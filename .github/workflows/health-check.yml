@@ -1,0 +1,84 @@
+name: Daily Health Check
+
+# 毎朝(JST 9:00 = UTC 0:00)にデータソースの疎通・レスポンス形式・異常値を確認する。
+# 失敗した場合、Claude Code Actionが原因を診断して修正PRを自動生成する(自動マージはしない)。
+#
+# 事前準備(リポジトリのSettings > Secrets and variablesで設定):
+#   - JQUANTS_REFRESH_TOKEN (任意。未設定ならJ-Quantsチェックはスキップされる)
+#   - FINNHUB_API_KEY       (任意。未設定ならFinnhubチェックはスキップされる)
+#   - ANTHROPIC_API_KEY     (自動診断PRを使う場合は必須)
+#
+# 注意: このワークフローの `anthropics/claude-code-action` の呼び出し方は
+# 実装時点の公開ドキュメントに基づく想定です。実行前に
+# https://github.com/anthropics/claude-code-action の最新のREADME/docsと
+# 照合し、必要に応じて `with:` の引数を修正してください。
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    outputs:
+      failed: ${{ steps.run_check.outcome == 'failure' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run mocked test suite
+        run: pip install -r requirements-dev.txt && pytest -q
+
+      - name: Run schema/anomaly health check (live API)
+        id: run_check
+        env:
+          JQUANTS_REFRESH_TOKEN: ${{ secrets.JQUANTS_REFRESH_TOKEN }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+        run: python scripts/schema_health_check.py
+
+      - name: Diagnose and open fix PR with Claude Code
+        if: failure()
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            scripts/schema_health_check.py が失敗しました(直前のジョブのログを参照)。
+            原因を診断し、必要な修正を行ってください。想定される原因:
+              - yfinance / J-Quants / Finnhubのレスポンス形式(フィールド名)の変更
+              - core/validation.py の妥当性チェックに引っかかる異常値の検知
+            対応方針:
+              - データ取得ロジック(core/providers/*)のフィールドマッピングを修正する場合、
+                数値を推測で埋めず、取得できない項目は「取得不可」として扱うこと(CLAUDE.md準拠)
+              - 修正には必ずテストを追加すること
+              - 妥当性チェックのしきい値自体を変更する場合は、変更理由をPR本文に明記すること
+            修正が完了したら、変更内容を要約したコミットを作成してください。
+            (このジョブ自体はPRを作らないため、後続のcreate-pull-requestステップでPR化されます)
+          claude_args: "--max-turns 15"
+
+      - name: Create Pull Request
+        if: failure()
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "fix: 定期健康診断で検知した異常への自動修正"
+          title: "[自動PR] 定期健康診断での異常検知と修正案"
+          body: |
+            `Daily Health Check` ワークフローが異常を検知し、Claude Codeが修正を試みました。
+
+            **このPRは自動マージされません。** マージ前に以下を確認してください(CONTRIBUTING.md参照)。
+            - データ取得ロジック・予測値の計算/表示に関わる変更が含まれる場合、必ず人がレビューする
+            - 予想値のラベル・出典・更新日が引き続き正しく表示されるか
+            - 取得不可の項目が「取得不可」と表示されているか(数値を推測で埋めていないか)
+          branch: "auto/health-check-fix-${{ github.run_number }}"
+          delete-branch: true
