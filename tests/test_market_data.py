@@ -60,6 +60,30 @@ def test_fetch_snapshot_maps_fields(mock_ticker_cls):
 
 
 @patch("yfinance.Ticker")
+def test_fetch_snapshot_handles_sub_1pct_dividend_and_high_roe(mock_ticker_cls):
+    # 実際のAAPLレスポンス(2026-08時点)を再現した回帰テスト。
+    # dividendYield=0.36 は「0.36%」を意味し(dividendRate 1.08 / price 305.26 で検算済み)、
+    # returnOnEquity=1.4875 は既に比率(148.75%、自社株買いの影響で100%超)であり変換不要。
+    info = {
+        "currentPrice": 305.26,
+        "currency": "USD",
+        "trailingPE": 34.93,
+        "priceToBook": 41.48,
+        "returnOnEquity": 1.4875101,
+        "dividendYield": 0.36,
+        "dividendRate": 1.08,
+        "marketCap": 4_455_019_315_200,
+        "longName": "Apple Inc.",
+    }
+    mock_ticker_cls.return_value = _mock_ticker(info)
+
+    snapshot = fetch_snapshot("AAPL", Market.US)
+
+    assert snapshot.dividend_yield == pytest.approx(0.0036)
+    assert snapshot.roe == pytest.approx(1.4875101)
+
+
+@patch("yfinance.Ticker")
 def test_fetch_snapshot_raises_when_not_found(mock_ticker_cls):
     mock_ticker_cls.return_value = _mock_ticker({})
     with pytest.raises(ProviderError):

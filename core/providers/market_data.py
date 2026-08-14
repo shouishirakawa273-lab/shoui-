@@ -89,14 +89,17 @@ def fetch_snapshot(code: str, market: Market | None = None) -> StockSnapshot:
         )
 
     price = info.get("currentPrice") or info.get("regularMarketPrice")
+
+    # yfinanceの dividendYield はパーセント値そのもの(3.35 = 3.35%)で返るため常に/100する。
+    # dividendRate(1株配当額)÷price との検算で確認済み(2026-08時点、7203/AAPL)。
     dividend_yield = info.get("dividendYield")
-    # yfinanceのバージョンにより比率(0.02)/パーセント(2.0)表記が混在するため正規化
-    if dividend_yield is not None and dividend_yield > 1:
+    if dividend_yield is not None:
         dividend_yield = dividend_yield / 100
 
+    # yfinanceの returnOnEquity は既に比率で返るため変換不要。
+    # 自社株買いの影響でROEが100%(比率1.0)を超える銘柄(AAPL等)があるため、
+    # 「1より大きければ%表記とみなして/100する」ような magnitude 依存の補正はしないこと。
     roe = info.get("returnOnEquity")
-    if roe is not None and abs(roe) > 1:
-        roe = roe / 100
 
     revenue, operating_income, net_income = _fetch_latest_financials(ticker)
 
