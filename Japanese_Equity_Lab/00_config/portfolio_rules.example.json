@@ -1,0 +1,12 @@
+{
+  "rules_id": "PR_default_v1",
+  "max_position_weight": 0.05,
+  "max_sector_weight": 0.20,
+  "max_theme_weight": 0.30,
+  "minimum_cash": 0.05,
+  "earnings_event_exposure": "決算発表前後3営業日は新規ポジションを持たない",
+  "liquidity_constraint": "1日平均売買代金の1%以内",
+  "schema_version": "1.0",
+  "source": "manual",
+  "note": "lib/schemas/portfolio_rules.PortfolioRules に対応する設定例。実運用時は複製して調整する。"
+}
