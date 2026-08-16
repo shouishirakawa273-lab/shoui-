@@ -49,6 +49,28 @@ def test_fixture_adapter_fetch_trading_calendar(fixture_path: Path) -> None:
     assert len(result.payload) == 3
 
 
+def test_fixture_adapter_fetch_index_prices_defaults_to_empty_without_breaking(fixture_path: Path) -> None:
+    """Phase2時点のfixtureファイル(indicesキーが無い)でも後方互換で空配列を返す。"""
+    adapter = FixtureDataSourceAdapter(fixture_path)
+    result = adapter.fetch_index_prices(index_code="0000", start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
+    assert result.payload == []
+
+
+def test_fixture_adapter_fetch_listed_info_defaults_to_empty_without_breaking(fixture_path: Path) -> None:
+    adapter = FixtureDataSourceAdapter(fixture_path)
+    result = adapter.fetch_listed_info()
+    assert result.payload == []
+
+
+def test_jquants_adapter_new_endpoints_unconfigured_raise_data_source_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("JQUANTS_REFRESH_TOKEN", raising=False)
+    adapter = JQuantsAdapter(refresh_token=None)
+    with pytest.raises(DataSourceError, match="JQUANTS_REFRESH_TOKEN"):
+        adapter.fetch_index_prices(index_code="0000", start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
+    with pytest.raises(DataSourceError, match="JQUANTS_REFRESH_TOKEN"):
+        adapter.fetch_listed_info()
+
+
 def test_daily_quotes_payload_to_raw_bars_treats_missing_as_none() -> None:
     payload = [
         {"Code": "7203", "Date": "2026-01-05", "Open": 2000, "High": 2010, "Low": 1990, "Close": 2005, "Volume": 1000},

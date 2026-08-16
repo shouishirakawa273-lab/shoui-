@@ -37,12 +37,17 @@ _RATE_LIMIT_INTERVAL_SEC = 12.5  # 5リクエスト/分を安全マージン込�
 
 
 class JQuantsAdapter:
-    """J-Quants API (日次株価・取引カレンダー) の DataSourceAdapter 実装。
+    """J-Quants API (日次株価・取引カレンダー・指数・銘柄マスタ) の DataSourceAdapter 実装。
 
     使用エンドポイント:
     - ``POST /token/auth_refresh``: リフレッシュトークン -> IDトークン
     - ``GET /prices/daily_quotes``: 銘柄別の日次OHLCV(未調整、AdjustmentFactor等を含む)
     - ``GET /markets/trading_calendar``: 取引カレンダー(HolidayDivision等)
+    - ``GET /indices``: 指数(TOPIX等)の日次価格。**インデックスコード(TOPIXは"0000"と
+      想定)・レスポンス形状はこのセッションでは未検証**。ローカル環境で疎通確認すること。
+    - ``GET /listed/info``: 銘柄マスタ(上場情報)。**listing_date/delisting_dateに相当する
+      フィールドが含まれるかは未検証**。含まれない場合、Universeはsurvivorship biasを
+      解消できない(`lib/universe.py`参照)。
     """
 
     def __init__(self, refresh_token: str | None = None, session: requests.Session | None = None) -> None:
@@ -146,6 +151,74 @@ class JQuantsAdapter:
             request_parameters={"from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=datetime.now(UTC),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_index_prices(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
+        """指数(TOPIX等)の日次価格を取得する。TOPIXのindex_codeは"0000"と想定しているが
+        未検証(ローカル環境で疎通確認すること)。"""
+        if not self.configured:
+            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
+        id_token = self._authenticate()
+
+        self._throttle()
+        try:
+            resp = self._session.get(
+                f"{BASE_URL}/indices",
+                params={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+                headers={"Authorization": f"Bearer {id_token}"},
+                timeout=15,
+            )
+            self._last_request_at = time.monotonic()
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            raise DataSourceError(f"指数({index_code})の価格取得に失敗しました: {exc}") from exc
+
+        payload = resp.json()
+        records = payload.get("indices", [])
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/indices",
+            request_parameters={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+            retrieved_at=datetime.now(UTC),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_listed_info(self, *, as_of: date | None = None) -> RawFetchResult:
+        """銘柄マスタ(上場情報)を取得する。listing_date/delisting_dateに相当する
+        フィールドが含まれるかは未検証。含まれない場合、これだけではSurvivorship bias
+        (現在上場している銘柄しか分からない)を解消できない(lib/universe.py参照)。"""
+        if not self.configured:
+            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
+        id_token = self._authenticate()
+
+        self._throttle()
+        params: dict[str, str] = {}
+        if as_of is not None:
+            params["date"] = as_of.isoformat()
+        try:
+            resp = self._session.get(
+                f"{BASE_URL}/listed/info",
+                params=params,
+                headers={"Authorization": f"Bearer {id_token}"},
+                timeout=15,
+            )
+            self._last_request_at = time.monotonic()
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            raise DataSourceError(f"銘柄マスタの取得に失敗しました: {exc}") from exc
+
+        payload = resp.json()
+        records = payload.get("info", [])
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/listed/info",
+            request_parameters=dict(params),
+            retrieved_at=datetime.now(UTC),
+            data_period=(as_of.isoformat() if as_of else "current"),
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )

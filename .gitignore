@@ -18,6 +18,11 @@ data/*.db
 # Japanese Equity Research Lab: 実データのRaw Snapshotは大きくなりうるため追跡しない。
 # fixtureによる合成データのSnapshot(Pipeline動作例)は小さいため追跡する。
 Japanese_Equity_Lab/01_data/raw/jquants/
+Japanese_Equity_Lab/01_data/raw/jquants_local/
+
+# Japanese Equity Research Lab: LocalSnapshotAdapter用にユーザーがローカルで取得した
+# J-Quants生レスポンス(Phase3A LOCAL_DATA_FETCH_GUIDE.md参照)。実データのため追跡しない。
+Japanese_Equity_Lab/01_data/raw/local_snapshot_input/
 
 # Streamlit
 .streamlit/secrets.toml

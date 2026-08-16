@@ -44,7 +44,11 @@ class RawFetchResult:
 
 
 class DataSourceAdapter(Protocol):
-    """日次株価データソースが実装すべきInterface。"""
+    """日次株価データソースが実装すべきInterface。
+
+    Phase3Aで`fetch_index_prices` / `fetch_listed_info`を追加した(TOPIX・Universe
+    マスタデータのため)。Fundamental Data(決算等)はまだこのInterfaceに含めない。
+    """
 
     def fetch_daily_quotes(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """指定銘柄群の日次OHLCV(未調整)を取得する。"""
@@ -52,4 +56,12 @@ class DataSourceAdapter(Protocol):
 
     def fetch_trading_calendar(self, *, start_date: date, end_date: date) -> RawFetchResult:
         """指定期間の取引カレンダー(取引日/休場日)を取得する。"""
+        ...
+
+    def fetch_index_prices(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
+        """指定インデックス(例: TOPIX)の日次価格を取得する。"""
+        ...
+
+    def fetch_listed_info(self, *, as_of: date | None = None) -> RawFetchResult:
+        """銘柄マスタ(上場情報)を取得する。as_ofに対応しないSourceは現在情報を返す。"""
         ...

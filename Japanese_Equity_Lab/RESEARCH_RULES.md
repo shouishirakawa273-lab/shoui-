@@ -38,6 +38,16 @@ AIで大量の戦略を探索すると、偶然過去データに適合しただ
   実データでの疎通確認は必ずローカル環境で行う。Pipeline配線の検証には合成データ
   (`13_tests/fixtures/`)を使ってよいが、**実際のデータであるかのように偽装しない**
   (Snapshotの`source`フィールド等で常に区別する)。
+- 上記の理由で外部APIへ疎通できない環境では、`lib/data_sources/local_snapshot.LocalSnapshotAdapter`
+  (`--source local`)を使う。ユーザーがネットワーク制限のないローカル環境で
+  J-Quantsから取得したJSON/CSVファイルを、決まった命名規約
+  (`daily_quotes_<code>.json`、`trading_calendar.json`、`indices_<index_code>.json`、
+  `listed_info.json`。詳細は`local_snapshot.py`のモジュールdocstring)で1つの
+  ディレクトリへ配置し、`--local-snapshot-dir`で渡す。これは「実データそのもの」を
+  扱う経路であり、fixtureのような合成データではないが、**このセッション自身は
+  一度もJ-Quantsへ疎通していない**ため、このAdapterが実レスポンスの形状を正しく
+  扱えるかどうかはユーザーがローカルで実行して確認する必要がある(D0025〜D0028、
+  Phase3A完了報告参照)。
 
 ## Pipeline全体の構成 (`scripts/jquants_lab_pipeline.py`)
 
@@ -45,8 +55,12 @@ Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較 
 Experiment Registry を一本のPipelineとして実行できる。
 
 - `lib/data_sources/base.DataSourceAdapter`: 外部データソースへの依存を切り離すInterface。
-  `lib/data_sources/jquants.JQuantsAdapter`(実データ)と
-  `lib/data_sources/fixture.FixtureDataSourceAdapter`(合成データ)が同じInterfaceを満たす。
+  `lib/data_sources/jquants.JQuantsAdapter`(実データ・API直接接続)、
+  `lib/data_sources/local_snapshot.LocalSnapshotAdapter`(実データ・ローカルファイル経由、
+  外部APIへ疎通できない環境向け)、`lib/data_sources/fixture.FixtureDataSourceAdapter`
+  (合成データ)が同じInterfaceを満たす。個別銘柄日次OHLCV(`fetch_daily_quotes`)に加え、
+  指数データ(`fetch_index_prices`、TOPIX等)・銘柄マスタ(`fetch_listed_info`)も
+  同じ抽象化で扱う。
 - `lib/snapshot.RawSnapshotStore`: APIレスポンスを`01_data/raw/`へImmutableに保存する
   (manifestにsource/endpoint/request_parameters/retrieved_at/data_period/
   response_schema_version/content_hash/local_file/record_countを記録)。
@@ -230,6 +244,14 @@ Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(.
 Corporate Actionsの実データSourceを確定し、`apply_split_adjustments_as_of`をPipelineへ
 組み込むこと。それまでは合成データによるPipeline配線の検証にとどめる。
 
+Phase3Aで`lib/data_sources/convert.detect_split_hints_from_daily_quotes()`を追加したが、
+これは`daily_quotes`の`AdjustmentFactor`が前日から変化した日を分割・併合の**候補**として
+抽出する参考情報にすぎず、`announced_at=None`のままなので上記BLOCKING TODOを解消しない
+(`apply_split_adjustments_as_of()`に渡すと意図的に`LookAheadBiasError`で拒否される)。
+Pipelineの標準出力に「情報提供のみ、Backtestには未適用」として表示するだけで、実際の
+Adjusted価格系列には一切反映しない。J-Quantsが`announced_at`(公表時刻)を返す
+実際のエンドポイントが判明した場合のみ、このBLOCKING TODOは解消できる。
+
 ## Multiple Testing
 
 AIが多数の戦略を試した場合、良かったものだけを見せてはいけない。
@@ -246,6 +268,14 @@ Ver.1はキャピタルゲイン研究が主目的のため、**Price Return同�
 戦略側のリターンとBenchmark側のリターンで `return_type`(`PRICE_RETURN` / `TOTAL_RETURN`)が
 一致しない場合、`compare_to_benchmark()` はエラーにして比較させない
 (配当込みTotal Returnとの混同を防ぐ)。
+
+Phase3Aで`DataSourceAdapter.fetch_index_prices()`(J-Quants `/indices`相当)を接続した
+(D0026)。TOPIXの`index_code`は`"0000"`と仮定しているが**未検証**(公式ドキュメントからの
+推測)。`/indices`のレスポンス形状も`/prices/daily_quotes`と同じOpen/High/Low/Close/Volumeを
+持つという未検証の前提に立っている。ユーザーがローカルで実際に叩いた結果、コードや形状が
+異なると判明した場合は`lib/data_sources/jquants.py`の`fetch_index_prices()`と
+`lib/data_sources/convert.index_prices_payload_to_raw_bars()`のみを修正すればよい
+(Backtest Engine・Benchmark比較ロジックへの影響はない設計)。
 
 ## 税金の扱い
 
@@ -273,12 +303,20 @@ Retirement Criteria(例: 直近12か月Alpha < 0)を登録時に明記する。
 ## Point-in-Time Universe (`lib/universe.py`)
 
 Survivorship bias排除の前提として、`UniverseProvider`(`as_of(as_of: datetime) -> UniverseSnapshot`)
-のInterfaceを定義する。将来`listing_date` / `delisting_date` / `market` / `sector` /
+のInterfaceを定義する。`listing_date` / `delisting_date` / `market` / `sector` /
 `tradable_from` / `tradable_until`等から、その時点で投資可能だった銘柄集合を返す。
 実データが無い/不十分な場合に架空の補完(「投資可能銘柄が0件だった」等)をせず、
 `UniverseResolution`(`RESOLVED` / `UNRESOLVED` / `DATA_UNAVAILABLE`)で明示する。
 Phase1.1はInterfaceとsynthetic data向けの素朴な実装(`ListingBasedUniverseProvider`)のみ。
-実データソースとの接続はPhase2以降。
+
+Phase3Aで`lib/data_sources/convert.listed_info_payload_to_listing_records()`により
+J-Quants `/listed/info`を接続した。`/listed/info`が`listing_date`/`delisting_date`に
+相当するフィールドを含むかどうかは未検証であり、含まれない場合は`None`のまま正直に
+扱う(数値を推測で埋めない方針)。`UniverseSnapshot.survivorship_bias_unresolved`は、
+渡された全`ListingRecord`に`delisting_date`が1件も無い場合に自動的に`True`になる
+(`_auto_detect_survivorship_bias()`、D0028)。この場合、そのUniverseを使った
+Backtest結果はSurvivorship Biasが残存する前提で解釈すること(現在上場している銘柄だけを
+過去へ遡らせている可能性が高い)。
 
 ## Provenance (`lib/registry/provenance.py`)
 

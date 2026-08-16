@@ -1,16 +1,22 @@
-"""Japanese Equity Research Lab — Phase2 Pipeline実行スクリプト。
+"""Japanese Equity Research Lab — Pipeline実行スクリプト(Phase3A: 実データ対応)。
 
 Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較 ->
 Experiment Registry を一本通しで実行し、Raw SnapshotとProvenanceを記録する。
 
 --source jquants はローカル環境で(.envにJQUANTS_REFRESH_TOKENを設定した上で)実行すること
-(クラウドのセッションからは外部APIへ接続できない)。--source fixture は合成データによる
-Pipeline配線の検証用で、ネットワーク接続なしでどこでも実行できる。
+(クラウドのセッションからは外部APIへ接続できないことがある。README.md参照)。
+--source local は、ネットワーク接続できる別環境で取得済みのJ-Quants生レスポンス
+(JSON/CSV)をこの環境へ持ち込んで実行するためのモード
+(lib/data_sources/local_snapshot.LocalSnapshotAdapter、ファイル命名規約はdocstring参照)。
+--source fixture は合成データによるPipeline配線の検証用で、ネットワーク接続なしで
+どこでも実行できる(Strategy Performance評価には使わない)。
 
 使い方:
     python scripts/jquants_lab_pipeline.py --source fixture
-    python scripts/jquants_lab_pipeline.py --source jquants --codes 7203 6758 --benchmark-code 0000 \
-        --start 2026-01-05 --end 2026-06-30
+    python scripts/jquants_lab_pipeline.py --source jquants --codes 7203 6758 8056 3626 \
+        --benchmark-index-code 0000 --start 2024-01-04 --end 2026-07-24
+    python scripts/jquants_lab_pipeline.py --source local --local-snapshot-dir /path/to/snapshots \
+        --codes 7203 6758 8056 3626 --benchmark-index-code 0000 --start 2024-01-04 --end 2026-07-24
 """
 
 from __future__ import annotations
@@ -28,9 +34,17 @@ sys.path.insert(0, str(_LAB_DIR))
 from dotenv import load_dotenv  # noqa: E402
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, TransactionCostConfig  # noqa: E402
 from lib.data_sources.base import DataSourceAdapter  # noqa: E402
-from lib.data_sources.convert import daily_quotes_payload_to_raw_bars, trading_calendar_payload_to_calendar  # noqa: E402
+from lib.data_sources.convert import (  # noqa: E402
+    daily_quotes_payload_to_raw_bars,
+    detect_split_hints_from_daily_quotes,
+    index_prices_payload_to_raw_bars,
+    listed_info_payload_to_listing_records,
+    trading_calendar_payload_to_calendar,
+)
 from lib.data_sources.fixture import FixtureDataSourceAdapter  # noqa: E402
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
+from lib.data_sources.local_snapshot import LocalSnapshotAdapter  # noqa: E402
+from lib.market_calendar import session_close_at  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
 from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
@@ -44,11 +58,16 @@ from lib.strategies.fixed_pipeline_validation import (  # noqa: E402
     STRATEGY_VERSION,
     as_buy_signal_fn,
 )
+from lib.universe import ListingBasedUniverseProvider  # noqa: E402
 
 
-def _build_adapter(source: str, fixture_path: Path) -> DataSourceAdapter:
+def _build_adapter(source: str, fixture_path: Path, local_snapshot_dir: Path | None) -> DataSourceAdapter:
     if source == "fixture":
         return FixtureDataSourceAdapter(fixture_path)
+    if source == "local":
+        if local_snapshot_dir is None:
+            raise SystemExit("--source local には --local-snapshot-dir の指定が必須です。")
+        return LocalSnapshotAdapter(local_snapshot_dir)
     return JQuantsAdapter()
 
 
@@ -57,45 +76,74 @@ def run_pipeline(
     source: str,
     codes: list[str],
     benchmark_code: str,
+    benchmark_index_code: str,
     start: date,
     end: date,
     fixture_path: Path,
+    local_snapshot_dir: Path | None,
     commission_bps: float,
     slippage_bps: float,
 ) -> None:
-    if source == "jquants":
+    is_real_source = source in ("jquants", "local")
+    if is_real_source:
         print(
             "!!! BLOCKING TODO(実日本株Backtestでは未解決) !!!\n"
-            "Corporate Actions(株式分割・併合等)の実データSourceが未実装のため、\n"
+            "Corporate Actions(株式分割・併合等)のannounced_at付きデータSourceが未実装のため、\n"
             "対象期間・対象銘柄に分割等があった場合、価格系列が不連続になり\n"
             "Backtest結果が誤ります。実際の投資判断にこの結果を使用しないでください。\n"
-            "(DECISIONS.md D0014 / RESEARCH_RULES.md参照)\n"
+            "(DECISIONS.md D0014/D0025、RESEARCH_RULES.md参照)\n"
         )
 
     load_dotenv()
-    adapter = _build_adapter(source, fixture_path)
+    adapter = _build_adapter(source, fixture_path, local_snapshot_dir)
     snapshot_store = RawSnapshotStore(_LAB_DIR / "01_data" / "raw")
     run_id = f"RUN_{datetime.now(UTC):%Y%m%dT%H%M%S%f}"
+    manifests_used = []
 
-    all_codes = [*codes, benchmark_code]
-    quotes_result = adapter.fetch_daily_quotes(codes=all_codes, start_date=start, end_date=end)
+    quotes_result = adapter.fetch_daily_quotes(codes=codes, start_date=start, end_date=end)
     calendar_result = adapter.fetch_trading_calendar(start_date=start, end_date=end)
-
     quotes_manifest = snapshot_store.save(quotes_result, snapshot_id=f"SNAP_{run_id}_daily_quotes")
     calendar_manifest = snapshot_store.save(calendar_result, snapshot_id=f"SNAP_{run_id}_trading_calendar")
+    manifests_used += [quotes_manifest, calendar_manifest]
 
-    raw_bars = daily_quotes_payload_to_raw_bars(quotes_result.payload)
+    raw_bars = daily_quotes_payload_to_raw_bars(quotes_result.payload, source=source)
     raw_by_code: dict[str, list] = {}
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
 
-    # BLOCKING TODO(Phase3): Corporate Actionsの取得元が未実装のため、現時点ではsplit
-    # 調整なし(actions=[])でRaw->Adjustedへ明示的に変換している(RawとAdjustedを
-    # 混同しない、という設計自体は満たすが、分割があった銘柄では価格が不連続になる)。
-    price_history = {code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items() if code in codes}
-    benchmark_bars = apply_split_adjustments(raw_by_code.get(benchmark_code, []), [])
+    # BLOCKING TODO(Phase3B以降): Corporate Actionsのannounced_at付きSourceが未実装のため、
+    # 現時点ではsplit調整なし(actions=[])でRaw->Adjustedへ明示的に変換している
+    # (RawとAdjustedを混同しない、という設計自体は満たすが、分割があった銘柄では
+    # 価格が不連続になりうる)。AdjustmentFactorからの検出候補は情報提供のみ行う。
+    price_history = {code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items()}
+    corporate_action_hints = detect_split_hints_from_daily_quotes(quotes_result.payload)
+
+    # Benchmark: fixtureモードは従来通りdaily_quotesベースの擬似コード(後方互換)、
+    # jquants/localモードは実Indexデータ(/indices)を使う。
+    if source == "fixture":
+        benchmark_result = adapter.fetch_daily_quotes(codes=[benchmark_code], start_date=start, end_date=end)
+        benchmark_manifest = snapshot_store.save(benchmark_result, snapshot_id=f"SNAP_{run_id}_benchmark")
+        benchmark_raw_bars = daily_quotes_payload_to_raw_bars(benchmark_result.payload, source=source)
+        benchmark_label = benchmark_code
+    else:
+        benchmark_result = adapter.fetch_index_prices(index_code=benchmark_index_code, start_date=start, end_date=end)
+        benchmark_manifest = snapshot_store.save(benchmark_result, snapshot_id=f"SNAP_{run_id}_benchmark_index")
+        benchmark_raw_bars = index_prices_payload_to_raw_bars(benchmark_result.payload, code=benchmark_index_code, source=source)
+        benchmark_label = benchmark_index_code
+    manifests_used.append(benchmark_manifest)
+    benchmark_bars = apply_split_adjustments(benchmark_raw_bars, [])
 
     trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=start, range_end=end)
+
+    # Universe: 実データSourceのみ接続する(fixtureモードでは省略、DATA_UNAVAILABLE扱い)。
+    universe_snapshot = None
+    if is_real_source:
+        listed_info_result = adapter.fetch_listed_info()
+        listed_info_manifest = snapshot_store.save(listed_info_result, snapshot_id=f"SNAP_{run_id}_listed_info")
+        manifests_used.append(listed_info_manifest)
+        listing_records = listed_info_payload_to_listing_records(listed_info_result.payload)
+        universe_provider = ListingBasedUniverseProvider(listing_records)
+        universe_snapshot = universe_provider.as_of(session_close_at(end))
 
     run_config = BacktestRunConfig(
         universe_codes=tuple(codes),
@@ -128,7 +176,7 @@ def run_pipeline(
         failure_metric="Pipelineのどこかでエラーになること",
     ).lock()
 
-    dataset_hash = dataset_hash_from_snapshots([quotes_manifest.content_hash, calendar_manifest.content_hash])
+    dataset_hash = dataset_hash_from_snapshots([m.content_hash for m in manifests_used])
     strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(DEFAULT_CONFIG)})
     config_hash = hash_json_safe(
         {
@@ -215,10 +263,22 @@ def run_pipeline(
     )
 
     print(f"=== run_id={run_id} (source={source}) ===")
-    print(f"universe_codes={run_config.universe_codes} benchmark_code={benchmark_code}")
+    print(f"universe_codes={run_config.universe_codes} benchmark={benchmark_label}")
     print(f"period={start}〜{end}")
     print(f"quotes snapshot: {quotes_manifest.snapshot_id} (record_count={quotes_manifest.record_count})")
     print(f"calendar snapshot: {calendar_manifest.snapshot_id} (record_count={calendar_manifest.record_count})")
+    print(f"benchmark snapshot: {benchmark_manifest.snapshot_id} (record_count={benchmark_manifest.record_count})")
+    print(
+        f"corporate action hints(情報提供のみ、Backtestには未適用): {len(corporate_action_hints)}件 "
+        f"({[h.code for h in corporate_action_hints]})"
+    )
+    if universe_snapshot is not None:
+        print(
+            f"universe: resolution={universe_snapshot.resolution.value} "
+            f"codes={len(universe_snapshot.codes)}件 "
+            f"survivorship_bias_unresolved={universe_snapshot.survivorship_bias_unresolved} "
+            f"note={universe_snapshot.note!r}"
+        )
     print(f"experiment_id={experiment.experiment_id} status={experiment.status.value}")
     print(f"metrics={metrics}")
     print(f"reproducibility={fingerprint}")
@@ -230,16 +290,27 @@ def run_pipeline(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", choices=["jquants", "fixture"], default="fixture")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--source", choices=["jquants", "fixture", "local"], default="fixture")
     parser.add_argument("--codes", nargs="+", default=["7203", "6758", "9984"])
-    parser.add_argument("--benchmark-code", default="TOPIX_SYNTH")
+    parser.add_argument("--benchmark-code", default="TOPIX_SYNTH", help="--source fixture 専用の擬似Benchmarkコード")
+    parser.add_argument(
+        "--benchmark-index-code",
+        default="0000",
+        help="--source jquants/local 用のTOPIX等インデックスコード(未検証、要ローカル確認)",
+    )
     parser.add_argument("--start", type=date.fromisoformat, default=date(2026, 1, 5))
     parser.add_argument("--end", type=date.fromisoformat, default=date(2026, 6, 30))
     parser.add_argument(
         "--fixture-path",
         type=Path,
         default=_LAB_DIR / "13_tests" / "fixtures" / "synthetic_jquants_daily_quotes.json",
+    )
+    parser.add_argument(
+        "--local-snapshot-dir",
+        type=Path,
+        default=None,
+        help="--source local 用。ローカル環境で取得したJ-Quants生レスポンスを置いたディレクトリ",
     )
     parser.add_argument("--commission-bps", type=float, default=5.0)
     parser.add_argument("--slippage-bps", type=float, default=5.0)
@@ -249,9 +320,11 @@ def main() -> None:
         source=args.source,
         codes=args.codes,
         benchmark_code=args.benchmark_code,
+        benchmark_index_code=args.benchmark_index_code,
         start=args.start,
         end=args.end,
         fixture_path=args.fixture_path,
+        local_snapshot_dir=args.local_snapshot_dir,
         commission_bps=args.commission_bps,
         slippage_bps=args.slippage_bps,
     )

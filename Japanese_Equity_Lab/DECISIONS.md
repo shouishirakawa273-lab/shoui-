@@ -329,6 +329,16 @@ Source Request」を、各ノードが直接の親を1つだけ持つ線形チ�
 個人の取得タイミングに依存する(誰が実行しても同じ内容にはならない)ため、
 `data/*.sqlite3`が既存リポジトリでgitignoreされているのと同じ理由で追跡しない。
 
+**Phase3Aでの追記**: `LocalSnapshotAdapter`(`--source local`)が生成するRaw Snapshot
+(`01_data/raw/jquants_local/`)も同じ理由で`.gitignore`へ追加した(D0025)。このセッションで
+scratch検証用に生成した`jquants_local/`配下のファイルはコミット対象から外し、ローカルの
+作業ディレクトリからも削除した(実データでも合成scratch dataでもない中途半端な検証物を
+恒久的な証跡として残さないため)。同じ理由で、fixture Snapshotについても、既存の
+デモとメトリクスが完全に一致するだけの重複した動作確認runは追加コミットしない
+(`06_backtests/experiment_registry.jsonl`・`provenance.jsonl`は既存のPhase2.2デモのままで、
+Phase3Aの動作確認(D0025のリファクタリング前後比較)はDECISIONS.mdの記述と
+`13_tests/`のテストで裏付ける)。
+
 ---
 
 ## Phase 2.1(2026-08-16): Backtest Sample Metrics厳密化・Execution Outcome記録・再現性強化
@@ -472,3 +482,147 @@ PIT判定が変わる」という対称的な結果を、同じ形式のテス�
 狙って発生させたものではなかった。Portfolio Simulation固有の分岐を確実にカバーする
 専用のFixtureを用意し、Strategy Performance評価に使うFixtureとは目的を明確に分離した
 (fixture冒頭の`_disclaimer`に明記)。
+
+---
+
+## Phase 3A(2026-08-16): 実J-Quantsデータ投入によるPipeline End-to-End検証
+
+Phase2 FINAL後、「Phase2までfixtureで検証したResearch Pipelineに、実際のJ-Quants
+日本株データを投入しても、既存設計を壊さずEnd-to-Endで動作するか」を確認する目的で
+着手した。本セッションでもD0012同様、J-Quants等の外部APIへ一切疎通できないことを
+最初に再確認した(`api.jquants.com`へのCONNECTが403で拒否、D0012時点と同一の症状)。
+そのため本Phaseの実データ検証は、ユーザーがローカル環境で取得したJ-Quantsレスポンスを
+読み込む`LocalSnapshotAdapter`経由の経路を新設し、その経路で「配管(pipeline plumbing)」を
+検証することに主眼を置いた。「実際の市場データでの検証」そのものは、ユーザーが
+ローカルでデータを取得してこのPipelineに投入するまで完了しない(Phase3A完了報告参照)。
+
+## D0025 — `LocalSnapshotAdapter`を新設し、`--source local`でPipelineに接続
+
+**変更内容**: `lib/data_sources/local_snapshot.py`に、ユーザーがローカル環境で
+あらかじめ取得したJ-Quants JSON/CSVファイル(`daily_quotes_<code>.json`等の命名規約、
+モジュールdocstring参照)を読み込み、既存の`DataSourceAdapter` Protocolを満たす
+`LocalSnapshotAdapter`を実装した。`scripts/jquants_lab_pipeline.py`に
+`--source {jquants,fixture,local}`と`--local-snapshot-dir`を追加し、
+`_build_adapter()`で分岐させた。
+
+**理由**: このセッションからは実際にJ-Quantsへ疎通できないため、「Pipelineが実データの
+形状(フィールド名・型・欠損パターン)を正しく扱えるか」を、ネットワーク接続なしに
+検証する手段が必要だった。ユーザーが自分のPC(ネットワーク制限のない環境)で
+J-Quantsから取得したファイルをこのSourceへ渡すことで、Backtest Engine側のコードを
+一切変更せずに実データ検証へ移行できる設計にした(`DataSourceAdapter`抽象化の
+恩恵、D0012と同じ設計思想)。
+
+**retrieved_atの扱い**: ファイルのmtimeをデフォルトの`retrieved_at`として使う
+(コンストラクタで明示的に上書き可能)。ファイルがいつ取得されたかの正確な記録は
+ユーザー自身の管理に委ねる(D0021で確認した通り、`retrieved_at`はPIT判定に使われない
+ため、多少不正確でもBacktest結果自体には影響しない)。
+
+## D0026 — `DataSourceAdapter`に`fetch_index_prices`/`fetch_listed_info`を追加
+
+**変更内容**: `lib/data_sources/base.DataSourceAdapter` Protocolへ、指数データ
+(TOPIX等)取得用の`fetch_index_prices(index_code, start_date, end_date)`と、
+銘柄マスタ取得用の`fetch_listed_info(as_of=None)`を追加した。`JQuantsAdapter`
+(`/indices`・`/listed/info`)、`FixtureDataSourceAdapter`(既存fixtureへの
+後方互換のため`"indices"`/`"listed_info"`キーが無ければ空ペイロードを返す)、
+`LocalSnapshotAdapter`の3実装すべてに追加した。
+
+**理由**: D0013(TOPIX取得は未実装、Phase3 TODO)を解消するため。個別銘柄の
+`fetch_daily_quotes`と同じ抽象化パターンをそのまま再利用することで、
+Backtest Engine・Benchmark比較ロジック側の変更を発生させずに済んだ。
+
+**未検証の前提(引き継ぎ)**: `/indices`のレスポンス形状は`/prices/daily_quotes`と
+同じOpen/High/Low/Close/Volumeを持つという前提で`index_prices_payload_to_raw_bars()`を
+実装したが、実レスポンスでの検証はできていない。TOPIXの`index_code`も
+`"0000"`と仮定しているが未検証(公式ドキュメントからの推測)。ユーザーがローカルで
+実際に`/indices`を叩いた結果、形状やコードが異なる場合は、この関数だけを修正すれば
+Pipelineの他の部分には波及しない設計になっている。
+
+## D0027 — Corporate Action Hint検出を「前日比の変化」ベースに修正(バグ修正)
+
+**問題**: `detect_split_hints_from_daily_quotes()`の初期実装は、`AdjustmentFactor != 1.0`
+であるすべての行を分割候補として抽出していた。手元で用意したJ-Quants形状の
+scratch dataで検証したところ、「分割後もAdjustmentFactorが同じ値を保持し続ける」
+という(ありうる)convention下で、1回の分割に対し100件以上の重複したhintが
+生成されることが判明した。これは実際のJ-Quantsデータでも同様に誤発火しうる
+実バグと判断した(単なるテストデータの偶然ではない)。
+
+**変更内容**: 銘柄コードごとに前日の`AdjustmentFactor`を追跡し、
+「前日から値が変化し、かつ1.0でない」日だけをhintとして抽出するよう修正した
+(`Japanese_Equity_Lab/lib/data_sources/convert.py`)。この方式は、
+「変化した初日だけ1.0以外になる」実装・「変化後も同じ値を保持し続ける」実装の
+どちらのconventionでも重複なく効力発生日候補を抽出できる。回帰テスト
+(`test_detect_split_hints_deduplicates_when_factor_stays_elevated_across_many_days`)
+を追加した。
+
+**このhint自体の位置づけ(変更なし)**: `announced_at=None`のまま抽出するため、
+既存のPIT-safe変換`apply_split_adjustments_as_of()`に渡すと`LookAheadBiasError`で
+拒否される(意図した挙動)。D0014のBLOCKING TODO(announced_at付きCorporate Action
+取得元が未実装)は本Phaseでも未解決のまま。このhintは「事後的な参考情報の表示」
+以外の用途では使用禁止であることを`_SPLIT_HINT_NOTE`とRESEARCH_RULES.mdに明記する
+(Phase3A完了報告参照)。
+
+## D0028 — Universeへ`/listed/info`を接続し、Survivorship Bias自動検出を追加
+
+**変更内容**: `listed_info_payload_to_listing_records()`(`lib/data_sources/convert.py`)で
+`/listed/info`ペイロードを`ListingRecord`へ変換し、`scripts/jquants_lab_pipeline.py`が
+実データSource(`jquants`/`local`)実行時にこれを`ListingBasedUniverseProvider`へ渡して
+`as_of()`を呼ぶようにした。`lib/universe.py`の`UniverseSnapshot`に
+`survivorship_bias_unresolved: bool`フィールドを追加し、`ListingBasedUniverseProvider`が
+「全listingにdelisting_dateが無い」場合に自動的にTrueを立てるようにした
+(`_auto_detect_survivorship_bias()`)。
+
+**理由**: `/listed/info`が(未検証の限りでは)ある時点でのスナップショットに過ぎず、
+`listing_date`/`delisting_date`に相当するフィールドを含むかどうかが不明なため、
+含まれない場合は正直に`None`のままにし(数値を推測で埋めない方針)、その結果として
+「現在の上場銘柄だけを過去へ遡らせている」状態(Survivorship Bias未解消)を
+機械的に検出してBacktest結果に警告として残せるようにした。
+
+**この結果に基づくBacktestの解釈上の制約**: Phase3Aで検証した`--source local`経路の
+scratch実行では`survivorship_bias_unresolved=True`が常に立った(scratch dataに
+delisting_dateを含めなかったため)。実際のJ-Quants `/listed/info`が
+delisting_dateを含むかどうかは未検証であり、ユーザーがローカルで実データを
+取得した際に確認が必要(Phase3A完了報告のTODO参照)。
+
+## D0029 — 実際の日本の祝日を手動検証したTradingCalendarテストを追加
+
+**変更内容**: `13_tests/test_trading_calendar_real_holidays.py`を新設し、2024年の
+実際の祝日・年末年始休場(元日・成人の日・振替休日群・ゴールデンウィーク・
+海の日・敬老の日・秋分の日・スポーツの日・文化の日振替・年末休場)を手動で
+検証した上で`TradingCalendar`を構築し、(1)平日かつ祝日でない日は取引日、
+(2)土日は非取引日、(3)平日だが祝日である日は非取引日(単純な曜日判定では
+検出できないケース)、(4)ゴールデンウィークを挟んだ`next_trading_session`/
+`previous_trading_session`の解決、(5)範囲外の日付は「平日だから取引日だろう」と
+推測せず例外を送出すること、(6)2024-11-05の取引時間変更境界、をそれぞれ確認した。
+
+**理由**: このセッションからは実際のJ-Quants `/markets/trading_calendar`
+レスポンスを取得できないため、「機械的な曜日判定ではなく、実際の祝日・休場日を
+正しく扱える」ことを、広く確認可能な公知の祝日情報を使って独立に検証した。
+このテストは網羅的な祝日カレンダーの提供や祝日判定ロジックの実装ではなく、
+既存の`TradingCalendar`(データ駆動、内部にロジックとして祝日を持たない設計)が
+正しいtrading_datesさえ与えられれば正しく動くことの確認である。本番運用では
+必ずJ-Quants等の実データからTrading Calendarを構築すること(テストファイル冒頭に
+明記)。
+
+## D0030 — `scripts/fetch_jquants_local_snapshot.py`を新設し、`LocalSnapshotAdapter`用の
+取得手順をコードとして提供
+
+**変更内容**: `JQuantsAdapter`をそのまま再利用してJ-Quants実APIへ接続し、結果を
+`LocalSnapshotAdapter`が読める命名規約・JSON形状(`daily_quotes_<code>.json`等)で
+`Japanese_Equity_Lab/01_data/raw/local_snapshot_input/`(新規`.gitignore`対象)へ
+保存する取得専用スクリプトを追加した。ユーザー向け手順は
+`Japanese_Equity_Lab/LOCAL_DATA_FETCH_GUIDE.md`にまとめた。
+
+**理由**: 「ユーザーが手作業でcurl等を叩いてJSONを整形する」手順書だけでは、
+エンドポイント名・パラメータ名・認証フローの知識が`JQuantsAdapter`とドキュメントの
+2箇所に重複し、どちらかが将来ズレる(ドキュメントの記載が古くなる)リスクがある。
+既存の`JQuantsAdapter`をそのまま呼び出すスクリプトにすることで、エンドポイント・
+パラメータの唯一の情報源(single source of truth)を`lib/data_sources/jquants.py`に
+保つ。取得したペイロード(市場データ)のみをファイルへ書き出し、リフレッシュ
+トークン・IDトークンはいかなるファイルにも出力しない(既存の認証情報保護方針を維持)。
+
+**このスクリプトの出力の位置づけ**: `01_data/raw/local_snapshot_input/`は
+「ユーザー手元の作業コピー」であり、`lib.snapshot.RawSnapshotStore`が管理する
+Immutable Raw Snapshot(`01_data/raw/local/`)そのものではない。正式なSnapshotは
+Pipeline実行時(`--source local`)に別途生成される。この区別を明確にするため、
+出力先ディレクトリ名を`01_data/raw/jquants/`(D0016で追跡除外済みの、Pipelineが
+生成する正式なRaw Snapshot置き場)とは別にした。

@@ -13,6 +13,9 @@ Paper Tradingで検証し、成功・失敗の両方を再利用可能な知見�
 - [INVESTMENT_POLICY.md](./INVESTMENT_POLICY.md) — 投資方針(対象・時間軸・目的)
 - [RESEARCH_RULES.md](./RESEARCH_RULES.md) — 検証ルール(bias排除・Benchmark・Multiple Testing等)
 - [DECISIONS.md](./DECISIONS.md) — 実装中に生じた仕様変更の記録
+- [LOCAL_DATA_FETCH_GUIDE.md](./LOCAL_DATA_FETCH_GUIDE.md) — ローカル環境で実J-Quantsデータを
+  取得し`--source local`でPipelineを検証する手順(Phase3A、クラウドセッションが外部APIへ
+  疎通できない場合用)
 
 ## ディレクトリ構成
 

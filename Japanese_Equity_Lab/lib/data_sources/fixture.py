@@ -64,3 +64,31 @@ class FixtureDataSourceAdapter:
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
+
+    def fetch_index_prices(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
+        """fixtureに"indices": {index_code: [...]}} が無い場合は空配列を返す
+        (既存(Phase2)のfixtureファイルとの後方互換のため)。"""
+        all_indices: dict[str, list[dict[str, Any]]] = self._data.get("indices", {})
+        records = [row for row in all_indices.get(index_code, []) if start_date <= date.fromisoformat(row["Date"]) <= end_date]
+        return RawFetchResult(
+            source="fixture",
+            endpoint="fixture:indices",
+            request_parameters={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+            retrieved_at=datetime.now(UTC),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_listed_info(self, *, as_of: date | None = None) -> RawFetchResult:
+        """fixtureに"listed_info": [...] が無い場合は空配列を返す(後方互換のため)。"""
+        records: list[dict[str, Any]] = self._data.get("listed_info", [])
+        return RawFetchResult(
+            source="fixture",
+            endpoint="fixture:listed_info",
+            request_parameters={"as_of": as_of.isoformat() if as_of else None},
+            retrieved_at=datetime.now(UTC),
+            data_period=(as_of.isoformat() if as_of else "current"),
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
