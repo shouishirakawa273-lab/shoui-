@@ -208,3 +208,36 @@ append-only Experiment Registryやfrozen dataclass設計とどう整合させる
 **Phase2以降で再検討する条件**: Idea/Strategy/Knowledge等で実際に「同じ対象を
 改訂したい」という要求が具体的に発生した時点で、`Hypothesis.revise()` のパターンを
 一般化する形で導入を検討する。
+
+---
+
+## D0011(D0008の修正)— Corporate Actionの「known_at」と「adjustable_at」を分離
+
+**問題**: D0008で実装した `apply_split_adjustments_as_of()` は `announced_at <= as_of`
+(known_at基準)でCorporate Actionを絞り込んだ後、絞り込んだactionをそのまま
+`apply_split_adjustments()` に渡していた。しかし`apply_split_adjustments()`内部の
+調整ロジックは `bar.session_date < action.effective_date` のみでfactorを計算するため、
+「発表済みだが、まだeffective_dateを迎えていない」Corporate Actionが、`as_of`が
+`effective_date`より前であっても調整に反映されてしまうbugがあった
+(例: 8/1発表・10/1効力発生の分割を、8/15時点のFeature計算で既に適用してしまう)。
+これは指摘の通りlook-ahead biasである(8/15時点で実際に市場で成立していた価格を、
+まだ発生していない未来の分割比率で書き換えてしまうため)。
+
+**修正内容**: `is_known_at(action, as_of)`(= `announced_at <= as_of`)と
+`is_adjustable_at(action, as_of)`(= `session_open_at(effective_date) <= as_of`)を
+分離した関数として定義した。`apply_split_adjustments_as_of()` は:
+1. 全actionが`is_known_at`であることを検証する(既知でなければ `LookAheadBiasError`)。
+2. その上で`is_adjustable_at`なactionのみを調整対象として`apply_split_adjustments()`に渡す
+   (`is_known_at`だが`is_adjustable_at`でないactionは、エラーにはせず単に除外する。
+   これは意図した挙動であり、「発表は知っているが、まだ実施されていないので調整しない」
+   という正しいPIT境界を表す)。
+
+**メリット**: Event情報としての「知っている」(known_at)と、Price Series調整として
+「反映してよい」(adjustable_at)が明確に分離され、テスト
+(`test_apply_split_adjustments_as_of_does_not_adjust_before_effective_date` /
+`test_apply_split_adjustments_as_of_adjusts_once_effective_date_has_passed`)で
+両者の境界を直接検証できるようになった。
+
+**デメリット**: 既存の `apply_split_adjustments_as_of` 呼び出し側(まだ実運用は無い)の
+挙動が変わる。announced_atのみで判定していた前提のコードがあれば要修正だが、
+Phase1.1〜1.2時点でこの関数の呼び出し実績は無いため影響なし。

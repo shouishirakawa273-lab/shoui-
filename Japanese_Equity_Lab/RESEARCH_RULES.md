@@ -92,10 +92,23 @@ Ver.1は株式分割・併合による価格連続性のみを補正し、配当
 (次項のBenchmark参照)。
 
 Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(..., as_of=decision_at)`
-を使い、`decision_at`より後に**発表**される(=その時点ではまだ知り得ない)株式分割・併合を
-過去のSignal生成に混入させない。判定は`effective_date`ではなく`announced_at`(発表時刻)基準で
-行う。`announced_at`が不明なCorporate Actionは`LookAheadBiasError`で拒否する(黙って除外しない)。
-Raw priceはこの調整でも一切書き換えない。
+を使う。Corporate Actionには2つの異なる時点があり、必ず分離して扱う(D0011参照)。
+
+- `known_at`(= `announced_at`): そのCorporate Actionの「存在」が公知になった時刻。
+  Event情報(例:「分割が発表されている」)としてはこの時刻以降利用してよい。
+- `adjustable_at`(= `effective_date`の寄付時刻): 実際に株数・価格基準が切り替わる時刻。
+  過去Price Seriesの調整は、この時刻を過ぎたCorporate Actionにのみ適用してよい。
+
+例: 8/1に分割発表、8/15が意思決定時点(decision_at)、10/1が分割の効力発生日、の場合。
+8/15時点では「将来分割される」というEvent情報は利用できる(`known_at`は過ぎている)が、
+10/1の分割はまだ効力が発生していない(`adjustable_at`を過ぎていない)ため、8/15時点の
+過去Price Featureを10/1以降の基準へ補正してはならない。「発表されている」ことと
+「Price Seriesを調整してよい」ことは別問題である。
+
+`announced_at`が不明、または`as_of`より後に発表される(=まだ公知でない)Corporate Actionが
+混入している場合は`LookAheadBiasError`で拒否する(黙って除外しない)。一方、発表済みだが
+まだ効力発生前のCorporate Actionは、エラーにはせず単に調整対象から除外する
+(意図した挙動であり、データ不備ではない)。Raw priceはこの調整でも一切書き換えない。
 
 ## Multiple Testing
 

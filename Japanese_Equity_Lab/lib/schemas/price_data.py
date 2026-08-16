@@ -13,6 +13,7 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from lib.errors import LookAheadBiasError
+from lib.market_calendar import session_open_at
 from lib.schemas.base import RecordMeta
 
 
@@ -94,18 +95,50 @@ def apply_split_adjustments(raw_bars: list[RawOHLCVBar], actions: list[Corporate
     return adjusted
 
 
+def is_known_at(action: CorporateAction, as_of: datetime) -> bool:
+    """そのCorporate Actionの「存在」がas_of時点で公知になっていたか(known_at = announced_at)。
+
+    Event情報(例:「分割が発表されている」)としてはこの時刻以降利用してよい、という意味の
+    Point-in-Time制約。Price Seriesを調整してよいかどうかとは別問題(is_adjustable_at参照)。
+    """
+    if action.announced_at is None:
+        return False
+    return action.announced_at <= as_of
+
+
+def is_adjustable_at(action: CorporateAction, as_of: datetime) -> bool:
+    """as_of時点でPrice Seriesの調整に反映してよいか(adjustable_at = effective_dateの寄付)。
+
+    株式分割・併合は効力発生日(ex-date相当)の寄付から株数・価格基準が切り替わる。
+    「発表済みだが未実施」の場合、まだ市場では旧基準のまま取引されているため、
+    過去のPrice Featureを新基準へ遡って補正してはならない。
+    """
+    return session_open_at(action.effective_date) <= as_of
+
+
 def apply_split_adjustments_as_of(
     raw_bars: list[RawOHLCVBar],
     actions: list[CorporateAction],
     *,
     as_of: datetime,
 ) -> list[AdjustedOHLCVBar]:
-    """as_of(decision_at)時点でannounced_at済みのCorporate Actionのみを反映する。
+    """as_of(decision_at)時点で実際に効力が発生済みのCorporate Actionのみを反映する。
 
-    Adjusted OHLCVをFeature生成に使う場合、as_ofより後にannounceされる
-    (=その時点ではまだ知り得ない)株式分割・併合を過去のSignal生成に混入させてはならない。
-    announced_atが不明(None)のCorporate Actionは、Point-in-Time安全性を検証できないため
-    LookAheadBiasErrorで拒否する(黙って除外せず、呼び出し側にデータ不備を明示する)。
+    Corporate Actionには2つの異なる時点がある。
+    - known_at (= announced_at): そのCorporate Actionの「存在」が公知になった時刻。
+    - adjustable_at (= effective_dateの寄付時刻): 実際に株数・価格基準が切り替わる時刻。
+
+    例: 8/1に分割発表、8/15が意思決定時点(decision_at)、10/1が分割の効力発生日、の場合。
+    8/15時点では「将来分割される」というEvent情報は利用できる(known_atを過ぎている)が、
+    10/1の分割はまだ効力が発生していない(adjustable_atを過ぎていない)ため、
+    8/15時点の過去Price Featureを10/1以降の基準へ補正してはならない
+    (=このCorporate Actionはこの関数の返すAdjusted OHLCVには一切反映されない)。
+
+    announced_atが不明(None)、またはas_ofより後にannounceされる(=まだ公知でない)
+    Corporate Actionが混入している場合はLookAheadBiasErrorで拒否する
+    (黙って除外せず、呼び出し側の入力に未来情報が混じっていることを明示する)。
+    一方、known_atは過ぎているがadjustable_atをまだ過ぎていないCorporate Actionは、
+    エラーにはせず単に調整対象から除外する(これは意図した挙動であり、データ不備ではない)。
     Raw priceは本関数でも書き換えず、常にRawOHLCVBarのまま不変で保持する。
     """
     if as_of.tzinfo is None:
@@ -116,5 +149,11 @@ def apply_split_adjustments_as_of(
             f"announced_atが不明なCorporate Actionが{len(unresolved)}件あり、"
             "Point-in-Time安全性を検証できません(apply_split_adjustments_as_ofには渡せません)。"
         )
-    known_actions = [a for a in actions if a.announced_at is not None and a.announced_at <= as_of]
-    return apply_split_adjustments(raw_bars, known_actions)
+    not_yet_known = [a for a in actions if not is_known_at(a, as_of)]
+    if not_yet_known:
+        raise LookAheadBiasError(
+            f"as_of={as_of.isoformat()} 時点でまだ公表されていないCorporate Actionが"
+            f"{len(not_yet_known)}件含まれています(未来情報の混入)。"
+        )
+    adjustable_actions = [a for a in actions if is_adjustable_at(a, as_of)]
+    return apply_split_adjustments(raw_bars, adjustable_actions)
