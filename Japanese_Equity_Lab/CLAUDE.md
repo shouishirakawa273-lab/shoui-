@@ -37,3 +37,17 @@ Paper Tradingで検証し、成功・失敗を再利用可能な知見として�
 - Test期間を見た後に無断でパラメータを変更しない。失敗した実験を削除しない。
 - 根拠不明な数値を生成・推測で補完しない(取得不可は取得不可のまま記録する)。
 - 仕様変更が必要になった場合はコードを勝手に変えず `DECISIONS.md` に記録する。
+
+## Claude Code Guardrails(Phase4A.5)
+
+具体的な手順は `.claude/skills/` へ、詳細なWorkflowは
+`CLAUDE_CODE_RESEARCH_WORKFLOW.md` へ置く。ここには常時有効な短いRuleのみ:
+
+- PIT安全性と再現性を最優先する。
+- Unknownは0ではない。Unknownはfalseでもない。
+- 未確認のSource仕様を推測で埋めない(公式仕様が確認できなければUNKNOWN)。
+- Reviewer Agent(`pit-auditor`/`skeptic-reviewer`/`data-source-researcher`)は
+  コードを変更しない。Findingsを報告するのみで、修正は必ずMain Claudeが行う。
+- 最終的な投資判断(発注)は必ず人間が行う。
+- Phaseの遷移には明示的な完了報告(`phase-close`)が必要で、自己判断で次のPhaseへ
+  進まない。

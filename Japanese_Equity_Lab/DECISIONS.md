@@ -1965,3 +1965,152 @@ Evidence -> Provenance -> Frozen Offline Datasetの経路が実データで機�
 ではなく、将来Phaseでの拡張ポイントとして記録するのみで足りる、という
 ユーザー判断に基づき、**Phase4Aのstatusを`CODE_COMPLETE_AWAITING_LOCAL_
 VALIDATION`から`COMPLETE`へ変更する。** Phase4Bには着手していない。
+
+---
+
+## D0044 — Phase4A.5: Claude Code Research Engineering Guardrails
+
+Phase4A COMPLETE後、Phase4B(TDnet/EDINET/Company IR接続)着手前に、
+Japanese Equity Labの開発品質を高める目的でClaude Codeの Skills /
+Subagents / Workflowのみを整備した。**投資研究機能・Data Source自体は
+一切追加していない。** 既存Research Logic(`lib/`配下)・既存Screening
+Tool(`core/` `app.py` `tests/`)は無変更。
+
+### 公式仕様確認(実施済み)
+
+このPhaseでは`code.claude.com`(Claude Code公式ドキュメント)への接続が
+可能だった(過去PhaseでJ-Quants公式ドキュメントへの接続が拒否されたのとは
+異なるHostであり、Egress Policyの対象外だった)。以下を実際に確認した上で
+実装した(未確認のfrontmatter fieldやTool名は使用していない):
+
+- SKILL.mdのFrontmatter Field一覧(`name`/`description`/`when_to_use`/
+  `argument-hint`/`arguments`/`disable-model-invocation`/`user-invocable`/
+  `allowed-tools`/`disallowed-tools`/`model`/`effort`/`context`/`agent`/
+  `background`/`hooks`/`paths`/`shell`/`metadata`/`license`/
+  `compatibility`)とProject Skillsの配置場所(`.claude/skills/<name>/
+  SKILL.md`)。
+- Project Subagentのfrontmatter field一覧(`name`/`description`/`tools`/
+  `disallowedTools`/`model`/`permissionMode`/`maxTurns`/`skills`/
+  `mcpServers`/`hooks`/`memory`/`background`/`effort`/`isolation`/
+  `color`/`initialPrompt`)と配置場所(`.claude/agents/`)。**Subagent
+  Frontmatterは`disallowedTools`のようにcamelCase、Skill Frontmatterは
+  `disallowed-tools`のようにkebab-caseであり、両者は別の命名規約である
+  ことを確認した(誤って混同しない)。**
+  `context: fork`はSkill側のFieldであり、Subagent自身のFrontmatter
+  Fieldには存在しない(Subagent frontmatterに`context: fork`は書けない、
+  誤情報を実装しないよう確認した)。
+- Skillの`skills` field(Subagentへのpreload機構、`skills: [name, ...]`)。
+- Hook Event一覧(`PreToolUse`/`PostToolUse`等31種)、`PreToolUse`のみが
+  Tool呼び出しをBlockできること(`PostToolUse`はBlock不可)。
+
+### 実装内容
+
+**5つのProject Skills**(`.claude/skills/`、いずれも`paths: Japanese_
+Equity_Lab/**`でLab配下作業時のみ自動起動対象、明示的な`/name`起動は
+どこからでも可能):
+
+1. `pit-audit`: PIT/Look-ahead Leakage専門監査。published_at/market_
+   public_at/provider_available_at/available_at/retrieved_at/decision_at/
+   execution_atの取り違え、Revision/Restatement/Corporate Action/PIT
+   Universe/Survivorship/Delisting/Forward-fill Leakage、Fundamentals
+   固有(Actual/Forecast、当期/翌期、累計/単独、連結/非連結、会計基準、
+   Correction/Revision、Raw Coverage/Research Window)を含む。Findings
+   のみ出力(Severity/Evidence/Risk/Suggested Verification)、PASSでも
+   何を確認したか明示する。修正はしない。
+2. `adversarial-review`: DEFAULT PROCESS = ADVERSARIAL、CONCLUSION =
+   NEUTRAL UNTIL SUPPORTED(RESEARCH_RULES.md §0.5と同じ原則を実装/研究
+   設計Reviewへ適用)。Hidden Assumption・Confirmation Bias・Survivorship
+   Bias・Overfitting・Silent Fallback(`unknown→zero`/`unknown→false`
+   等)・Origin Source/Delivery Provider混同等をChecklist化。Claim/
+   Counterargument/Alternative Explanation/Evidence Needed/Severityで
+   出力。Buy/Sell判断はしない。
+3. `phase-close`: `disable-model-invocation: true`(User明示起動のみ)。
+   Phase Scope確認からCompletion Status判定までの15Step標準Procedure。
+   Completion Status候補はCOMPLETE/CODE_COMPLETE_AWAITING_LOCAL_
+   VALIDATION/BLOCKED/PARTIAL。**Commit/Pushはこのskill自身では行わず、
+   Task Promptで明示的に要求された場合のみ**、Phaseの自動遷移も行わない
+   ことを明記。
+4. `source-onboarding`: 新規Data Source接続前(Phase4B以降)の調査
+   Checklist。Source Identity/Originating Source/Delivery Provider/公式
+   Doc/認証/Plan・契約/Cost/License/Historical Coverage/Rate Limit/
+   Pagination/Correction・Deletion・Revision Semantics/PIT Timestamp
+   Semantics/Entity識別子/Null意味論/Declared vs Observed Schema/Raw
+   保存Policy等。確認できない項目はUNKNOWN(推測禁止)。
+   `SourceAuthorityClass`は真実度Scoreではないことを明記。
+5. `local-validation`: このセッションから実APIへ接続できない場合の標準
+   Procedure(Windows PowerShell)。A〜Iの出力Section(Sync/Key存在確認/
+   Smoke Test/Raw Snapshot取得/Raw確認/診断/Offline再実行/期待される
+   観測結果/貼り戻すべき出力)。API Key本体を絶対に表示しない(存在確認
+   のみ、`if ($env:...)`Pattern)。Mass Downloadを最初から実行しない。
+
+**3つのProject Subagents**(`.claude/agents/`、いずれも`tools`
+Allowlistが`Write`/`Edit`/`Bash`を含まない、すなわち構造的にRead-only):
+
+1. `pit-auditor`(`tools: Read, Grep, Glob`、`skills: [pit-audit]`)
+2. `skeptic-reviewer`(`tools: Read, Grep, Glob`、
+   `skills: [adversarial-review]`)
+3. `data-source-researcher`(`tools: Read, Grep, Glob, WebFetch,
+   WebSearch`、`skills: [source-onboarding]`)。ConnectorやAPI Keyの取扱い
+   は禁止と明記。
+
+**Separation of Reviewer and Author**をArchitecture Ruleとして
+`CLAUDE_CODE_RESEARCH_WORKFLOW.md`(新規)へ明文化した。Reviewer Agentは
+発見したIssueをMain Claudeへ返すのみで自分で修正しない(Author ==
+Reviewerを避ける)。同ファイルに通常の実装変更Workflowと新規Data Source
+追加時のWorkflow(`data-source-researcher` → 実装 → `pit-auditor` →
+`skeptic-reviewer` → `phase-close`)を図示した。`10_agents/README.md`
+(将来のResearch Pipeline内AI Agent構想)とは別物であることも明記した。
+
+`Japanese_Equity_Lab/CLAUDE.md`へ短い常時Ruleのみ追記した(既存内容は
+無変更)。長いProcedureはCLAUDE.mdへコピーせず、上記Skillsへ置いた。
+
+`HOOKS_PROPOSAL.md`(新規)でSecret Guard/Protected Path Warning/Optional
+Phase Validationの3案を提案のみ記録した。`.claude/settings.json`は
+このPhaseで変更していない(既存の`PostToolUse`品質ゲートHookは無変更)。
+
+### Structural Validation
+
+- 5つのSKILL.md全て、Python `yaml.safe_load`でFrontmatter Parseに成功
+  (`description`はColonを含むため`>-` Folded Block Scalarを使用、Plain
+  Scalarでは`mapping values are not allowed here`エラーになることを
+  実際に確認した上で修正)。
+- Skill名(`pit-audit`/`adversarial-review`/`phase-close`/
+  `source-onboarding`/`local-validation`)は互いに重複せず、既存の
+  Bundled Skill名とも衝突しない。
+- 3つのSubagent Frontmatter全て、同様にParse成功。Agent名
+  (`pit-auditor`/`skeptic-reviewer`/`data-source-researcher`)は互いに
+  重複せず、既存Built-in Agent名(`Explore`/`Plan`/`general-purpose`/
+  `claude-code-guide`/`statusline-setup`)とも衝突しない。
+- 各SubagentのPreload Skill名(`pit-audit`/`adversarial-review`/
+  `source-onboarding`)は対応するSkillディレクトリ名と完全一致することを
+  確認。
+- 3つのSubagentいずれも`tools`にWrite/Edit/Bashを含まないことを機械的に
+  確認(Allowlist方式のため、明示していないToolは使用不可)。
+- `phase-close`のFrontmatterに`allowed-tools`でgit commit/push系の
+  Bash Patternを含めていないことを確認(既定のPermission Flowに従う、
+  自動Commit不可)。
+- `local-validation`の本文に`echo $env:...`等、Secret値を表示する
+  Patternが含まれていないことを確認(存在確認Patternのみ)。
+- `git diff --stat -- core/ app.py tests/`が空であることを確認
+  (既存Screening Tool無変更)。
+- **LOCAL_VALIDATION_NEEDED**: Claude Code自身の`/doctor`等による
+  Interactive診断は、このHeadless/非Interactiveセッションでは実行できない
+  (`/doctor`はこのセッションで利用可能なSkill一覧に含まれていない)。
+  Subagentのライブ再読み込み(Live Change Detection)がSkillと同様に
+  Session再起動無しで反映されるかも、公式ドキュメントでSkillについてのみ
+  明記されており、Subagentについては未確認。次回Session起動時、または
+  Userのローカル環境での`/skills`・Agent一覧表示による目視確認を推奨する。
+
+### 回帰確認
+
+`pytest`(Lab 313件・既存Screening Tool 37件、変更なし)・`ruff check`・
+`ruff format --check`・`mypy`(69ファイル)いずれもclean(Pythonコードは
+このPhaseで一切変更していないため、件数もPhase4A完了時点から不変)。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認済み。
+
+### このDecisionでやらないこと
+
+Phase4B実装・TDnet/EDINET/Company IR Connector・投資判断ロジック・
+Buy/Sell Logic・AI Research Agent実装・既存Backtest Logicの変更・
+Screening Toolの変更・Hookの自動導入(`.claude/settings.json`変更)には
+着手していない。
