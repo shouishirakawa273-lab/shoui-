@@ -1,25 +1,27 @@
-"""ユーザーがローカル環境で取得したJ-Quantsの生レスポンスを読み込む DataSourceAdapter。
+"""ユーザーがローカル環境で取得したJ-Quants API V2の生レスポンスを読み込む DataSourceAdapter。
 
 このセッションはネットワークポリシーによりJ-Quants等の外部APIへ疎通できない
-(api.jquants.com/Yahoo Finance/example.com いずれも403で拒否されることを確認済み)。
-そのため、ユーザーがネットワーク接続可能な別環境(ローカルPC等)で取得した
-J-Quantsの生レスポンス(JSON、日次株価のみCSVも可)をファイルとして受け取り、
-Snapshot保存・変換・Backtest実行以降をこの環境で行うためのAdapter。
+(api.jquants.com/jpx.gitbook.io(ドキュメント)/Yahoo Finance/example.com いずれも
+拒否されることを確認済み)。そのため、ユーザーがネットワーク接続可能な別環境
+(ローカルPC等)で取得したJ-Quants V2の生レスポンス(JSON、日次BarのみCSVも可)を
+ファイルとして受け取り、Snapshot保存・変換・Backtest実行以降をこの環境で行うための
+Adapter。
 
 **ディレクトリ内のファイル命名規約**(このAdapterが読みに行くファイル名):
 
-    daily_quotes_<code>.json   /prices/daily_quotes の生レスポンス(1銘柄分)
-    daily_quotes_<code>.csv    (JSONが用意できない場合の代替。列: Code,Date,Open,High,
-                                 Low,Close,Volume。J-Quantsの実列名と異なる場合は
+    equity_bars_<code>.json    /v2/equities/bars/daily の生レスポンス(1銘柄分)
+    equity_bars_<code>.csv     (JSONが用意できない場合の代替。列: Code,Date,O,H,L,C,Vo,
+                                 AdjFactor,ExRT。J-Quantsの実列名と異なる場合は
                                  事前にリネームすること)
-    trading_calendar.json      /markets/trading_calendar の生レスポンス
-    indices_<index_code>.json  /indices の生レスポンス(TOPIXの場合 index_code="0000" を
-                                 想定しているが未検証。実際のコードに合わせてファイル名を
-                                 決めること)
-    listed_info.json           /listed/info の生レスポンス
+    trading_calendar.json      /v2/markets/calendar の生レスポンス
+    topix_bars.json            /v2/indices/bars/daily/topix の生レスポンス
+    general_index_bars_<code>.json  /v2/indices/bars/daily の生レスポンス(使う場合のみ)
+    equities_master.json       /v2/equities/master の生レスポンス
 
-JSONファイルは、J-Quantsが返す生のレスポンス全体(``{"daily_quotes": [...]}`` 等の
-トップレベルキー付き)をそのまま保存したものを想定する(加工しないこと)。
+JSONファイルは、J-Quantsが返す生のレスポンス全体(``{"data": [...], "pagination_key":
+null}`` 等のトップレベルキー付き)をそのまま保存したものを想定する(加工しないこと。
+複数ページに分かれていた場合は、``data``配列を1つに結合してから保存すること
+-- ``scripts/fetch_jquants_local_snapshot.py``を使えば自動的に結合される)。
 
 retrieved_atは、呼び出し側が明示的に指定しない限りファイルの最終更新時刻(mtime)を
 近似値として使う。正確な取得日時が必要な場合はコンストラクタで明示的に指定すること
@@ -35,20 +37,25 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from lib.data_sources.base import RawFetchResult
+from lib.data_sources.base import LIGHT_PLAN_ASSUMED, DataSourceCapabilities, RawFetchResult
 from lib.errors import DataSourceError
 
-RESPONSE_SCHEMA_VERSION = "jquants-v1(local, 未検証)"
+RESPONSE_SCHEMA_VERSION = "jquants-v2(local, 未検証)"
+_DATA_KEY = "data"
 
 
 class LocalSnapshotAdapter:
-    """ローカル環境で取得済みのJ-Quants生レスポンスファイルを読み込むAdapter。"""
+    """ローカル環境で取得済みのJ-Quants V2生レスポンスファイルを読み込むAdapter。"""
 
     def __init__(self, snapshot_dir: Path, *, retrieved_at: datetime | None = None) -> None:
         if not snapshot_dir.exists():
             raise DataSourceError(f"snapshot_dirが存在しません: {snapshot_dir}")
         self._dir = snapshot_dir
         self._retrieved_at_override = retrieved_at
+
+    @property
+    def capabilities(self) -> DataSourceCapabilities:
+        return LIGHT_PLAN_ASSUMED
 
     def _retrieved_at_for(self, path: Path) -> datetime:
         if self._retrieved_at_override is not None:
@@ -62,44 +69,47 @@ class LocalSnapshotAdapter:
                 return candidate
         return None
 
-    def _read_json_key(self, path: Path, key: str) -> list[dict[str, Any]]:
+    def _read_json_data(self, path: Path) -> list[dict[str, Any]]:
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, list):
             return data
-        records = data.get(key)
+        records = data.get(_DATA_KEY)
         if records is None:
-            raise DataSourceError(f"{path} に '{key}' キーが見つかりません(J-Quantsの生レスポンスをそのまま保存してください)")
+            raise DataSourceError(
+                f"{path} に '{_DATA_KEY}' キーが見つかりません(J-Quants V2の生レスポンス"
+                '``{"data": [...]}``をそのまま保存してください)'
+            )
         return list(records)
 
     def _read_csv(self, path: Path) -> list[dict[str, Any]]:
         with path.open(encoding="utf-8-sig", newline="") as f:
             return list(csv.DictReader(f))
 
-    def _read_rows(self, path: Path, *, json_key: str) -> list[dict[str, Any]]:
+    def _read_rows(self, path: Path) -> list[dict[str, Any]]:
         if path.suffix == ".csv":
             return self._read_csv(path)
-        return self._read_json_key(path, json_key)
+        return self._read_json_data(path)
 
-    def fetch_daily_quotes(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
+    def fetch_equity_bars(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         records: list[dict[str, Any]] = []
         latest_path: Path | None = None
         missing: list[str] = []
         for code in codes:
-            path = self._find_file(f"daily_quotes_{code}")
+            path = self._find_file(f"equity_bars_{code}")
             if path is None:
                 missing.append(code)
                 continue
             latest_path = path
-            rows = self._read_rows(path, json_key="daily_quotes")
+            rows = self._read_rows(path)
             records.extend(row for row in rows if start_date <= date.fromisoformat(str(row["Date"])) <= end_date)
         if missing:
             raise DataSourceError(
-                f"以下の銘柄のdaily_quotesファイルが見つかりません: {missing}。"
-                f"{self._dir} に daily_quotes_<code>.json (または .csv) を配置してください。"
+                f"以下の銘柄のequity_barsファイルが見つかりません: {missing}。"
+                f"{self._dir} に equity_bars_<code>.json (または .csv) を配置してください。"
             )
         return RawFetchResult(
             source="jquants_local",
-            endpoint="/prices/daily_quotes",
+            endpoint="/v2/equities/bars/daily",
             request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=self._retrieved_at_for(latest_path) if latest_path else datetime.now(UTC),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
@@ -111,11 +121,11 @@ class LocalSnapshotAdapter:
         path = self._find_file("trading_calendar")
         if path is None:
             raise DataSourceError(f"{self._dir} に trading_calendar.json が見つかりません。")
-        rows = self._read_rows(path, json_key="trading_calendar")
+        rows = self._read_rows(path)
         records = [row for row in rows if start_date <= date.fromisoformat(str(row["Date"])) <= end_date]
         return RawFetchResult(
             source="jquants_local",
-            endpoint="/markets/trading_calendar",
+            endpoint="/v2/markets/calendar",
             request_parameters={"from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=self._retrieved_at_for(path),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
@@ -123,15 +133,31 @@ class LocalSnapshotAdapter:
             payload=records,
         )
 
-    def fetch_index_prices(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
-        path = self._find_file(f"indices_{index_code}")
+    def fetch_topix_bars(self, *, start_date: date, end_date: date) -> RawFetchResult:
+        path = self._find_file("topix_bars")
         if path is None:
-            raise DataSourceError(f"{self._dir} に indices_{index_code}.json が見つかりません。")
-        rows = self._read_rows(path, json_key="indices")
+            raise DataSourceError(f"{self._dir} に topix_bars.json が見つかりません。")
+        rows = self._read_rows(path)
         records = [row for row in rows if start_date <= date.fromisoformat(str(row["Date"])) <= end_date]
         return RawFetchResult(
             source="jquants_local",
-            endpoint="/indices",
+            endpoint="/v2/indices/bars/daily/topix",
+            request_parameters={"from": start_date.isoformat(), "to": end_date.isoformat()},
+            retrieved_at=self._retrieved_at_for(path),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_general_index_bars(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
+        path = self._find_file(f"general_index_bars_{index_code}")
+        if path is None:
+            raise DataSourceError(f"{self._dir} に general_index_bars_{index_code}.json が見つかりません。")
+        rows = self._read_rows(path)
+        records = [row for row in rows if start_date <= date.fromisoformat(str(row["Date"])) <= end_date]
+        return RawFetchResult(
+            source="jquants_local",
+            endpoint="/v2/indices/bars/daily",
             request_parameters={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=self._retrieved_at_for(path),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
@@ -139,14 +165,14 @@ class LocalSnapshotAdapter:
             payload=records,
         )
 
-    def fetch_listed_info(self, *, as_of: date | None = None) -> RawFetchResult:
-        path = self._find_file("listed_info")
+    def fetch_equities_master(self, *, as_of: date | None = None) -> RawFetchResult:
+        path = self._find_file("equities_master")
         if path is None:
-            raise DataSourceError(f"{self._dir} に listed_info.json が見つかりません。")
-        records = self._read_rows(path, json_key="info")
+            raise DataSourceError(f"{self._dir} に equities_master.json が見つかりません。")
+        records = self._read_rows(path)
         return RawFetchResult(
             source="jquants_local",
-            endpoint="/listed/info",
+            endpoint="/v2/equities/master",
             request_parameters={"as_of": as_of.isoformat() if as_of else None},
             retrieved_at=self._retrieved_at_for(path),
             data_period=(as_of.isoformat() if as_of else "current"),

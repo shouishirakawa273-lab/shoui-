@@ -1,19 +1,23 @@
-"""J-Quants API の DataSourceAdapter 実装。
+"""J-Quants API V2 の DataSourceAdapter 実装。
 
-認証: リフレッシュトークン(環境変数 ``JQUANTS_REFRESH_TOKEN``、親リポジトリの
-`.env` を経由)からIDトークンを取得し、Bearer認証でリクエストする
-(`core/providers/jquants.py` と同じ認証フロー)。レート制限(5リクエスト/分)を
-守るため、リクエスト間隔を確保する。
+認証: J-Quants API V2はAPI Key方式。環境変数 ``JQUANTS_API_KEY``(親リポジトリの
+`.env` を経由)から取得したキーを ``x-api-key`` Headerに載せてリクエストする。
+V1の ``token/auth_user`` / ``token/auth_refresh`` によるリフレッシュトークン/IDトークン
+方式は使用しない(Phase3A.1でV1依存を完全に削除、DECISIONS.md D0031参照)。
 
 重要な既知の制約:
-- このAdapterはJ-Quants公式ドキュメントに基づくエンドポイント・フィールド名を
-  前提に実装している。**このセッションはネットワークポリシーにより外部APIへの
-  疎通が一切できない環境で開発されており、実レスポンスでの検証は行えていない**
-  (`README.md` の既知の制約、`scripts/jquants_lab_snapshot.py` 参照)。
-  本番投入前に必ずローカル環境で疎通確認し、フィールド名が異なる場合は
-  `lib/data_sources/convert.py` を実際のレスポンスに合わせて修正すること。
-- 認証情報(リフレッシュトークン・IDトークン)はログ・例外メッセージ・
-  Snapshotのいずれにも出力しない。
+- このAdapterはユーザーがセッション内で明示したJ-Quants API V2の仕様(Endpoint・
+  Field名)をCanonical Specificationとして実装している。**このセッションは
+  ネットワークポリシーにより外部API・J-Quants公式ドキュメントへの疎通が一切できない
+  環境で開発されており、実レスポンスでの検証は行えていない**(README.md の
+  既知の制約、DECISIONS.md D0031参照)。本番投入前に必ずローカル環境で疎通確認し、
+  Field名が異なる場合は`lib/data_sources/convert.py`を実際のレスポンスに合わせて
+  修正すること。
+- 認証情報(APIキー)はログ・例外メッセージ・Snapshotのいずれにも出力しない。
+- 現在の契約プランはLight(ユーザー申告)。`capabilities`(`DataSourceCapabilities`)は
+  Lightプランでの利用可否についての未検証の推測を含む。契約プラン上利用できない
+  Datasetを、このAdapterが他Providerへsilent fallbackすることはない
+  (該当Endpointの呼び出しはそのままJ-Quantsのエラーとして`DataSourceError`に変換される)。
 """
 
 from __future__ import annotations
@@ -22,102 +26,103 @@ import logging
 import os
 import time
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 import requests
 
-from lib.data_sources.base import RawFetchResult
+from lib.data_sources.base import LIGHT_PLAN_ASSUMED, DataSourceCapabilities, RawFetchResult
 from lib.errors import DataSourceError
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.jquants.com/v1"
-RESPONSE_SCHEMA_VERSION = "jquants-v1(未検証)"
-_RATE_LIMIT_INTERVAL_SEC = 12.5  # 5リクエスト/分を安全マージン込みで確保
+BASE_URL = "https://api.jquants.com/v2"
+RESPONSE_SCHEMA_VERSION = "jquants-v2(未検証、ユーザー提示仕様に基づく実装)"
+_RATE_LIMIT_INTERVAL_SEC = 12.5  # レート制限は契約プランにより異なるため、V1同様の安全マージンを暫定的に維持する
+_MAX_PAGES = 100  # pagination_keyによる無限ループを避けるための安全弁
 
 
 class JQuantsAdapter:
-    """J-Quants API (日次株価・取引カレンダー・指数・銘柄マスタ) の DataSourceAdapter 実装。
+    """J-Quants API V2 (日次株価・取引カレンダー・TOPIX・銘柄マスタ) の DataSourceAdapter 実装。
 
-    使用エンドポイント:
-    - ``POST /token/auth_refresh``: リフレッシュトークン -> IDトークン
-    - ``GET /prices/daily_quotes``: 銘柄別の日次OHLCV(未調整、AdjustmentFactor等を含む)
-    - ``GET /markets/trading_calendar``: 取引カレンダー(HolidayDivision等)
-    - ``GET /indices``: 指数(TOPIX等)の日次価格。**インデックスコード(TOPIXは"0000"と
-      想定)・レスポンス形状はこのセッションでは未検証**。ローカル環境で疎通確認すること。
-    - ``GET /listed/info``: 銘柄マスタ(上場情報)。**listing_date/delisting_dateに相当する
-      フィールドが含まれるかは未検証**。含まれない場合、Universeはsurvivorship biasを
-      解消できない(`lib/universe.py`参照)。
+    使用エンドポイント(すべてV2、ユーザー提示のCanonical Specificationに基づく):
+
+    - ``GET /v2/equities/bars/daily``: 個別銘柄の日次Bar(Raw + Adjusted両方を含む)
+    - ``GET /v2/markets/calendar``: 取引カレンダー(Date/HolDiv)
+    - ``GET /v2/indices/bars/daily/topix``: TOPIX専用の日次価格
+    - ``GET /v2/indices/bars/daily``: 一般指数(TOPIX以外、Light plan未確認)
+    - ``GET /v2/equities/master``: 銘柄マスタ(上場情報)
+
+    レスポンスは ``{"data": [...], "pagination_key": "..."}`` 形式を前提とし、
+    `pagination_key`が返る限り追加リクエストして全ページを結合する。
     """
 
-    def __init__(self, refresh_token: str | None = None, session: requests.Session | None = None) -> None:
-        self._refresh_token = refresh_token or os.environ.get("JQUANTS_REFRESH_TOKEN")
+    def __init__(self, api_key: str | None = None, session: requests.Session | None = None) -> None:
+        self._api_key = api_key or os.environ.get("JQUANTS_API_KEY")
         self._session = session or requests.Session()
-        self._id_token: str | None = None
-        self._id_token_expiry: datetime | None = None
         self._last_request_at: float = 0.0
 
     @property
     def configured(self) -> bool:
-        return bool(self._refresh_token)
+        return bool(self._api_key)
+
+    @property
+    def capabilities(self) -> DataSourceCapabilities:
+        return LIGHT_PLAN_ASSUMED
 
     def _throttle(self) -> None:
         elapsed = time.monotonic() - self._last_request_at
         if elapsed < _RATE_LIMIT_INTERVAL_SEC:
             time.sleep(_RATE_LIMIT_INTERVAL_SEC - elapsed)
 
-    def _authenticate(self) -> str:
-        if self._id_token and self._id_token_expiry and datetime.now() < self._id_token_expiry:
-            return self._id_token
-        if not self._refresh_token:
-            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません")
-        try:
-            self._throttle()
-            resp = self._session.post(
-                f"{BASE_URL}/token/auth_refresh",
-                params={"refreshtoken": self._refresh_token},
-                timeout=15,
-            )
-            self._last_request_at = time.monotonic()
-            resp.raise_for_status()
-        except requests.RequestException:
-            # requests例外の文字列表現にはURL(refreshtokenクエリパラメータ込み)が
-            # 含まれうるため、chained exceptionとして伝播させない(`from None`)。
-            raise DataSourceError("J-Quants認証に失敗しました(詳細はログへ出力しません)") from None
+    def _require_configured(self) -> str:
+        if not self._api_key:
+            raise DataSourceError("JQUANTS_API_KEY が設定されていません(.envを確認してください)")
+        return self._api_key
 
-        data = resp.json()
-        id_token = data.get("idToken")
-        if not id_token:
-            raise DataSourceError("J-Quants認証レスポンスにidTokenが含まれていません")
-        self._id_token = id_token
-        self._id_token_expiry = datetime.now() + timedelta(hours=23)  # 実際の有効期限は要検証
-        return id_token
-
-    def fetch_daily_quotes(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
-        if not self.configured:
-            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
-        id_token = self._authenticate()
-
+    def _get_all_pages(self, endpoint: str, params: dict[str, str], *, error_label: str) -> list[dict[str, object]]:
+        api_key = self._require_configured()
         records: list[dict[str, object]] = []
-        for code in codes:
+        request_params = dict(params)
+        for _ in range(_MAX_PAGES):
             self._throttle()
             try:
                 resp = self._session.get(
-                    f"{BASE_URL}/prices/daily_quotes",
-                    params={"code": code, "from": start_date.isoformat(), "to": end_date.isoformat()},
-                    headers={"Authorization": f"Bearer {id_token}"},
+                    f"{BASE_URL}{endpoint}",
+                    params=request_params,
+                    headers={"x-api-key": api_key},
                     timeout=15,
                 )
                 self._last_request_at = time.monotonic()
                 resp.raise_for_status()
             except requests.RequestException as exc:
-                raise DataSourceError(f"{code} の日次株価取得に失敗しました: {exc}") from exc
-            payload = resp.json()
-            records.extend(payload.get("daily_quotes", []))
+                # requests例外の文字列表現にAPIキーが含まれることは無い(Headerで送っておりURLに
+                # 載せていないため)が、念のためchained exceptionにせず要約メッセージのみ伝播する。
+                raise DataSourceError(f"{error_label}の取得に失敗しました: {exc}") from exc
+            body = resp.json()
+            page_records = body.get("data")
+            if page_records is None:
+                raise DataSourceError(f"{error_label}のレスポンスに'data'キーが見つかりません(V2形式ではない可能性があります)")
+            records.extend(page_records)
+            pagination_key = body.get("pagination_key")
+            if not pagination_key:
+                break
+            request_params = dict(params)
+            request_params["pagination_key"] = pagination_key
+        return records
 
+    def fetch_equity_bars(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
+        records: list[dict[str, object]] = []
+        for code in codes:
+            records.extend(
+                self._get_all_pages(
+                    "/equities/bars/daily",
+                    {"code": code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+                    error_label=f"{code} の日次Bar",
+                )
+            )
         return RawFetchResult(
             source="jquants",
-            endpoint="/prices/daily_quotes",
+            endpoint="/v2/equities/bars/daily",
             request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=datetime.now(UTC),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
@@ -126,96 +131,53 @@ class JQuantsAdapter:
         )
 
     def fetch_trading_calendar(self, *, start_date: date, end_date: date) -> RawFetchResult:
-        if not self.configured:
-            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
-        id_token = self._authenticate()
-
-        self._throttle()
-        try:
-            resp = self._session.get(
-                f"{BASE_URL}/markets/trading_calendar",
-                params={"from": start_date.isoformat(), "to": end_date.isoformat()},
-                headers={"Authorization": f"Bearer {id_token}"},
-                timeout=15,
-            )
-            self._last_request_at = time.monotonic()
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise DataSourceError(f"取引カレンダー取得に失敗しました: {exc}") from exc
-
-        payload = resp.json()
-        records = payload.get("trading_calendar", [])
+        params = {"from": start_date.isoformat(), "to": end_date.isoformat()}
+        records = self._get_all_pages("/markets/calendar", params, error_label="取引カレンダー")
         return RawFetchResult(
             source="jquants",
-            endpoint="/markets/trading_calendar",
-            request_parameters={"from": start_date.isoformat(), "to": end_date.isoformat()},
+            endpoint="/v2/markets/calendar",
+            request_parameters=params,
             retrieved_at=datetime.now(UTC),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
 
-    def fetch_index_prices(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
-        """指数(TOPIX等)の日次価格を取得する。TOPIXのindex_codeは"0000"と想定しているが
-        未検証(ローカル環境で疎通確認すること)。"""
-        if not self.configured:
-            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
-        id_token = self._authenticate()
-
-        self._throttle()
-        try:
-            resp = self._session.get(
-                f"{BASE_URL}/indices",
-                params={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
-                headers={"Authorization": f"Bearer {id_token}"},
-                timeout=15,
-            )
-            self._last_request_at = time.monotonic()
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise DataSourceError(f"指数({index_code})の価格取得に失敗しました: {exc}") from exc
-
-        payload = resp.json()
-        records = payload.get("indices", [])
+    def fetch_topix_bars(self, *, start_date: date, end_date: date) -> RawFetchResult:
+        params = {"from": start_date.isoformat(), "to": end_date.isoformat()}
+        records = self._get_all_pages("/indices/bars/daily/topix", params, error_label="TOPIX日次価格")
         return RawFetchResult(
             source="jquants",
-            endpoint="/indices",
-            request_parameters={"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+            endpoint="/v2/indices/bars/daily/topix",
+            request_parameters=params,
             retrieved_at=datetime.now(UTC),
             data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
 
-    def fetch_listed_info(self, *, as_of: date | None = None) -> RawFetchResult:
-        """銘柄マスタ(上場情報)を取得する。listing_date/delisting_dateに相当する
-        フィールドが含まれるかは未検証。含まれない場合、これだけではSurvivorship bias
-        (現在上場している銘柄しか分からない)を解消できない(lib/universe.py参照)。"""
-        if not self.configured:
-            raise DataSourceError("JQUANTS_REFRESH_TOKEN が設定されていません(.envを確認してください)")
-        id_token = self._authenticate()
+    def fetch_general_index_bars(self, *, index_code: str, start_date: date, end_date: date) -> RawFetchResult:
+        """TOPIX以外の一般指数(Light plan未確認、既定のPipelineでは呼び出さない)。"""
+        params = {"code": index_code, "from": start_date.isoformat(), "to": end_date.isoformat()}
+        records = self._get_all_pages("/indices/bars/daily", params, error_label=f"指数({index_code})")
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/v2/indices/bars/daily",
+            request_parameters=params,
+            retrieved_at=datetime.now(UTC),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
 
-        self._throttle()
+    def fetch_equities_master(self, *, as_of: date | None = None) -> RawFetchResult:
         params: dict[str, str] = {}
         if as_of is not None:
             params["date"] = as_of.isoformat()
-        try:
-            resp = self._session.get(
-                f"{BASE_URL}/listed/info",
-                params=params,
-                headers={"Authorization": f"Bearer {id_token}"},
-                timeout=15,
-            )
-            self._last_request_at = time.monotonic()
-            resp.raise_for_status()
-        except requests.RequestException as exc:
-            raise DataSourceError(f"銘柄マスタの取得に失敗しました: {exc}") from exc
-
-        payload = resp.json()
-        records = payload.get("info", [])
+        records = self._get_all_pages("/equities/master", params, error_label="銘柄マスタ")
         return RawFetchResult(
             source="jquants",
-            endpoint="/listed/info",
+            endpoint="/v2/equities/master",
             request_parameters=dict(params),
             retrieved_at=datetime.now(UTC),
             data_period=(as_of.isoformat() if as_of else "current"),

@@ -1,8 +1,8 @@
 """Portfolio Simulationの挙動確認専用テスト。
 
-`13_tests/fixtures/portfolio_scenario.json` は、Strategy Performance評価には使わない
-System Behavior Test専用のsynthetic fixtureである。以下を意図的に1本のシナリオへ
-詰め込んでいる。
+`13_tests/fixtures/portfolio_scenario_v2.json`(J-Quants API V2形状)は、Strategy
+Performance評価には使わないSystem Behavior Test専用のsynthetic fixtureである。
+以下を意図的に1本のシナリオへ詰め込んでいる。
 
 - 異なる日付・異なる銘柄(PSIM_A / PSIM_B)へのSignal
 - 保有中の再Signal(PositionPolicy.NO_REENTRY_WHILE_POSITION_OPENでSKIPされる)
@@ -26,10 +26,10 @@ from lib.backtest.engine import (
     BacktestRunConfig,
     ExecutionOutcome,
 )
-from lib.data_sources.convert import daily_quotes_payload_to_raw_bars, trading_calendar_payload_to_calendar
+from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.schemas.price_data import AdjustedOHLCVBar, apply_split_adjustments
 
-_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "portfolio_scenario.json"
+_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "portfolio_scenario_v2.json"
 
 
 def _load_fixture() -> dict[str, object]:
@@ -57,14 +57,14 @@ def test_portfolio_scenario_exercises_policy_skip_execution_failure_and_normal_f
         last = bars_up_to_decision[-1]
         return last.session_date in signal_dates.get(last.code, set())
 
-    quotes = fixture["daily_quotes"]  # type: ignore[assignment]
+    quotes = fixture["equity_bars"]  # type: ignore[assignment]
     codes = ["PSIM_A", "PSIM_B"]
     price_history = {}
     for code in codes:
-        raw_bars = daily_quotes_payload_to_raw_bars(quotes[code])  # type: ignore[index]
+        raw_bars = equity_bars_payload_to_raw_bars(quotes[code])  # type: ignore[index]
         price_history[code] = apply_split_adjustments(raw_bars, [])
 
-    benchmark_raw = daily_quotes_payload_to_raw_bars(quotes["PSIM_BENCH"])  # type: ignore[index]
+    benchmark_raw = equity_bars_payload_to_raw_bars(quotes["PSIM_BENCH"])  # type: ignore[index]
     benchmark_bars = apply_split_adjustments(benchmark_raw, [])
 
     calendar_payload = fixture["trading_calendar"]  # type: ignore[assignment]

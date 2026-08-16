@@ -30,6 +30,7 @@ class ListingRecord(RecordMeta):
     code: str
     market: str
     sector: str | None = None
+    company_name: str | None = None
     listing_date: date | None = None
     delisting_date: date | None = None
     tradable_from: date | None = None
@@ -115,3 +116,32 @@ class ListingBasedUniverseProvider:
             note=note,
             survivorship_bias_unresolved=self._survivorship_bias_unresolved,
         )
+
+
+def check_company_name_consistency(expected_names: dict[str, str], listings: Sequence[ListingRecord]) -> list[str]:
+    """手入力のTicker->会社名対応が、Listed Issue Masterと食い違っていないか確認する。
+
+    会社名を手入力のCanonical Dataとして扱わない方針(Phase3A.1、DECISIONS.md D0033)の
+    一環。手入力名は表示・ドキュメント用の参考情報にとどめ、Masterと矛盾する場合は
+    ここで警告文字列を生成する(例外は投げない。呼び出し側でログ・表示に使う)。
+    大文字小文字・全角半角の違いは区別せず、部分一致であれば一致とみなす
+    (法人格表記の揺れ等を許容するため)。
+
+    `listings`に対応するcodeが無い場合(Masterから解決できない場合)も、
+    「確認できていない」ことを警告として返す(黙って一致扱いにしない)。
+    """
+    by_code = {listing.code: listing.company_name for listing in listings}
+    warnings: list[str] = []
+    for code, expected_name in expected_names.items():
+        if code not in by_code:
+            warnings.append(f"{code}: Masterに銘柄が見つからず、会社名'{expected_name}'を確認できません")
+            continue
+        actual_name = by_code[code]
+        if actual_name is None:
+            warnings.append(f"{code}: Masterに会社名が含まれておらず、'{expected_name}'を確認できません")
+            continue
+        normalized_expected = expected_name.strip().casefold()
+        normalized_actual = actual_name.strip().casefold()
+        if normalized_expected not in normalized_actual and normalized_actual not in normalized_expected:
+            warnings.append(f"{code}: 手入力の会社名'{expected_name}'がMasterの'{actual_name}'と一致しません")
+    return warnings

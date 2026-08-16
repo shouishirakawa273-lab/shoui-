@@ -1,9 +1,9 @@
 """Pipeline全体(Data -> Feature -> Signal -> Decision -> Execution -> Return ->
 Benchmark比較 -> Experiment Registry -> Provenance)の統合テスト。
 
-合成データ(fixtures/synthetic_jquants_daily_quotes.json)を使い、外部API疎通なしで
-`scripts/jquants_lab_pipeline.py`と同じ配線が最後まで正常に動くことを確認する
-(Phase2完了条件11: Small Real-data Test)。tmp_pathを使い、実際の
+合成データ(fixtures/synthetic_jquants_v2_bars.json、J-Quants API V2形状)を使い、
+外部API疎通なしで`scripts/jquants_lab_pipeline.py`と同じ配線が最後まで正常に動くことを
+確認する(Phase2完了条件11: Small Real-data Test)。tmp_pathを使い、実際の
 Japanese_Equity_Lab/01_data・06_backtestsは汚さない。
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, TransactionCostConfig, build_close_to_next_open_window
-from lib.data_sources.convert import daily_quotes_payload_to_raw_bars, trading_calendar_payload_to_calendar
+from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.data_sources.fixture import FixtureDataSourceAdapter
 from lib.errors import LookAheadBiasError
 from lib.market_calendar import JST
@@ -26,7 +26,7 @@ from lib.schemas.price_data import apply_split_adjustments
 from lib.snapshot import RawSnapshotStore
 from lib.strategies.fixed_pipeline_validation import DEFAULT_CONFIG, STRATEGY_ID, as_buy_signal_fn
 
-_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "synthetic_jquants_daily_quotes.json"
+_FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "synthetic_jquants_v2_bars.json"
 _CODES = ["7203", "6758", "9984"]
 _BENCHMARK_CODE = "TOPIX_SYNTH"
 _START = date(2026, 1, 5)
@@ -37,7 +37,7 @@ def test_fixture_pipeline_runs_end_to_end_and_is_reproducible(tmp_path: Path) ->
     adapter = FixtureDataSourceAdapter(_FIXTURE_PATH)
     snapshot_store = RawSnapshotStore(tmp_path / "01_data" / "raw")
 
-    quotes_result = adapter.fetch_daily_quotes(codes=[*_CODES, _BENCHMARK_CODE], start_date=_START, end_date=_END)
+    quotes_result = adapter.fetch_equity_bars(codes=[*_CODES, _BENCHMARK_CODE], start_date=_START, end_date=_END)
     calendar_result = adapter.fetch_trading_calendar(start_date=_START, end_date=_END)
 
     quotes_manifest = snapshot_store.save(quotes_result, snapshot_id="SNAP_TEST_daily_quotes")
@@ -45,7 +45,7 @@ def test_fixture_pipeline_runs_end_to_end_and_is_reproducible(tmp_path: Path) ->
     assert quotes_manifest.record_count > 0
     assert calendar_manifest.record_count > 0
 
-    raw_bars = daily_quotes_payload_to_raw_bars(quotes_result.payload)
+    raw_bars = equity_bars_payload_to_raw_bars(quotes_result.payload)
     raw_by_code: dict[str, list] = {}
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
@@ -114,10 +114,10 @@ def test_fixture_pipeline_runs_end_to_end_and_is_reproducible(tmp_path: Path) ->
 def test_fixture_pipeline_never_uses_same_day_close_execution(tmp_path: Path) -> None:
     """Pipeline全体を通しても、同日Close→同日約定のトレードが1件も発生しないことを確認する。"""
     adapter = FixtureDataSourceAdapter(_FIXTURE_PATH)
-    quotes_result = adapter.fetch_daily_quotes(codes=["7203"], start_date=_START, end_date=_END)
+    quotes_result = adapter.fetch_equity_bars(codes=["7203"], start_date=_START, end_date=_END)
     calendar_result = adapter.fetch_trading_calendar(start_date=_START, end_date=_END)
 
-    raw_bars = daily_quotes_payload_to_raw_bars(quotes_result.payload)
+    raw_bars = equity_bars_payload_to_raw_bars(quotes_result.payload)
     price_history = {"7203": apply_split_adjustments(raw_bars, [])}
     trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=_START, range_end=_END)
 

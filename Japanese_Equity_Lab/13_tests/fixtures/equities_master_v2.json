@@ -1,0 +1,30 @@
+{
+  "_disclaimer": "J-Quants API V2 /v2/equities/master の生レスポンス形状を模したGolden Fixture(合成データ)。CompanyName/ListingDate/DelistingDate等のField名は未検証(convert.py equities_master_payload_to_listing_records参照)。",
+  "data": [
+    {
+      "Code": "7203",
+      "CompanyName": "トヨタ自動車",
+      "MarketCode": "0111",
+      "Sector33Code": "3700",
+      "ListingDate": "1949-05-16",
+      "DelistingDate": null
+    },
+    {
+      "Code": "6758",
+      "CompanyName": "ソニーグループ",
+      "MarketCode": "0111",
+      "Sector33Code": "3650",
+      "ListingDate": "1958-12-01",
+      "DelistingDate": null
+    },
+    {
+      "Code": "3626",
+      "CompanyName": "TIS株式会社",
+      "MarketCode": "0111",
+      "Sector33Code": "5250",
+      "ListingDate": "2000-06-27",
+      "DelistingDate": null
+    }
+  ],
+  "pagination_key": null
+}

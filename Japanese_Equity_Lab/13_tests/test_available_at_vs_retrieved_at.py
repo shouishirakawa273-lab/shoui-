@@ -20,7 +20,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, build_close_to_next_open_window
 from lib.data_sources.base import RawFetchResult
-from lib.data_sources.convert import daily_quotes_payload_to_raw_bars, trading_calendar_payload_to_calendar
+from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.errors import LookAheadBiasError
 from lib.market_calendar import JST, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord, assert_no_lookahead
@@ -42,7 +42,7 @@ def test_old_market_data_retrieved_today_is_still_usable_for_a_historical_decisi
         retrieved_at=datetime.now(UTC),
         data_period=f"{value_date.isoformat()}/{value_date.isoformat()}",
         response_schema_version="fixture-v1",
-        payload=[{"Code": "7203", "Date": value_date.isoformat(), "Close": 2000}],
+        payload=[{"Code": "7203", "Date": value_date.isoformat(), "C": 2000}],
     )
     assert retrieved_today.retrieved_at.date() != value_date  # retrieved_atは「今日」
 
@@ -111,7 +111,7 @@ def _weekdays(start: date, count: int) -> list[date]:
     return days
 
 
-def _daily_quotes_payload(code: str, days: list[date], *, base: float, step: float) -> list[dict[str, object]]:
+def _equity_bars_payload(code: str, days: list[date], *, base: float, step: float) -> list[dict[str, object]]:
     rows = []
     for i, d in enumerate(days):
         price = base + step * i
@@ -119,18 +119,20 @@ def _daily_quotes_payload(code: str, days: list[date], *, base: float, step: flo
             {
                 "Code": code,
                 "Date": d.isoformat(),
-                "Open": price,
-                "High": price + 1,
-                "Low": price - 1,
-                "Close": price,
-                "Volume": 1000,
+                "O": price,
+                "H": price + 1,
+                "L": price - 1,
+                "C": price,
+                "Vo": 1000,
+                "AdjFactor": 1.0,
+                "ExRT": None,
             }
         )
     return rows
 
 
 def _trading_calendar_payload(days: list[date]) -> list[dict[str, object]]:
-    return [{"Date": d.isoformat(), "HolidayDivision": "1"} for d in days]
+    return [{"Date": d.isoformat(), "HolDiv": "1"} for d in days]
 
 
 _BEHAVIOR_DAYS = _weekdays(date(2026, 1, 5), 40)  # 2026-01-05は月曜
@@ -140,10 +142,10 @@ def _run_full_pipeline(quotes_payload: list[dict[str, object]]) -> object:
     """Raw payloadからBacktestEngine.run()までの全経路を実行する(retrieved_atは
     どの段階でも使わないため、この経路の出力にはretrieved_atが一切影響しないはず)。"""
     calendar_payload = _trading_calendar_payload(_BEHAVIOR_DAYS)
-    raw_bars = daily_quotes_payload_to_raw_bars(quotes_payload)
+    raw_bars = equity_bars_payload_to_raw_bars(quotes_payload)
     price_history = {"7203": apply_split_adjustments(raw_bars, [])}
-    bench_payload = _daily_quotes_payload("BENCH", _BEHAVIOR_DAYS, base=2000.0, step=0.3)
-    benchmark_bars = apply_split_adjustments(daily_quotes_payload_to_raw_bars(bench_payload), [])
+    bench_payload = _equity_bars_payload("BENCH", _BEHAVIOR_DAYS, base=2000.0, step=0.3)
+    benchmark_bars = apply_split_adjustments(equity_bars_payload_to_raw_bars(bench_payload), [])
     trading_calendar = trading_calendar_payload_to_calendar(
         calendar_payload, range_start=_BEHAVIOR_DAYS[0], range_end=_BEHAVIOR_DAYS[-1]
     )
@@ -166,7 +168,7 @@ def test_retrieved_at_changing_alone_does_not_change_the_investment_decision() -
     """(behavioral) 同じavailable_at相当のデータで、RawFetchResult.retrieved_atだけを
     大きく変えた2つのSnapshotから同じPipelineを実行すると、完全に同じBacktest結果
     (= 同じ投資判断)になることを実際に確認する。"""
-    quotes_payload = _daily_quotes_payload("7203", _BEHAVIOR_DAYS, base=1000.0, step=1.0)
+    quotes_payload = _equity_bars_payload("7203", _BEHAVIOR_DAYS, base=1000.0, step=1.0)
 
     fetch_result_a = RawFetchResult(
         source="fixture",

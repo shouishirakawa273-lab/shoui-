@@ -13,7 +13,7 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from lib.errors import LookAheadBiasError
-from lib.market_calendar import session_open_at
+from lib.market_calendar import session_close_at, session_open_at
 from lib.schemas.base import RecordMeta
 
 
@@ -24,6 +24,10 @@ class CorporateActionType(StrEnum):
     MERGER = "MERGER"
     DELISTING = "DELISTING"
     TICKER_CHANGE = "TICKER_CHANGE"
+    ADJUSTMENT_EVENT = "ADJUSTMENT_EVENT"
+    """J-Quants V2の``AdjFactor``/``ExRT``から機械的に検出したイベントで、SPLIT/
+    REVERSE_SPLITのどちらかを断定する根拠(値の方向の公式仕様)が未検証のもの。
+    分割か併合かを決め打ちせず、この汎用型で表す(DECISIONS.md D0032参照)。"""
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -49,6 +53,11 @@ class CorporateAction(RecordMeta):
     announced_at: datetime | None = None
     split_ratio: float | None = None  # 分割後株数 / 分割前株数 (SPLIT/REVERSE_SPLITのみ)
     dividend_per_share: float | None = None  # DIVIDENDのみ。Ver.1では価格調整に反映しない。
+    raw_adj_factor: float | None = None
+    """J-Quants V2 ``AdjFactor``の値をそのまま保持する(ADJUSTMENT_EVENTのみ)。
+    ``split_ratio``(「新株数/旧株数」という本スキーマ独自の向きの定義)とは
+    別に、Provider側の生の値を検証可能な形で残す。この値をPrice調整へ適用する
+    向き(掛けるか割るか)は未検証(DECISIONS.md D0032参照)。"""
     note: str | None = None
 
 
@@ -157,3 +166,91 @@ def apply_split_adjustments_as_of(
         )
     adjustable_actions = [a for a in actions if is_adjustable_at(a, as_of)]
     return apply_split_adjustments(raw_bars, adjustable_actions)
+
+
+# --- Phase3A.1: Case A (Announcementを Signalとして使う) と Case B (Price Seriesの
+# 連続化) を分離する(DECISIONS.md D0032参照)。上のapply_split_adjustments_as_ofは
+# Case A向け(``announced_at``必須、事前に「いつ発表されたか」を知る必要がある用途)。
+# 以下はCase B向け(J-Quants V2の``AdjFactor``/``ExRT``のように、Provider自身が
+# 効力発生日のBar行に付与するmechanicalなイベントを扱う)。
+
+
+def provider_event_available_at(effective_date: date) -> datetime:
+    """Provider由来(V2 AdjFactor/ExRT等)のCorporate Actionが「知り得た」時刻。
+
+    このイベントは事前の公表(announced_at)を経由せず、効力発生日(effective_date)
+    のBar行そのものにmechanicalに付与される。したがって、このEventの存在が
+    Research Labにとって知り得るのは、その日のBarデータ自体が取得可能になる時刻
+    (=市場のその日の大引け、``session_close_at(effective_date)``)と同じである。
+    RawOHLCVBarのavailable_atと同じ導出元を使うことで、個別に未来情報を混入させる
+    余地を無くす(RawOHLCVBar自体のPIT gateと同じ基準に揃える)。
+    """
+    return session_close_at(effective_date)
+
+
+def build_provider_derived_adjusted_bars(
+    raw_bars: list[RawOHLCVBar],
+    events: list[CorporateAction],
+    *,
+    as_of: datetime,
+) -> list[AdjustedOHLCVBar]:
+    """Provider由来のAdjFactor/ExRTイベント(``raw_adj_factor``)からAs-of Adjusted
+    Seriesを構築する(Case B: Price Seriesの連続化。announced_atは不要)。
+
+    ``announced_at``が無いことを理由にPrice Adjustment全体をBLOCKする必要はないと
+    判断した(DECISIONS.md D0032)。理由: このEventは「将来起きることを事前に知る」
+    Case A(Corporate Action Announcementを取引Signalとして使う用途)とは異なり、
+    効力発生日当日のBarデータそのものから機械的に導出される。その日のBarを
+    使ってよいなら(=available_atのPIT gateを通過しているなら)、同じ日に付随する
+    このEventも同時に「知り得る」情報であり、別途announced_atを要求する意味が無い。
+
+    PIT gate: 各EventについてPROVIDER_EVENT_AVAILABLE_AT(=その日のBarと同じ
+    ``session_close_at(effective_date)``)がas_ofを超えている場合、
+    「本来知り得ないはずの未来のイベントが混入している」とみなしLookAheadBiasErrorで
+    拒否する(Case Aのannounced_at不明ケースと同様、黙って除外しない。Provider由来の
+    Eventには「発表済みだがまだ効力未発生」という中間状態が無いため)。
+
+    **重要な未検証事項**: ``raw_adj_factor``をRaw価格へ適用する向き(掛け算か
+    割り算か)は、J-Quants V2の公式ドキュメントで確認できていない
+    (このセッションはドキュメントへ疎通できない)。本関数は
+    ``adjusted_price = raw_price × Π(未来イベントのraw_adj_factor)``という
+    「乗算」慣習を仮定している(複数のデータベンダーで一般的な向きだが未検証)。
+    実データ入手後、既知の実分割銘柄についてJ-Quants自身が返す``AdjC``等と
+    本関数の出力を突き合わせて検証すること(LOCAL_DATA_FETCH_GUIDE.md参照)。
+    向きが逆だった場合は、この関数内の乗算を除算に修正するだけで直る設計にしている。
+    """
+    if as_of.tzinfo is None:
+        raise ValueError("as_of はtz-awareである必要があります")
+    missing_factor = [e for e in events if e.raw_adj_factor is None]
+    if missing_factor:
+        raise ValueError(f"raw_adj_factorが無いEventが{len(missing_factor)}件あります(検出ロジックの不具合の可能性)。")
+
+    not_yet_available = [e for e in events if provider_event_available_at(e.effective_date) > as_of]
+    if not_yet_available:
+        raise LookAheadBiasError(
+            f"as_of={as_of.isoformat()} 時点でまだ取得可能でないはずのProvider由来Corporate Actionが"
+            f"{len(not_yet_available)}件含まれています(未来情報の混入)。"
+        )
+
+    ordered_events = sorted(events, key=lambda e: e.effective_date)
+    adjusted: list[AdjustedOHLCVBar] = []
+    for bar in sorted(raw_bars, key=lambda b: b.session_date):
+        cumulative_factor = 1.0
+        for event in ordered_events:
+            if event.effective_date > bar.session_date and event.raw_adj_factor is not None:
+                cumulative_factor *= event.raw_adj_factor
+        adjusted.append(
+            AdjustedOHLCVBar(
+                code=bar.code,
+                session_date=bar.session_date,
+                open=None if bar.open is None else bar.open * cumulative_factor,
+                high=None if bar.high is None else bar.high * cumulative_factor,
+                low=None if bar.low is None else bar.low * cumulative_factor,
+                close=None if bar.close is None else bar.close * cumulative_factor,
+                volume=None if bar.volume is None else bar.volume / cumulative_factor,
+                split_adjustment_factor=cumulative_factor,
+                derived_from="raw+jquants_v2_adjfactor_events(multiply_convention_unverified)",
+                source=bar.source,
+            )
+        )
+    return adjusted

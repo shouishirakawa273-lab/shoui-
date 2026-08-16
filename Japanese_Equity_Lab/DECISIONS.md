@@ -626,3 +626,121 @@ Immutable Raw Snapshot(`01_data/raw/local/`)そのものではない。正式な
 Pipeline実行時(`--source local`)に別途生成される。この区別を明確にするため、
 出力先ディレクトリ名を`01_data/raw/jquants/`(D0016で追跡除外済みの、Pipelineが
 生成する正式なRaw Snapshot置き場)とは別にした。
+
+---
+
+## Phase 3A.1(2026-08-16): J-Quants API V2 Migration
+
+Phase3A完了報告に対し、ユーザーから「現在の契約プランはLight」「`JQuantsAdapter`が
+現行API V2ではなく旧V1仕様をかなり含んでいる」という指摘を受けた。Phase3Bには進まず、
+V1依存を全面的に削除しV2へ移行することをPhase3A.1として実施した。
+
+## D0031 — J-Quants API V1依存を全面的に削除し、V2(ユーザー提示仕様)へ移行
+
+**変更内容**: `lib/data_sources/jquants.py`を全面書き換えし、認証方式を
+`token/auth_refresh`(リフレッシュトークン→IDトークン)から`x-api-key` Header方式
+(環境変数`JQUANTS_API_KEY`)へ変更した。Endpointを以下へ全面差し替えた。
+
+| 旧(V1、削除済み) | 新(V2) |
+|---|---|
+| `/prices/daily_quotes` | `/v2/equities/bars/daily` |
+| `/markets/trading_calendar` | `/v2/markets/calendar` |
+| `/indices`(`code="0000"`推測) | `/v2/indices/bars/daily/topix`(TOPIX専用) |
+| `/listed/info` | `/v2/equities/master` |
+| (無し) | `/v2/indices/bars/daily`(一般指数、既定Pipelineでは未使用) |
+
+Field名も`Open/High/Low/Close/Volume`から`O/H/L/C/Vo`(+`Va`/`AdjFactor`/`AdjO`〜`AdjVo`/
+`UL`/`LL`/`MktCap`/`ExRT`)へ、Trading Calendarの`HolidayDivision`から`HolDiv`へ変更した。
+レスポンスは`{"data": [...], "pagination_key": ...}`形式を前提とし、`pagination_key`が
+返る限り追加リクエストして結合する処理を`JQuantsAdapter._get_all_pages()`に実装した。
+`DataSourceAdapter` Protocolのメソッド名も`fetch_daily_quotes`→`fetch_equity_bars`、
+`fetch_index_prices`→`fetch_topix_bars`(+`fetch_general_index_bars`)、
+`fetch_listed_info`→`fetch_equities_master`へ改名し、`FixtureDataSourceAdapter`・
+`LocalSnapshotAdapter`双方も同じInterfaceへ揃えた。V1形状のfixtureファイル
+(`synthetic_jquants_daily_quotes.json`・`portfolio_scenario.json`)は
+`99_archive/13_tests/fixtures/`へ退避し(削除しない)、V2形状の新fixture
+(`synthetic_jquants_v2_bars.json`・`portfolio_scenario_v2.json`)と、Endpoint別の
+小さなGolden Fixture(`equities_bars_daily_v2.json`等4種)を新設した。
+
+**Endpoint・Field名の情報源についての重要な注記**: このセッションはJ-Quants公式API・
+公式ドキュメント(`jpx.gitbook.io`)のいずれにもネットワークポリシーにより疎通できない
+(`WebFetch`でも同一の`EGRESS_BLOCKED`を確認、D0012/D0025と同じ制約)。したがって
+上記のV2 Endpoint・Field名は、**ユーザーがこのセッション内のメッセージで明示した仕様を
+Canonical Specificationとしてそのまま実装したものであり、このセッション自身が公式資料や
+実APIで検証したものではない**。`HolDiv`の値("1"が取引日、等)の意味は特にユーザーからも
+明示されなかったため、V1時代の理解(未検証)を暫定的に引き継ぎつつ、
+`trading_calendar_payload_to_calendar()`に`trading_hol_div_values`引数を追加し、
+実データ確認後に呼び出し側で上書きできるようにした(推測を恒久的な既定値として
+固定しないための設計)。ローカル環境での疎通確認後、Field名や値の意味が異なると
+判明した場合は`lib/data_sources/jquants.py`・`lib/data_sources/convert.py`のみを
+修正すればよい(`BacktestEngine`側は無変更)。
+
+## D0032 — Corporate Actionを「Case A(Announcement Signal)」と「Case B(Price
+Series連続化)」に分離し、Case Bはannounced_at無しでもPIT-safeに扱えると判断
+
+**問題**: 既存の`apply_split_adjustments_as_of()`は、`announced_at`が無いCorporate
+Actionを一律`LookAheadBiasError`で拒否していた。V2の`AdjFactor`/`ExRT`は公表時刻を
+伴わないため、この設計のままではPrice Series連続化(株価が分割で不連続になることを
+防ぐ用途)すら一切できなかった。
+
+**判断**: Corporate Actionの用途を以下の2つに明確に分離した。
+
+- **Case A(Announcementを取引Signalとして使う)**: 「将来分割される」という情報を
+  事前に知って売買判断に使う用途。これには本物の公表時刻(`announced_at`)が必須であり、
+  V2の`equities/bars/daily`にはこの情報が無い(公表時刻を返す別のDisclosure系Endpointが
+  必要だが、今回は対象外)。既存の`apply_split_adjustments_as_of()`はこのCase A専用として
+  そのまま維持した(挙動・シグネチャとも変更なし)。
+- **Case B(Price Seriesの連続化)**: 過去のPrice Featureが分割によって不連続にならない
+  ようにする用途。V2の`AdjFactor`/`ExRT`はEvent当日のBar行そのものに機械的に付与される
+  (=事前の公表を経由しない)。したがって、その日のBarデータ自体が取得可能になる時刻
+  (`session_close_at(effective_date)`、既存のRawOHLCVBarのavailable_atと同じ導出元)を
+  過ぎていれば、このEventも同時に「知り得る」情報であり、別途`announced_at`を要求する
+  必要は無いと判断した。新設した`build_provider_derived_adjusted_bars()`
+  (`lib/schemas/price_data.py`)がこのCase Bを担う。`as_of`時点でまだ取得可能でないはずの
+  Eventが混入していれば`LookAheadBiasError`で拒否する(Case Aの「未公表」ケースと同様、
+  黙って除外しない)。
+
+**Event検出ロジックの変更(V1→V2)**: `detect_split_hints_from_daily_quotes()`
+(前日との差分を見る、Phase3AでD0027として一度修正した実装)を廃止し、
+`detect_corporate_action_events_from_equity_bars()`に置き換えた。V2では
+「AdjFactorはCorporate Actionの権利落ち日のrecordそのものに記録される」という
+ユーザー提示仕様に基づき、前日比較ではなく「その行が`AdjFactor != 1`または`ExRT`が
+設定されているか」だけでEvent当日を判定する(ユーザー指定のsynthetic test: Day1
+`AdjFactor=1` / Day2 `AdjFactor=0.5,ExRT="1"` / Day3 `AdjFactor=1` →Day2の1件のみ認識、
+`test_convert_phase3a.py`で確認)。検出したEventは新設の
+`CorporateActionType.ADJUSTMENT_EVENT`(分割か併合かを断定しない汎用型)として扱う。
+
+**未解決のまま残した点(重要)**: `build_provider_derived_adjusted_bars()`は
+`raw_adj_factor`をRaw価格へ「乗算」する慣習(`adjusted = raw × Π(未来イベントのfactor)`)を
+仮定しているが、この向き(掛けるか割るか)はJ-Quants V2公式ドキュメントで確認できて
+いない(このセッションは疎通できない)。誤った向きで適用すると価格を桁違いに歪める
+リスクがあるため、`scripts/jquants_lab_pipeline.py`は**この関数を実際のBacktest実行には
+まだ組み込まず**(`apply_split_adjustments(bars, [])`のまま、無調整)、Corporate Action
+Eventの検出・件数表示のみ行う。したがって、D0014のBLOCKING TODOは実データBacktestに
+ついて実質的に残ったままである(理由がCase A/B未分離からAdjFactorの向き未検証へ変わった)。
+`LOCAL_DATA_FETCH_GUIDE.md`に、実データ入手後にAdjFactorの向きをJ-Quants自身の`AdjC`と
+突き合わせて検証する手順を追記した。
+
+## D0033 — `DataSourceCapabilities`の導入とUniverse/Company Nameまわりの修正
+
+**変更内容**:
+
+1. `lib/data_sources/base.DataSourceCapabilities`を新設し、`daily_prices` /
+   `trading_calendar` / `topix` / `listed_master` / `general_indices`の利用可否を
+   表現できるようにした。既定値`LIGHT_PLAN_ASSUMED`はユーザー申告のLightプランを
+   踏まえた**未検証の推測**であり、契約状況の確認はユーザー自身に委ねる。
+   Adapterの`fetch_*`は、この構造体を理由に事前ブロックはしない(実際のAPI呼び出しに
+   任せ、利用不可なら本物のエラーがそのまま`DataSourceError`として伝わる設計。
+   他Providerへのsilent fallbackは行わない、RESEARCH_RULES.md参照)。
+2. Universeを`/listed/info`から`/v2/equities/master`へ接続先変更した
+   (`equities_master_payload_to_listing_records()`)。
+3. `ListingRecord`に`company_name`フィールドを追加し、`lib.universe`に
+   `check_company_name_consistency(expected_names, listings)`を新設した。手入力の
+   Ticker→会社名対応をCanonical Dataとして扱わず、Masterと矛盾する場合に警告文字列を
+   返す(例外にはしない)。`scripts/jquants_lab_pipeline.py`は実データSource利用時に
+   これを呼び出し、警告があれば標準出力に表示する。
+4. **誤りの訂正**: `LOCAL_DATA_FETCH_GUIDE.md`等で「3626 = TOKAIホールディングス」と
+   誤って記載していた。正しくは3626 = TIS株式会社、TOKAIホールディングス = 3167。
+   ユーザーからの指摘を受けて全箇所を修正した。今後はコード上の会社名ラベルも
+   手入力ではなく`equities_master`から解決することを推奨する
+   (`check_company_name_consistency`参照)。

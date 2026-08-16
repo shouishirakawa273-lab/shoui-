@@ -40,27 +40,33 @@ AIで大量の戦略を探索すると、偶然過去データに適合しただ
   (Snapshotの`source`フィールド等で常に区別する)。
 - 上記の理由で外部APIへ疎通できない環境では、`lib/data_sources/local_snapshot.LocalSnapshotAdapter`
   (`--source local`)を使う。ユーザーがネットワーク制限のないローカル環境で
-  J-Quantsから取得したJSON/CSVファイルを、決まった命名規約
-  (`daily_quotes_<code>.json`、`trading_calendar.json`、`indices_<index_code>.json`、
-  `listed_info.json`。詳細は`local_snapshot.py`のモジュールdocstring)で1つの
+  J-Quants API V2から取得したJSON/CSVファイルを、決まった命名規約
+  (`equity_bars_<code>.json`、`trading_calendar.json`、`topix_bars.json`、
+  `equities_master.json`。詳細は`local_snapshot.py`のモジュールdocstring)で1つの
   ディレクトリへ配置し、`--local-snapshot-dir`で渡す。これは「実データそのもの」を
   扱う経路であり、fixtureのような合成データではないが、**このセッション自身は
-  一度もJ-Quantsへ疎通していない**ため、このAdapterが実レスポンスの形状を正しく
-  扱えるかどうかはユーザーがローカルで実行して確認する必要がある(D0025〜D0028、
-  Phase3A完了報告参照)。
+  一度もJ-Quantsへ(APIにもドキュメントにも)疎通していない**ため、このAdapterが
+  実レスポンスの形状を正しく扱えるかどうかはユーザーがローカルで実行して確認する
+  必要がある(D0025〜D0028、D0031〜D0033、`LOCAL_DATA_FETCH_GUIDE.md`参照)。
+- 現在の契約プランはLight(ユーザー申告)。`DataSourceCapabilities`
+  (`lib/data_sources/base.py`)がLightプランでの利用可否についての未検証の推測を
+  保持するが、これは警告目的であり、Adapterは契約プランを理由に`fetch_*`呼び出しを
+  事前ブロックしない(実際のAPIが返すエラーをそのまま伝える)。利用不可と判明した
+  Datasetを他Providerへsilent fallbackすることは禁止する。
 
 ## Pipeline全体の構成 (`scripts/jquants_lab_pipeline.py`)
 
 Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較 ->
 Experiment Registry を一本のPipelineとして実行できる。
 
-- `lib/data_sources/base.DataSourceAdapter`: 外部データソースへの依存を切り離すInterface。
-  `lib/data_sources/jquants.JQuantsAdapter`(実データ・API直接接続)、
+- `lib/data_sources/base.DataSourceAdapter`: 外部データソースへの依存を切り離すInterface
+  (J-Quants API V2ベース、Phase3A.1でV1から全面移行)。
+  `lib/data_sources/jquants.JQuantsAdapter`(実データ・API直接接続、`x-api-key`認証)、
   `lib/data_sources/local_snapshot.LocalSnapshotAdapter`(実データ・ローカルファイル経由、
   外部APIへ疎通できない環境向け)、`lib/data_sources/fixture.FixtureDataSourceAdapter`
-  (合成データ)が同じInterfaceを満たす。個別銘柄日次OHLCV(`fetch_daily_quotes`)に加え、
-  指数データ(`fetch_index_prices`、TOPIX等)・銘柄マスタ(`fetch_listed_info`)も
-  同じ抽象化で扱う。
+  (合成データ)が同じInterfaceを満たす。個別銘柄日次Bar(`fetch_equity_bars`)に加え、
+  TOPIX専用Endpoint(`fetch_topix_bars`)・一般指数(`fetch_general_index_bars`)・
+  銘柄マスタ(`fetch_equities_master`)も同じ抽象化で扱う。
 - `lib/snapshot.RawSnapshotStore`: APIレスポンスを`01_data/raw/`へImmutableに保存する
   (manifestにsource/endpoint/request_parameters/retrieved_at/data_period/
   response_schema_version/content_hash/local_file/record_countを記録)。
@@ -234,23 +240,36 @@ Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(.
 まだ効力発生前のCorporate Actionは、エラーにはせず単に調整対象から除外する
 (意図した挙動であり、データ不備ではない)。Raw priceはこの調整でも一切書き換えない。
 
-### 🚫 BLOCKING TODO: Corporate Actions実データSourceが無いと実日本株Backtestは開始できない
+### Case A(Announcement Signal)とCase B(Price Series連続化)の分離(Phase3A.1、D0032)
 
-`announced_at`付きでCorporate Actions(株式分割・併合等)を取得するデータSourceは
-**未実装**(Phase3 TODO、DECISIONS.md D0014)。現在の`scripts/jquants_lab_pipeline.py`は
-`apply_split_adjustments(bars, actions=[])`で常に無調整のまま`AdjustedOHLCVBar`へ変換して
-いる。**対象期間・対象銘柄に株式分割等があった場合、価格系列が不連続になりBacktest結果が
-誤る。** 実際の日本株を対象にした(投資判断に使う)Backtestを開始する前に、必ず
-Corporate Actionsの実データSourceを確定し、`apply_split_adjustments_as_of`をPipelineへ
-組み込むこと。それまでは合成データによるPipeline配線の検証にとどめる。
+上記の`known_at`/`adjustable_at`の区別に加え、Phase3A.1で用途を明確に2つへ分離した。
 
-Phase3Aで`lib/data_sources/convert.detect_split_hints_from_daily_quotes()`を追加したが、
-これは`daily_quotes`の`AdjustmentFactor`が前日から変化した日を分割・併合の**候補**として
-抽出する参考情報にすぎず、`announced_at=None`のままなので上記BLOCKING TODOを解消しない
-(`apply_split_adjustments_as_of()`に渡すと意図的に`LookAheadBiasError`で拒否される)。
+- **Case A**: Corporate Action Announcementそのものを取引Signalとして使う用途。
+  本物の`announced_at`が必須。`apply_split_adjustments_as_of()`が担う(変更なし)。
+- **Case B**: Price Seriesが分割で不連続にならないようにする用途。J-Quants V2の
+  `AdjFactor`/`ExRT`はEvent当日のBar行そのものに機械的に付与され、事前の公表を
+  経由しない。そのため`announced_at`は不要で、その日のBarデータ自体が取得可能に
+  なる時刻(`session_close_at(effective_date)`)をPIT gateとして使う
+  `build_provider_derived_adjusted_bars()`(`lib/schemas/price_data.py`)が担う。
+
+### 🚫 BLOCKING TODO: 実データBacktestでは依然としてsplit調整を適用していない
+
+Case A(Announcementを使う用途)のデータSourceは引き続き**未実装**(DECISIONS.md D0014)。
+Case B(Price Series連続化)はD0032で設計上PIT-safeに扱えるようになったが、
+`build_provider_derived_adjusted_bars()`が`AdjFactor`をRaw価格へ適用する向き(乗算/除算)は
+**未検証**(J-Quants V2公式ドキュメントへこのセッションから疎通できないため)。
+誤った向きで適用すると価格を桁違いに歪めるリスクがあるため、
+`scripts/jquants_lab_pipeline.py`は引き続き`apply_split_adjustments(bars, actions=[])`
+(常に無調整)を使う。**対象期間・対象銘柄に株式分割等があった場合、価格系列が不連続に
+なりBacktest結果が誤る。** 実際の日本株を対象にした(投資判断に使う)Backtestを開始する
+前に、必ずAdjFactorの向きを実データで検証すること(`LOCAL_DATA_FETCH_GUIDE.md`手順7参照)。
+それまでは合成データ・向き未検証であることを踏まえたPipeline配線の検証にとどめる。
+
+`lib/data_sources/convert.detect_corporate_action_events_from_equity_bars()`
+(旧`detect_split_hints_from_daily_quotes()`、D0032で置き換え)は、その日の行が
+`AdjFactor != 1`または`ExRT`ありであればEvent当日として抽出する参考情報にすぎず、
 Pipelineの標準出力に「情報提供のみ、Backtestには未適用」として表示するだけで、実際の
-Adjusted価格系列には一切反映しない。J-Quantsが`announced_at`(公表時刻)を返す
-実際のエンドポイントが判明した場合のみ、このBLOCKING TODOは解消できる。
+Adjusted価格系列には一切反映しない。
 
 ## Multiple Testing
 
@@ -269,12 +288,12 @@ Ver.1はキャピタルゲイン研究が主目的のため、**Price Return同�
 一致しない場合、`compare_to_benchmark()` はエラーにして比較させない
 (配当込みTotal Returnとの混同を防ぐ)。
 
-Phase3Aで`DataSourceAdapter.fetch_index_prices()`(J-Quants `/indices`相当)を接続した
-(D0026)。TOPIXの`index_code`は`"0000"`と仮定しているが**未検証**(公式ドキュメントからの
-推測)。`/indices`のレスポンス形状も`/prices/daily_quotes`と同じOpen/High/Low/Close/Volumeを
-持つという未検証の前提に立っている。ユーザーがローカルで実際に叩いた結果、コードや形状が
-異なると判明した場合は`lib/data_sources/jquants.py`の`fetch_index_prices()`と
-`lib/data_sources/convert.index_prices_payload_to_raw_bars()`のみを修正すればよい
+Phase3A.1で`DataSourceAdapter.fetch_topix_bars()`(J-Quants V2の`/v2/indices/bars/daily/topix`、
+TOPIX専用Endpoint)へ接続先を変更した(D0031)。Phase3A時点で使っていた`index_code="0000"`の
+推測は廃止した(専用Endpointのため銘柄・指数コード指定が不要になった)。レスポンス形状は
+個別銘柄Barと同じO/H/L/Cを持つという未検証の前提に立っている。ユーザーがローカルで実際に
+叩いた結果、形状が異なると判明した場合は`lib/data_sources/jquants.py`の`fetch_topix_bars()`と
+`lib/data_sources/convert.topix_bars_payload_to_raw_bars()`のみを修正すればよい
 (Backtest Engine・Benchmark比較ロジックへの影響はない設計)。
 
 ## 税金の扱い
@@ -309,10 +328,14 @@ Survivorship bias排除の前提として、`UniverseProvider`(`as_of(as_of: dat
 `UniverseResolution`(`RESOLVED` / `UNRESOLVED` / `DATA_UNAVAILABLE`)で明示する。
 Phase1.1はInterfaceとsynthetic data向けの素朴な実装(`ListingBasedUniverseProvider`)のみ。
 
-Phase3Aで`lib/data_sources/convert.listed_info_payload_to_listing_records()`により
-J-Quants `/listed/info`を接続した。`/listed/info`が`listing_date`/`delisting_date`に
-相当するフィールドを含むかどうかは未検証であり、含まれない場合は`None`のまま正直に
-扱う(数値を推測で埋めない方針)。`UniverseSnapshot.survivorship_bias_unresolved`は、
+Phase3Aで`/listed/info`(V1)を接続し、Phase3A.1で
+`lib/data_sources/convert.equities_master_payload_to_listing_records()`により
+J-Quants V2の`/v2/equities/master`へ接続先を変更した(D0033)。`/v2/equities/master`が
+`listing_date`/`delisting_date`に相当するフィールドを含むかどうかは未検証であり、
+含まれない場合は`None`のまま正直に扱う(数値を推測で埋めない方針)。`ListingRecord`には
+`company_name`も追加し、`lib.universe.check_company_name_consistency()`で手入力の
+Ticker→会社名対応がMasterと矛盾しないか確認できる(手入力をCanonical Dataとして
+扱わない、D0033)。`UniverseSnapshot.survivorship_bias_unresolved`は、
 渡された全`ListingRecord`に`delisting_date`が1件も無い場合に自動的に`True`になる
 (`_auto_detect_survivorship_bias()`、D0028)。この場合、そのUniverseを使った
 Backtest結果はSurvivorship Biasが残存する前提で解釈すること(現在上場している銘柄だけを

@@ -1,0 +1,11 @@
+{
+  "_disclaimer": "J-Quants API V2 /v2/markets/calendar の生レスポンス形状を模したGolden Fixture(合成データ)。HolDivの値の意味は未検証(convert.pyの_TRADING_HOL_DIV_GUESS参照)。",
+  "data": [
+    {"Date": "2026-01-03", "HolDiv": "0"},
+    {"Date": "2026-01-04", "HolDiv": "0"},
+    {"Date": "2026-01-05", "HolDiv": "1"},
+    {"Date": "2026-01-06", "HolDiv": "1"},
+    {"Date": "2026-01-07", "HolDiv": "1"}
+  ],
+  "pagination_key": null
+}

@@ -71,24 +71,32 @@ cd ..   # リポジトリルート
 pytest Japanese_Equity_Lab/13_tests/ -q
 ```
 
-## 現在の状態(Phase 2)
+## 現在の状態(Phase 3A.1)
 
 Phase1〜1.1(フォルダ構造・方針文書・主要schema・東証取引時間の制度変更対応・
-Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)に加え、
-Phase2で以下を実装した。
+Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)、Phase2〜2.2
+(実データPipelineの実装、Execution Metrics、Reproducibility)に加え、Phase3A・3A.1で
+以下を実装した。
 
-- `lib/data_sources/`: `DataSourceAdapter` Interfaceと`JQuantsAdapter`(実データ)・
-  `FixtureDataSourceAdapter`(合成データ)。両者は同じInterfaceを満たす。
+- `lib/data_sources/`: `DataSourceAdapter` Interface(J-Quants API V2ベース)と
+  `JQuantsAdapter`(実データ・API直接接続)・`LocalSnapshotAdapter`(実データ・ローカル
+  ファイル経由)・`FixtureDataSourceAdapter`(合成データ)。3者とも同じInterfaceを満たす。
+  個別銘柄日次Bar・Trading Calendar・TOPIX専用Endpoint・銘柄マスタ(Master)を扱う。
 - `lib/snapshot.py`: Raw SnapshotのImmutable保存(manifest付き、認証情報の混入を検知)。
 - `lib/market_calendar.TradingCalendar`: 実データに基づく取引日カレンダー
   (祝日等をデータから判定し、範囲外は失敗させる)。
 - `lib/strategies/fixed_pipeline_validation.py`: Pipeline検証専用の固定Strategy。
 - `lib/backtest/engine.BacktestEngine.run()`: Data〜Benchmark比較までの実装。
 - `lib/reproducibility.py`: 再現性検証用のhash計算。
+- `lib/schemas/price_data.py`: Corporate ActionをCase A(Announcement Signal、
+  `announced_at`必須)とCase B(Price Series連続化、Provider由来Event、
+  `build_provider_derived_adjusted_bars`)に分離(D0032)。
 
-**既知の制約**: このセッションは外部API(J-Quants含む)へ一切疎通できない
-ネットワークポリシー下で動作しているため、実際のJ-Quants接続での検証は行えていない。
-Pipeline配線は`FixtureDataSourceAdapter`(合成データ、`13_tests/fixtures/README.md`参照)で
-検証済み。ローカル環境で`.env`にJQUANTS_REFRESH_TOKENを設定した上で
-`python scripts/jquants_lab_pipeline.py --source jquants` を実行し、実データで疎通確認すること。
-TOPIX等のインデックス取得・Corporate Actions(株式分割等)の取得元はPhase3のTODO。
+**既知の制約**: このセッションは外部API・公式ドキュメント(J-Quants含む)へ一切疎通できない
+ネットワークポリシー下で動作しているため、実際のJ-Quants API V2接続での検証は行えていない。
+Pipeline配線は`FixtureDataSourceAdapter`(合成データ、`13_tests/fixtures/README.md`参照)と、
+手作業で用意したV2形状のscratch dataによる`--source local`経路で検証済み。ローカル環境で
+`.env`にJQUANTS_API_KEYを設定した上で`python scripts/jquants_lab_pipeline.py --source jquants`
+を実行するか、`LOCAL_DATA_FETCH_GUIDE.md`の手順で実データ疎通確認すること。Corporate Action
+Announcement(Case A)の取得元、AdjFactorの適用方向の検証はPhase3B以降のTODO
+(DECISIONS.md D0031〜D0033参照)。
