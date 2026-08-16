@@ -1229,3 +1229,165 @@ RESOLVED経路追加、Instrument Type/Market Scopeの分離、Rate Limit訂正�
 **回帰確認**: `pytest`(Lab 180件、既存Screening Tool 37件)・`ruff check`・
 `ruff format --check`・`mypy`(52ファイル)いずれもclean。`git diff --stat`で
 `core/` `app.py` `tests/`への変更が無いことを確認済み。
+
+---
+
+## Phase3D(2026-08-16): Multi-Source Data Foundation
+
+Phase3C完了後、ユーザーより「J-Quantsだけに依存しない、日本株投資研究所の情報基盤を
+作ること」を目的にPhase3Dの開始指示があった。最優先は実データの大量収集ではなく、
+Data Lake → Source Catalog → Normalization → Point-in-Time/Provenance →
+Relevant Retrieval → Evidence Packet → 将来のAgent/Hypothesis/Backtestという
+共通基盤を作り、将来Sourceが増えても研究所本体を作り直さずに済む構造にすること。
+
+## D0040 — Multi-Source Data Foundationの共通Schema/Architectureを新設する
+(J-Quants以外のSourceへは接続しない)
+
+**背景**: これまでの実装はJ-Quants(株価・Master)専用だった。将来EDINET/TDnet/
+Company IR/日本マクロ統計/Global Market Data/News/Consensus/Idea Source等を
+追加接続する際、Source固有の実装が研究所本体(BacktestEngine/Universe等)へ
+直接染み出すと、Source追加のたびに本体を作り直すことになる。また、情報源の
+性質(FACT/CLAIM/OPINION等)を区別せず「Evidence」として一律に扱うと、
+Confirmation Bias(仮説を支持する情報だけを集めてしまう)を構造的に防げない。
+
+**変更内容(新設モジュール、`Japanese_Equity_Lab/lib/`配下)**:
+
+1. **`lib/sources/catalog.py`**: `DataCapability`(MARKET_PRICE/FUNDAMENTAL/
+   DISCLOSURE/POSITIONING/EXPECTATIONS/MACRO/GLOBAL_MARKET/NEWS/IDEA)、
+   `SourceAuthorityClass`(PRIMARY_OFFICIAL/COMPANY_PRIMARY/VERIFIED_SECONDARY/
+   SECONDARY/SOCIAL/USER_SUPPLIED)、`SourceMetadata`(source_id/source_type/
+   provider_name/source_authority_class/primary_or_secondary/retrieved_at/
+   published_at/available_at/effective_at/source_url/license_or_usage_note/
+   content_hash/provenance_id)、`DatasetDescriptor`(Coverage・更新頻度・PIT可否・
+   `ImplementationStatus`等)、`SourceCatalog.find()`(capability/code/country/
+   sectorで検索)。**`SourceAuthorityClass`が高いからといって内容の解釈まで
+   正しいとは限らない**ことをDocstringで明示する(「会社が発表した数字」と
+   「経営陣の将来見通し」は別、後述Evidence Type参照)。
+2. **`lib/sources/providers.py`**: Capability-based Design。1つの巨大Interfaceへ
+   詰め込まず、`MarketDataProvider`/`FundamentalDataProvider`/`DisclosureProvider`
+   (EDINET/TDnet/Company IRを1つのProtocolでまとめる、文書という共通の形のため)/
+   `MacroDataProvider`/`GlobalMarketDataProvider`/`NewsProvider`/
+   `ConsensusProvider`/`IdeaSourceProvider`の8Protocolへ分割し、各Providerは
+   `ProviderCapabilities`で自己申告する。**既存`lib.data_sources.jquants.
+   JQuantsAdapter`は一切変更していない**が、`MarketDataProvider`と同じ
+   メソッド名・シグネチャで設計したため、`isinstance(adapter, MarketDataProvider)`
+   が構造的に成立する(`13_tests/test_source_providers.py`で確認)。
+3. **`lib/sources/entity_registry.py`**: Canonical Entity Registry。J-Quants Code・
+   EDINET Code・法人番号・社名/旧社名を直接joinせず、`issuer_id`を介して対応付ける。
+   `EntityIdentifierMapping`(issuer_id/security_id/provider_identifiers/aliases/
+   canonical_name/valid_from/valid_until/mapping_provenance/mapping_confidence)、
+   `EntityRegistry.resolve(provider_name, provider_identifier, as_of)`はPIT対応
+   (社名変更・コード変更等で有効期間が異なる複数Mappingを登録でき、有効期間外は
+   `None`、重複一致は`ValueError`とし、黙ってどちらかを選ばない)。
+4. **`lib/evidence/model.py`**: `EvidenceType`(FACT/CLAIM/INTERPRETATION/
+   OPINION/IDEA。`Hypothesis`は別schemaのためEvidence Typeに含めない)、
+   `DataLayer`(RAW/NORMALIZED/DERIVED)、`EvidenceRelation`(SUPPORTS/
+   CONTRADICTS/ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN、Hypothesisが存在する
+   場合のみ付与するDerived Relationであり、`EvidenceRecord`自体には保持しない)、
+   `AvailabilityBasis`(EXACT/OBSERVED/INFERRED/UNKNOWN。UNKNOWNの場合、
+   `available_at`をpublished_at等から推測補完しない)、`SourceVersion`/
+   `RevisionHistory`(source_record_id/source_version_id/supersedes_version_id/
+   is_correction/event_at/published_at/first_seen_at/available_at/retrieved_at/
+   source_version_at。`RevisionHistory.as_of(decision_at)`は将来のRevisionを
+   過去Decisionへ流用しない。既定で`availability_basis=UNKNOWN`のVersionを
+   除外する安全側デフォルト、`include_unknown_availability=True`で明示的opt-in)、
+   `AiDerivedProvenance`(model_provider/model_name/model_version/prompt_version/
+   prompt_hash/input_evidence_ids/retrieval_plan_hash/generated_at。
+   `EvidenceRecord.ai_derived_provenance`が設定されている場合、`layer`は
+   `DERIVED`である必要があると`__post_init__`で強制し、AI生成DataがRaw/
+   Normalizedを名乗ることを禁止する)、`EvidenceRecord.is_usable_at()`
+   (`source.available_at`基準のPITフィルタ、`retrieved_at`の新しさに影響されない)。
+5. **`lib/evidence/news.py`**: `NewsScope`(JAPAN/GLOBAL)、共通`NewsEvent`
+   Schema(published_at/scope/country/event_type/entities/affected_sectors/
+   affected_codes/source/headline/summary/confidence/provenance)。Dedup
+   Semanticsとして`EXACT_DUPLICATE`/`SYNDICATED_COPY`/`SAME_EVENT_CLUSTER`/
+   `DISTINCT`を区別する簡易ヒューリスティック(`classify_news_relation`)を実装し、
+   `cluster_news()`は`EXACT_DUPLICATE`であっても記事情報そのものを削除せず
+   クラスタとして全メンバーを保持する(Contradictory reportingを保持する)。
+   Global Event → Economic Transmission → Japanese Sector → Japanese Company
+   という伝播関係の推論(例: 「US Data Center Capex増 → 電力需要増 → 変圧器需要増
+   → 銅需要増 → 日本の電気機器メーカー」)はPhase3Dでは実装しない
+   (`NewsEvent.affected_sectors`/`affected_codes`は将来Agent/人手が設定する
+   プレースホルダとしてのみ持つ)。
+6. **`lib/evidence/retrieval.py`**: `ResearchQuestion`/`RetrievalDecision`/
+   `RetrievalPlan`/`plan_retrieval()`/`retrieve_evidence()`。「Dataが多いほど
+   全部AIに渡す」設計を禁止し、`plan_retrieval()`は`DataCapability`全種について
+   含める/除外する理由を必ず記録する(空文字列の理由を許容しない、監査可能性)。
+   LLMによるRetrieval Selection(「関連しそうなCapabilityをAIが選ぶ」)は
+   Phase3Dでは実装しない(呼び出し側が明示的に指定した`requested_capabilities`
+   に基づいて機械的に判定するのみ)。
+7. **`lib/evidence/packet.py`**: `EvidencePacket`(research_question/as_of/
+   included_evidence_ids/excluded_candidate_sources/retrieval_reason/
+   missing_expected_sources/positive_evidence/negative_evidence/
+   alternative_explanation_evidence/contradictory_evidence/unknowns/
+   provenance_id)。**Conclusion/Verdict/Supportedに相当するFieldを意図的に
+   持たない**(Evidence不足を自動でPositive/Negativeへ昇格させる経路が
+   Schema上そもそも存在しないことを`13_tests/test_evidence_packet.py::
+   test_evidence_packet_has_no_overall_verdict_field`で直接確認する)。
+   `build_evidence_packet()`は呼び出し側から明示的に与えられた
+   `relations: Mapping[evidence_id, EvidenceRelation]`をそのままカテゴリへ
+   振り分けるだけで、件数による判定・上書きを一切行わない(情報件数の多数決禁止、
+   下記Anti-Confirmation Test参照)。`conflicting_evidence_ids`を指定した
+   Evidenceは`relations`での分類に関わらず`contradictory_evidence`へ入り、
+   Conflicting Sourcesの自動統合(どちらか一方を機械的に選ぶこと)を避ける。
+8. **`lib/evidence/decision_log.py`**: `DecisionEvidenceLog`(log_id/decision_at/
+   evidence_packet_id/used_evidence_ids/not_used_or_unavailable_evidence_ids/
+   main_drivers/contradictions/unknowns/predicted_outcome/actual_outcome/
+   provenance_id)。**BUY/SELL Agentは一切実装しない**。
+   `predicted_outcome`/`actual_outcome`は将来の検証用に空のまま保存できる
+   Fieldとして用意するのみ。
+9. **`lib.schemas.experiment.Experiment.used_data_capabilities`**
+   (`tuple[str, ...]`、既定`()`、後方互換)を新設し、将来のAblation比較
+   (例: Fundamental+Momentum vs +News vs +Macro)のため、どの`DataCapability`を
+   使用したExperimentかを追跡可能にした。Ablation Engine自体はPhase3Dでは
+   実装しない。既存`06_backtests/experiment_registry.jsonl`の過去Experimentは
+   `used_data_capabilities=()`(「未記録」、「何も使っていない」という意味では
+   ない)としてそのまま読み込める(`_experiment_from_dict`で`tuple(d.get(...)
+   or ())`のように安全にdefaultへfallbackする、D0037/D0038と同じ後方互換手法)。
+10. **Provenance/Lineageは新機構を作らず既存`lib.registry.provenance.
+    ProvenanceStore`を再利用する**。Raw Snapshot → Normalized Evidence →
+    Derived Evidence → EvidencePacket → Decision Evidence Logという新しい
+    Node種別の連鎖も、既存の`trace_to_origin()`でそのまま遡れることを
+    `13_tests/test_evidence_lineage.py`で確認した。
+
+**Current Official Facts Cleanup**: J-Quants V2 `/v2/equities/master`の
+Field名について、公式仕様上、市場Scopeは`Mkt`/`MktNm`、商品区分は`ProdCat`で
+あることをユーザーが確認した。D0038/D0039で「ProdCat相当・Field名未確定」と
+していた記述を訂正し、`lib/data_sources/convert.py`の
+`equities_master_payload_to_listing_records()`を`MarketCode`/`MarketCodeName`
+から`Mkt`/`MktNm`へ、`ProdCat`(単独、`ProdCatName`という架空のFallbackを削除)へ
+変更した。既存Fixture(`13_tests/fixtures/equities_master_v2.json`)・テスト
+(`13_tests/test_convert_phase3a.py`)の`"MarketCode"`キーも`"Mkt"`へ機械的に
+置換した(値そのものは変更していない)。**ただし各Fieldが取りうる値の列挙
+(どの値がPrime/Standard/Growthか、どの値が普通株か)は依然として未検証であり、
+値そのものを推測で決め打ちしない**(`build_common_stock_universe`の許可リストは
+引き続き呼び出し側が確認した値を渡す設計を維持、実データPipelineへの接続も
+引き続き保留する)。
+
+**Anti-Confirmation Test(`13_tests/test_evidence_packet.py`)**: 以下を直接確認した。
+
+- Positive Evidenceしか無いFixtureでも、`missing_expected_sources`で
+  「反証探索を行っていないこと」自体を明示的に表現できる(隠さない)。
+- Social Opinion(SOCIAL Authority)が10件`SUPPORTS`でも、Primary Official
+  Fact(PRIMARY_OFFICIAL Authority)1件の`CONTRADICTS`は消えない・上書きされない
+  (件数による上書きロジックがこのモジュールのどこにも存在しないことの直接証拠)。
+- `EvidencePacket`に`verdict`/`conclusion`/`supported`等に相当するFieldが
+  一切存在しないことを`dataclasses.fields()`で構造的に確認した。
+- Conflicting Sources(2件のFACTが矛盾する数値を報告)は、どちらか一方へ
+  自動的に統合されず、両方が`contradictory_evidence`へ保持される。
+- Evidence皆無(`evidence_pool=[]`)の場合でも、`positive_evidence`等へ
+  自動的に何かが昇格することはない(Fieldがそもそも存在しないことと合わせて、
+  構造的に不可能であることを確認)。
+
+**Phase3Dで実装していないもの(スコープ境界、Phase5/Phase6へ送る)**: LLMによる
+Retrieval Selection、Positive/Negative自動分類、News Relevance AI、
+Hypothesis生成、Skeptic Agent、Ablation Engine、BUY/SELL判断、実際のBOJ/e-Stat等
+Skeleton Adapter(公式仕様をこのセッションでは確認できないため、推測実装をしない
+方針上、意図的に見送った)、実際のBulk/File Download Endpoint接続(仕様未確認)、
+外部API Key取得・有料契約・大量Download・Web Scraping・News Crawling・TDnet
+Add-on契約・Consensus契約は一切行っていない。
+
+**回帰確認**: `pytest`(Lab 233件 = 従来180件+新規53件、既存Screening Tool
+37件)・`ruff check`・`ruff format --check`・`mypy`(62ファイル)いずれもclean。
+`git diff --stat`で`core/` `app.py` `tests/`への変更が無いことを確認済み。
+戦略パラメータの探索・最適化は行っていない。

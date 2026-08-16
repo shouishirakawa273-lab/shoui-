@@ -16,6 +16,10 @@ Paper Tradingで検証し、成功・失敗の両方を再利用可能な知見�
 - [LOCAL_DATA_FETCH_GUIDE.md](./LOCAL_DATA_FETCH_GUIDE.md) — ローカル環境で実J-Quantsデータを
   取得し`--source local`でPipelineを検証する手順(Phase3A、クラウドセッションが外部APIへ
   疎通できない場合用)
+- [DATA_SOURCE_ARCHITECTURE.md](./DATA_SOURCE_ARCHITECTURE.md) — Multi-Source Data
+  Foundation(Phase3D): Source Catalog・Capability-based Provider・Entity Registry
+- [EVIDENCE_MODEL.md](./EVIDENCE_MODEL.md) — Evidence Type・PIT/Revision・Evidence
+  Packet・Decision Evidence Log(Phase3D)
 
 ## ディレクトリ構成
 
@@ -37,7 +41,9 @@ Japanese_Equity_Lab/
   13_tests/             pytest テスト(lib/ と1対1対応)
   99_archive/           削除ではなく退避したデータ・実験
   lib/                  UI非依存の共有Pythonロジック(schemas / backtest / registry /
-                         market_calendar / point_in_time / universe / data_sources / snapshot)
+                         market_calendar / point_in_time / universe / data_sources / snapshot /
+                         sources[catalog/providers/entity_registry] / evidence[model/news/
+                         retrieval/packet/decision_log])
 ```
 
 親リポジトリの `scripts/jquants_lab_pipeline.py` で、Data取得 -> Feature -> Signal ->
@@ -71,7 +77,7 @@ cd ..   # リポジトリルート
 pytest Japanese_Equity_Lab/13_tests/ -q
 ```
 
-## 現在の状態(Phase 3A.2)
+## 現在の状態(Phase 3D)
 
 Phase1〜1.1(フォルダ構造・方針文書・主要schema・東証取引時間の制度変更対応・
 Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)、Phase2〜2.2
@@ -103,4 +109,24 @@ Pipeline配線は`FixtureDataSourceAdapter`(合成データ、`13_tests/fixtures
 手作業で用意したV2形状のscratch dataによる`--source local`経路で検証済み。ローカル環境で
 `.env`にJQUANTS_API_KEYを設定した上で`python scripts/jquants_lab_pipeline.py --source jquants`
 を実行するか、`LOCAL_DATA_FETCH_GUIDE.md`の手順で実データ疎通確認すること。Corporate Action
-Announcement(Case A)の取得元はPhase3B以降のTODO(DECISIONS.md D0031〜D0035参照)。
+Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0035参照)。
+
+### Phase3B〜3D
+
+- **Phase3B**: ユーザーのローカル環境で実J-Quants V2データによる初回End-to-End Backtest
+  (`RUN_20260816T164133244945`)に成功し、Infrastructure/Integration Validationとして完了。
+- **Phase3C**: 固定4銘柄ではなくPoint-in-Time Universeを扱えるようにした。
+  `lib/universe.py`の`PitCoverage`/`PitMasterUniverseProvider`(decision_atごとに
+  Masterへ再問い合わせ)、`build_common_stock_universe`(普通株の明示的な定義)、
+  `UniverseResolution.PARTIAL`(Survivorship Biasを解消できていない場合にRESOLVEDと
+  自称しない)。J-Quants Master `date`パラメータの真のPIT性を実データ(6502 東芝)で
+  確認済み(D0039)。
+- **Phase3D**: J-Quantsだけに依存しない情報基盤(Multi-Source Data Foundation)の
+  共通Architectureを新設した(D0040、実データへの接続はまだ行っていない)。
+  `lib/sources/`(Data Catalog・Capability-based Provider Protocol・Canonical
+  Entity Registry)、`lib/evidence/`(Evidence Type・PIT/Revision History・
+  News Dedup・Relevant Retrieval・EvidencePacket・Decision Evidence Log)。
+  DEFAULT STANCE = DISCONFIRM, NOT CONFIRMを上位原則としてRESEARCH_RULES.mdへ
+  追加し、情報件数の多数決禁止・Evidence不足の自動昇格禁止をSchema/testで
+  構造的に強制する(Anti-Confirmation Test、`13_tests/test_evidence_packet.py`)。
+  詳細は`DATA_SOURCE_ARCHITECTURE.md`/`EVIDENCE_MODEL.md`参照。

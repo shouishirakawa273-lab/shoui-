@@ -54,10 +54,11 @@ class ListingRecord(RecordMeta):
     `market`と`instrument_type`は別概念であり混同しない(D0039)。`market`は
     投資対象の市場Scope(Prime/Standard/Growth等)、`instrument_type`は商品区分
     (普通株/ETF/REIT/優先株/外国株等)を表す。普通株判定には`instrument_type`を使う
-    (`build_common_stock_universe`参照)。J-Quants Masterの実際のField名は
-    ユーザー提供情報に基づき`ProdCat`相当を想定しているが、正確なField名・値の
-    列挙はローカル環境での実データ確認が必要(未確定要素を含むためこの情報源を
-    明示する)。
+    (`build_common_stock_universe`参照)。J-Quants Masterの実際のField名は公式仕様上
+    `market`が`Mkt`/`MktNm`、`instrument_type`が`ProdCat`である(D0040でユーザーが
+    確認した公式仕様)。ただし各Fieldが取りうる値の列挙(どの値がPrime/Standard/Growthか、
+    どの値が普通株か)は未検証のままであり、値そのものを推測で決め打ちしない
+    (`build_common_stock_universe`の許可リストは呼び出し側が確認した値を渡す)。
     """
 
     code: str

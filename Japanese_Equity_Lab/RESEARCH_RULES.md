@@ -27,6 +27,43 @@ AIで大量の戦略を探索すると、偶然過去データに適合しただ
 19. 失敗した仮説もKnowledgeとして残す。
 20. 実際の注文は行わない。
 
+## 0.5 情報収集の上位原則(Phase3D、D0040): DEFAULT STANCE = DISCONFIRM, NOT CONFIRM
+
+**DEFAULT STANCE = DISCONFIRM, NOT CONFIRM。DEFAULT PROCESS = ADVERSARIAL。
+CONCLUSION = NEUTRAL UNTIL SUPPORTED。**
+
+研究所は、候補銘柄・仮説・既存Knowledgeを肯定するために情報を探索してはならない。
+必ず、Negative Evidence / Alternative Explanation / Missing Evidence /
+Contradictory Evidence / Priced-in Risk / Falsification Conditionを探索可能な
+構造にする。「買える理由を探す」のではなく、「この仮説を壊そうとした結果、それでも
+残るか」を評価する。
+
+**ただし「反証すること」自体を目的化せず、否定方向へのバイアスも禁止する。**
+Adversarialなのは探索プロセスであり、結論を否定側へ誘導することではない。
+Evidenceそのものへ、収集した時点でPositive/Negativeを固定しない
+(`lib.evidence.model.EvidenceRecord`はHypothesisに対する評価を一切保持しない)。
+
+- **情報件数の多数決を禁止する。** 一次情報1件とSNS投稿10件を同じ重みで扱わない。
+  `lib.evidence.packet.build_evidence_packet()`は件数を一切集計・比較しない
+  (`13_tests/test_evidence_packet.py`のAnti-Confirmation Testで直接確認する)。
+- **`INSUFFICIENT_EVIDENCE`/`UNKNOWN`を正式な状態として扱う。** 無理に
+  Positive/Negativeへ分類しない。`EvidencePacket`はConclusion/Verdictに相当する
+  Fieldを意図的に持たない(Evidence不足を自動でPositive/Negativeへ昇格させる経路が
+  存在しない、Schemaで構造的に防ぐ)。
+
+### Evidence Type(`lib.evidence.model.EvidenceType`)
+
+FACT / CLAIM / INTERPRETATION / OPINION / IDEA の5種を同一Fieldへ潰さない。
+`Hypothesis`(`lib.schemas.hypothesis.Hypothesis`)はEvidence Typeに含めない
+(EvidenceそのものではなくEvidenceから導かれる仮説であり、別schemaとして扱う)。
+
+### Derived Relation(Hypothesisが存在する場合のみ付与、`lib.evidence.model.EvidenceRelation`)
+
+SUPPORTS / CONTRADICTS / ALTERNATIVE_EXPLANATION / NEUTRAL / UNKNOWN。
+Evidence自体には保持せず、`build_evidence_packet()`が呼び出し側から明示的に
+与えられた判定として付与する(自動分類エンジンはPhase3Dでは実装しない、
+Schemaのみ用意する)。詳細は`EVIDENCE_MODEL.md`参照。
+
 ## データ入手に関する既知の制約(2026年時点)
 
 - J-Quants無料プランは業績予想データに約12週間の遅延がある。真のリアルタイムPITではなく、
@@ -476,10 +513,57 @@ Bulk取得したデータであっても、Raw Snapshotの不変性・hash・pro
 decision_atごとに解決してBacktestへ投入する構造(`UniverseProvider.as_of()`、
 `PitMasterUniverseProvider`)を維持する。実際のBulk Endpoint接続の設計はPhase3Dで扱う。
 
+## Multi-Source Data Foundation(Phase3D、D0040)
+
+J-Quantsだけに依存しない情報基盤の共通Architecture。詳細は`DATA_SOURCE_ARCHITECTURE.md`
+(Source Catalog/Capability/Provider Protocol/Entity Registry)と`EVIDENCE_MODEL.md`
+(Evidence Type/PIT/Revision/Packet/Decision Log)を参照。要点のみここに記す。
+
+- **Data Catalog** (`lib.sources.catalog.SourceCatalog`): どのSourceに何のDataがあり、
+  どの範囲でPIT利用可能か、どのAuthority Classかを検索可能にする。
+  `DatasetDescriptor.implementation_status`でCatalog上の記述と実接続済みかを区別する
+  (Phase3Dの既定は`NOT_IMPLEMENTED`)。
+- **Capability-based Provider Protocol** (`lib.sources.providers`): 1つの巨大Interfaceに
+  詰め込まず、`MarketDataProvider`/`FundamentalDataProvider`/`DisclosureProvider`/
+  `MacroDataProvider`/`GlobalMarketDataProvider`/`NewsProvider`/`ConsensusProvider`/
+  `IdeaSourceProvider`へ分割する。既存`lib.data_sources.jquants.JQuantsAdapter`は
+  無変更のまま構造的に`MarketDataProvider`を満たす(互換性)。
+- **Canonical Entity Registry** (`lib.sources.entity_registry`): J-Quants Code/EDINET
+  Code/法人番号/社名等を直接joinせず、`issuer_id`を介して対応付ける。
+  Identifier MappingにもPIT原則を適用する(`valid_from`/`valid_until`、
+  `EntityRegistry.resolve(as_of=...)`)。
+- **Evidence Model** (`lib.evidence.model`): FACT/CLAIM/INTERPRETATION/OPINION/IDEAの
+  分離、`DataLayer`(RAW/NORMALIZED/DERIVED)、`RevisionHistory.as_of()`による
+  Revision Leak防止、`AvailabilityBasis`(EXACT/OBSERVED/INFERRED/UNKNOWN、
+  UNKNOWNは既定でPIT利用不可扱い)。
+- **News** (`lib.evidence.news`): `NewsScope`(JAPAN/GLOBAL)を明示的に分離しつつ
+  共通`NewsEvent`で扱う。Dedupは`EXACT_DUPLICATE`/`SYNDICATED_COPY`/
+  `SAME_EVENT_CLUSTER`を区別し、後者2つは記事を削除せずクラスタとして保持する
+  (Contradictory reportingを保持する)。
+- **Relevant Retrieval** (`lib.evidence.retrieval`): 「Dataが多いほど全部AIに渡す」
+  設計を禁止する。`plan_retrieval()`はResearchQuestionが要求したCapabilityのみを
+  含め、含める/除外する理由を全件記録する(監査可能性)。
+- **EvidencePacket** (`lib.evidence.packet`): 将来Agentへ渡すEvidenceの単位。
+  Conclusion/Verdictに相当するFieldを意図的に持たない。詳細は上記
+  「0.5 情報収集の上位原則」参照。
+- **Decision Evidence Log** (`lib.evidence.decision_log`): 将来のAI判断について
+  Used/Not-Used Evidence・主な根拠・矛盾・未解決点を保存する。**BUY/SELL Agentは
+  Phase3Dでは未実装**(Schemaのみ)。
+- **Ablation lineage** (`lib.schemas.experiment.Experiment.used_data_capabilities`):
+  将来のAblation比較(News無し/Macro無し等)のため、どのCapabilityを使用した
+  Experimentかを追跡可能にする(Ablation Engine自体はPhase3Dでは未実装)。
+
+**Phase3DでやらないこととPhase番号**: LLMによるRetrieval Selection・
+Positive/Negative自動分類・News Relevance AI・Hypothesis生成・Skeptic Agent・
+Ablation Engine・BUY/SELL判断は、いずれもPhase5/Phase6以降に送る。
+
 ## Provenance (`lib/registry/provenance.py`)
 
 すべての重要な知見は生成元まで遡って追跡可能にする。
 例: YouTube URL → Comment ID → Idea → Hypothesis → Backtest → Paper Test → Knowledge。
+Phase3D(D0040)では、Raw Snapshot → Normalized Evidence → Derived Evidence →
+EvidencePacket → Decision Evidence Logのlineageも同じ機構でそのまま追跡できる
+(新しいProvenance機構は作らない、`13_tests/test_evidence_lineage.py`参照)。
 AIの要約と原文は必ず区別して保存する。`ProvenanceStore` は追記専用のリンク台帳で、
 `trace_to_origin()` で終点から起点までのchainを取得できる。
 

@@ -64,3 +64,8 @@ class Experiment(RecordMeta):
     reproducibility: ReproducibilityFingerprint | None = None
     price_adjustment: PriceAdjustmentProvenance | None = None
     notes: str = ""
+    # 将来のAblation比較(例: Fundamental+Momentum+News vs News抜き)のため、この
+    # ExperimentがどのDataCapabilityを使用したかを追跡する(D0040)。空タプルは
+    # 「未記録」であり「何も使っていない」という意味ではない(既存Experimentとの
+    # 後方互換のためdefault=()、Ablation Engine自体はPhase3Dでは実装しない)。
+    used_data_capabilities: tuple[str, ...] = ()

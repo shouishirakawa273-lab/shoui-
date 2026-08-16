@@ -62,6 +62,7 @@ def _experiment_from_dict(data: dict[str, Any]) -> Experiment:
     d["metrics"] = _metrics_from_dict(d.get("metrics"))
     d["reproducibility"] = _reproducibility_from_dict(d.get("reproducibility"))
     d["price_adjustment"] = _price_adjustment_from_dict(d.get("price_adjustment"))
+    d["used_data_capabilities"] = tuple(d.get("used_data_capabilities") or ())
     d["created_at"] = datetime.fromisoformat(d["created_at"])
     d["updated_at"] = datetime.fromisoformat(d["updated_at"])
     return Experiment(**d)

@@ -172,7 +172,7 @@ def test_build_provider_derived_adjusted_bars_silently_excludes_future_event_no_
 
 def test_equities_master_payload_to_listing_records_handles_missing_dates_honestly() -> None:
     """listing_date/delisting_dateに相当するフィールドが無い場合、Noneのまま(推測しない)。"""
-    payload = [{"Code": "7203", "CompanyName": "トヨタ自動車", "MarketCode": "0111", "Sector33Code": "3700"}]
+    payload = [{"Code": "7203", "CompanyName": "トヨタ自動車", "Mkt": "0111", "Sector33Code": "3700"}]
     records = equities_master_payload_to_listing_records(payload)
     assert len(records) == 1
     record = records[0]
@@ -185,7 +185,7 @@ def test_equities_master_payload_to_listing_records_handles_missing_dates_honest
 
 
 def test_equities_master_payload_to_listing_records_uses_dates_when_present() -> None:
-    payload = [{"Code": "7203", "MarketCode": "0111", "ListingDate": "1949-05-16", "DelistingDate": ""}]
+    payload = [{"Code": "7203", "Mkt": "0111", "ListingDate": "1949-05-16", "DelistingDate": ""}]
     records = equities_master_payload_to_listing_records(payload)
     assert records[0].listing_date == date(1949, 5, 16)
     assert records[0].delisting_date is None
@@ -222,7 +222,7 @@ def test_equity_bars_five_digit_provider_code_normalizes_to_internal_code() -> N
 
 
 def test_equities_master_five_digit_provider_code_normalizes_to_internal_code() -> None:
-    payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111"}]
+    payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "Mkt": "0111"}]
     records = equities_master_payload_to_listing_records(payload)
     assert records[0].code == "7203"
     assert records[0].provider_code == "72030"
@@ -232,8 +232,8 @@ def test_equities_master_skips_unnormalizable_codes_with_warning_not_crash(caplo
     """Masterには普通株以外(確認済みパターンに一致しないProvider Code)も含まれうるため、
     該当行はログ警告を出してスキップし、Master全体の解析はクラッシュさせない。"""
     payload = [
-        {"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111"},
-        {"Code": "72031", "CompanyName": "トヨタ自動車(優先株?)", "MarketCode": "0111"},  # 確認済みパターンに一致しない
+        {"Code": "72030", "CompanyName": "トヨタ自動車", "Mkt": "0111"},
+        {"Code": "72031", "CompanyName": "トヨタ自動車(優先株?)", "Mkt": "0111"},  # 確認済みパターンに一致しない
     ]
     with caplog.at_level("WARNING"):
         records = equities_master_payload_to_listing_records(payload)
@@ -256,7 +256,7 @@ def test_provider_code_72030_and_internal_code_7203_join_correctly_in_backtest_a
         {"Code": "72030", "Date": d.isoformat(), "O": 2000.0 + i, "H": 2010.0 + i, "L": 1990.0 + i, "C": 2005.0 + i, "Vo": 1000}
         for i, d in enumerate(days)
     ]
-    master_payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111", "ListingDate": "1949-05-16"}]
+    master_payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "Mkt": "0111", "ListingDate": "1949-05-16"}]
 
     raw_bars = equity_bars_payload_to_raw_bars(equity_bars_payload)
     assert {b.code for b in raw_bars} == {"7203"}  # Providerの"72030"ではなく内部Code"7203"でグルーピングできる

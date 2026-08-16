@@ -180,9 +180,9 @@ def equities_master_payload_to_listing_records(payload: list[dict[str, object]])
 
     ``market``(投資対象の市場Scope、Prime/Standard/Growth等)と``instrument_type``
     (商品区分、普通株/ETF/REIT/優先株等)は別概念として別々のFieldから取る
-    (D0039、`lib/universe.py`のモジュールDocstring参照)。``instrument_type``の
-    実際のField名はユーザー提供情報に基づき``ProdCat``相当を想定しているが、
-    正確なField名はローカル環境での実データ確認が必要(未確定要素を含む)。
+    (D0039、`lib/universe.py`のモジュールDocstring参照)。公式仕様上、市場Scopeは
+    ``Mkt``/``MktNm``、商品区分は``ProdCat``である(D0040でユーザーが確認した
+    公式仕様)。
 
     ``Code``はProvider Codeのため、`normalize_provider_code_to_internal`で
     Research Lab内部Codeへ正規化する(元の値は`provider_code`に保持。DECISIONS.md
@@ -209,12 +209,12 @@ def equities_master_payload_to_listing_records(payload: list[dict[str, object]])
             ListingRecord(
                 code=internal_code,
                 provider_code=provider_code,
-                market=str(row.get("MarketCode") or row.get("MarketCodeName") or "取得不可"),
+                market=str(row.get("Mkt") or row.get("MktNm") or "取得不可"),
                 sector=_optional_str(row.get("Sector33Code") or row.get("Sector33CodeName")),
                 company_name=_optional_str(row.get("CompanyName")),
                 listing_date=_optional_date(row.get("ListingDate")),
                 delisting_date=_optional_date(row.get("DelistingDate")),
-                instrument_type=_optional_str(row.get("ProdCat") or row.get("ProdCatName")),
+                instrument_type=_optional_str(row.get("ProdCat")),
                 source="jquants",
             )
         )

@@ -4,7 +4,7 @@
     {
       "Code": "7203",
       "CompanyName": "トヨタ自動車",
-      "MarketCode": "0111",
+      "Mkt": "0111",
       "Sector33Code": "3700",
       "ListingDate": "1949-05-16",
       "DelistingDate": null
@@ -12,7 +12,7 @@
     {
       "Code": "6758",
       "CompanyName": "ソニーグループ",
-      "MarketCode": "0111",
+      "Mkt": "0111",
       "Sector33Code": "3650",
       "ListingDate": "1958-12-01",
       "DelistingDate": null
@@ -20,7 +20,7 @@
     {
       "Code": "3626",
       "CompanyName": "TIS株式会社",
-      "MarketCode": "0111",
+      "Mkt": "0111",
       "Sector33Code": "5250",
       "ListingDate": "2000-06-27",
       "DelistingDate": null
