@@ -133,3 +133,6 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   分離して扱う**(D0041、`SourceAuthorityClass`は信頼度スコアではない)。
   詳細は`DATA_SOURCE_ARCHITECTURE.md`/`EVIDENCE_MODEL.md`参照。Phase4の
   接続順・優先原則も`DATA_SOURCE_ARCHITECTURE.md`「Phase4 Roadmap」参照。
+  Phase4開始前のArchitecture Cleanup(D0042: Source/Delivery Provider分離、
+  Backtest/Experimentの完全Offline原則、market_public_at/provider_available_at
+  の区別、Fundamental Schema Contract予約)はDECISIONS.mdを参照。

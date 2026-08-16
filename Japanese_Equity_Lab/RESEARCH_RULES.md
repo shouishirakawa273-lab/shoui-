@@ -376,6 +376,23 @@ Strategyパラメータの組み合わせを「まだ結果を見ていないHid
 ならない。Walk-Forward・真のOut-of-Sample検証を行う場合は、この期間とは異なる
 期間を新たに設定すること。
 
+### Hidden Test隔離(Phase5必須要件、D0042、未実装・Roadmapとして明記)
+
+**Locked Hidden Testは、Hypothesis Agent / Knowledge Agent / Retrieval Agent /
+Strategy Generatorから原則アクセス不能にする。** Promptで「見ないでください」と
+指示するだけでは不十分であり、Dataset Access Layer自体で隔離する必要がある。
+
+想定するAccess段階(Phase5で実装):
+
+```
+RESEARCH -> VALIDATION -> LOCKED_TEST -> FUTURE / PAPER_TRADE
+```
+
+`LOCKED_TEST`を一度研究者/Agentが見た場合、その結果は以後純粋なHidden Testとして
+再利用しない(Knowledge contaminationを防ぐ、上記「燃え尽きた期間」と同じ趣旨を
+Dataset Access Layerとして構造化したもの)。**この節はPhase5のRoadmapであり、
+Phase3D/Phase4A時点では未実装。**
+
 ## Benchmark: Price Return / Total Return (`lib/backtest/benchmark.py`)
 
 日本株戦略は原則 **TOPIX** を基準Benchmarkとする。可能なら業種指数とも比較する。
@@ -557,6 +574,50 @@ J-Quantsだけに依存しない情報基盤の共通Architecture。詳細は`DA
 - **Decision Evidence Log** (`lib.evidence.decision_log`): 将来のAI判断について
   Used/Not-Used Evidence・主な根拠・矛盾・未解決点を保存する。**BUY/SELL Agentは
   Phase3Dでは未実装**(Schemaのみ)。
+- **Source AuthorityとDelivery Providerの分離** (`SourceMetadata.originating_source`/
+  `delivery_provider`、D0042): 情報の原典(例: EDINET)と、それをResearch Labへ
+  届けたProvider(例: J-Quants経由)を区別する。両方Optionalで後方互換。
+- **Revision Reason** (`SourceVersion.revision_reason`、D0042): 訂正理由を任意で
+  保持できる。Fundamental Data(Phase4A)のRevision管理でも同じ`RevisionHistory`
+  Contractを使う想定(下記「Backtest/Experimentの完全Offline原則」参照)。
+
+### Backtest/Experimentの完全Offline原則(D0042)
+
+**Historical Backtestの実行中に、decision_atごとに外部APIへ問い合わせる構造を
+本番Defaultにしない。** 「データ取得」と「研究/Backtest実行」を明確に分離する。
+
+```
+External Provider -> Acquisition Phase -> Immutable Raw Snapshot ->
+Normalized PIT Dataset -> Frozen Dataset -> Backtest/Experiment(Network無し)
+```
+
+`lib.universe.PitMasterUniverseProvider`(`master_fetcher`をdecision_atごとに
+呼び出す)は取得・診断用途としては引き続き有効だが、実験本番では
+`lib.universe.FrozenPitUniverseProvider`のように、事前に取得済みのSnapshotだけから
+decision_at Universeをresolveする構造を将来Defaultにする。Provider APIの後日変更・
+Provider側Revision・Network障害・Rate Limit・再実行時のデータ差・実験中に取得した
+Dataの変化によってBacktest結果が変わることを防ぐ(再現性の担保)。この原則は
+Phase4以降の全Data Sourceに適用する。**`scripts/jquants_lab_pipeline.py`は元々
+decision_atごとの外部呼び出しを行っていない**(`PitMasterUniverseProvider`を
+まだ実データPipelineへ接続していない、D0039参照)ため、この原則は現状のPipelineで
+既に暗黙に守られている。
+
+### 2種類のPIT研究を区別する(D0042)
+
+- **A. Market Information Study**: 「市場参加者がいつ情報を知り得たか」。
+  `SourceMetadata.published_at`(market_public_at相当)を基準にする。
+- **B. Reproducible System Simulation**: 「このResearch LabのData Pipelineでは
+  いつ情報を取得できたか」。`SourceMetadata.available_at`(provider_available_at
+  相当)を基準にする。**このLabのPIT判定(`EvidenceRecord.is_usable_at()`等)は
+  既定でB系統**(available_at基準)。
+
+両者を混同しない。例えば市場には15:30に公開されたがJ-Quants Lightでは18:00まで
+取れなかった場合、市場反応研究(A)では15:30を使う可能性がある一方、「当時この
+システムを運用していた」というSimulation(B)では18:00以前に使ってはならない。
+`lib.evidence.model.AvailabilitySemantics`(`MARKET_PUBLIC_AT`/
+`PROVIDER_AVAILABLE_AT`)と`lib.schemas.experiment.Experiment.
+availability_semantics`で、どちらの基準を使用したExperimentかを追跡できる
+(既定`None`=未記録、既存Experimentとの後方互換)。
 - **Ablation lineage** (`lib.schemas.experiment.Experiment.used_data_capabilities`):
   将来のAblation比較(News無し/Macro無し等)のため、どのCapabilityを使用した
   Experimentかを追跡可能にする(Ablation Engine自体はPhase3Dでは未実装)。

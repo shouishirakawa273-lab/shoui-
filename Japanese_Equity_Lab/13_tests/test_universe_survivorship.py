@@ -28,6 +28,7 @@ from lib.backtest.price_history import StaticPriceHistory
 from lib.market_calendar import TradingCalendar, session_close_at
 from lib.schemas.price_data import AdjustedOHLCVBar
 from lib.universe import (
+    FrozenPitUniverseProvider,
     ListingBasedUniverseProvider,
     ListingRecord,
     PitCoverage,
@@ -293,5 +294,56 @@ def test_pit_master_provider_caches_per_date() -> None:
 def test_pit_master_provider_as_of_requires_tz_aware_datetime() -> None:
     coverage = PitCoverage(confirmed_from=date(2024, 1, 1), confirmed_until=date(2024, 12, 31))
     provider = PitMasterUniverseProvider(lambda _d: [], confirmed_coverage=coverage)
+    with pytest.raises(ValueError, match="tz-aware"):
+        provider.as_of(datetime(2024, 6, 1))
+
+
+# --- D0042: FrozenPitUniverseProvider(Backtest/Experimentの完全Offline原則) ---
+
+
+def test_frozen_pit_provider_has_no_callable_dependency_in_constructor() -> None:
+    """構造的に外部呼び出しができないこと(Callable引数を一切持たない)を確認する
+    (D0042、Offline原則。`PitMasterUniverseProvider`のmaster_fetcherとの対比)。"""
+    import inspect
+
+    signature = inspect.signature(FrozenPitUniverseProvider.__init__)
+    for parameter in signature.parameters.values():
+        assert "Callable" not in str(parameter.annotation)
+
+
+def test_frozen_pit_provider_resolves_from_pre_fetched_snapshots_only() -> None:
+    coverage = PitCoverage(confirmed_from=date(2024, 1, 1), confirmed_until=date(2024, 12, 31))
+    snapshots_by_date = {
+        date(2024, 6, 1): [
+            ListingRecord(code="1000", market="0111", instrument_type="COMMON_STOCK", listing_date=date(2000, 1, 1)),
+            ListingRecord(code="2000", market="0111", instrument_type="COMMON_STOCK", listing_date=date(2010, 1, 1)),
+        ],
+        date(2024, 6, 3): [
+            ListingRecord(code="1000", market="0111", instrument_type="COMMON_STOCK", listing_date=date(2000, 1, 1)),
+        ],
+    }
+    provider = FrozenPitUniverseProvider(snapshots_by_date, confirmed_coverage=coverage)
+
+    before = provider.as_of(datetime(2024, 6, 1, tzinfo=UTC))
+    after = provider.as_of(datetime(2024, 6, 3, tzinfo=UTC))
+
+    assert before.resolution == UniverseResolution.RESOLVED
+    assert "2000" in before.codes
+    assert after.resolution == UniverseResolution.RESOLVED
+    assert "2000" not in after.codes
+
+
+def test_frozen_pit_provider_falls_back_to_partial_when_date_not_pre_fetched() -> None:
+    """事前取得していない日付は、架空のUniverseを組み立てず安全側のPARTIALに倒す。"""
+    coverage = PitCoverage(confirmed_from=date(2024, 1, 1), confirmed_until=date(2024, 12, 31))
+    provider = FrozenPitUniverseProvider({}, confirmed_coverage=coverage)
+    snapshot = provider.as_of(datetime(2024, 6, 1, tzinfo=UTC))
+    assert snapshot.resolution == UniverseResolution.PARTIAL
+    assert snapshot.survivorship_bias_unresolved is True
+
+
+def test_frozen_pit_provider_as_of_requires_tz_aware_datetime() -> None:
+    coverage = PitCoverage(confirmed_from=date(2024, 1, 1), confirmed_until=date(2024, 12, 31))
+    provider = FrozenPitUniverseProvider({}, confirmed_coverage=coverage)
     with pytest.raises(ValueError, match="tz-aware"):
         provider.as_of(datetime(2024, 6, 1))

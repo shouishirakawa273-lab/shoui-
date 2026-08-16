@@ -39,14 +39,45 @@ Hypothesisが存在する場合のみ付与できる、Evidenceとの関係。**
 
 ## Source Metadata と PIT(`lib.sources.catalog.SourceMetadata`)
 
-`retrieved_at`(研究所がいつ取得したか)・`published_at`(発行者がいつ公表したか)・
-`available_at`(市場参加者が当時実際に参照可能になった日時)・`effective_at`
+`retrieved_at`(研究所がいつ取得したか)・`published_at`(発行者/取引所がいつ
+公表したか、= market_public_at相当)・`available_at`(**この特定のProvider経由で
+いつ参照可能になったか**、= provider_available_at相当)・`effective_at`
 (必要な場合のみ、制度の施行日等)を区別する。既存`lib.point_in_time`の
 `available_at`/`retrieved_at`分離と同じ思想をMulti-Sourceへ拡張したもの。
 
 `EvidenceRecord.is_usable_at(decision_at)`は`source.available_at`のみを基準に
 判定し、`retrieved_at`の新しさに影響されない(後日取得した古い情報が、実際より
 早く「使えた」ことにならない)。
+
+### market_public_atとprovider_available_atの分離、2種類のPIT研究(D0042)
+
+例: 15:30に会社が決算公表(`published_at`)、J-Quants Light経由では18:00に
+取得可能になった(`available_at`)、Research Labが実際に取得したのは18:03
+(`retrieved_at`)。この3つは全て異なりうる。既存のField(published_at/
+available_at/retrieved_at)で十分表現できるため、Fieldを増やしすぎず
+Semanticsを明文化する形で対応した。
+
+Historical Researchには少なくとも2種類ある。
+
+- **A. Market Information Study**: 「市場参加者がいつ情報を知り得たか」
+  (`published_at`基準)。
+- **B. Reproducible System Simulation**: 「このResearch LabのData Pipelineでは
+  いつ情報を取得できたか」(`available_at`基準)。**このLabのPIT判定は既定でB系統**。
+
+`lib.evidence.model.AvailabilitySemantics`(`MARKET_PUBLIC_AT`/
+`PROVIDER_AVAILABLE_AT`)と`lib.schemas.experiment.Experiment.
+availability_semantics`(`str | None`、既定`None`=未記録)で、どちらの基準を
+使用したExperimentかを追跡できる。
+
+### Originating SourceとDelivery Providerの分離(D0042)
+
+`SourceMetadata.originating_source`(情報の原典、例: `"EDINET"`)と
+`delivery_provider`(それをResearch Labへ届けたProvider、例: `"JQUANTS"`)は
+別概念であり分離する。EDINET由来の情報をJ-Quants経由で取得した場合
+`originating_source="EDINET"` `delivery_provider="JQUANTS"`、直接EDINET APIから
+取得した場合は両方`"EDINET"`。同じ原典を複数Providerから取得した場合の比較、
+Provider障害・遅延・変換による差異の追跡、Provenanceの正確な保持に使う。
+両方Optional(既定`None`)で既存`SourceMetadata`利用箇所との後方互換を維持する。
 
 ## Source AuthorityとEvidence Contentの信頼性を分離する(D0041)
 
@@ -87,8 +118,9 @@ Raw → Normalized → Derived → EvidencePacket → Decision Evidence Logのli
 決算の後日訂正・Macro統計のRevision・PDF差し替え・News更新等を表現する。
 
 - `SourceVersion`: source_record_id / source_version_id / supersedes_version_id /
-  is_correction / value / event_at / published_at / first_seen_at / available_at /
-  retrieved_at / source_version_at / `availability_basis`
+  is_correction / `revision_reason`(訂正理由、任意、D0042) / value / event_at /
+  published_at / first_seen_at / available_at / retrieved_at /
+  source_version_at / `availability_basis`
 - `AvailabilityBasis`: EXACT(公式に確認)/ OBSERVED(研究所が観測)/
   INFERRED(制度的ルールから推定)/ UNKNOWN(不明)。**UNKNOWNの場合、
   available_atをpublished_at等から推測補完しない。**
@@ -188,6 +220,22 @@ Prediction -> Actual Result -> Which Evidence Helped? -> Which Evidence Misled?
 という検証を将来行うための土台。**ここではまだBUY/SELL Agentを実装しない。**
 `predicted_outcome`/`actual_outcome`は将来の検証用に空のまま保存できるFieldとして
 用意するのみ。
+
+## Value Availability(`lib.evidence.model.ValueAvailability`、Phase4A準備、D0042)
+
+将来のNormalized Fundamental Record等における、数値欠落の意味を区別するための
+予約済みSentinel。**NULLを0へ変換しない、という契約を型で表現する下地。**
+
+- `NOT_YET_FETCHED`: 取得できていない(取得不可)。
+- `NOT_APPLICABLE`: 会計基準上、そもそも存在しない指標(0ではない。例: IFRS等で
+  経常利益相当Fieldが存在しない場合)。
+
+実際のFundamental Record Schemaの確定実装はPhase4Aで行う(ここでは契約のみ予約
+する)。Fundamental Schema全体の設計原則(actual/company_forecast/
+next_year_forecast、quarterly period、cumulative vs standalone、consolidated/
+non_consolidated、fiscal_period/fiscal_year、disclosure_date/time/number、
+document_type、accounting_standard、revision/correction、currency/unit)は
+`DATA_SOURCE_ARCHITECTURE.md`「Phase4A Fundamental Schema Contract」参照。
 
 ## Ablation Lineage(`lib.schemas.experiment.Experiment.used_data_capabilities`)
 

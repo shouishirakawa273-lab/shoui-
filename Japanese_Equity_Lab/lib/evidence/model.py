@@ -89,6 +89,39 @@ class AvailabilityBasis(StrEnum):
     UNKNOWN = "UNKNOWN"  # 不明(値を推測で埋めない)
 
 
+class AvailabilitySemantics(StrEnum):
+    """2種類のHistorical Researchを区別する(D0042)。
+
+    A. Market Information Study: 「市場参加者がいつ情報を知り得たか」
+       (`SourceMetadata.published_at`、market_public_at相当を基準にする)。
+    B. Reproducible System Simulation: 「このResearch LabのData Pipelineでは
+       いつ情報を取得できたか」(`SourceMetadata.available_at`、
+       provider_available_at相当を基準にする)。
+
+    両者を混同しない。市場には15:30に公開されたがJ-Quants Lightでは18:00まで
+    取れなかった場合、市場反応研究(A)では15:30を使う可能性がある一方、
+    「当時このシステムを運用していた」というSimulation(B)では18:00以前には
+    使ってはならない。`lib.schemas.experiment.Experiment.availability_semantics`
+    で、どちらの基準を使用したExperimentかを追跡可能にする。
+    """
+
+    MARKET_PUBLIC_AT = "MARKET_PUBLIC_AT"  # A系統
+    PROVIDER_AVAILABLE_AT = "PROVIDER_AVAILABLE_AT"  # B系統(既定、このLabのBacktestは通常こちら)
+
+
+class ValueAvailability(StrEnum):
+    """将来のNormalized Fundamental Record等における、数値欠落の意味を区別するための
+    予約済みSentinel(D0042、Phase4A Fundamental Schema Contract)。
+
+    NULLを0へ変換しない、という契約を型で表現する下地。実際のFundamental Record
+    Schemaの確定実装はPhase4Aで行う(ここでは契約のみ予約する。
+    `DATA_SOURCE_ARCHITECTURE.md`「Phase4A Fundamental Schema Contract」参照)。
+    """
+
+    NOT_YET_FETCHED = "NOT_YET_FETCHED"  # 取得できていない(取得不可)
+    NOT_APPLICABLE = "NOT_APPLICABLE"  # 会計基準上、そもそも存在しない指標(0ではない)
+
+
 @dataclass(kw_only=True, frozen=True)
 class AiDerivedProvenance:
     """AIが生成したDerived Record(要約・Event抽出・Entity Mapping・Hypothesis草案等)の
@@ -124,6 +157,7 @@ class SourceVersion:
     availability_basis: AvailabilityBasis = AvailabilityBasis.UNKNOWN
     supersedes_version_id: str | None = None
     is_correction: bool = False
+    revision_reason: str | None = None  # 訂正理由(例: "会社側の入力ミス訂正"、任意)
     event_at: date | None = None  # 対象時点(value_date相当)
     published_at: datetime | None = None
     first_seen_at: datetime | None = None

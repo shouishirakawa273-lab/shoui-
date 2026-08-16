@@ -1441,3 +1441,95 @@ Add-on契約・Consensus契約は一切行っていない。
 `ruff format --check`・`mypy`いずれもclean。`git diff --stat`で`core/` `app.py`
 `tests/`への変更が無いことを確認済み。既存Schema(Enum値・Field構成)は無変更、
 Docstring/ドキュメントの追記のみ。
+
+---
+
+## D0042 — Phase4開始前のArchitecture Cleanup(Phase3Dは引き続きCOMPLETE)
+
+**Phase3Dのstatusは変更しない。** 目的はPhase1〜3Dを作り直すことではなく、
+Phase4以降でFundamental/Disclosure/News等の実データを接続した際に、後から
+高コストな設計変更が発生するのを防ぐこと。既存Schemaの破壊的変更は行っていない
+(全て既定値付きのOptional Field追加、または新規クラス追加)。
+
+**変更内容**:
+
+1. **Source AuthorityとDelivery Providerを分離した。** `SourceMetadata`へ
+   `originating_source`(情報の原典、例: `"EDINET"`)・`delivery_provider`
+   (それをResearch Labへ届けたProvider、例: `"JQUANTS"`)を追加(両方Optional、
+   既定`None`、既存構築箇所は無変更で動作する)。EDINET由来の情報をJ-Quants
+   経由で取得した場合と直接EDINET APIから取得した場合を区別でき、Provider障害・
+   遅延・変換による差異の追跡やProvenanceの正確な保持に使う。
+2. **Backtest/Experimentの完全Offline原則を明文化し、`FrozenPitUniverseProvider`
+   (`lib/universe.py`)を新設した。** Historical Backtestの実行中にdecision_at
+   ごとに外部APIへ問い合わせる構造を本番Defaultにしない
+   (`External Provider -> Acquisition -> Immutable Raw Snapshot ->
+   Normalized PIT Dataset -> Frozen Dataset -> Backtest(Network無し)`)。
+   `PitMasterUniverseProvider`(D0039、`master_fetcher`をdecision_atごとに
+   呼び出す)は取得・診断用途として引き続き有効だが、実験本番では
+   `FrozenPitUniverseProvider`(事前取得済みSnapshotのみから解決、Callable引数を
+   一切持たず構造的に外部呼び出し不可能)を将来Defaultにする方針とした。
+   **`scripts/jquants_lab_pipeline.py`は元々decision_atごとの外部呼び出しを
+   行っていない**(D0039で`PitMasterUniverseProvider`をまだ実データPipelineへ
+   接続していなかったため)ことを確認し、この原則が現状のPipelineで既に
+   暗黙に守られていることをRESEARCH_RULES.mdへ明記した。
+3. **market_public_atとprovider_available_atを概念上分離し、2種類のPIT研究
+   (Market Information Study / Reproducible System Simulation)を区別した。**
+   既存の`published_at`(market_public_at相当)/`available_at`
+   (provider_available_at相当)/`retrieved_at`のField自体は増やさず、
+   Semanticsを`SourceMetadata`のDocstringへ明文化した。どちらの基準を
+   使用したExperimentかを追跡できるよう、`lib.evidence.model.
+   AvailabilitySemantics`(MARKET_PUBLIC_AT/PROVIDER_AVAILABLE_AT)Enumと
+   `Experiment.availability_semantics`(`str | None`、既定`None`)を新設した。
+   このLabのPIT判定(`EvidenceRecord.is_usable_at()`等)は既定でB系統
+   (`available_at`基準)であることを明記した。
+4. **Revision/Correction ContractへFundamental向けの`revision_reason`を
+   追加した。** `SourceVersion`に`revision_reason: str | None = None`
+   (訂正理由、任意)を追加し、既存のRevision非Leak保証
+   (`RevisionHistory.as_of()`)をPhase4Aの財務データでも同じ仕組みで使う
+   前提を明確にした。
+5. **Phase4A Fundamental Schema Contract(設計指針のみ、未実装)を
+   `DATA_SOURCE_ARCHITECTURE.md`へ追記した。** Fundamental Dataを
+   `code/date/sales/profit`のような単純なWide Tableへ早期に潰さず、
+   actual/company_forecast/next_year_forecast、四半期区分(1Q/2Q/3Q/FY)、
+   累計vs単独、連結/非連結、fiscal_period/fiscal_year、開示日時・番号、
+   document_type、accounting_standard(JGAAP/IFRS/USGAAP)、Revision、
+   currency/unitを区別可能であることを設計指針として明記した。
+   **NULLを0へ変換しない契約を型で表現する下地**として、
+   `lib.evidence.model.ValueAvailability`(NOT_YET_FETCHED/NOT_APPLICABLE)を
+   予約Sentinelとして新設した(実際のFundamental Record Schema確定実装は
+   Phase4Aで行う、ここでは契約のみ予約)。
+6. **Storage Architecture(将来要件)を`DATA_SOURCE_ARCHITECTURE.md`へ
+   予約した。** Raw(compressed JSON/CSV、既存`RawSnapshotStore`維持)→
+   Normalized(Parquet)→Analytical Query(DuckDB)→Catalog/Provenance
+   (SQLite/DuckDB)→Long-form Document/News(File/Object Storage +
+   Metadata DB)という方向性のみ記録。現時点でのStorage Migrationは
+   不要(実装していない)。Raw Provider PayloadをParquet変換後に削除しない、
+   Derived/NormalizedはRawから再生成可能にする、という原則を明記した。
+7. **News Licensing/Storage Policy(将来要件)を`DATA_SOURCE_ARCHITECTURE.md`へ
+   予約した。** `FULL_CONTENT_ALLOWED`/`METADATA_ONLY`/`REFERENCE_ONLY`/
+   `DERIVED_SUMMARY_ALLOWED`/`UNKNOWN_RESTRICTIONS`という将来のPolicy分類を
+   記録(UNKNOWNの場合は安全側=保存範囲制限側に倒す)。Phase4Eで実装、
+   Phase4Aでは実装しない。
+8. **Hidden Test隔離(Phase5必須要件)をRESEARCH_RULES.mdへ追記した。**
+   Locked Hidden TestをHypothesis Agent/Knowledge Agent/Retrieval Agent/
+   Strategy Generatorから原則アクセス不能にする、Dataset Access Layer
+   (RESEARCH → VALIDATION → LOCKED_TEST → FUTURE/PAPER_TRADE)による隔離が
+   必要であることをPhase5のRoadmapとして明記した(Phase3D/Phase4Aでは未実装)。
+9. **SourceAuthorityClassの意味の明文化(D0041で着手済み)を維持・補強した。**
+   `13_tests/test_source_catalog.py`へ、`SourceAuthorityClass`が
+   `IntEnum`ではないこと、モジュール内に`score`/`weight`/`rank`を含む
+   スコアリング関数・定数が存在しないことを構造的に確認するテストを追加した。
+10. **Anti-Confirmation原則(D0040)は維持した。** DEFAULT PROCESS =
+    ADVERSARIAL、CONCLUSION = NEUTRAL UNTIL SUPPORTED。Evidenceそのものへ
+    Positive/Negativeを固定せず、Hypothesisに対するRelation
+    (SUPPORTS/CONTRADICTS/ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN)としてのみ
+    扱う。`INSUFFICIENT_EVIDENCE`/`UNKNOWN`を正式な結果として維持する。変更なし。
+
+**このDecisionでやらないこと**: Phase4A実装・Real Fundamental Data取得・
+Strategy探索・Parameter Optimization・BUY/SELL判断・AI Agent実装・News取得・
+全市場Bulk Downloadには着手していない。既存Screening Tool(`core/` `app.py`
+`tests/`)は無変更。
+
+**回帰確認**: `pytest`(Lab 246件 = 従来233件+新規13件、既存Screening Tool
+37件)・`ruff check`・`ruff format --check`・`mypy`(62ファイル)いずれもclean。
+`git diff --stat`で`core/` `app.py` `tests/`への変更が無いことを確認済み。

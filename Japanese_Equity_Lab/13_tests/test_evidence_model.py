@@ -1,4 +1,5 @@
-"""Phase3D(D0040): Evidence Model(Type/Layer/PIT/Revision)のテスト。"""
+"""Phase3D(D0040)/Phase4 Architecture Cleanup(D0042): Evidence Model
+(Type/Layer/PIT/Revision/Availability Semantics/Value Availability)のテスト。"""
 
 from __future__ import annotations
 
@@ -9,11 +10,13 @@ import pytest
 from lib.evidence.model import (
     AiDerivedProvenance,
     AvailabilityBasis,
+    AvailabilitySemantics,
     DataLayer,
     EvidenceRecord,
     EvidenceType,
     RevisionHistory,
     SourceVersion,
+    ValueAvailability,
     filter_usable_at,
 )
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
@@ -224,3 +227,73 @@ def test_normalizing_raw_payload_does_not_mutate_original_dict() -> None:
         related_codes=(raw_payload["code"],),
     )
     assert raw_payload == raw_payload_copy
+
+
+# --- D0042: market_public_at相当とprovider_available_at相当を区別可能 ---
+
+
+def test_published_at_and_available_at_can_diverge_for_provider_delay() -> None:
+    """15:30に会社が決算公表(published_at=market_public_at相当)、J-Quants Light
+    経由では18:00に取得可能になった(available_at=provider_available_at相当)、
+    という状況を別々のFieldで表現できる。PIT判定はavailable_at基準。"""
+    market_public_at = datetime(2024, 6, 1, 15, 30, tzinfo=UTC)
+    provider_available_at = datetime(2024, 6, 1, 18, 0, tzinfo=UTC)
+    source = SourceMetadata(
+        source_id="s1",
+        source_type="TDNET",
+        provider_name="J-Quants",
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=datetime(2024, 6, 1, 18, 3, tzinfo=UTC),
+        published_at=market_public_at,
+        available_at=provider_available_at,
+    )
+    record = EvidenceRecord(
+        evidence_id="E1",
+        evidence_type=EvidenceType.FACT,
+        layer=DataLayer.NORMALIZED,
+        capability=DataCapability.DISCLOSURE,
+        content="決算公表",
+        source=source,
+    )
+    # Reproducible System Simulation(B系統): provider_available_at(18:00)基準。
+    assert record.is_usable_at(datetime(2024, 6, 1, 16, 0, tzinfo=UTC)) is False
+    assert record.is_usable_at(datetime(2024, 6, 1, 18, 0, tzinfo=UTC)) is True
+    # Market Information Study(A系統)で使う場合はpublished_atを別途参照する。
+    assert record.source.published_at == market_public_at
+    assert record.source.published_at != record.source.available_at
+
+
+def test_availability_semantics_distinguishes_two_kinds_of_pit_research() -> None:
+    assert AvailabilitySemantics.MARKET_PUBLIC_AT != AvailabilitySemantics.PROVIDER_AVAILABLE_AT
+
+
+# --- D0042: NULL/NOT_APPLICABLEを0へ潰さないSchema Contract(Phase4A準備) ---
+
+
+def test_value_availability_not_applicable_is_distinct_from_zero_and_not_yet_fetched() -> None:
+    """会計基準上存在しない指標(NOT_APPLICABLE)と、単に未取得(NOT_YET_FETCHED)は
+    別概念であり、どちらも数値の0とは異なる(Phase4A Fundamental Schema Contract)。"""
+    assert ValueAvailability.NOT_APPLICABLE != ValueAvailability.NOT_YET_FETCHED
+    assert ValueAvailability.NOT_APPLICABLE != 0
+    assert ValueAvailability.NOT_YET_FETCHED != 0
+
+
+# --- D0042: Revision Historyへrevision_reasonを追加(Fundamentalへの拡張準備) ---
+
+
+def test_source_version_records_revision_reason() -> None:
+    version = SourceVersion(
+        source_record_id="EARNINGS_2024Q1",
+        source_version_id="v2",
+        value="120億円",
+        available_at=datetime(2024, 8, 1, tzinfo=UTC),
+        retrieved_at=datetime(2024, 8, 1, tzinfo=UTC),
+        availability_basis=AvailabilityBasis.EXACT,
+        supersedes_version_id="v1",
+        is_correction=True,
+        revision_reason="会社側の入力ミス訂正",
+    )
+    assert version.revision_reason == "会社側の入力ミス訂正"
+    assert version.is_correction is True
+    assert version.supersedes_version_id == "v1"

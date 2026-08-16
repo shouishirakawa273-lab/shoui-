@@ -236,3 +236,69 @@ DecisionへLeakさせないこと」**(`lib.evidence.model.RevisionHistory.as_of
 実データでも正しく機能することの確認)。Phase4Aでは戦略探索・パラメータ
 最適化・BUY/SELL判断は一切行わない(Phase3Cの固定Strategy検証時と同じ、
 Infrastructure/Integration Validationとしての位置づけ)。
+
+### Backtest/Experimentの完全Offline原則
+
+Phase4以降の全Data Sourceについて、Backtest/Experiment実行中に外部Providerへ
+問い合わせる構造を本番Defaultにしない(詳細はRESEARCH_RULES.md「Backtest/
+Experimentの完全Offline原則」参照)。`lib.universe.FrozenPitUniverseProvider`
+(D0042)が、事前取得済みSnapshotのみから解決する構成の実装例。
+
+### Phase4A Fundamental Schema Contract(設計指針、D0042。未実装)
+
+Fundamental Dataを`code / date / sales / profit`のような単純なWide Tableへ
+早期に潰さない。**Phase4AではSchema確定実装まで進めなくてもよいが**、将来の
+Normalized Fundamental Recordが最低限以下を区別可能であることを設計指針として
+明記する(実装はPhase4Aで行う)。
+
+```
+# 設計指針のスケッチ(未実装、実際のFieldはPhase4Aで確定する)
+value_kind:          actual | company_forecast | next_year_forecast
+forecast_horizon:    current_year | next_year
+period:              1Q | 2Q | 3Q | FY
+period_basis:        cumulative | standalone   # 2Q累計をQ2単独値として扱わない
+consolidation:       consolidated | non_consolidated
+fiscal_period_start / fiscal_period_end
+fiscal_year_start / fiscal_year_end
+disclosure_date / disclosure_time / disclosure_number
+document_type
+accounting_standard: JGAAP | IFRS | USGAAP 等
+revision:            SourceVersion/RevisionHistoryを流用(D0040、revision_reason含む)
+currency / unit
+value:               float | ValueAvailability(NOT_YET_FETCHED | NOT_APPLICABLE)
+```
+
+**重要**: NULLを0へ変換しない。会計基準上存在しない指標(例: IFRS等で経常利益
+相当Fieldが存在しない場合)を0とみなさない(`lib.evidence.model.
+ValueAvailability`、`EVIDENCE_MODEL.md`「Value Availability」参照)。決算期変更
+(fiscal_period/fiscal_yearのズレ)にも耐えられる設計にする。
+
+### Storage Architecture(将来要件、D0042。現時点ではMigration不要)
+
+全市場Price + Fundamentals + Newsへ進む前に検討する方向性のみ予約する
+(現時点でのStorage Migrationは不要)。
+
+| データ種別 | 推奨方向 |
+| --- | --- |
+| Raw Provider Data | Immutable / compressed JSON or CSV(現行`RawSnapshotStore`を維持) |
+| Normalized Numerical Data | Parquet |
+| Analytical Query | DuckDB |
+| Catalog / Metadata / Provenance | SQLite または DuckDB |
+| Long-form Document / News | File/Object Storage + Metadata DB |
+
+**重要**: Raw Provider PayloadをParquet変換後に削除しない。Rawは証拠として残す。
+Derived/Normalizedは常にRawから再生成可能にする。
+
+### News Licensing / Storage Policy(将来要件、D0042。Phase4Aでは実装不要)
+
+Phase4EでNewsを実装する前に、Sourceごとの保存Policyを必須化する
+(Roadmap/Architecture requirementのみ、Phase4Aでは実装しない)。
+
+```
+FULL_CONTENT_ALLOWED | METADATA_ONLY | REFERENCE_ONLY |
+DERIVED_SUMMARY_ALLOWED | UNKNOWN_RESTRICTIONS
+```
+
+`UNKNOWN_RESTRICTIONS`の場合は安全側へ倒す(保存範囲を制限する)。
+`SourceMetadata.license_or_usage_note`(既存、自由記述)だけでなく、将来的には
+機械的に保存可否を制御できるStorage Policyへ拡張可能にする。

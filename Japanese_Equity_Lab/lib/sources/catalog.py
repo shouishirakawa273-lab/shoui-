@@ -76,14 +76,37 @@ class ImplementationStatus(StrEnum):
 class SourceMetadata:
     """1件のEvidence/Recordが由来するSourceの共通メタデータ。
 
-    `retrieved_at`(研究所がいつ取得したか)と`published_at`(発行者がいつ公表したか)、
-    `available_at`(市場参加者が当時実際に参照可能になった日時)は別概念であり、
-    混同しない(`lib.point_in_time`と同じ区別をMulti-Sourceへ拡張する、D0040)。
+    `retrieved_at`(研究所がいつ取得したか)・`published_at`(発行者/取引所がいつ
+    公表したか、= market_public_at相当)・`available_at`(**この特定のProvider経由で
+    いつ参照可能になったか**、= provider_available_at相当)は別概念であり、
+    混同しない(`lib.point_in_time`と同じ区別をMulti-Sourceへ拡張する、D0040/D0042)。
+
+    例: 15:30に会社が決算を公表(`published_at`)、J-Quants Light経由では18:00に
+    取得可能になった(`available_at`)、Research Labが実際に取得したのは18:03
+    (`retrieved_at`)、という場合、この3つは全て異なりうる。`available_at`は
+    「市場参加者一般がいつ知りえたか」ではなく「このSourceからいつ引ける状態に
+    なったか」を表す(Providerによって遅延が異なるため)。`EvidenceRecord.
+    is_usable_at()`等のPIT判定は`available_at`(Reproducible System Simulation、
+    B系統)を基準にする。Market Information Study(A系統、市場参加者一般が
+    いつ知りえたかを基準にする研究)を行う場合は`published_at`を基準にする
+    (`EvidenceRelation`とは別の話。`lib.schemas.experiment.Experiment.
+    availability_semantics`でどちらの基準を使ったかを記録できる、
+    `lib.evidence.model.AvailabilitySemantics`参照)。
+
     `effective_at`は必要な場合のみ設定する(例: 制度変更の施行日のように、
     公表日と効力発生日がずれるケース)。
 
     `source_authority_class`は出所の位置づけであり、内容の真偽を保証しない
     (`SourceAuthorityClass`のDocstring参照)。
+
+    **`originating_source`(情報の原典)と`delivery_provider`(それをResearch Labへ
+    届けたProvider)は別概念であり分離する(D0042)。** 例: EDINET由来の情報を
+    J-Quants経由で取得した場合`originating_source="EDINET"`
+    `delivery_provider="JQUANTS"`、直接EDINET APIから取得した場合は両方
+    `"EDINET"`。同じ原典を複数Providerから取得した場合の比較や、Provider障害・
+    遅延・変換による差異の追跡に使う。後方互換のため両方Optional(`None`)とし、
+    未設定の場合は`provider_name`を実務上のフォールバック表示名として扱う
+    (自動的に一致するとは限らないため、区別が重要な場合は明示的に設定すること)。
     """
 
     source_id: str
@@ -99,6 +122,8 @@ class SourceMetadata:
     license_or_usage_note: str | None = None
     content_hash: str | None = None
     provenance_id: str | None = None
+    originating_source: str | None = None
+    delivery_provider: str | None = None
 
     def __post_init__(self) -> None:
         if self.available_at.tzinfo is None or self.retrieved_at.tzinfo is None:

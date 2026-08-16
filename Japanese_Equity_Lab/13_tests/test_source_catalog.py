@@ -86,3 +86,83 @@ def test_catalog_default_implementation_status_is_not_implemented() -> None:
     """CatalogにDatasetとして記述されていることと実接続済みであることを混同しない。"""
     dataset = _dataset("future_source", DataCapability.MACRO)
     assert dataset.implementation_status == ImplementationStatus.NOT_IMPLEMENTED
+
+
+# --- D0042: SourceAuthorityClassは単純なスコア/順位ではない ---
+
+
+def test_source_authority_class_is_not_an_int_enum() -> None:
+    """PRIMARY_OFFICIAL=100点、SOCIAL=10点のような数値スコアリングに使える
+    IntEnumではなく、文字列カテゴリ(StrEnum)であることを構造的に確認する。"""
+    assert not issubclass(SourceAuthorityClass, int)
+    for member in SourceAuthorityClass:
+        assert isinstance(member.value, str)
+
+
+def test_source_catalog_module_defines_no_authority_scoring_function() -> None:
+    """`SourceAuthorityClass`を数値スコアへ変換する関数/定数(例: authority_score,
+    AUTHORITY_WEIGHTS等)がこのモジュールに存在しないことを構造的に確認する
+    (StrEnumはstrを継承するため`<`は文字列としての大小比較になり、信頼度の
+    順序を意味しない。数値化する仕組み自体を作らないことが本来の保証)。"""
+    import lib.sources.catalog as catalog_module
+
+    forbidden_substrings = ("score", "weight", "rank")
+    suspicious_names = [name for name in dir(catalog_module) if any(bad in name.lower() for bad in forbidden_substrings)]
+    assert suspicious_names == []
+
+
+# --- D0042: Originating SourceとDelivery Providerの分離 ---
+
+
+def test_source_metadata_distinguishes_originating_source_from_delivery_provider() -> None:
+    """EDINET由来の情報をJ-Quants経由で取得した場合、原典(originating_source)と
+    配送経路(delivery_provider)を別々に保持できる。"""
+    metadata = SourceMetadata(
+        source_id="s1",
+        source_type="DISCLOSURE",
+        provider_name="J-Quants",
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=datetime(2024, 1, 1, tzinfo=UTC),
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        available_at=datetime(2024, 1, 1, tzinfo=UTC),
+        originating_source="EDINET",
+        delivery_provider="JQUANTS",
+    )
+    assert metadata.originating_source == "EDINET"
+    assert metadata.delivery_provider == "JQUANTS"
+    assert metadata.originating_source != metadata.delivery_provider
+
+
+def test_source_metadata_originating_source_and_delivery_provider_default_to_none() -> None:
+    """既存Schemaとの後方互換: 未設定でも構築できる(破壊的変更ではない)。"""
+    metadata = SourceMetadata(
+        source_id="s1",
+        source_type="TDNET",
+        provider_name="TDnet",
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=datetime(2024, 1, 1, tzinfo=UTC),
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        available_at=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+    assert metadata.originating_source is None
+    assert metadata.delivery_provider is None
+
+
+def test_direct_edinet_source_has_matching_originating_source_and_delivery_provider() -> None:
+    """直接EDINET APIから取得した場合は、原典と配送経路が一致する。"""
+    metadata = SourceMetadata(
+        source_id="s2",
+        source_type="DISCLOSURE",
+        provider_name="EDINET",
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=datetime(2024, 1, 1, tzinfo=UTC),
+        published_at=datetime(2024, 1, 1, tzinfo=UTC),
+        available_at=datetime(2024, 1, 1, tzinfo=UTC),
+        originating_source="EDINET",
+        delivery_provider="EDINET_DIRECT",
+    )
+    assert metadata.originating_source == "EDINET"
+    assert metadata.delivery_provider == "EDINET_DIRECT"

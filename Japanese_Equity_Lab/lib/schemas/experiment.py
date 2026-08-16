@@ -69,3 +69,8 @@ class Experiment(RecordMeta):
     # 「未記録」であり「何も使っていない」という意味ではない(既存Experimentとの
     # 後方互換のためdefault=()、Ablation Engine自体はPhase3Dでは実装しない)。
     used_data_capabilities: tuple[str, ...] = ()
+    # 2種類のHistorical Research(Market Information Study / Reproducible System
+    # Simulation)のどちらの基準でPIT判定したかを追跡する(D0042、
+    # `lib.evidence.model.AvailabilitySemantics`の値を文字列で保持)。Noneは
+    # 「未記録」(既存Experimentとの後方互換)。
+    availability_semantics: str | None = None

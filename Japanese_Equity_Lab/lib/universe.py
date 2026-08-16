@@ -252,6 +252,69 @@ class PitMasterUniverseProvider:
         return snapshot
 
 
+class FrozenPitUniverseProvider:
+    """事前に取得済みのMaster Snapshot群だけからUniverseを解決する、完全Offlineな
+    Provider(D0042、Backtest/Experimentの完全Offline原則)。
+
+    **Backtest/Experimentの実行中は、原則として外部Providerへ一切問い合わせない。**
+    理想的なPipelineは
+    ``External Provider -> Acquisition -> Immutable Raw Snapshot ->
+    Normalized PIT Dataset -> Frozen Dataset -> Backtest/Experiment(Network無し)``
+    であり、「データ取得」と「研究/Backtest実行」を明確に分離する。
+    `PitMasterUniverseProvider`(`master_fetcher`をdecision_atごとに呼び出す)は
+    取得・診断用途としては引き続き有効だが、Backtest本番では本Providerのように、
+    Acquisition Phaseで事前に取得し尽くした`snapshots_by_date`(例:
+    `scripts/fetch_jquants_local_snapshot.py --master-pit-check`等で個別に取得し
+    ローカル保存したMaster Snapshotの集合)だけから解決する構成を既定にする。
+
+    Provider APIの後日変更・Provider側Revision・Network障害・Rate Limit・
+    再実行時のデータ差・実験中に取得したDataの変化によってBacktest結果が変わることを
+    防ぐ(再現性の担保)。`master_fetcher`のようなCallable引数を持たないため、
+    構造的に外部呼び出しができない(`inspect.signature`で確認可能、
+    `13_tests/test_universe_survivorship.py`参照)。
+
+    `confirmed_coverage`の外側のas_ofは`PitMasterUniverseProvider`と同様、安全側の
+    `PARTIAL`とする。`snapshots_by_date`に該当日付が無い場合(取得漏れ)も同様に
+    `PARTIAL`とし、architectureとして「取得していないので分からない」ことを
+    正直に表す(架空のUniverseを組み立てない)。
+    """
+
+    def __init__(self, snapshots_by_date: Mapping[date, Sequence[ListingRecord]], *, confirmed_coverage: PitCoverage) -> None:
+        self._snapshots_by_date = dict(snapshots_by_date)
+        self._confirmed_coverage = confirmed_coverage
+
+    def as_of(self, as_of: datetime) -> UniverseSnapshot:
+        if as_of.tzinfo is None:
+            raise ValueError("as_of はtz-awareである必要があります")
+        target_date = as_of.date()
+
+        if not self._confirmed_coverage.covers(target_date) or target_date not in self._snapshots_by_date:
+            return UniverseSnapshot(
+                as_of=as_of,
+                resolution=UniverseResolution.PARTIAL,
+                note=(
+                    f"as_of={target_date}はPIT確認済み範囲外、または事前取得済み"
+                    "Snapshotに含まれていないため安全側に倒した(D0042、Offline原則)"
+                ),
+                survivorship_bias_unresolved=True,
+            )
+
+        listings = self._snapshots_by_date[target_date]
+        if not listings:
+            return UniverseSnapshot(
+                as_of=as_of, resolution=UniverseResolution.DATA_UNAVAILABLE, note=f"as_of={target_date}のSnapshotが空でした"
+            )
+
+        codes = tuple(sorted(listing.code for listing in listings if _is_tradable_on(listing, target_date)))
+        return UniverseSnapshot(
+            as_of=as_of,
+            resolution=UniverseResolution.RESOLVED,
+            codes=codes,
+            note="事前取得済みFrozen Snapshotから解決(Network Accessなし、D0042)",
+            survivorship_bias_unresolved=False,
+        )
+
+
 @dataclass(frozen=True)
 class CommonStockFilterResult:
     """`build_common_stock_universe`の結果。除外した件数・理由を必ず追跡できるようにする
