@@ -29,11 +29,14 @@ Adapter側で行われる)。認証情報(APIキー)はいかなるファイル�
         --start 2022-01-04 --end 2024-12-30
 
 `--fetch-financial-summary`(Phase4A/D0043): `/v2/fins/summary`も取得し
-`financial_summary_<code>.json`へ保存する(既定では取得しない)。Field名
-(DiscNo/DocType/DiscDate/DiscTime/CurPerType/Sales/OP/NP等)はこのセッションでは
-未検証(ネットワーク遮断のため公式ドキュメントへ接続できない、DECISIONS.md D0043
-参照)。取得後、`python scripts/jquants_financial_summary_diagnostic.py`で
-時系列確認できる。
+`financial_summary_<code>.json`へ保存する(既定では取得しない)。**重要
+(2026-08-16 Local Real Data Validationで確認済み)**: このEndpointはcode指定
+クエリの場合、`--start`/`--end`で絞り込まれず、対象Codeが持つ取得可能な全履歴を
+返す(Price API等とは異なる)。そのため保存されるRaw Payloadの実際の範囲
+(Raw Coverage)は、指定した`--start`/`--end`(Requested Research Window)と
+一致しない場合がある。取得後、実際のRaw Coverageは
+`financial_summary_<code>.coverage.json`(このスクリプトが生成)、または
+`python scripts/jquants_financial_summary_diagnostic.py`で確認できる。
 
 `--master-pit-check`(Phase3C/D0038): `/v2/equities/master`の`date`パラメータが
 真のPoint-in-Time上場状況(過去に存在したが現在は廃止済みの銘柄を含む)を返すのか、
@@ -62,6 +65,7 @@ from dotenv import load_dotenv  # noqa: E402
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
 from lib.data_sources.ticker_codes import TickerCodeNormalizationError, normalize_provider_code_to_internal  # noqa: E402
 from lib.errors import DataSourceError  # noqa: E402
+from lib.fundamentals.normalize import raw_disclosure_date_range  # noqa: E402
 
 _CALENDAR_BUFFER_DAYS = 45  # 前後の取引日解決(lookback/holding)に余裕を持たせる
 
@@ -114,15 +118,41 @@ def fetch_all(*, codes: list[str], start: date, end: date, output_dir: Path, fet
     _save(output_dir / "equities_master.json", records=master_result.payload)
 
     if fetch_financial_summary:
-        print(f"Financial Summary(/v2/fins/summary、Phase4A、Field名未検証)取得: {codes} ({start} 〜 {end})")
+        print(
+            f"Financial Summary(/v2/fins/summary、Phase4A)取得: {codes}\n"
+            f"  Requested Research Window: {start} 〜 {end}"
+            "(このEndpointはcode指定時、from/toで絞り込まれない場合があります。"
+            "実際のRaw Coverageは取得後に別途表示します。D0043参照)"
+        )
         for code in codes:
             try:
                 fins_result = adapter.fetch_financial_statements(codes=[code], start_date=start, end_date=end)
             except DataSourceError as exc:
                 raise SystemExit(f"{code} のFinancial Summary取得に失敗しました: {exc}") from exc
             _save(output_dir / f"financial_summary_{code}.json", records=fins_result.payload)
+            raw_min, raw_max = raw_disclosure_date_range(fins_result.payload)
+            print(f"  {code}: Raw Coverage = {raw_min} 〜 {raw_max}({len(fins_result.payload)}件)")
+            coverage_path = output_dir / f"financial_summary_{code}.coverage.json"
+            coverage_path.write_text(
+                json.dumps(
+                    {
+                        "query_type": "CODE_HISTORY",
+                        "requested_code": code,
+                        "retrieved_at": fins_result.retrieved_at.isoformat(),
+                        "record_count": len(fins_result.payload),
+                        "raw_min_disc_date": raw_min.isoformat() if raw_min else None,
+                        "raw_max_disc_date": raw_max.isoformat() if raw_max else None,
+                        "research_window_start": start.isoformat(),
+                        "research_window_end": end.isoformat(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         print(
-            "\n診断: 取得したFinancial Summaryを時系列で確認するには、以下のコマンドを実行してください:\n"
+            "\n診断: 取得したFinancial Summaryを時系列(Raw Coverage/Research Window区別付き)で"
+            "確認するには、以下のコマンドを実行してください:\n"
             f"python scripts/jquants_financial_summary_diagnostic.py --snapshot-dir {output_dir} --code <CODE>"
         )
 

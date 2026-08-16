@@ -182,7 +182,17 @@ class LocalSnapshotAdapter:
 
     def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """`financial_summary_<code>.json`(または`.csv`)を読み込む(Phase4A、D0043)。
-        各行は`DiscDate`で期間フィルタする(equity_barsの`Date`とは異なるField名)。
+
+        **DiscDateによる期間フィルタは行わない**(Local Real Data Validationで、
+        `/v2/fins/summary`はcode指定クエリの場合start_date/end_dateで絞り込まれず
+        対象Codeの取得可能な全履歴を返すことを確認済み、DECISIONS.md D0043参照)。
+        ここでDiscDateで機械的に切り捨てると、保存済みファイルにフルの履歴が
+        入っていても、それを読み込む段階でImmutable Raw Snapshotから未来/過去の
+        Disclosureが失われてしまう(raw削除禁止原則に反する)。Research Window
+        による絞り込みは、Normalized/As-of層(`lib.fundamentals.view.
+        fundamentals_as_of()`)がdecision_at基準で行う。`start_date`/`end_date`
+        引数はProtocol互換のため残しているが、このメソッドでは使用しない
+        (呼び出し側が意図を記録したい場合は`request_parameters`を参照)。
         """
         records: list[dict[str, Any]] = []
         latest_path: Path | None = None
@@ -193,8 +203,7 @@ class LocalSnapshotAdapter:
                 missing.append(code)
                 continue
             latest_path = path
-            rows = self._read_rows(path)
-            records.extend(row for row in rows if start_date <= date.fromisoformat(str(row["DiscDate"])) <= end_date)
+            records.extend(self._read_rows(path))
         if missing:
             raise DataSourceError(
                 f"以下の銘柄のfinancial_summaryファイルが見つかりません: {missing}。"
@@ -205,7 +214,7 @@ class LocalSnapshotAdapter:
             endpoint="/v2/fins/summary",
             request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=self._retrieved_at_for(latest_path) if latest_path else datetime.now(UTC),
-            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            data_period=f"requested_research_window={start_date.isoformat()}/{end_date.isoformat()}",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )

@@ -188,14 +188,22 @@ class JQuantsAdapter:
     def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """``GET /v2/fins/summary``: 決算短信サマリ(実績・会社予想・修正等)を取得する(Phase4A、D0043)。
 
-        **未検証(重要)**: このセッションはJ-Quants公式ドキュメントへの接続を試みたが
-        Egress Proxyにより拒否された(DECISIONS.md D0043、接続試行の記録参照)。
-        Endpoint名・クエリパラメータ名(`code`/`from`/`to`)は、他のV2 Endpointと
-        同じ規約(コード指定+期間指定、`{"data": [...], "pagination_key": ...}`の
-        ページネーション)を踏襲した作業仮説であり、公式仕様で確認したものではない。
-        本番投入前に必ずローカル環境で疎通確認し、パラメータ名・ページネーション
-        挙動が異なる場合は修正すること。レスポンスFieldの解釈(意味論)は
-        `lib.fundamentals.normalize`側で行う(このメソッドはRaw Payloadをそのまま返す)。
+        **未検証(重要)**: 公式ドキュメントへは引き続き接続できない(DECISIONS.md
+        D0043「A」)。Endpoint名・クエリパラメータ名(`code`/`from`/`to`)は他のV2
+        Endpointと同じ規約を踏襲した作業仮説であり、公式仕様で確認したものではない。
+        レスポンスFieldの解釈(意味論)は`lib.fundamentals.normalize`側で行う
+        (このメソッドはRaw Payloadをそのまま返す)。
+
+        **Period/Coverage Semantics(2026-08-16 Local Real Data Validationで確認、
+        重要)**: `code`指定クエリの場合、`from`/`to`を指定しても対象Codeの取得
+        可能な履歴全体が返る(Price API `/v2/equities/bars/daily`のような期間絞り
+        込みではない)。実観測: `code=7203`に`from=2024-01-01`/`to=2024-12-31`を
+        指定しても、2021-11-04〜2026-08-04の20件が返った。したがって`start_date`/
+        `end_date`は「送信したQuery Parameter」ではあるが「実際に結果を絞り込む
+        フィルタ」であるとは主張しない。呼び出し側は、返ってきたRaw Payloadの
+        実際のCoverageを`lib.fundamentals.normalize.raw_disclosure_date_range()`で
+        別途確認すること(Requested Research WindowとRaw Provider Coverageは
+        別概念)。
 
         **Rate Limit**: `/v2/fins/summary`にはEndpoint固有の60リクエスト/分制限が
         あるとユーザーから提示された。実効レート制限は
@@ -221,7 +229,10 @@ class JQuantsAdapter:
             endpoint="/v2/fins/summary",
             request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=datetime.now(UTC),
-            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            # 「実際に返ったデータの範囲」ではなく「要求したResearch Window」である
+            # ことを明示する(Local Real Data Validationでこのendpointはfrom/toで
+            # 絞り込まれないことを確認済み、上記docstring参照)。
+            data_period=f"requested_research_window={start_date.isoformat()}/{end_date.isoformat()}",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )

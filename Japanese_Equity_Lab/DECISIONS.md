@@ -1751,3 +1751,123 @@ Mapping・Raw→Normalized→Evidence Provenance・Frozen Dataset Offline再現�
 Factor探索・BUY/SELL判断・Ranking・「好決算」の定義・News/TDnet/EDINET/
 Company IR接続・全市場Bulk Historical Fetch・Portfolio Construction・
 AI Interpretationには着手していない。Phase4Bには進んでいない。
+
+---
+
+## D0043 追記 — Phase4A: Local Real Data Validation(7203)結果の反映
+
+2026-08-16、ユーザーがローカルPC環境で実際に`/v2/fins/summary`(7203)へ接続し、
+実Raw Responseの一部を確認した。**このセッション自体は引き続き公式ドキュメントへ
+接続できない**(上記「A」の状況は不変)。以下は、ユーザー報告に基づく実観測結果を
+コード・テスト・ドキュメントへ反映した記録である。「公式仕様で確認済み」と
+「Local Real Dataで観測済み」は別物であり、区別して記載する。
+
+### Local Real Dataで確認済み(公式仕様確認ではなく、実Wire Formatの観測)
+
+1. **Field名の実在確認**: `Sales`/`OP`/`OdP`/`NP`/`EPS`/`BPS`/`NxFSales`/
+   `SigChgInC`/`RetroRst`/`MatChgSub`/`CurPerSt`/`CurPerEn`/`CurFYSt`/`CurFYEn`/
+   `NxtFYSt`/`NxtFYEn`が実在するField名であることを確認。従来の仮Field名
+   `"OrdinaryProfit"`は誤りで、正しくは`"OdP"`(`_METRIC_FIELD_MAP`を修正、
+   `lib/fundamentals/normalize.py`)。
+2. **Wire Format(値の型)**: 数値(大きな整数値・小数値いずれも)、booleanに
+   見える値もすべて**文字列**として返る(例: `Sales="15481299000000"`、
+   `EPS="109.28"`、`MatChgSub="false"`)。欠損値は空文字列(例: `OdP=""`)。
+   → `provider_declared_type`(未確認)と`observed_wire_type`(文字列)と
+   `normalized_type`(`Decimal`/`bool | None`)を概念上分離した。Rawを公式型へ
+   無理にcoerceしない方針は維持。`lib.fundamentals.normalize.parse_boolean_
+   string()`を新設し、`"true"`/`"false"`の明示的literalのみ受理、
+   Python truthiness(`bool("false")`が`True`になる罠)は使わず、未知literal
+   はNone(UNKNOWN)へfail closedする。数値文字列は既存の`Decimal`Parse
+   (`_parse_decimal`)がそのまま安全に扱える(大きな整数値・小数値いずれも)。
+3. **DocType実在確認**: `1QFinancialStatements_Consolidated_IFRS`/
+   `2QFinancialStatements_Consolidated_IFRS`/
+   `3QFinancialStatements_Consolidated_IFRS`/
+   `FYFinancialStatements_Consolidated_IFRS`が実在するDocType値であることを
+   確認。`_DOC_TYPE_TO_ACCOUNTING_STANDARD`をこれら4件(すべてIFRS)へ更新し、
+   Fixture Test専用の仮エントリ(`..._SYNTH`)を置き換えた。JGAAP/USGAAPの
+   DocType値は依然未確認のため、引き続き空Mapping(fail closed)。
+4. **`DiscNo`とDisclosure Dateの無関係性**: 実観測で`DiscNo=20220204580837`
+   (先頭が`2022-02-04`を思わせる)だが`DiscDate=2022-02-09`(実際の開示日は
+   異なる)であることを確認。**DiscNoからDisclosure Date/Timeを推測すること
+   を明示的に禁止する規約をRESEARCH_RULES.mdへ追加**し、対応するテストを
+   追加した(`test_disc_no_is_not_used_to_derive_disclosure_date`)。もともと
+   実装はDiscNoを日付Parseに使っていなかった(構造的に安全だった)が、この
+   実観測により、その安全性が「たまたま」ではなく「確認済みの理由がある」
+   ことになった。
+5. **Period/Coverage Semantics(重要)**: `/v2/fins/summary`への`code`指定
+   クエリは、Price API(`/v2/equities/bars/daily`)とは異なり、`from`/`to`
+   パラメータで期間に絞り込まれるとは**限らない**。実観測: `--start
+   2024-01-01 --end 2024-12-31`を指定しても、対象Code(7203)が持つ取得可能な
+   全履歴(2021-11-04〜2026-08-04、20件)が返った。
+
+### 上記5の反映によるコード変更
+
+- `lib.data_sources.jquants.JQuantsAdapter.fetch_financial_statements`:
+  Docstringへこの事実を明記し、`RawFetchResult.data_period`の値を
+  `f"requested_research_window={start}/{end}"`へ変更(「実際に返った範囲」
+  ではなく「要求したResearch Window」であることを明示)。
+- `lib.data_sources.local_snapshot.LocalSnapshotAdapter.fetch_financial_
+  statements`/`lib.data_sources.fixture.FixtureDataSourceAdapter.fetch_
+  financial_statements`: **DiscDateによる期間フィルタを削除した。**
+  従来はこれらのAdapterがファイル/fixtureを読み込む際にDiscDateで
+  Client-side Filteringしており、これは実データでは正しくない挙動を再現する
+  だけでなく、フィルタ後の結果がそのまま`RawSnapshotStore.save()`で
+  Immutable Raw Snapshotとして保存されうる構造だったため、Rawの一部
+  (Research Windowの外にあるDisclosure)が「取得されなかったこと」に
+  なってしまうリスクがあった(raw削除禁止原則に抵触しうる)。Research
+  Windowによる絞り込みは、Normalized/As-of層(`fundamentals_as_of()`)が
+  `decision_at`基準で行う、という既存原則(D0042 Offline原則)に一本化した。
+- `lib.fundamentals.normalize.raw_disclosure_date_range(payload)`を新設。
+  Raw Payload全体の実際のDiscDate範囲(Raw Coverage)を機械的に返す
+  (Research Windowによる絞り込みは行わない)。
+- `scripts/fetch_jquants_local_snapshot.py`: `--fetch-financial-summary`
+  実行時に各Codeについて`financial_summary_<code>.coverage.json`
+  (`query_type=CODE_HISTORY`/`requested_code`/`retrieved_at`/`record_count`/
+  `raw_min_disc_date`/`raw_max_disc_date`/`research_window_start`/
+  `research_window_end`)を追加保存し、標準出力にもRaw Coverageを表示する
+  ようにした(共有`SnapshotManifest`データクラス自体は他Sourceへの影響を
+  避けるため変更していない、Sidecar Fileとして追加)。
+- `scripts/jquants_financial_summary_diagnostic.py`: `--research-window-
+  start`/`--research-window-end`(任意、参考表示のみ・絞り込みはしない)を
+  追加し、Raw CoverageとResearch Windowを別々に表示するようにした。Raw
+  CoverageがResearch Windowを超えていてもWarningではなく正常な状態として
+  扱う。
+
+### Forecast Revision vs Correctionの扱い(変更なし、再確認のみ)
+
+`RetroRst`(Retrospective Restatement)等の実在Field名は確認できたが、これを
+`is_correction`の自動判定に使うことは今回行っていない。`RetroRst`の正確な
+Semantics(どのDiscNoに対する訂正を意味するか等)は未確認であり、公式仕様で
+確認できない限り、Revision Relationshipを推測で確定させない既存原則
+(D0043「H」)を維持する。`ChgByASRev`/`ChgNoASRev`/`ChgAcEst`も同様に未実装
+(Raw Payloadには保持されるが、Metricへは未マッピング)。
+
+### 依然未検証(Local Real Data Validationでも確認できていない)
+
+`TA`/`Eq`/`EqAR`/`CFO`/`CFI`/`CFF`/`CashEq`/Dividend関連Field/Share Count
+関連Field/非連結詳細Field/`ROE`等のField名は実在が報告されたが、
+`_METRIC_FIELD_MAP`へのMapping(Metric化)はPhase4Aのスコープとして意図的に
+見送った(Raw Payloadには保持され、Normalizerも壊れない。将来必要になった
+時点でMapping追加する拡張ポイントとして記録する)。Pagination仕様・Rate
+Limitの実際の挙動・JGAAP/USGAAPのDocType値も未確認のまま。
+
+### Tests
+
+新規18テスト追加(`test_fundamentals_wire_format.py` 13件: 大きな整数値
+文字列のDecimal変換・小数値文字列のDecimal変換・parse_boolean_stringの
+明示的literal受理/fail closed・空文字列と0/Falseの非等価性・IFRS OdPの
+NOT_APPLICABLE判定(確認済み実DocType使用)・DiscNo≠DiscDate・
+raw_disclosure_date_range、`test_fundamentals_pit_real_dates.py` 5件:
+実7203 Disclosure Date(2024-02-06/05-08/08-01/11-06)を用いたMARKET_
+PUBLIC_AT系統のas_of境界確認、PROVIDER_AVAILABLE_AT系統のUNKNOWN
+Fallback禁止の再確認)。Lab全体は291件→309件。既存45テスト(前回D0043
+実装分)は無変更のまま全通過(Field名変更等の後方影響なし)。
+
+**回帰確認**: `pytest`(Lab 309件・既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`(69ファイル)いずれもclean。`git diff --stat
+-- core/ app.py tests/`で変更が無いことを確認済み。
+
+**Status**: 引き続き`CODE_COMPLETE_AWAITING_LOCAL_VALIDATION`。今回の
+Local Real Data Validationは7203の一部Fieldの単発確認であり、ユーザーが
+指示した4銘柄(7203/6758/8056/3626)での本格的なValidationはまだ完了して
+いない。Phase4Bへは進んでいない。

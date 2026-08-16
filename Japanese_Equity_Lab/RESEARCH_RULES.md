@@ -668,6 +668,25 @@ DECISIONS.mdへ追記すること。
   Limitがある場合、`effective_limit = min(plan_limit, endpoint_limit)`を
   使う。Plan全体のLimitだけを参照して個別Endpointの制約を見落とさない。
 
+### Local Real Data Validationで判明した追加原則(D0043追記)
+
+- **DiscNoからDisclosure Date/Timeを推測しない**: 2026-08-16のLocal Real
+  Data Validationで、`DiscNo`の先頭桁が実際の`DiscDate`と一致しない実例
+  (`DiscNo=20220204580837`だが`DiscDate=2022-02-09`)を確認した。PITは
+  常に`DiscDate`/`DiscTime`をSource of Truthとし、`DiscNo`は不透明な
+  識別子(disclosure_number)として扱う。この原則は`/v2/fins/summary`に
+  限らず、番号らしき識別子から日時を機械的に導出しようとする全てのProvider
+  連携に一般化して適用する。
+- **Requested Research WindowとRaw Provider Coverageを混同しない**: Query
+  Parameter(`from`/`to`等)を送信したからといって、Providerがその範囲へ
+  絞り込んだ結果を返すとは限らない(`/v2/fins/summary`のcode指定クエリで
+  実証済み、対象Codeの取得可能な全履歴が返った)。Raw取得の実際の範囲は
+  必ず返ってきたPayload自体から確認し(例:
+  `lib.fundamentals.normalize.raw_disclosure_date_range()`)、送信した
+  Query Parameterの値をそのまま「実際のCoverage」として記録・表示しない。
+  Raw CoverageがRequested Research Windowを超えること自体は異常ではない
+  (Rawは削除しない、絞り込みはNormalized/As-of層がdecision_at基準で行う)。
+
 ## Provenance (`lib/registry/provenance.py`)
 
 すべての重要な知見は生成元まで遡って追跡可能にする。

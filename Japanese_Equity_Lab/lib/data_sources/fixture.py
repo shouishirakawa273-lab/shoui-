@@ -114,22 +114,20 @@ class FixtureDataSourceAdapter:
     def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """fixtureに"financial_summary": {code: [...]} が無い場合は空配列を返す(Phase4A、D0043)。
 
-        各行は`DiscDate`(YYYY-MM-DD)で期間フィルタする(equity_barsの"Date"とは
-        異なるField名、`/v2/fins/summary`のRaw形状を模す)。
+        **DiscDateによる期間フィルタは行わない**(実際の`/v2/fins/summary`は
+        code指定クエリの場合start_date/end_dateで絞り込まれないことをLocal Real
+        Data Validationで確認済み、`LocalSnapshotAdapter.fetch_financial_
+        statements`と同じ理由、DECISIONS.md D0043参照)。`start_date`/`end_date`
+        引数はProtocol互換のため残しているが使用しない。
         """
         all_summaries: dict[str, list[dict[str, Any]]] = self._data.get("financial_summary", {})
-        records: list[dict[str, Any]] = []
-        for code in codes:
-            for row in all_summaries.get(code, []):
-                disc_date = row.get("DiscDate")
-                if disc_date and start_date <= date.fromisoformat(disc_date) <= end_date:
-                    records.append(row)
+        records: list[dict[str, Any]] = [row for code in codes for row in all_summaries.get(code, [])]
         return RawFetchResult(
             source="fixture",
             endpoint="fixture:financial_summary",
             request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
             retrieved_at=datetime.now(UTC),
-            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            data_period=f"requested_research_window={start_date.isoformat()}/{end_date.isoformat()}",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )

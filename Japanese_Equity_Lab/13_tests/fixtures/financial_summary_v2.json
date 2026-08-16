@@ -1,5 +1,5 @@
 {
-  "_disclaimer": "J-Quants API V2 /v2/fins/summary の生レスポンス形状を模したGolden Fixture(合成データ)。Field名(DiscNo/DocType/DiscDate/DiscTime/CurPerType/Sales/OP/NP/FSales/FOP/FNP/NxFSales/NxFOP/NxFNP/NCSales/NCOP等)は全て未検証。このセッションはJ-Quants公式ドキュメントへ疎通できない(DECISIONS.md D0043、接続試行の記録参照)。ローカル環境で実レスポンスを確認した上で必ず修正すること。",
+  "_disclaimer": "J-Quants API V2 /v2/fins/summary の生レスポンス形状を模したGolden Fixture。大半は合成データだが、一部Field(7203の1件目: Sales/EPS/OdP/BPS/NxFSales/SigChgInC/RetroRst/MatChgSub)は2026-08-16のLocal Real Data Validationでユーザーが実際に確認した7203の実Raw Response値をそのまま使用している(ただしDiscDate/DiscTime/DocType/CurPerType等との対応関係はこのメッセージでは特定されていないため、既存の合成Disclosure行へ便宜上載せているだけであり、この行全体が7203の実際の開示内容だと主張するものではない)。DocType(1Q/2Q/3Q/FYFinancialStatements_Consolidated_IFRS)もLocal Real Data Validationで実在を確認済み。それ以外のField名・値は依然未検証。DECISIONS.md D0043参照。",
   "data": [
     {
       "Code": "72030",
@@ -8,15 +8,27 @@
       "DiscDate": "2024-05-10",
       "DiscTime": "15:00",
       "CurPerType": "FY",
-      "Sales": "1000000",
+      "CurPerSt": "2023-04-01",
+      "CurPerEn": "2024-03-31",
+      "CurFYSt": "2023-04-01",
+      "CurFYEn": "2024-03-31",
+      "NxtFYSt": "2024-04-01",
+      "NxtFYEn": "2025-03-31",
+      "Sales": "15481299000000",
       "OP": "100000",
+      "OdP": "",
       "NP": "70000",
+      "EPS": "109.28",
+      "BPS": "",
       "FSales": "1050000",
       "FOP": "105000",
       "FNP": "73000",
       "NxFSales": "",
       "NxFOP": "",
-      "NxFNP": ""
+      "NxFNP": "",
+      "SigChgInC": "",
+      "RetroRst": "",
+      "MatChgSub": "false"
     },
     {
       "Code": "72030",
@@ -38,14 +50,14 @@
     {
       "Code": "67580",
       "DiscNo": "20240515001",
-      "DocType": "FYFinancialStatements_Consolidated_IFRS_SYNTH",
+      "DocType": "FYFinancialStatements_Consolidated_IFRS",
       "DiscDate": "2024-05-15",
       "DiscTime": "16:00",
       "CurPerType": "FY",
       "Sales": "500000",
       "OP": "40000",
       "NP": "25000",
-      "OrdinaryProfit": "",
+      "OdP": "",
       "FSales": "",
       "FOP": "",
       "FNP": ""

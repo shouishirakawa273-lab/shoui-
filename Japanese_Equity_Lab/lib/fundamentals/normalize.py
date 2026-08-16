@@ -1,17 +1,41 @@
 """J-Quants `/v2/fins/summary` Raw Payload -> `DisclosureEnvelope`/`FundamentalMetric`。
 
-**Field名は全て未検証**(このセッションはJ-Quants公式ドキュメントへ疎通できない、
-DECISIONS.md D0043参照)。以下の`_METRIC_FIELD_MAP`/`_DOC_TYPE_TO_ACCOUNTING_STANDARD`は
-ユーザーがセッション内で提示した情報に基づく作業仮説であり、`_DOC_TYPE_TO_
-ACCOUNTING_STANDARD`のエントリはFixture Testで会計基準分岐ロジックを検証するための
-仮定義に過ぎない(実際のDocType文字列ではない)。ローカル環境で実レスポンスを
-確認した上で必ず修正すること。**DocType文字列のsubstring heuristicで
-Accounting Standard/Consolidation Scope/Disclosure Event Typeを推測することは
-禁止する。** 未知のDocTypeは`accounting_standard=None`へfail closedし、warning
-ログを残す(監査可能性)。
+**確認状況(D0043 + Local Real Data Validation追記)**: このセッション自体は
+J-Quants公式ドキュメントへ引き続き疎通できない(DECISIONS.md D0043「A」)。
+ただし2026-08-16、ユーザーがローカルPC環境で実際に`/v2/fins/summary`(7203)へ
+接続し、実Raw Responseの一部Field名・Wire Format(値の型)・DocType値を確認した
+(DECISIONS.md D0043「Local Real Data Validation Results」参照)。以下はその
+確認状況を反映している:
+
+- **Local Real Dataで確認済み**: `Sales`/`OP`/`OdP`/`NP`/`EPS`/`BPS`/`NxFSales`/
+  `SigChgInC`/`RetroRst`/`MatChgSub`のField名が実在すること、数値も文字列
+  (例: `Sales="15481299000000"`、`EPS="109.28"`)として返ること、欠損値は
+  空文字列として返ること、boolean的な値も文字列(`MatChgSub="false"`)として
+  返ること、DocTypeとして`1Q`/`2Q`/`3Q`/`FYFinancialStatements_Consolidated_
+  IFRS`が実在すること、`DiscNo`が`DiscDate`から機械的に導出できる値ではないこと
+  (実観測例: `DiscNo=20220204580837`だが`DiscDate=2022-02-09`)。
+- **依然未検証**: 上記以外のField(`TA`/`Eq`/`EqAR`/`CFO`/`CFI`/`CFF`/`CashEq`/
+  Dividend関連/Share Count関連/非連結詳細/`ROE`等、Raw Payloadには保持されるが
+  Metricへは未マッピング)、Pagination仕様、Rate Limit、JGAAP/USGAAPのDocType
+  値、`from`/`to`パラメータの実際の意味(下記参照)。
+
+**`_METRIC_FIELD_MAP`/`_DOC_TYPE_TO_ACCOUNTING_STANDARD`は上記の確認状況を反映した
+ものであり、それでもなお完全な公式仕様確認ではない。** ローカル環境で追加のField
+不一致が見つかった場合、コードを無断で書き換えずDECISIONS.md D0043へ追記すること。
+**DocType文字列のsubstring heuristicでAccounting Standard/Consolidation Scope/
+Disclosure Event Typeを推測することは禁止する。** 未知のDocTypeは
+`accounting_standard=None`へfail closedし、warningログを残す(監査可能性)。
 
 Consolidated/Non-Consolidatedの区別は、DocTypeからの推測ではなく、値をどの
 Field群(Sales/OP等 vs NCSales/NCOP等)から取得したかという構造的な事実で決める。
+
+**Period/Coverage Semantics(Local Real Data Validationで判明)**: `/v2/fins/
+summary`への`code`指定クエリは、Price API(`/v2/equities/bars/daily`)とは異なり、
+`from`/`to`で指定した期間に絞り込まれるとは限らない(実観測: `--start 2024-01-01
+--end 2024-12-31`を指定しても、対象Codeが持つ取得可能な全履歴(2021-11-04〜
+2026-08-04、20件)が返った)。したがってRaw取得の実際のCoverageは
+`raw_disclosure_date_range()`で確認すること(Requested Research WindowとRaw
+Provider Coverageは別概念、DECISIONS.md D0043参照)。
 
 Rawからの変換方針:
 
@@ -20,7 +44,14 @@ Rawからの変換方針:
   別途行う)。
 - 5桁Provider Codeは書き換えない(`normalize_provider_code_to_internal`で
   内部Codeを別途導出するのみ、`provider_code`は生の値のまま保持する)。
-- Numeric Stringを勝手にFloatへ変換しない(`Decimal`でParseし、精度を保つ)。
+- Numeric StringもBoolean的な文字列も勝手に一括変換しない。数値文字列は
+  `Decimal`でParseし精度を保つ(大きな整数値・小数値のいずれも`Decimal`で
+  安全に扱える)。Boolean的な文字列は`parse_boolean_string()`で明示的な
+  literalのみ受理し、Python truthiness(`bool("false")`は`True`になる)は
+  使わない。未知literalは`None`(UNKNOWN)へfail closedする。
+- `DiscNo`からDisclosure Date/Timeを推測しない(Local Real Dataで両者が一致
+  しないケースを確認済み)。PITは常に`DiscDate`/`DiscTime`をSource of Truth
+  とする。
 - Provider Rawに含まれる未知のFieldは無視するだけで、Raw自体を破棄・拒否しない
   (Provider Schema Evolutionへの前方互換性、`normalizer_version`で追跡する)。
 """
@@ -105,21 +136,53 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.NON_CONSOLIDATED,
     ),
-    # "ordinary_profit"(経常利益)の生Field名はユーザー未提示・未確認。IFRS/USGAAPで
-    # blankになりうることの確認(D0043)をFixture Testで検証するための仮Field名。
+    # "OdP"(経常利益)はLocal Real Data Validationで実在するField名として確認済み
+    # (D0043追記、7203実Raw Responseで確認)。IFRS/USGAADでblankになりうることの
+    # 確認自体は引き続きユーザー確認済み公式仕様(D0043)による。
     "ordinary_profit": (
-        "OrdinaryProfit",
+        "OdP",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    "ordinary_profit_current_year_forecast": (
+        "FOdP",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    "ordinary_profit_next_year_forecast": (
+        "NxFOdP",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.NEXT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    # "EPS"はLocal Real Data ValidationでDecimal文字列("109.28"等)として実在する
+    # Field名と確認済み(D0043追記)。
+    "eps": ("EPS", ActualOrForecast.ACTUAL, FiscalYearTarget.CURRENT_FISCAL_YEAR, ConsolidationScope.CONSOLIDATED),
+    "eps_current_year_forecast": (
+        "FEPS",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    "eps_next_year_forecast": (
+        "NxFEPS",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
     ),
 }
 
 # DocType文字列 -> Accounting Standard の明示的Mapping(substring heuristic禁止)。
-# 実際のJ-Quants DocType一覧は未確認のため空(既定でfail closed=None)。
-# 以下はFixture Test専用の仮エントリであり、実データでの動作を保証しない。
+# 以下4件はLocal Real Data Validationで実在するDocType値として確認済み
+# (D0043追記)。それ以外(JGAAP/USGAAPのDocType等)は未確認のため、既定で
+# fail closed(None)する。
 _DOC_TYPE_TO_ACCOUNTING_STANDARD: dict[str, str] = {
-    "FYFinancialStatements_Consolidated_IFRS_SYNTH": "IFRS",  # 未確認(Fixture Test用)
+    "1QFinancialStatements_Consolidated_IFRS": "IFRS",
+    "2QFinancialStatements_Consolidated_IFRS": "IFRS",
+    "3QFinancialStatements_Consolidated_IFRS": "IFRS",
+    "FYFinancialStatements_Consolidated_IFRS": "IFRS",
 }
 
 # 会計基準上、そもそも存在しない指標(ユーザー確認済み公式仕様、D0043)。
@@ -136,6 +199,10 @@ _KNOWN_PERIOD_TYPES: dict[str, PeriodType] = {
     "5Q": PeriodType.Q5,
     "FY": PeriodType.FY,
 }
+
+# Wire上ではboolean的な値も文字列で返る(Local Real Data Validationで
+# `MatChgSub="false"`を確認済み、D0043追記)。許可されたliteralのみ受理する。
+_KNOWN_BOOLEAN_LITERALS: dict[str, bool] = {"true": True, "false": False}
 
 
 def _optional_str(value: object) -> str | None:
@@ -158,10 +225,51 @@ def _parse_period_type(raw: object) -> PeriodType:
 
 
 def _parse_decimal(raw_value: str) -> Decimal | None:
+    """大きな整数値("15481299000000")・小数値("109.28")のいずれも`Decimal`で
+    安全にParseする(精度を保つため`float`は使わない、Local Real Data
+    Validationで両パターンとも文字列として返ることを確認済み、D0043追記)。"""
     try:
         return Decimal(raw_value)
     except (InvalidOperation, ValueError):
         return None
+
+
+def parse_boolean_string(raw: str | None) -> bool | None:
+    """Wire上のboolean的な値("true"/"false"、Local Real Data Validationで
+    `MatChgSub="false"`を確認済み、D0043追記)を厳格にParseする。
+
+    Python truthiness(`bool("false")`は`True`になってしまう)は使わず、
+    許可されたliteralのみ受理する。`None`・空文字列・未知literalはいずれも
+    `None`(UNKNOWN)へfail closedし、値を推測で確定させない。
+    """
+    if raw is None:
+        return None
+    return _KNOWN_BOOLEAN_LITERALS.get(raw)
+
+
+def _parse_date_or_none(raw: str | None) -> date | None:
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def raw_disclosure_date_range(payload: Sequence[Mapping[str, object]]) -> tuple[date | None, date | None]:
+    """Raw Payload全体の`DiscDate`最小値・最大値を返す(Requested Research
+    WindowとRaw Provider Coverageを区別して表示するための補助関数、D0043追記)。
+
+    `/v2/fins/summary`は`code`指定クエリの場合、`from`/`to`で絞り込まれるとは
+    限らない(Local Real Data Validationで確認済み)。この関数はRaw Payload
+    そのものから実際のCoverageを機械的に求めるのみで、Research Windowによる
+    絞り込みは一切行わない。DiscDateが無い/不正な行は無視する。1件も解釈
+    できなければ`(None, None)`。
+    """
+    dates = [d for row in payload if (d := _parse_date_or_none(_optional_str(row.get("DiscDate")))) is not None]
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
 
 
 def resolve_value_availability(raw_value: str | None, *, accounting_standard: str | None, metric_type: str) -> ValueAvailability:
@@ -241,6 +349,16 @@ def parse_financial_summary_payload(
         market_public_at, market_public_at_basis = _build_market_public_at(disc_date_raw, disc_time_raw)
         cur_per_type = _parse_period_type(row.get("CurPerType"))
 
+        # CurPerSt/CurPerEn/CurFYSt/CurFYEn/NxtFYSt/NxtFYEnはLocal Real Data
+        # Validationで実在するField名として確認済み(D0043追記)。不正/欠損の場合は
+        # 推測補完せずNoneのまま(_parse_date_or_noneがfail closedする)。
+        current_period_start = _parse_date_or_none(_optional_str(row.get("CurPerSt")))
+        current_period_end = _parse_date_or_none(_optional_str(row.get("CurPerEn")))
+        current_fiscal_year_start = _parse_date_or_none(_optional_str(row.get("CurFYSt")))
+        current_fiscal_year_end = _parse_date_or_none(_optional_str(row.get("CurFYEn")))
+        next_fiscal_year_start = _parse_date_or_none(_optional_str(row.get("NxtFYSt")))
+        next_fiscal_year_end = _parse_date_or_none(_optional_str(row.get("NxtFYEn")))
+
         accounting_standard = None
         if doc_type is not None:
             accounting_standard = _DOC_TYPE_TO_ACCOUNTING_STANDARD.get(doc_type)
@@ -268,6 +386,12 @@ def parse_financial_summary_payload(
             market_public_at_basis=market_public_at_basis,
             retrieved_at=retrieved_at,
             current_period_type=cur_per_type,
+            current_period_start=current_period_start,
+            current_period_end=current_period_end,
+            current_fiscal_year_start=current_fiscal_year_start,
+            current_fiscal_year_end=current_fiscal_year_end,
+            next_fiscal_year_start=next_fiscal_year_start,
+            next_fiscal_year_end=next_fiscal_year_end,
             accounting_standard=accounting_standard,
             source_snapshot_id=source_snapshot_id,
         )
@@ -354,6 +478,8 @@ def build_revision_histories(
 __all__ = [
     "NORMALIZER_VERSION",
     "build_revision_histories",
+    "parse_boolean_string",
     "parse_financial_summary_payload",
+    "raw_disclosure_date_range",
     "resolve_value_availability",
 ]
