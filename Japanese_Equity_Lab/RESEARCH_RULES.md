@@ -402,16 +402,46 @@ Ticker→会社名対応がMasterと矛盾しないか確認できる(手入力�
 良い成績が出ている可能性がある前提で解釈すること(廃止された銘柄=多くの場合
 業績不振や上場廃止基準抵触による銘柄が母集団から欠落しているため)。
 
-### 普通株Universeの明示的な定義(Phase3C、D0038)
+### Master date paramのPIT性は実データ確認済み(Phase3C、D0039)
 
-`build_common_stock_universe(listings, *, common_stock_market_codes)`で、ETF・REIT・
-優先株・インフラファンド等(普通株以外)をUniverseから除外する。
-`common_stock_market_codes`(普通株の市場区分を表すMarketCodeの許可リスト)は
-呼び出し側が明示的に渡す必要があり、このモジュール自身は実際のJ-Quants MarketCodeの
-値・意味を検証・決め打ちしない。許可リストが空、またはMarketCodeが不明な場合は
-安全側(除外側)に倒す。現時点(Phase3C)では実際のMarketCode値がこのセッションでは
+`/v2/equities/master`の`date`パラメータが真のPoint-in-Time上場状況を返すことは、
+6502(東芝)を対象にした実データSmoke Test(as_of=2023-12-19では含まれ、
+as_of=2023-12-21では含まれない)により確認済み(D0039)。ただしこれは
+「decision_atごとにその日付でMasterへ再問い合わせした場合」にのみ成り立つ確認結果である。
+`ListingBasedUniverseProvider`のように単一のMasterスナップショット(例: 期間末日1回分)を
+全decision_atへ使い回す場合には、依然としてSurvivorship Biasが残る(`PARTIAL`のまま)。
+真にdecision_atごとのPIT解決を行うには、下記の`PitMasterUniverseProvider`を使う必要がある。
+
+### `PitCoverage` / `PitMasterUniverseProvider`: decision_atごとの真のPIT解決(Phase3C、D0039)
+
+`PitMasterUniverseProvider(master_fetcher, confirmed_coverage=PitCoverage(...))`は、
+decision_atごとに`master_fetcher`(通常は`adapter.fetch_equities_master(as_of=decision_date)`
+を呼び出すCallable)を実際に再実行し、`RESOLVED`なUniverseSnapshotを解決する
+(D0035の`PriceHistorySource.as_of()`と同じ「全期間を一度だけ事前計算して使い回さない」
+設計)。`confirmed_coverage`(`PitCoverage.confirmed_from`/`confirmed_until`)の範囲外の
+as_ofについては、不要なAPI呼び出しを避けるためMasterへの問い合わせ自体を行わず、
+安全側の`PARTIAL`を返す。`confirmed_coverage`は「実際に確認できた範囲」を呼び出し側が
+明示的に渡す(このモジュール自身が「確認済み」の範囲を拡大解釈しない)。
+
+**`scripts/jquants_lab_pipeline.py`はまだ`PitMasterUniverseProvider`へ切り替えていない**
+(D0039)。切り替えるとdecision_atの数だけMasterへ実際に再問い合わせすることになり、
+これは全市場規模データ取得と同種の「大規模な実データ取得」に該当するため、Phase3Cの
+停止点を越える。現状のPipelineは引き続き`ListingBasedUniverseProvider`
+(単一Masterスナップショット、`PARTIAL`前提)を使う。
+
+### Instrument TypeとMarket Scopeの分離、普通株Universeの明示的な定義(Phase3C、D0038/D0039)
+
+`market`(投資対象の市場Scope、Prime/Standard/Growth等)と`instrument_type`
+(商品区分、普通株/ETF/REIT/優先株等)は別概念であり、普通株判定には`market`ではなく
+`instrument_type`を使う(D0039、market値が同じでもinstrument_typeが異なりうる)。
+`build_common_stock_universe(listings, *, common_stock_instrument_types)`で、
+ETF・REIT・優先株・インフラファンド等(普通株以外)をUniverseから除外する。
+`common_stock_instrument_types`(普通株を表すinstrument_typeの許可リスト)は
+呼び出し側が明示的に渡す必要があり、このモジュール自身は実際のJ-Quants商品区分Fieldの
+値・意味を検証・決め打ちしない。許可リストが空、またはinstrument_typeが不明な場合は
+安全側(除外側)に倒す。現時点(Phase3C)では実際のinstrument_type値がこのセッションでは
 未検証のため、実データPipeline(`scripts/jquants_lab_pipeline.py`)へはまだ接続していない
-(DECISIONS.md D0038)。
+(DECISIONS.md D0038/D0039)。
 
 ### `BacktestEngine`のdecision_atごとのUniverse再解決(Phase3C、D0038)
 
@@ -423,17 +453,28 @@ Universeに含まれないCodeについては`signal_fn`自体を呼ばない。
 実データSource利用時に`/v2/equities/master`から構築した`universe_provider`を
 `engine.run()`へ渡している。
 
-### J-Quants Light Planでの既知の未確認事項(Phase3C、D0038)
+### J-Quants Light Planでの既知の未確認事項(Phase3C、D0038/D0039)
 
-- `/v2/equities/master`の`date`パラメータが真のPoint-in-Time Snapshot(廃止銘柄を
-  含む)を返すか、単に「現在の状態」を返すだけかは未検証。後者の場合、
-  Survivorship Biasは構造的に解消できず`resolution=PARTIAL`が恒常的な状態になる。
-  `scripts/fetch_jquants_local_snapshot.py --master-pit-check`で、ローカル環境から
-  実際に確認できる(使い方はスクリプトのDocstring参照)。
+- `/v2/equities/master`の`date`パラメータのPIT性自体は確認済み(D0039、上記参照)。
+  ただし、この確認は特定の1銘柄・1期間についてのものであり、他の期間・銘柄でも
+  同様に成り立つかはさらなる確認が有用。
 - 市場区分(Prime/Standard/Growth)は2022年4月のTSE市場再編で大きく変わっており、
   単一時点のMasterスナップショットから過去の市場区分を復元することはできない。
   `ListingRecord.market`は「そのMasterスナップショット自身のas_of時点の区分」を
   表すに過ぎず、過去のdecision_atにおける市場区分としては使わないこと。
+- 商品区分(instrument_type)の実際のField名・値の列挙は未検証(D0039、`ProdCat`相当を
+  想定しているのみ)。
+
+### 全市場日次株価取得の方針(Phase3C、D0039、実装はPhase3Dへ)
+
+数千銘柄規模の`equity_bars`取得は、銘柄ごとに`/v2/equities/bars/daily`を逐次呼び出す
+方式をDefaultにせず、Light Plan以上で利用可能なFile Download/Bulk取得エンドポイントを
+優先する方針とする。**実際のBulk/File Downloadエンドポイントの仕様はこのセッションでは
+未確認であり、推測でのクライアント実装は行っていない**(値を推測で決め打ちしない方針)。
+Bulk取得したデータであっても、Raw Snapshotの不変性・hash・provenanceという既存原則
+(`lib.snapshot.RawSnapshotStore`)は変更せずそのまま適用し、PIT Universeは引き続き
+decision_atごとに解決してBacktestへ投入する構造(`UniverseProvider.as_of()`、
+`PitMasterUniverseProvider`)を維持する。実際のBulk Endpoint接続の設計はPhase3Dで扱う。
 
 ## Provenance (`lib/registry/provenance.py`)
 

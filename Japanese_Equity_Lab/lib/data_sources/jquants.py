@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.jquants.com/v2"
 RESPONSE_SCHEMA_VERSION = "jquants-v2(未検証、ユーザー提示仕様に基づく実装)"
-_RATE_LIMIT_INTERVAL_SEC = 12.5  # レート制限は契約プランにより異なるため、V1同様の安全マージンを暫定的に維持する
+_RATE_LIMIT_INTERVAL_SEC = 1.05  # Light Planは60リクエスト/分(ユーザー確認済み、DECISIONS.md D0039)。安全マージンを付与。
 _MAX_PAGES = 100  # pagination_keyによる無限ループを避けるための安全弁
 
 

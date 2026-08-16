@@ -4,26 +4,30 @@ Survivorship bias排除の前提となる。実データ(上場日・廃止日�
 架空の補完をせず、PARTIAL / UNRESOLVED / DATA_UNAVAILABLE を明示する
 (数値を推測で埋めない方針)。
 
-**Phase3Cで判明・確定した既知の制約(DECISIONS.md D0038参照)**:
-- J-Quants API V2 `/v2/equities/master`が過去日付を指定した際に、その時点の
-  真のPoint-in-Time上場状況(=当時存在したが現在は廃止済みの銘柄を含む)を返すか、
-  単に現在の状況を返すだけかは、このセッションでは未確認(Light Planでの
-  実際の挙動はローカル環境での確認が必要)。
-- Masterが廃止銘柄を一切含まない(現在上場中の銘柄のみを返す)場合、
-  `delisting_date`を一切持たないListingRecord集合しか得られず、
-  Survivorship Biasを構造的に解消できない。この場合は
-  `survivorship_bias_unresolved=True`かつ`resolution=PARTIAL`として明示する
-  (RESOLVEDとは扱わない)。
+**Phase3Cで判明・確定した既知の制約(DECISIONS.md D0038/D0039参照)**:
+- J-Quants API V2 `/v2/equities/master`の`date`パラメータは、実データによる
+  確認済みSmoke Test(6502 東芝、as_of=2023-12-19では含まれ、
+  as_of=2023-12-21では含まれない。DECISIONS.md D0039)により、真のPoint-in-Time
+  上場状況(=当時存在したが現在は廃止済みの銘柄を含む)を返すことを確認済み。
+  ただし、これは「decision_atごとにその日付を指定してMasterへ再問い合わせした場合」
+  にのみ成り立つ確認結果である。`ListingBasedUniverseProvider`のように単一の
+  Masterスナップショット(例: 期間末日のみを`date`に指定した1回分)を全期間の
+  decision_atへ使い回す場合には、依然としてSurvivorship Biasが残る
+  (`survivorship_bias_unresolved`/`PARTIAL`のまま)。真にdecision_atごとの
+  PIT解決が必要な場合は`PitMasterUniverseProvider`を使うこと。
 - 市場区分(Prime/Standard/Growth等)は2022年4月のTSE市場再編で大きく変わった。
   単一時点のMasterスナップショットからは、ある銘柄が過去のどの時点でどの市場区分に
   属していたかを復元できない。`ListingRecord.market`は「そのMasterスナップショット
   自身のas_of時点での区分」を表すに過ぎず、過去のdecision_atにおける市場区分としては
-  使わないこと。
+  使わないこと。また`market`は「投資対象の市場Scope」(Prime/Standard/Growth等)を
+  表すに過ぎず、「普通株かどうか」を表すものではない(D0039)。普通株かどうかは
+  `ListingRecord.instrument_type`(J-Quants Masterの商品区分フィールド、Provider仕様に
+  沿って別途扱う)で判定する。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -46,6 +50,14 @@ class ListingRecord(RecordMeta):
     `code`はResearch Lab内部Code(普通株4桁)。`provider_code`はJ-Quants等の
     Provider側の生の値(5桁等)を混同しないよう別途保持する
     (`lib.data_sources.ticker_codes`、DECISIONS.md D0036)。
+
+    `market`と`instrument_type`は別概念であり混同しない(D0039)。`market`は
+    投資対象の市場Scope(Prime/Standard/Growth等)、`instrument_type`は商品区分
+    (普通株/ETF/REIT/優先株/外国株等)を表す。普通株判定には`instrument_type`を使う
+    (`build_common_stock_universe`参照)。J-Quants Masterの実際のField名は
+    ユーザー提供情報に基づき`ProdCat`相当を想定しているが、正確なField名・値の
+    列挙はローカル環境での実データ確認が必要(未確定要素を含むためこの情報源を
+    明示する)。
     """
 
     code: str
@@ -57,6 +69,7 @@ class ListingRecord(RecordMeta):
     tradable_from: date | None = None
     tradable_until: date | None = None
     provider_code: str | None = None
+    instrument_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +164,94 @@ class ListingBasedUniverseProvider:
 
 
 @dataclass(frozen=True)
+class PitCoverage:
+    """PIT Master問い合わせ(`date`パラメータ)が正当と実データで確認されている期間。
+
+    2023-12-19/2023-12-21をまたぐ6502(東芝)のMembership変化により、
+    `/v2/equities/master`の`date`パラメータが真のPIT Snapshotを返すこと自体は
+    確認済みだが(D0039)、それ以外の期間(特にこの確認より過去の期間)についても
+    同様に機能するかは別途の確認が必要である。したがって`confirmed_from` /
+    `confirmed_until`は「実際に確認できた範囲」を呼び出し側が明示的に渡す
+    (このモジュール自身が「確認済み」を拡大解釈しない)。
+    """
+
+    confirmed_from: date
+    confirmed_until: date
+
+    def covers(self, target_date: date) -> bool:
+        return self.confirmed_from <= target_date <= self.confirmed_until
+
+
+class PitMasterUniverseProvider:
+    """decision_atごとに`/v2/equities/master`をas_of=decision_atで再問い合わせし、
+    真にPoint-in-TimeなUniverseSnapshotを解決するProvider(D0039)。
+
+    `ListingBasedUniverseProvider`との違い: 後者は単一の静的なListingRecord集合を
+    構築時に受け取り、`as_of()`ではそれをローカルにフィルタするだけ(=全期間で
+    同じMasterスナップショットを使い回す)。本Providerは`master_fetcher`
+    (通常は`adapter.fetch_equities_master(as_of=...)`を呼び出すCallable)を
+    decision_atごとに実際に呼び出すため、D0035の`PriceHistorySource.as_of()`と同じ
+    設計思想(全期間分を一度だけ事前計算して使い回さない)をUniverseにも適用する。
+
+    `confirmed_coverage`の範囲外のas_ofについては、PIT性が未確認のため
+    Master再取得そのものを行わず(不要なAPI呼び出しを避ける)、安全側の`PARTIAL`を
+    返す。範囲内であっても、`master_fetcher`が空集合を返した場合は
+    `DATA_UNAVAILABLE`とする(「投資可能銘柄が0件だった」という架空の結論を出さない)。
+
+    decision_dateごとの重複問い合わせを避けるため、日付単位でSnapshotをキャッシュする
+    (`BacktestEngine`側でも同様のキャッシュを持つが、本Provider単体で使う場合にも
+    重複呼び出しを避けられるようにするため、二重にキャッシュする)。
+    """
+
+    def __init__(self, master_fetcher: Callable[[date], Sequence[ListingRecord]], *, confirmed_coverage: PitCoverage) -> None:
+        self._master_fetcher = master_fetcher
+        self._confirmed_coverage = confirmed_coverage
+        self._cache: dict[date, UniverseSnapshot] = {}
+
+    def as_of(self, as_of: datetime) -> UniverseSnapshot:
+        if as_of.tzinfo is None:
+            raise ValueError("as_of はtz-awareである必要があります")
+        target_date = as_of.date()
+        if target_date in self._cache:
+            return self._cache[target_date]
+
+        if not self._confirmed_coverage.covers(target_date):
+            snapshot = UniverseSnapshot(
+                as_of=as_of,
+                resolution=UniverseResolution.PARTIAL,
+                note=(
+                    f"PIT確認済み範囲({self._confirmed_coverage.confirmed_from}〜"
+                    f"{self._confirmed_coverage.confirmed_until})外のため安全側に倒した"
+                    "(Master再取得は行っていない、D0039)"
+                ),
+                survivorship_bias_unresolved=True,
+            )
+            self._cache[target_date] = snapshot
+            return snapshot
+
+        listings = self._master_fetcher(target_date)
+        if not listings:
+            snapshot = UniverseSnapshot(
+                as_of=as_of,
+                resolution=UniverseResolution.DATA_UNAVAILABLE,
+                note=f"as_of={target_date}のMaster再取得結果が空でした",
+            )
+            self._cache[target_date] = snapshot
+            return snapshot
+
+        codes = tuple(sorted(listing.code for listing in listings if _is_tradable_on(listing, target_date)))
+        snapshot = UniverseSnapshot(
+            as_of=as_of,
+            resolution=UniverseResolution.RESOLVED,
+            codes=codes,
+            note="PIT確認済みMaster(dateパラメータ)をdecision_atごとに再取得して解決(D0039)",
+            survivorship_bias_unresolved=False,
+        )
+        self._cache[target_date] = snapshot
+        return snapshot
+
+
+@dataclass(frozen=True)
 class CommonStockFilterResult:
     """`build_common_stock_universe`の結果。除外した件数・理由を必ず追跡できるようにする
     (ETF/REIT/優先株等が誤って普通株Universeへ混入していないことを監査できるように)。
@@ -158,40 +259,44 @@ class CommonStockFilterResult:
 
     included: tuple[ListingRecord, ...]
     excluded: tuple[ListingRecord, ...]
-    excluded_market_codes: Mapping[str, int]
+    excluded_instrument_types: Mapping[str, int]
 
 
 def build_common_stock_universe(
     listings: Sequence[ListingRecord],
     *,
-    common_stock_market_codes: frozenset[str],
+    common_stock_instrument_types: frozenset[str],
 ) -> CommonStockFilterResult:
-    """普通株Universeを明示的に定義する(D0038)。
+    """普通株Universeを明示的に定義する(D0038/D0039)。
 
-    `common_stock_market_codes`は「普通株の上場市場区分を表すMarketCodeの集合」を
-    呼び出し側が明示的に渡す(このモジュール自身は実際のJ-Quants MarketCodeの
-    値・意味を検証しておらず、推測で決め打ちしない。DECISIONS.md D0038参照)。
-    `listing.market`がこの集合に含まれないListingRecordは、ETF・REIT・優先株・
-    インフラファンド等(普通株以外)である可能性があるとみなし、除外する。
+    `common_stock_instrument_types`は「普通株を表す商品区分(instrument_type)の集合」を
+    呼び出し側が明示的に渡す(このモジュール自身は実際のJ-Quants商品区分Fieldの
+    値・意味を検証しておらず、推測で決め打ちしない。DECISIONS.md D0038/D0039参照)。
+    `listing.instrument_type`がこの集合に含まれないListingRecordは、ETF・REIT・
+    優先株・外国株等(普通株以外)である可能性があるとみなし、除外する。
+    **`listing.market`(Prime/Standard/Growth等の市場Scope)は普通株判定には使わない**
+    (D0039、`market`と`instrument_type`は別概念)。
 
-    **既定で「除外」側に倒す**: `common_stock_market_codes`が空、またはMarketCodeが
-    不明(取得不可)な場合も、安全側に倒して除外する(誤って普通株Universeへ
-    混入させるより、判断できない銘柄を除外してしまう方を選ぶ)。除外した銘柄と
-    その理由(MarketCode別件数)は`CommonStockFilterResult`で必ず追跡できる。
+    **既定で「除外」側に倒す**: `common_stock_instrument_types`が空、または
+    instrument_typeが不明(取得不可)な場合も、安全側に倒して除外する(誤って
+    普通株Universeへ混入させるより、判断できない銘柄を除外してしまう方を選ぶ)。
+    除外した銘柄とその理由(instrument_type別件数)は`CommonStockFilterResult`で
+    必ず追跡できる。
     """
     included: list[ListingRecord] = []
     excluded: list[ListingRecord] = []
-    excluded_market_codes: dict[str, int] = {}
+    excluded_instrument_types: dict[str, int] = {}
     for listing in listings:
-        if listing.market in common_stock_market_codes:
+        instrument_type = listing.instrument_type or "取得不可"
+        if instrument_type in common_stock_instrument_types:
             included.append(listing)
         else:
             excluded.append(listing)
-            excluded_market_codes[listing.market] = excluded_market_codes.get(listing.market, 0) + 1
+            excluded_instrument_types[instrument_type] = excluded_instrument_types.get(instrument_type, 0) + 1
     return CommonStockFilterResult(
         included=tuple(included),
         excluded=tuple(excluded),
-        excluded_market_codes=excluded_market_codes,
+        excluded_instrument_types=excluded_instrument_types,
     )
 
 

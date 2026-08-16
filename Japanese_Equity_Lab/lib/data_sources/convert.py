@@ -178,6 +178,12 @@ def equities_master_payload_to_listing_records(payload: list[dict[str, object]])
     Ticker/Company Name整合性チェック(`lib/universe.check_company_name_consistency`)
     に使うため、フィールド名は暫定的に"CompanyName"を想定している(未検証)。
 
+    ``market``(投資対象の市場Scope、Prime/Standard/Growth等)と``instrument_type``
+    (商品区分、普通株/ETF/REIT/優先株等)は別概念として別々のFieldから取る
+    (D0039、`lib/universe.py`のモジュールDocstring参照)。``instrument_type``の
+    実際のField名はユーザー提供情報に基づき``ProdCat``相当を想定しているが、
+    正確なField名はローカル環境での実データ確認が必要(未確定要素を含む)。
+
     ``Code``はProvider Codeのため、`normalize_provider_code_to_internal`で
     Research Lab内部Codeへ正規化する(元の値は`provider_code`に保持。DECISIONS.md
     D0036参照)。Masterには普通株以外(優先株・ETF等、確認済みパターンに一致しない
@@ -208,6 +214,7 @@ def equities_master_payload_to_listing_records(payload: list[dict[str, object]])
                 company_name=_optional_str(row.get("CompanyName")),
                 listing_date=_optional_date(row.get("ListingDate")),
                 delisting_date=_optional_date(row.get("DelistingDate")),
+                instrument_type=_optional_str(row.get("ProdCat") or row.get("ProdCatName")),
                 source="jquants",
             )
         )

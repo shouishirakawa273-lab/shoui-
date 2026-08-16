@@ -1130,20 +1130,102 @@ MarketCode値を確認した後、その確定値を許可リストとして渡�
 
 **ローカル環境での確認方法(ユーザー向け、実行推奨)**: 上記の未確認事項のうち
 「Masterの`date`パラメータが真のPIT Snapshotを返すか」は、少量のリクエストで
-安全に確認できる。例えば、過去に上場廃止されたことが分かっている銘柄コードを1つ選び、
+安全に確認できる。過去に上場廃止されたことが分かっている銘柄コードを1つ選び、
 
 ```
-python scripts/fetch_jquants_local_snapshot.py --master-as-of <廃止前の日付>
-python scripts/fetch_jquants_local_snapshot.py --master-as-of <廃止後の日付>
+python scripts/fetch_jquants_local_snapshot.py \
+    --master-pit-check <廃止前の日付> <廃止後の日付> --master-pit-check-code <銘柄コード>
 ```
 
 のように前後の日付でMasterを取得し、廃止前の`as_of`ではその銘柄が含まれ、廃止後の
-`as_of`では含まれなくなる(または`DelistingDate`フィールドが埋まっている)かを
-目視で確認する。含まれる場合は真のPIT Snapshotとみなせるが、含まれない場合
-(=常に「現在の状態」しか返らない)は、Light Planでは`/v2/equities/master`単体では
-Survivorship Biasを解消できないと結論できる(その場合、`resolution=PARTIAL`が
-恒常的な状態になる。これは仕様上の制約であり、コード側の不具合ではない)。
+`as_of`では含まれなくなるかを確認する。含まれる場合は真のPIT Snapshotとみなせるが、
+含まれない場合(=常に「現在の状態」しか返らない)は、Light Planでは
+`/v2/equities/master`単体ではSurvivorship Biasを解消できないと結論できる
+(その場合、`resolution=PARTIAL`が恒常的な状態になる。これは仕様上の制約であり、
+コード側の不具合ではない)。**この確認は実際にD0039で実行され、確認済みとなった
+(下記D0039参照)。**
 
 **このPhaseでやらないこと**: 全市場規模でのUniverse実データ取得・普通株許可リストの
 決め打ち・戦略パラメータの探索や最適化は行っていない(要件どおり、Infrastructure
 Validationとしての固定20営業日Momentum/60営業日Hold Strategyのみを対象とする)。
+
+---
+
+## D0039 — Phase3Cを閉じる: Master date paramのPIT実データ確認、Universe Resolutionの
+RESOLVED経路追加、Instrument Type/Market Scopeの分離、Rate Limit訂正、Bulk取得方針の明文化
+
+**背景**: ユーザーがローカル環境で`scripts/fetch_jquants_local_snapshot.py
+--master-pit-check 2023-12-19 2023-12-21 --master-pit-check-code 6502`を実行し、
+6502(東芝)がas_of=2023-12-19では含まれ(4330件中)、as_of=2023-12-21では含まれない
+(4331件中)ことを実データで確認した。これは`/v2/equities/master`の`date`パラメータが
+真のPoint-in-Time上場状況を返すことの直接的な証拠であり、D0038で「未検証」としていた
+最重要の未確認事項が解消された。あわせて、J-Quants Light Planの実際のレート制限が
+60リクエスト/分であること(D0038時点で暫定採用していた「5リクエスト/分」相当の
+安全マージンは古い前提だった)もユーザーから確認情報として提供された。
+
+**変更内容**:
+
+1. **Master date paramのPIT性: 未確認 → 確認済み**。`lib/universe.py`の
+   モジュールDocstringおよびD0038の該当記述を「未検証」から「6502実データ確認済み」へ
+   更新した。ただし、この確認結果が保証するのは「decision_atごとにその日付を指定して
+   Masterへ再問い合わせした場合」のみである点に注意が必要(下記2参照)。単一の
+   Masterスナップショット(例: 期間末日1回分)を全decision_atへ使い回す
+   `ListingBasedUniverseProvider`の既存の使い方(`scripts/jquants_lab_pipeline.py`の
+   現状の配線)は、この確認結果だけでは`RESOLVED`にならない
+   (Survivorship Biasは依然として残る、`PARTIAL`のまま)。
+2. **Universe ResolutionにRESOLVED経路を追加**: 新設した`PitCoverage`
+   (`confirmed_from`/`confirmed_until`、実データで確認できた範囲を呼び出し側が明示的に
+   渡す)と`PitMasterUniverseProvider`(`lib/universe.py`)により、decision_atごとに
+   `master_fetcher`(通常は`adapter.fetch_equities_master(as_of=decision_date)`)を
+   実際に再呼び出しし、その結果を`_is_tradable_on`でフィルタして`RESOLVED`を返す経路を
+   新設した(D0035の`PriceHistorySource.as_of()`と同じ「全期間を一度だけ事前計算して
+   使い回さない」設計)。`confirmed_coverage`の範囲外のas_ofについては、Master自体への
+   問い合わせを行わず(不要なAPI呼び出しを避ける)、安全側の`PARTIAL`を返す。
+   `master_fetcher`が空集合を返した場合は`DATA_UNAVAILABLE`とする。
+   **`scripts/jquants_lab_pipeline.py`はまだ`PitMasterUniverseProvider`へ切り替えていない**
+   (下記5「このDecisionでやらないこと」参照。切り替えるとdecision_atの数だけMasterへ
+   実際に問い合わせることになり、これは全市場規模データ取得と同種の「大規模な実データ
+   取得」に該当するため、Phase3Cの停止点を越える)。
+3. **Instrument TypeとMarket Scopeの分離**: `ListingRecord`に`instrument_type`
+   (商品区分、普通株/ETF/REIT/優先株等)を新設し、`market`(投資対象の市場Scope、
+   Prime/Standard/Growth等)とは別概念として扱うようにした。`build_common_stock_universe`
+   のフィルタ基準を`listing.market`から`listing.instrument_type`へ変更し
+   (`CommonStockFilterResult.excluded_market_codes`は`excluded_instrument_types`へ改名)、
+   `common_stock_market_codes`パラメータは`common_stock_instrument_types`へ改名した。
+   `equities_master_payload_to_listing_records`(`lib/data_sources/convert.py`)は
+   `row.get("ProdCat") or row.get("ProdCatName")`から`instrument_type`を取る
+   (Field名はユーザー提供情報に基づく想定であり、正確な値の列挙・Field名の最終確認は
+   ローカル環境での実データ確認が必要。MarketCodeの実際の値と同様、依然として
+   `build_common_stock_universe`の実データPipelineへの接続は保留する。下記5参照)。
+4. **Rate Limitの訂正**: `lib/data_sources/jquants.py`の`_RATE_LIMIT_INTERVAL_SEC`を
+   「5リクエスト/分」想定の`12.5`秒から、確認済みの「60リクエスト/分」に基づく`1.05`秒へ
+   変更した。**この変更は`Japanese_Equity_Lab/lib/data_sources/jquants.py`
+   (Research Lab独自のV2 Client)にのみ適用する。ルート`CLAUDE.md`が言及する
+   「J-Quants: 5リクエスト/分」は既存Screening Toolの`core/providers/jquants.py`
+   (別実装、V1)についての記述であり、これは別システムのため変更していない**
+   (既存Screening Toolを変更しない方針を厳守)。
+5. **全市場日次株価取得の方針(ポリシーとして明文化、実装はしない)**: 数千銘柄規模の
+   `equity_bars`取得は、銘柄ごとに`/v2/equities/bars/daily`を逐次呼び出す方式を
+   Defaultにせず、Light Plan以上で利用可能なFile Download/Bulk取得エンドポイントを
+   優先する方針をRESEARCH_RULES.mdへ記録した。**ただし、実際のBulk/File Download
+   エンドポイントの仕様(URL・パラメータ・レスポンス形式)はこのセッションでは
+   未確認であり、推測でのクライアント実装は行っていない**(値を推測で決め打ちしない
+   方針)。Bulk取得したデータであっても、Raw Snapshotの不変性・hash・provenanceという
+   既存原則(`lib.snapshot.RawSnapshotStore`)は変更せずそのまま適用し、PIT Universeは
+   引き続きdecision_atごとに解決してBacktestへ投入する構造(`UniverseProvider.as_of()`)
+   を維持する方針を明記した。実際のBulk Endpoint接続はPhase3Dの設計時に扱う。
+
+**このDecisionでやらないこと(Phase3Cの停止点を維持)**:
+
+- `scripts/jquants_lab_pipeline.py`を`PitMasterUniverseProvider`へ切り替えることは
+  していない(decision_atの数だけMasterへ実際に再問い合わせすることになり、これは
+  「大規模な実データ取得」の一種であるため、Phase3Cの停止点を越える)。
+- `build_common_stock_universe`(instrument_type基準)を実データPipelineへ接続することは
+  していない(実際のinstrument_type値がこのセッションでは未確認のため)。
+- 全市場規模のBulk/File Download Endpointの実装はしていない(仕様未確認、Phase3Dで扱う)。
+- 戦略パラメータの探索・最適化は行っていない。既存Screening Tool(`core/` `app.py`
+  `tests/`)は無変更。
+
+**回帰確認**: `pytest`(Lab 180件、既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`(52ファイル)いずれもclean。`git diff --stat`で
+`core/` `app.py` `tests/`への変更が無いことを確認済み。
