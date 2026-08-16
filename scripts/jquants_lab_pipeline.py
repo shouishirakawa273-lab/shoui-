@@ -92,12 +92,16 @@ def run_pipeline(
             "!!! BLOCKING TODO(実日本株Backtestでは未解決) !!!\n"
             "Corporate Action Announcement(公表)をSignalとして使う用途(Case A)の\n"
             "データSourceは未実装のため、この用途には使用できません。一方、Price Series\n"
-            "連続化(Case B)はV2のAdjFactor/ExRTから技術的には可能になりましたが、\n"
-            "AdjFactorをRaw価格へ適用する向き(乗算/除算)がこのセッションでは未検証のため、\n"
-            "本Pipelineの実行結果は依然としてsplit調整なし(actions=[])のままです。\n"
+            "連続化(Case B)はAdjFactorの公式計算方法が確定し(DECISIONS.md D0034)、\n"
+            "build_provider_derived_adjusted_bars()としてPIT-safeに実装済みです。\n"
+            "ただし、BacktestEngine.run()は現状price_historyを1回だけ事前計算する設計のため、\n"
+            "単一のas_ofで事前調整すると、Walk-Forwardで複数のdecision_atをまたぐ場合に\n"
+            "特定の日付範囲でPIT安全性が崩れる可能性がある(decision_atごとの再計算が必要)。\n"
+            "このEngine側の配線変更をまだ行っていないため、本Pipelineの実行結果は\n"
+            "依然としてsplit調整なし(actions=[])のままです。\n"
             "対象期間・対象銘柄に分割等があった場合、価格系列が不連続になり\n"
             "Backtest結果が誤ります。実際の投資判断にこの結果を使用しないでください。\n"
-            "(DECISIONS.md D0014/D0025/D0032、RESEARCH_RULES.md参照)\n"
+            "(DECISIONS.md D0014/D0025/D0032/D0034、RESEARCH_RULES.md参照)\n"
         )
         if source == "jquants":
             print(
@@ -123,12 +127,16 @@ def run_pipeline(
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
 
-    # BLOCKING TODO(Phase3B以降): Case A(Announcementを使う用途)のデータSourceが
-    # 未実装なのに加え、Case B(V2 AdjFactor/ExRTによるPrice Series連続化、
-    # build_provider_derived_adjusted_bars)もAdjFactorの適用方向が未検証のため、
-    # 現時点ではsplit調整なし(actions=[])でRaw->Adjustedへ明示的に変換している
-    # (RawとAdjustedを混同しない、という設計自体は満たすが、分割があった銘柄では
-    # 価格が不連続になりうる)。V2 AdjFactor/ExRTからの検出候補は情報提供のみ行う。
+    # BLOCKING TODO(Phase3B以降): Case A(Announcementを使う用途)のデータSourceは
+    # 未実装。Case B(V2 AdjFactorによるPrice Series連続化)は
+    # build_provider_derived_adjusted_bars()としてPIT-safeに実装済み(D0034)だが、
+    # BacktestEngine.run()が単一のprice_historyを事前計算してから複数のdecision_atへ
+    # 使い回す設計のため、単一as_ofでの事前調整はWalk-Forwardの一部decision_atで
+    # PIT安全性を壊しうる(decision_atごとの再計算にはEngine側の配線変更が必要、
+    # D0034参照)。そのためこのPipelineでは引き続きsplit調整なし(actions=[])で
+    # Raw->Adjustedへ明示的に変換している(RawとAdjustedを混同しない、という設計自体は
+    # 満たすが、分割があった銘柄では価格が不連続になりうる)。
+    # V2 AdjFactor/ExRTからの検出候補は情報提供のみ行う。
     price_history = {code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items()}
     corporate_action_events = detect_corporate_action_events_from_equity_bars(quotes_result.payload)
 

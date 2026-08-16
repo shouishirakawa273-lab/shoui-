@@ -79,38 +79,94 @@ def test_detect_corporate_action_events_are_rejected_by_case_a_pit_safe_adjustme
         apply_split_adjustments_as_of([], events, as_of=session_close_at(date(2026, 1, 10)))
 
 
-def test_build_provider_derived_adjusted_bars_applies_event_once_available() -> None:
-    """Case B: Provider由来Eventはannounced_at無しでPrice Series連続化に使える。
-    効力発生日のBarデータが取得可能になった時点(session_close_at(effective_date))で
-    初めて反映される。"""
+# --- 公式仕様確定(DECISIONS.md D0034)のAs-of Adjustment: ユーザー提示の例そのもの。
+# 2024-01-10 C=980, AdjFactor=1.0 / 2024-01-11 C=480, AdjFactor=0.5(ex-date) /
+# 2024-01-12 C=500, AdjFactor=1.0 という3日間のBarを使う。
+
+_OFFICIAL_EXAMPLE_PAYLOAD = [
+    {"Code": "7203", "Date": "2024-01-10", "C": 980.0, "AdjFactor": 1.0, "ExRT": None},
+    {"Code": "7203", "Date": "2024-01-11", "C": 480.0, "AdjFactor": 0.5, "ExRT": "1"},
+    {"Code": "7203", "Date": "2024-01-12", "C": 500.0, "AdjFactor": 1.0, "ExRT": None},
+]
+_OFFICIAL_EXAMPLE_RAW_BARS = [
+    RawOHLCVBar(code="7203", session_date=date(2024, 1, 10), open=980.0, high=980.0, low=980.0, close=980.0, volume=1000.0),
+    RawOHLCVBar(code="7203", session_date=date(2024, 1, 11), open=480.0, high=480.0, low=480.0, close=480.0, volume=2000.0),
+    RawOHLCVBar(code="7203", session_date=date(2024, 1, 12), open=500.0, high=500.0, low=500.0, close=500.0, volume=1500.0),
+]
+
+
+def test_build_provider_derived_adjusted_bars_scenario_before_ex_date() -> None:
+    """as_of=2024-01-10 close時点では、1/11のex-date AdjFactorはまだ未来なので
+    未使用のまま(黙って除外、エラーにはしない)。1/10 close は無調整の980のまま。"""
+    events = detect_corporate_action_events_from_equity_bars(_OFFICIAL_EXAMPLE_PAYLOAD)
+    as_of = session_close_at(date(2024, 1, 10))
+    adjusted = build_provider_derived_adjusted_bars(_OFFICIAL_EXAMPLE_RAW_BARS, events, as_of=as_of)
+    by_date = {bar.session_date: bar for bar in adjusted}
+    assert by_date[date(2024, 1, 10)].close == pytest.approx(980.0)
+
+
+def test_build_provider_derived_adjusted_bars_scenario_at_ex_date_close() -> None:
+    """as_of=2024-01-11 close以降、ex-dateのAdjFactor=0.5が効力発生済みとして
+    1/10より前の価格にのみ反映される(1/11自身は無調整のまま)。"""
+    events = detect_corporate_action_events_from_equity_bars(_OFFICIAL_EXAMPLE_PAYLOAD)
+    as_of = session_close_at(date(2024, 1, 11))
+    adjusted = build_provider_derived_adjusted_bars(_OFFICIAL_EXAMPLE_RAW_BARS, events, as_of=as_of)
+    by_date = {bar.session_date: bar for bar in adjusted}
+    assert by_date[date(2024, 1, 10)].close == pytest.approx(490.0)  # 980 * 0.5
+    assert by_date[date(2024, 1, 11)].close == pytest.approx(480.0)  # ex-date当日は無調整
+
+
+def test_build_provider_derived_adjusted_bars_scenario_after_ex_date() -> None:
+    """as_of=2024-01-12: 1/10=490, 1/11=480, 1/12=500(無調整)になる。"""
+    events = detect_corporate_action_events_from_equity_bars(_OFFICIAL_EXAMPLE_PAYLOAD)
+    as_of = session_close_at(date(2024, 1, 12))
+    adjusted = build_provider_derived_adjusted_bars(_OFFICIAL_EXAMPLE_RAW_BARS, events, as_of=as_of)
+    by_date = {bar.session_date: bar for bar in adjusted}
+    assert by_date[date(2024, 1, 10)].close == pytest.approx(490.0)
+    assert by_date[date(2024, 1, 11)].close == pytest.approx(480.0)
+    assert by_date[date(2024, 1, 12)].close == pytest.approx(500.0)
+
+
+def test_build_provider_derived_adjusted_bars_adjusts_volume_by_division() -> None:
+    """Adjusted Volume = Raw Volume ÷ cumulative adjustment factor。"""
+    events = detect_corporate_action_events_from_equity_bars(_OFFICIAL_EXAMPLE_PAYLOAD)
+    as_of = session_close_at(date(2024, 1, 12))
+    adjusted = build_provider_derived_adjusted_bars(_OFFICIAL_EXAMPLE_RAW_BARS, events, as_of=as_of)
+    by_date = {bar.session_date: bar for bar in adjusted}
+    assert by_date[date(2024, 1, 10)].volume == pytest.approx(1000.0 / 0.5)  # 2000.0
+
+
+def test_build_provider_derived_adjusted_bars_ignores_exrt_only_rows_without_adj_factor_change() -> None:
+    """ExRTが設定されていてもAdjFactor==1の日は、独自の補正係数を推測して適用しない
+    (Price Adjustmentに一切寄与しない)。"""
     payload = [
-        {"Code": "7203", "Date": "2026-01-05", "AdjFactor": 1.0, "ExRT": None},
-        {"Code": "7203", "Date": "2026-01-06", "AdjFactor": 0.5, "ExRT": "1"},
+        {"Code": "7203", "Date": "2024-01-10", "C": 1000.0, "AdjFactor": 1.0, "ExRT": "9"},
+        {"Code": "7203", "Date": "2024-01-11", "C": 1000.0, "AdjFactor": 1.0, "ExRT": None},
     ]
     events = detect_corporate_action_events_from_equity_bars(payload)
+    assert len(events) == 1  # ExRTだけでもEventとしては検出される(metadata保持)
     raw_bars = [
-        RawOHLCVBar(code="7203", session_date=date(2026, 1, 5), open=2000.0, high=2010.0, low=1990.0, close=2000.0, volume=100),
-        RawOHLCVBar(code="7203", session_date=date(2026, 1, 6), open=1000.0, high=1010.0, low=990.0, close=1000.0, volume=200),
+        RawOHLCVBar(code="7203", session_date=date(2024, 1, 10), open=1000.0, high=1000.0, low=1000.0, close=1000.0, volume=100),
     ]
-    as_of = session_close_at(date(2026, 1, 6))
+    as_of = session_close_at(date(2024, 1, 11))
     adjusted = build_provider_derived_adjusted_bars(raw_bars, events, as_of=as_of)
-    # 2026-01-06のEvent(raw_adj_factor=0.5)は、それより前(2026-01-05)の価格にのみ
-    # 乗算される(乗算慣習、未検証。DECISIONS.md D0032参照)。
-    by_date = {bar.session_date: bar for bar in adjusted}
-    assert by_date[date(2026, 1, 5)].close == pytest.approx(1000.0)  # 2000.0 * 0.5
-    assert by_date[date(2026, 1, 6)].close == pytest.approx(1000.0)  # Event当日自身は無調整
+    assert adjusted[0].close == pytest.approx(1000.0)  # 無調整のまま
+    assert adjusted[0].split_adjustment_factor == pytest.approx(1.0)
 
 
-def test_build_provider_derived_adjusted_bars_rejects_future_event() -> None:
-    """as_of時点でまだ取得可能でないはずのEventが混入していればLookAheadBiasErrorで拒否する。"""
+def test_build_provider_derived_adjusted_bars_silently_excludes_future_event_no_error() -> None:
+    """as_of時点でまだ取得可能でないはずのEventは、黙って調整対象から除外する
+    (Case Aの「未公表」ケースとは異なりエラーにはしない。Backtest Pipelineが
+    ある時点までの全Event集合を保持したまま複数のdecision_atで繰り返し呼ぶ
+    運用を想定しているため)。"""
     payload = [{"Code": "7203", "Date": "2026-01-10", "AdjFactor": 0.5, "ExRT": "1"}]
     events = detect_corporate_action_events_from_equity_bars(payload)
     raw_bars = [
         RawOHLCVBar(code="7203", session_date=date(2026, 1, 5), open=2000.0, high=2010.0, low=1990.0, close=2000.0, volume=100),
     ]
     as_of = session_close_at(date(2026, 1, 6))  # Event(1/10)より前の意思決定時点
-    with pytest.raises(LookAheadBiasError):
-        build_provider_derived_adjusted_bars(raw_bars, events, as_of=as_of)
+    adjusted = build_provider_derived_adjusted_bars(raw_bars, events, as_of=as_of)
+    assert adjusted[0].close == pytest.approx(2000.0)  # 未来Eventは適用されない
 
 
 def test_equities_master_payload_to_listing_records_handles_missing_dates_honestly() -> None:

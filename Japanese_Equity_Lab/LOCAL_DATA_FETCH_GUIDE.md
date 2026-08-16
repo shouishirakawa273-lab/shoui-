@@ -125,18 +125,26 @@ Provenance記録、が一本のPipelineとして走る。
 5. **reproducibility**: `git_dirty`がFalseの状態(working treeがcleanな状態)で
    同じコマンドを2回実行し、`metrics`が完全に一致するか。
 
-## 手順7(推奨、必須ではない): AdjFactorの向きを検証する
+## 手順7(推奨、必須ではない): AdjFactorの計算結果を実データで確認する
 
-`lib/schemas/price_data.build_provider_derived_adjusted_bars`は、V2の`AdjFactor`を
-Raw価格へ「乗算」する慣習を仮定しているが、この向きは未検証(DECISIONS.md D0032参照)。
-実際に分割があった銘柄・期間が見つかった場合、以下を手動で突き合わせて確認できる。
+`lib/schemas/price_data.build_provider_derived_adjusted_bars`は、AdjFactorの適用方法
+(Ex-dateより前の価格にのみ乗算、出来高は除算)を公式仕様として実装済み
+(DECISIONS.md D0034)。実際に分割があった銘柄・期間が見つかった場合、以下を手動で
+突き合わせて確認することを推奨する(このセッションは実データで検証できていないため)。
 
-1. その銘柄のAdjFactorが1でない日(=分割の効力発生日)を`equity_bars_<code>.json`から探す。
-2. `build_provider_derived_adjusted_bars`で計算した分割前日のAdjusted Closeと、
+1. その銘柄のAdjFactorが1でない日(=分割のex-date)を`equity_bars_<code>.json`から探す。
+2. `build_provider_derived_adjusted_bars`で計算したex-date前日のAdjusted Closeと、
    J-Quantsが返す`AdjC`(その日以降の情報を使って計算された、Provider自身の調整済み値)を
-   比較する。分割前後を通じて概ね連続した価格になっていれば「乗算」が正しい。大きく
-   矛盾する場合(元の10倍・10分の1等の桁違いになる場合)は「除算」が正しい可能性が高く、
-   `build_provider_derived_adjusted_bars`内の`*`を`/`に直す必要がある。
+   比較する。ex-date前後を通じて概ね連続した価格になっていることを確認する。
+3. HolDiv=2(半休場日)・HolDiv=3(non-business day with holiday trading)を含む期間があれば、
+   `is_trading_session()`がそれぞれ意図通り取引日/非取引日と判定するかも確認する。
+
+なお、`build_provider_derived_adjusted_bars`自体は上記の通りPIT-safeに実装済みだが、
+`scripts/jquants_lab_pipeline.py`はまだこれを実際のBacktest実行(`price_history`)へは
+組み込んでいない。`BacktestEngine.run()`が単一のprice_historyを事前計算してから
+複数のdecision_atへ使い回す設計のため、単一のas_ofで事前調整するとWalk-Forwardの
+一部decision_atでPIT安全性が崩れうる(decision_atごとの再計算にはEngine側の配線変更が
+必要、DECISIONS.md D0034参照)。この配線変更はPhase3B以降の検討事項。
 
 もし途中で`DataSourceError`やフィールド不整合が出た場合は、J-Quants V2の実レスポンス形状が
 このセッションの推測(`lib/data_sources/jquants.py`・`lib/data_sources/convert.py`の

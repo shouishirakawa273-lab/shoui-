@@ -226,13 +226,29 @@ def test_trading_calendar_payload_to_calendar_only_keeps_business_days() -> None
 
 
 def test_trading_calendar_payload_to_calendar_accepts_explicit_hol_div_override() -> None:
-    """HolDivの値の意味が未検証であることを踏まえ、呼び出し側で上書きできることを確認する。"""
+    """既定のHolDiv値集合と異なる運用をしたい場合、呼び出し側で明示的に上書きできる。"""
     payload = [{"Date": "2026-01-05", "HolDiv": "TRADING"}, {"Date": "2026-01-06", "HolDiv": "CLOSED"}]
     calendar = trading_calendar_payload_to_calendar(
         payload, range_start=date(2026, 1, 5), range_end=date(2026, 1, 6), trading_hol_div_values=frozenset({"TRADING"})
     )
     assert calendar.is_trading_session(date(2026, 1, 5)) is True
-    assert calendar.is_trading_session(date(2026, 1, 6)) is False
+
+
+def test_trading_calendar_payload_to_calendar_uses_official_hol_div_semantics() -> None:
+    """公式仕様(DECISIONS.md D0034): 0=Non-business day, 1=Business day,
+    2=Half-Day Trading Session(取引日扱い), 3=Non-business day with holiday trading
+    (現物Cash Equity Pipelineでは非取引日扱い)。"""
+    payload = [
+        {"Date": "2026-01-05", "HolDiv": "0"},  # Non-business day
+        {"Date": "2026-01-06", "HolDiv": "1"},  # Business day
+        {"Date": "2026-01-07", "HolDiv": "2"},  # Half-Day Trading Session
+        {"Date": "2026-01-08", "HolDiv": "3"},  # Non-business day (with holiday trading)
+    ]
+    calendar = trading_calendar_payload_to_calendar(payload, range_start=date(2026, 1, 5), range_end=date(2026, 1, 8))
+    assert calendar.is_trading_session(date(2026, 1, 5)) is False  # HolDiv=0 -> non trading
+    assert calendar.is_trading_session(date(2026, 1, 6)) is True  # HolDiv=1 -> trading
+    assert calendar.is_trading_session(date(2026, 1, 7)) is True  # HolDiv=2 -> trading(半休場日)
+    assert calendar.is_trading_session(date(2026, 1, 8)) is False  # HolDiv=3 -> 現物Pipelineでは非trading
 
 
 def test_jquants_adapter_auth_failure_does_not_leak_api_key_in_exception() -> None:

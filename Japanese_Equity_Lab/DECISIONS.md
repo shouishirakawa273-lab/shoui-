@@ -744,3 +744,87 @@ Eventの検出・件数表示のみ行う。したがって、D0014のBLOCKING T
    ユーザーからの指摘を受けて全箇所を修正した。今後はコード上の会社名ラベルも
    手入力ではなく`equities_master`から解決することを推奨する
    (`check_company_name_consistency`参照)。
+
+---
+
+## Phase3A.1 追補(2026-08-16): HolDiv/AdjFactorの公式仕様確定
+
+Phase3A.1完了報告に対し、ユーザーからHolDivの値の意味とAdjFactorの公式計算方法を
+確定情報として提示された。D0031〜D0033で「未検証の推測」としていた箇所のうち、
+この2点は確定情報へ差し替えた。
+
+## D0034 — HolDiv/AdjFactorを公式仕様(確定)へ差し替え、Price Continuity Adjustmentを
+PIT-safeに実装
+
+**HolDiv(確定)**: `lib/data_sources/convert.py`に公式の値と意味を定数として明記した。
+
+```
+0 = Non-business day
+1 = Business day
+2 = Day of TSE Half-Day Trading Sessions
+3 = Non-business day (with holiday trading)
+```
+
+日本株現物Backtestのデフォルトを`tradable = {1, 2}`(`_TRADING_HOL_DIV_DEFAULT`)、
+`non_tradable = {0, 3}`とした(現物Cash Equity Pipelineでは3も非取引日として扱う、
+ユーザー確定仕様)。`trading_hol_div_values`引数によるConfigurable設計は維持しつつ、
+既定値はもはや「未検証の推測」ではなく確定仕様として扱う。HolDiv 0/1/2/3それぞれの
+Test(`test_trading_calendar_payload_to_calendar_uses_official_hol_div_semantics`)を追加した。
+
+**AdjFactor(確定)**: J-Quants V2のAdjFactorはCorporate Actionのex-dateのrecordに
+記録され、以下の計算方法が公式仕様であることが確定した。
+
+```
+Adjusted Price  = Raw Price  × Π(そのバー日より後にeffectiveなAdjFactor)
+Adjusted Volume = Raw Volume ÷ Π(そのバー日より後にeffectiveなAdjFactor)
+```
+
+ユーザー提示の例(2024-01-10 C=980,AdjFactor=1.0 / 2024-01-11 C=480,AdjFactor=0.5(ex-date)
+/ 2024-01-12 C=500,AdjFactor=1.0 → Adjusted Closeは01-10=490, 01-11=480(ex-date当日は
+無調整), 01-12=500)で確認したところ、D0032で実装した`build_provider_derived_adjusted_bars`
+の「イベント効力発生日より前のバーにのみ乗算する」ロジックは、既にこの公式仕様と
+**一致していた**(「乗算慣習」という一般論からの推測だったが、結果的に正しい向きだった)。
+したがって計算式自体の変更は無く、ドキュメント上の「未検証」という表現を確定仕様の説明へ
+差し替えた。出来高の除算(`volume / cumulative_factor`)も同様に既存実装のまま確定した。
+公式の3ケース(as_of=ex-date前日・ex-date当日close・ex-date翌日)をそれぞれ
+`test_build_provider_derived_adjusted_bars_scenario_{before,at,after}_ex_date`として
+`13_tests/test_convert_phase3a.py`に追加し、ユーザー提示の数値と完全一致することを確認した。
+
+**PIT-safe gateの挙動変更(重要)**: これまで`build_provider_derived_adjusted_bars`は、
+as_of時点でまだ効力発生日のBarが取得可能でないはずのEventが混入していた場合
+`LookAheadBiasError`で拒否していた(Case Aの「未公表」ケースを模した設計)。しかし
+ユーザーの提示したCase A(as_of=2024-01-10、1/11の未来Eventが存在しても例外にならず、
+単に無調整のまま980を返す)を踏まえ、**エラーではなく黙って調整対象から除外する**
+挙動へ変更した。理由: Case Bのイベントには「発表済みだがまだ効力未発生」という
+Case A的な中間状態が無く、単に「まだ効力発生日のBarが取得可能になっていないだけ」
+という通常の時系列進行にすぎない。Backtest Pipelineがある時点までの全Raw/Event Dataを
+保持したまま複数のdecision_atで繰り返しこの関数を呼ぶ運用を想定すると、「まだ知り得ない」
+Eventが渡された集合に含まれること自体はむしろ通常の状態であり、それをエラー扱いすると
+実用上扱いづらい。異常なのは「未来のEventを適用してしまう」ことであり、本関数は
+それを構造的に防ぐことで安全性を担保する。
+
+**ExRTとの役割分離**: `AdjFactor != 1`のみをPrice Adjustmentの対象とし、`ExRT`が
+設定されているだけの行(`AdjFactor == 1`)は独自の補正係数を推測して適用しない
+よう明示的にガードした(数学的には1.0を掛けても無害だが、設計意図を明示するため)。
+`ExRT`はCorporate Action / ex-right eventのmetadataとして`CorporateAction`に
+保持され続ける(`detect_corporate_action_events_from_equity_bars`は引き続き
+`AdjFactor != 1`または`ExRT`ありの行をEventとして検出する)。
+
+**依然として実Backtestへ適用しない理由(BLOCKING TODOの性質が変化)**:
+`build_provider_derived_adjusted_bars`自体は上記の通りPIT-safeに実装済みだが、
+`scripts/jquants_lab_pipeline.py`はまだこれを`price_history`の構築へ組み込んでいない。
+理由は新たに判明した設計上の制約: `BacktestEngine.run()`(`lib/backtest/engine.py`)は
+`price_history`を**1回だけ事前計算**し、各`decision_at`ではそこから
+`session_date <= decision_date`のスライスを取り出すだけの設計になっている。仮に
+`build_provider_derived_adjusted_bars`を単一の固定`as_of`(例えば実行時点や対象期間の
+終端)で事前計算すると、Walk-Forwardで複数のdecision_atを横断する場合、**一部の
+decision_atにとっては「まだ知り得ないはずの将来のCorporate Actionで調整された価格」を
+見てしまう**(=事前計算時のas_ofより前の全decision_atに対して一律に同じ調整後価格を
+渡すことになるため)。これは関数自体のバグではなく、「事前計算1回+スライス」という
+既存Engineアーキテクチャと「decision_atごとに異なるAs-of Adjusted Seriesが必要」という
+Case Bの要件が噛み合わないことによる、より上位の設計課題である。この配線変更
+(price_historyをdecision_atごとに再計算する、あるいはEngine内でCorporate Action
+イベントを直接扱えるようにする等)は、既存Backtest Engineの構造変更を伴うため、
+「必要性がない限り変更しない」というPhase3Aの指示を踏まえ、Phase3A.1では見送り、
+Phase3B以降の検討事項とした。したがって`scripts/jquants_lab_pipeline.py`は引き続き
+`apply_split_adjustments(bars, [])`(無調整)のままである。

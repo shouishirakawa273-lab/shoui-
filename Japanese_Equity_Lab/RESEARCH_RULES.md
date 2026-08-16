@@ -247,23 +247,36 @@ Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(.
 - **Case A**: Corporate Action Announcementそのものを取引Signalとして使う用途。
   本物の`announced_at`が必須。`apply_split_adjustments_as_of()`が担う(変更なし)。
 - **Case B**: Price Seriesが分割で不連続にならないようにする用途。J-Quants V2の
-  `AdjFactor`/`ExRT`はEvent当日のBar行そのものに機械的に付与され、事前の公表を
-  経由しない。そのため`announced_at`は不要で、その日のBarデータ自体が取得可能に
-  なる時刻(`session_close_at(effective_date)`)をPIT gateとして使う
-  `build_provider_derived_adjusted_bars()`(`lib/schemas/price_data.py`)が担う。
+  `AdjFactor`はCorporate Actionのex-dateのBar行そのものに機械的に付与され、事前の公表を
+  経由しない(公式仕様確定、DECISIONS.md D0034)。そのため`announced_at`は不要で、
+  その日のBarデータ自体が取得可能になる時刻(`session_close_at(effective_date)`)を
+  PIT gateとして使う`build_provider_derived_adjusted_bars()`(`lib/schemas/price_data.py`)
+  が担う。計算式(確定):
+  `Adjusted Price = Raw Price × Π(そのバー日より後にeffectiveなAdjFactor)`、
+  `Adjusted Volume = Raw Volume ÷ Π(同上)`。as_of時点でまだ効力発生日のBarが取得可能に
+  なっていないEventは、エラーにはせず黙って調整対象から除外する(Case Aの「未公表」
+  ケースとは異なる、通常の時系列進行として扱う)。`ExRT`はCorporate Action /
+  ex-right eventのmetadataとして保持するのみで、`AdjFactor == 1`の日にExRTだけが
+  存在してもPrice Adjustmentは行わない。
 
 ### 🚫 BLOCKING TODO: 実データBacktestでは依然としてsplit調整を適用していない
 
 Case A(Announcementを使う用途)のデータSourceは引き続き**未実装**(DECISIONS.md D0014)。
-Case B(Price Series連続化)はD0032で設計上PIT-safeに扱えるようになったが、
-`build_provider_derived_adjusted_bars()`が`AdjFactor`をRaw価格へ適用する向き(乗算/除算)は
-**未検証**(J-Quants V2公式ドキュメントへこのセッションから疎通できないため)。
-誤った向きで適用すると価格を桁違いに歪めるリスクがあるため、
+Case B(Price Series連続化)は`build_provider_derived_adjusted_bars()`としてPIT-safeに
+実装済みで、AdjFactorの計算方法(乗算/除算の向き含む)も公式仕様として確定した
+(DECISIONS.md D0034)。しかし、`BacktestEngine.run()`(`lib/backtest/engine.py`)は
+`price_history`を1回だけ事前計算し、各`decision_at`ではそこから
+`session_date <= decision_date`のスライスを取り出すだけの設計になっている。単一の
+固定`as_of`で`build_provider_derived_adjusted_bars()`を事前計算すると、Walk-Forwardで
+複数のdecision_atを横断する場合、一部のdecision_atが「まだ知り得ないはずの将来の
+Corporate Actionで調整された価格」を見てしまう。この配線変更(decision_atごとの
+再計算、あるいはEngine内でCorporate Actionイベントを直接扱う設計への変更)は
+既存Backtest Engineの構造変更を伴うため、Phase3A.1では見送った(D0034)。
 `scripts/jquants_lab_pipeline.py`は引き続き`apply_split_adjustments(bars, actions=[])`
 (常に無調整)を使う。**対象期間・対象銘柄に株式分割等があった場合、価格系列が不連続に
 なりBacktest結果が誤る。** 実際の日本株を対象にした(投資判断に使う)Backtestを開始する
-前に、必ずAdjFactorの向きを実データで検証すること(`LOCAL_DATA_FETCH_GUIDE.md`手順7参照)。
-それまでは合成データ・向き未検証であることを踏まえたPipeline配線の検証にとどめる。
+前に、必ずこのEngine配線課題を解決すること。それまでは合成データによるPipeline配線の
+検証にとどめる。
 
 `lib/data_sources/convert.detect_corporate_action_events_from_equity_bars()`
 (旧`detect_split_hints_from_daily_quotes()`、D0032で置き換え)は、その日の行が

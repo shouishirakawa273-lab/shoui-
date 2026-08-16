@@ -23,20 +23,28 @@ from lib.universe import ListingRecord
 
 TOPIX_CODE = "TOPIX"
 
-# V2 ``/v2/markets/calendar`` の ``HolDiv`` で「取引日」を表す値の集合。
-# **未検証**: このセッションはJ-Quants V2公式ドキュメントへ疎通できず、HolDivの
-# 値の意味を独自に確認できていない。ここでは値"1"を取引日とするV1時代の理解を
-# 暫定的に引き継いでいるが、V2で値・意味が変わっている可能性がある。
-# `trading_calendar_payload_to_calendar`の`trading_hol_div_values`引数で上書きできる
-# (実データ取得後、正しい値をユーザーが確認してから恒久的にこの定数を修正すること)。
-_TRADING_HOL_DIV_GUESS: frozenset[str] = frozenset({"1"})
+# V2 ``/v2/markets/calendar`` の ``HolDiv``(公式仕様、ユーザー確定情報、DECISIONS.md
+# D0034参照)。
+#   0 = Non-business day
+#   1 = Business day
+#   2 = Day of TSE Half-Day Trading Sessions
+#   3 = Non-business day (with holiday trading)
+HOL_DIV_NON_BUSINESS_DAY = "0"
+HOL_DIV_BUSINESS_DAY = "1"
+HOL_DIV_HALF_DAY_TRADING = "2"
+HOL_DIV_NON_BUSINESS_WITH_HOLIDAY_TRADING = "3"
+
+# 日本株現物Backtestのデフォルト: 半休場日(2)も取引日として扱い、holiday tradingのみの
+# 非営業日(3)は現物Cash Equity Pipelineでは非取引日として扱う(ユーザー確定仕様)。
+_TRADING_HOL_DIV_DEFAULT: frozenset[str] = frozenset({HOL_DIV_BUSINESS_DAY, HOL_DIV_HALF_DAY_TRADING})
 
 _ADJUSTMENT_EVENT_NOTE = (
-    "J-QuantsV2のAdjFactor/ExRTから検出したCorporate Action候補(Case B: Price Series"
-    "連続化専用)。分割か併合か等の種別はAdjFactorの値の向きが未検証のため断定していない"
-    "(CorporateActionType.ADJUSTMENT_EVENT)。Case A(Announcementを取引Signalとして"
-    "使う用途)には使えない(announced_atを持たない)。Price Series連続化には"
-    "`build_provider_derived_adjusted_bars`を使う(DECISIONS.md D0032参照)。"
+    "J-QuantsV2のAdjFactor/ExRTから検出したCorporate Action候補。AdjFactorはEx-date"
+    "recordに記録され、Price Adjustment(Case B: Price Series連続化)には"
+    "`build_provider_derived_adjusted_bars`を使う(公式仕様確定、DECISIONS.md D0034参照)。"
+    "ExRTはCorporate Action / ex-right eventのmetadataとして保持するのみで、"
+    "AdjFactor=1の日にExRTだけが存在してもPrice Adjustmentは行わない。"
+    "Case A(Announcementを取引Signalとして使う用途)には使えない(announced_atを持たない)。"
 )
 
 
@@ -99,10 +107,12 @@ def trading_calendar_payload_to_calendar(
 ) -> TradingCalendar:
     """``/v2/markets/calendar``ペイロードから``TradingCalendar``を構築する。
 
-    `trading_hol_div_values`省略時は`_TRADING_HOL_DIV_GUESS`(未検証の推測)を使う。
-    実データで確認した正しい値集合が分かった場合は明示的に渡すこと。
+    `trading_hol_div_values`省略時は`_TRADING_HOL_DIV_DEFAULT`(公式仕様に基づく既定値:
+    Business day(1) / Half-Day Trading(2)を取引日とする)を使う。半休場日を取引日として
+    扱わない、あるいはholiday trading日(3)も取引日として扱うなど、既定と異なる運用を
+    したい場合はこの引数で明示的に上書きできる。
     """
-    hol_div_values = trading_hol_div_values if trading_hol_div_values is not None else _TRADING_HOL_DIV_GUESS
+    hol_div_values = trading_hol_div_values if trading_hol_div_values is not None else _TRADING_HOL_DIV_DEFAULT
     trading_dates = frozenset(date.fromisoformat(str(row["Date"])) for row in payload if str(row.get("HolDiv")) in hol_div_values)
     return TradingCalendar(trading_dates=trading_dates, range_start=range_start, range_end=range_end)
 
@@ -110,14 +120,18 @@ def trading_calendar_payload_to_calendar(
 def detect_corporate_action_events_from_equity_bars(payload: list[dict[str, object]]) -> list[CorporateAction]:
     """``equity_bars``の``AdjFactor``/``ExRT``からCorporate Action候補を抽出する。
 
-    J-Quants V2ではAdjFactorはCorporate Actionの権利落ち日のrecordそのものに記録される
-    (=ユーザー提示仕様。前日との差分ではなく、その日の行を見るだけで判定できる)。
-    したがって``AdjFactor != 1``または``ExRT``が設定されている行を、そのままEvent当日
-    として認識する(V1時代のような前日比較によるヒューリスティックは使わない)。
+    J-Quants V2ではAdjFactorはCorporate Actionの権利落ち日(ex-date)のrecordそのものに
+    記録される(公式仕様確定、DECISIONS.md D0034)。したがって``AdjFactor != 1``または
+    ``ExRT``が設定されている行を、そのままEvent当日として認識する(前日比較による
+    ヒューリスティックは使わない)。
 
     抽出したEventは`CorporateActionType.ADJUSTMENT_EVENT`(種別未断定)、
     `announced_at=None`(Case Aには使えない)、`raw_adj_factor`にAdjFactorの生値を保持する。
     Price Series連続化(Case B)には`build_provider_derived_adjusted_bars`を使う。
+    **ExRTのみが設定されAdjFactor==1の行も検出はするが**(Corporate Actionの
+    metadataとして記録する)、`build_provider_derived_adjusted_bars`はAdjFactor!=1の
+    ものだけを実際のPrice Adjustmentに使い、ExRTの存在だけを理由に独自の補正係数を
+    推測・適用することはない。
     """
     events: list[CorporateAction] = []
     for row in payload:
