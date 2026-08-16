@@ -33,7 +33,8 @@ Japanese_Equity_Lab/
   12_reports/           daily/weekly/experiment レポート
   13_tests/             pytest テスト(lib/ と1対1対応)
   99_archive/           削除ではなく退避したデータ・実験
-  lib/                  UI非依存の共有Pythonロジック(schemas / backtest / registry)
+  lib/                  UI非依存の共有Pythonロジック(schemas / backtest / registry /
+                         market_calendar / point_in_time / universe)
 ```
 
 `lib/` はこの構成案に対する追加提案(詳細は DECISIONS.md)。数字プレフィックスの各ディレクトリは
@@ -62,7 +63,10 @@ cd ..   # リポジトリルート
 pytest Japanese_Equity_Lab/13_tests/ -q
 ```
 
-## 現在の状態(Phase 1)
+## 現在の状態(Phase 1.1)
 
 フォルダ構造・方針文書・主要schema・Backtest Engineの骨格・Benchmark比較・
-Experiment Registry・Provenance管理を実装済み。実データを使ったBacktest実行はPhase 2以降。
+Experiment Registry・Provenance管理を実装済み。Phase1.1で、東証取引時間の制度変更対応
+(`lib/market_calendar.py`)・Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time
+安全性・Point-in-Time Universe(`lib/universe.py`)のInterfaceを追加し、`Japanese_Equity_Lab/lib`
+をmypyの対象に含めた。実データを使ったBacktest実行はPhase 2以降。

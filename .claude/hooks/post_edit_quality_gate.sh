@@ -20,7 +20,7 @@ echo "[hook] ruff format --check ..."
 "$PY" -m ruff format --check . || fail=1
 
 echo "[hook] mypy ..."
-"$PY" -m mypy core app.py scripts || fail=1
+"$PY" -m mypy core app.py scripts Japanese_Equity_Lab/lib || fail=1
 
 echo "[hook] pytest ..."
 "$PY" -m pytest tests/ -q || fail=1

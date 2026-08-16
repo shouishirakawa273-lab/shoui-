@@ -99,5 +99,5 @@ class Hypothesis(RecordMeta):
             locked_terms_hash=None,
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
-            **term_changes,
+            **term_changes,  # type: ignore[arg-type]  # 呼び出し側の責務でtermsの型を保証する
         )

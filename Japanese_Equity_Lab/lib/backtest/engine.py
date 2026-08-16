@@ -1,11 +1,13 @@
 """Backtest Engineの骨格。
 
 Phase1では実データでの売買シミュレーションは実装しない(Phase2で実施、DECISIONS.md D0003参照)。
-ここで実装するのは以下の2点。どちらも外部APIなしでsynthetic dataだけでテストできる。
+ここで実装するのは以下の3点。どれも外部APIなしでsynthetic dataだけでテストできる。
 
 1. Look-ahead biasを混入させないための入力検証
-   (decision_at時点でまだ利用不可能な情報が渡されたら拒否する)
-2. 指標計算(sample_size, win_rate, benchmark比較, 年度別/セクター別/銘柄別分布等)
+   (information_used_at時点でまだ利用不可能な情報が渡されたら拒否する)
+2. Close-to-Close実行の禁止
+   (当日Closeの情報で意思決定した場合、同日中の価格では約定できないようにする)
+3. 指標計算(sample_size, win_rate, benchmark比較, 年度別/セクター別/銘柄別分布等)
 
 税金はスコープ外とし、ここで扱うリターンは手数料・スリッページ控除後、税引前
 (Net Pre-tax Return)である。税引後シミュレーションは将来別モジュールで扱う。
@@ -16,9 +18,11 @@ from __future__ import annotations
 import statistics
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
+from lib.errors import LookAheadBiasError
+from lib.market_calendar import session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord, assert_no_lookahead
 
 
@@ -29,25 +33,83 @@ class DataSplit(StrEnum):
     WALK_FORWARD = "WALK_FORWARD"
 
 
+class ExecutionModel(StrEnum):
+    """Ver.1のデフォルトは NEXT_SESSION_OPEN。CLOSING_AUCTIONは将来実装(Phase1未対応)。"""
+
+    NEXT_SESSION_OPEN = "NEXT_SESSION_OPEN"
+    CLOSING_AUCTION = "CLOSING_AUCTION"
+
+
 @dataclass(frozen=True)
 class DecisionWindow:
-    """1回の売買判断における decision_at(判断時刻) と execution_at(執行時刻)。"""
+    """1回の売買判断における3つの時刻(すべてtz-aware)。
 
+    information_used_at: シグナル生成に使ってよい情報の締め時刻。Point-in-Timeガードは
+        この時刻を基準に行う(build_signal_input参照)。
+    decision_at: シグナルを確定した時刻。通常はinformation_used_atと同時刻。
+    execution_at: 実際に約定する時刻。
+
+    Ver.1のデフォルトExecution Modelは「当日Closeまでの情報でSignal生成 -> 次営業日Openで約定」。
+    decision_atがその日の大引け時刻と一致する場合、同日中の執行(Closing Auction等)は
+    このモデルでは禁止する(Close-to-Close Look-ahead防止。将来別Execution Modelとして実装する)。
+    """
+
+    information_used_at: datetime
     decision_at: datetime
     execution_at: datetime
 
     def __post_init__(self) -> None:
-        if self.decision_at.tzinfo is None or self.execution_at.tzinfo is None:
-            raise ValueError("decision_at / execution_at はtz-awareである必要があります")
-        if self.execution_at < self.decision_at:
-            raise ValueError("execution_at は decision_at より前にはなりません")
+        for name, value in (
+            ("information_used_at", self.information_used_at),
+            ("decision_at", self.decision_at),
+            ("execution_at", self.execution_at),
+        ):
+            if value.tzinfo is None:
+                raise ValueError(f"{name} はtz-awareである必要があります")
+        if not (self.information_used_at <= self.decision_at < self.execution_at):
+            raise ValueError(
+                "information_used_at <= decision_at < execution_at である必要があります "
+                f"(information_used_at={self.information_used_at.isoformat()}, "
+                f"decision_at={self.decision_at.isoformat()}, execution_at={self.execution_at.isoformat()})"
+            )
+        if self.decision_at == session_close_at(self.decision_at.date()) and self.execution_at.date() <= self.decision_at.date():
+            raise LookAheadBiasError(
+                "Close-to-Close実行は禁止です。同日Closeの情報で意思決定した場合、"
+                "同日中の価格では約定できません(次営業日Open以降のexecution_atを指定してください)。"
+                "Closing Auction戦略はExecutionModel.CLOSING_AUCTIONとして将来別途実装します。"
+            )
+
+
+def build_close_to_next_open_window(
+    *,
+    decision_session_date: date,
+    execution_session_date: date,
+) -> DecisionWindow:
+    """Ver.1のデフォルトExecution Model(NEXT_SESSION_OPEN)のDecisionWindowを構築する。
+
+    当日Closeまでの情報でSignal生成 -> 次営業日Openで約定、というVer.1の既定動作を表す。
+    execution_session_dateは呼び出し側が「実際に取引がある次の営業日」を渡すこと
+    (Phase1.1時点では祝日・臨時休場カレンダーは未実装。安易にdecision_session_date+1日を
+    使うと休場日を約定日にしてしまう恐れがあるため、この関数では自動計算しない)。
+    """
+    if execution_session_date <= decision_session_date:
+        raise LookAheadBiasError(
+            "execution_session_date は decision_session_date より後の営業日である必要があります "
+            f"(decision_session_date={decision_session_date}, execution_session_date={execution_session_date})"
+        )
+    decision_at = session_close_at(decision_session_date)
+    return DecisionWindow(
+        information_used_at=decision_at,
+        decision_at=decision_at,
+        execution_at=session_open_at(execution_session_date),
+    )
 
 
 @dataclass(frozen=True)
 class SignalInput:
     """1回の意思決定でストラテジーに渡してよい情報の束。
 
-    decision_at時点でavailable_atを過ぎていないレコードが1件でも含まれていたら、
+    information_used_at時点でavailable_atを過ぎていないレコードが1件でも含まれていたら、
     構築時点で LookAheadBiasError を送出する(黙って除外しない)。
     """
 
@@ -55,7 +117,7 @@ class SignalInput:
     records: tuple[PointInTimeRecord, ...]
 
     def __post_init__(self) -> None:
-        assert_no_lookahead(self.records, self.window.decision_at)
+        assert_no_lookahead(self.records, self.window.information_used_at)
 
 
 @dataclass(frozen=True)
@@ -160,7 +222,7 @@ def _max_drawdown(period_returns: Sequence[float]) -> float:
 class BacktestEngine:
     """Phase2で実データ連携する売買シミュレーションのインターフェース。
 
-    Phase1時点では、decision_at時点で利用可能な情報だけを使ってSignalInputを
+    Phase1時点では、information_used_at時点で利用可能な情報だけを使ってSignalInputを
     構築するところまでを実装する(build_signal_input)。シグナル生成〜約定の
     シミュレーションループはPhase2で実装する(run)。
     """

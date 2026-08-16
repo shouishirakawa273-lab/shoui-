@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 
+from lib.errors import LookAheadBiasError
 from lib.schemas.base import RecordMeta
 
 
@@ -91,3 +92,29 @@ def apply_split_adjustments(raw_bars: list[RawOHLCVBar], actions: list[Corporate
             )
         )
     return adjusted
+
+
+def apply_split_adjustments_as_of(
+    raw_bars: list[RawOHLCVBar],
+    actions: list[CorporateAction],
+    *,
+    as_of: datetime,
+) -> list[AdjustedOHLCVBar]:
+    """as_of(decision_at)時点でannounced_at済みのCorporate Actionのみを反映する。
+
+    Adjusted OHLCVをFeature生成に使う場合、as_ofより後にannounceされる
+    (=その時点ではまだ知り得ない)株式分割・併合を過去のSignal生成に混入させてはならない。
+    announced_atが不明(None)のCorporate Actionは、Point-in-Time安全性を検証できないため
+    LookAheadBiasErrorで拒否する(黙って除外せず、呼び出し側にデータ不備を明示する)。
+    Raw priceは本関数でも書き換えず、常にRawOHLCVBarのまま不変で保持する。
+    """
+    if as_of.tzinfo is None:
+        raise ValueError("as_of はtz-awareである必要があります")
+    unresolved = [a for a in actions if a.announced_at is None]
+    if unresolved:
+        raise LookAheadBiasError(
+            f"announced_atが不明なCorporate Actionが{len(unresolved)}件あり、"
+            "Point-in-Time安全性を検証できません(apply_split_adjustments_as_ofには渡せません)。"
+        )
+    known_actions = [a for a in actions if a.announced_at is not None and a.announced_at <= as_of]
+    return apply_split_adjustments(raw_bars, known_actions)

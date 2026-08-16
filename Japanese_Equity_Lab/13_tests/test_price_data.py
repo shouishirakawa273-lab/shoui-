@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
+import pytest
+from lib.errors import LookAheadBiasError
+from lib.market_calendar import JST, session_close_at
 from lib.schemas.price_data import (
     CorporateAction,
     CorporateActionType,
     RawOHLCVBar,
     apply_split_adjustments,
+    apply_split_adjustments_as_of,
 )
 
 
@@ -38,3 +42,55 @@ def test_split_adjustment_handles_missing_prices() -> None:
     ]
     adjusted = apply_split_adjustments(raw_bars, [])
     assert adjusted[0].close is None
+
+
+def test_apply_split_adjustments_as_of_excludes_not_yet_announced_split() -> None:
+    """decision_atより後に公表される分割は、過去のSignal生成に混入させない。"""
+    raw_bars = [
+        RawOHLCVBar(code="7203", session_date=date(2026, 1, 5), open=2000, high=2010, low=1990, close=2000, volume=1000),
+    ]
+    split_announced_later = CorporateAction(
+        code="7203",
+        action_type=CorporateActionType.SPLIT,
+        effective_date=date(2026, 2, 1),
+        announced_at=datetime(2026, 1, 20, 16, 0, tzinfo=JST),  # decision_atより後に公表
+        split_ratio=2.0,
+    )
+    decision_at = session_close_at(date(2026, 1, 10))
+
+    adjusted = apply_split_adjustments_as_of(raw_bars, [split_announced_later], as_of=decision_at)
+
+    assert adjusted[0].close == 2000  # まだ公表されていないので無調整
+    assert adjusted[0].split_adjustment_factor == 1.0
+
+
+def test_apply_split_adjustments_as_of_includes_already_announced_split() -> None:
+    raw_bars = [
+        RawOHLCVBar(code="7203", session_date=date(2026, 1, 5), open=2000, high=2010, low=1990, close=2000, volume=1000),
+    ]
+    split_announced_early = CorporateAction(
+        code="7203",
+        action_type=CorporateActionType.SPLIT,
+        effective_date=date(2026, 2, 1),
+        announced_at=datetime(2025, 12, 1, 16, 0, tzinfo=JST),  # decision_atより前に公表済み
+        split_ratio=2.0,
+    )
+    decision_at = session_close_at(date(2026, 1, 10))
+
+    adjusted = apply_split_adjustments_as_of(raw_bars, [split_announced_early], as_of=decision_at)
+
+    assert adjusted[0].close == 1000  # 公表済みなので調整される
+
+
+def test_apply_split_adjustments_as_of_rejects_unresolved_announced_at() -> None:
+    raw_bars = [
+        RawOHLCVBar(code="7203", session_date=date(2026, 1, 5), open=2000, high=2010, low=1990, close=2000, volume=1000),
+    ]
+    action_without_announced_at = CorporateAction(
+        code="7203",
+        action_type=CorporateActionType.SPLIT,
+        effective_date=date(2026, 2, 1),
+        split_ratio=2.0,
+    )
+    with pytest.raises(LookAheadBiasError):
+        apply_split_adjustments_as_of(raw_bars, [action_without_announced_at], as_of=session_close_at(date(2026, 1, 10)))

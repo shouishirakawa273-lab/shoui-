@@ -3,27 +3,18 @@
 日付だけでなく時刻レベルで published_at / available_at を区別する。
 とくに取引時間終了後に公表された情報は、同日終値時点の decision_at では
 利用できないことをコードレベルで強制する(assert_no_lookahead)。
-decision_at / execution_at (意思決定側のタイミング)は lib/backtest/engine.py で扱う。
+市場の取引時間は lib/market_calendar.py に集約する(ここでハードコードしない)。
+decision_at / execution_at / information_used_at (意思決定側のタイミング)は
+lib/backtest/engine.py で扱う。
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime
 
 from lib.errors import LookAheadBiasError
-
-# 日本は夏時間を採用していないため固定オフセットで扱う。
-JST = timezone(timedelta(hours=9), name="JST")
-
-# 東証の現物取引の大引け(Phase1時点の概算値。取引時間が変わった場合はここを更新する)。
-TSE_MARKET_CLOSE = time(15, 0)
-
-
-def session_close_at(session_date: date) -> datetime:
-    """指定した取引日の大引け時刻(JST, tz-aware)を返す。"""
-    return datetime.combine(session_date, TSE_MARKET_CLOSE, tzinfo=JST)
 
 
 @dataclass(frozen=True)

@@ -8,17 +8,16 @@ from lib.backtest.engine import (
     DataSplit,
     DecisionWindow,
     TradeResult,
+    build_close_to_next_open_window,
     compute_metrics,
 )
 from lib.errors import LookAheadBiasError
-from lib.point_in_time import JST, PointInTimeRecord, session_close_at
+from lib.market_calendar import JST, session_close_at, session_open_at
+from lib.point_in_time import PointInTimeRecord
 
 
-def _window(session_date: date) -> DecisionWindow:
-    return DecisionWindow(
-        decision_at=session_close_at(session_date),
-        execution_at=datetime.combine(date(2026, 8, 18), datetime.min.time(), tzinfo=JST),
-    )
+def _close_to_next_open_window(decision_date: date, execution_date: date) -> DecisionWindow:
+    return build_close_to_next_open_window(decision_session_date=decision_date, execution_session_date=execution_date)
 
 
 def test_build_signal_input_accepts_available_records() -> None:
@@ -29,29 +28,64 @@ def test_build_signal_input_accepts_available_records() -> None:
         available_at=datetime(2026, 8, 17, 9, 0, tzinfo=JST),
         label="PER",
     )
-    signal_input = engine.build_signal_input(_window(date(2026, 8, 17)), [record])
+    window = _close_to_next_open_window(date(2026, 8, 17), date(2026, 8, 18))
+    signal_input = engine.build_signal_input(window, [record])
     assert signal_input.records == (record,)
 
 
 def test_build_signal_input_rejects_after_hours_disclosure_on_same_day_close() -> None:
-    """available_at(15:30) > decision_at(同日15:00大引け) のデータはBacktestが拒否する。"""
+    """information_used_at(15:30) > 開示時刻(16:00) のデータはBacktestが拒否する。"""
     engine = BacktestEngine()
     late_earnings = PointInTimeRecord(
         value_date=date(2026, 8, 17),
-        published_at=datetime(2026, 8, 17, 15, 30, tzinfo=JST),
-        available_at=datetime(2026, 8, 17, 15, 30, tzinfo=JST),
+        published_at=datetime(2026, 8, 17, 16, 0, tzinfo=JST),
+        available_at=datetime(2026, 8, 17, 16, 0, tzinfo=JST),
         label="Q1決算(引け後開示)",
     )
+    window = _close_to_next_open_window(date(2026, 8, 17), date(2026, 8, 18))
     with pytest.raises(LookAheadBiasError):
-        engine.build_signal_input(_window(date(2026, 8, 17)), [late_earnings])
+        engine.build_signal_input(window, [late_earnings])
 
 
 def test_decision_window_rejects_execution_before_decision() -> None:
-    with pytest.raises(ValueError, match="execution_at"):
+    with pytest.raises(ValueError, match="information_used_at"):
         DecisionWindow(
-            decision_at=datetime(2026, 8, 17, 15, 0, tzinfo=JST),
+            information_used_at=datetime(2026, 8, 17, 9, 0, tzinfo=JST),
+            decision_at=datetime(2026, 8, 17, 15, 30, tzinfo=JST),
             execution_at=datetime(2026, 8, 17, 9, 0, tzinfo=JST),
         )
+
+
+def test_decision_window_rejects_information_used_after_decision() -> None:
+    with pytest.raises(ValueError, match="information_used_at"):
+        DecisionWindow(
+            information_used_at=datetime(2026, 8, 17, 16, 0, tzinfo=JST),
+            decision_at=datetime(2026, 8, 17, 15, 30, tzinfo=JST),
+            execution_at=datetime(2026, 8, 18, 9, 0, tzinfo=JST),
+        )
+
+
+def test_close_to_close_execution_is_rejected() -> None:
+    """当日Closeの情報で意思決定した場合、同日中の価格では約定できない。"""
+    close_at = session_close_at(date(2026, 8, 17))
+    with pytest.raises(LookAheadBiasError, match="Close-to-Close"):
+        DecisionWindow(
+            information_used_at=close_at,
+            decision_at=close_at,
+            # 同日の(架空の)遅い時刻を約定時刻にしても許されない。
+            execution_at=datetime(2026, 8, 17, 23, 0, tzinfo=JST),
+        )
+
+
+def test_default_execution_model_is_next_session_open() -> None:
+    window = build_close_to_next_open_window(decision_session_date=date(2026, 8, 17), execution_session_date=date(2026, 8, 18))
+    assert window.decision_at == session_close_at(date(2026, 8, 17))
+    assert window.execution_at == session_open_at(date(2026, 8, 18))
+
+
+def test_build_close_to_next_open_window_rejects_non_later_session() -> None:
+    with pytest.raises(LookAheadBiasError):
+        build_close_to_next_open_window(decision_session_date=date(2026, 8, 17), execution_session_date=date(2026, 8, 17))
 
 
 def test_compute_metrics_basic_distribution() -> None:

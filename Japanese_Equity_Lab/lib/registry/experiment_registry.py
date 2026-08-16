@@ -12,13 +12,18 @@ from collections import Counter
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from lib.backtest.engine import BacktestMetrics, DataSplit
 from lib.errors import AppendOnlyViolationError
 from lib.schemas.experiment import Experiment, ExperimentStatus
 
+# JSON Lines <-> dataclass の変換は実行時にしか型を検証できない(JSONにはenum/datetime/
+# 整数キーが無いため)。ここだけ dict[str, Any] を使い、以降のコードはdataclass経由で
+# 型付きに戻す。
 
-def _experiment_to_dict(experiment: Experiment) -> dict[str, object]:
+
+def _experiment_to_dict(experiment: Experiment) -> dict[str, Any]:
     payload = asdict(experiment)
     payload["status"] = experiment.status.value
     payload["created_at"] = experiment.created_at.isoformat()
@@ -28,21 +33,21 @@ def _experiment_to_dict(experiment: Experiment) -> dict[str, object]:
     return payload
 
 
-def _metrics_from_dict(data: dict[str, object] | None) -> BacktestMetrics | None:
+def _metrics_from_dict(data: dict[str, Any] | None) -> BacktestMetrics | None:
     if data is None:
         return None
-    d = dict(data)
+    d: dict[str, Any] = dict(data)
     d["data_split"] = DataSplit(d["data_split"])
     d["year_by_year_performance"] = {int(k): v for k, v in dict(d.get("year_by_year_performance") or {}).items()}
     return BacktestMetrics(**d)
 
 
-def _experiment_from_dict(data: dict[str, object]) -> Experiment:
-    d = dict(data)
+def _experiment_from_dict(data: dict[str, Any]) -> Experiment:
+    d: dict[str, Any] = dict(data)
     d["status"] = ExperimentStatus(d["status"])
-    d["metrics"] = _metrics_from_dict(d.get("metrics"))  # type: ignore[arg-type]
-    d["created_at"] = datetime.fromisoformat(d["created_at"])  # type: ignore[arg-type]
-    d["updated_at"] = datetime.fromisoformat(d["updated_at"])  # type: ignore[arg-type]
+    d["metrics"] = _metrics_from_dict(d.get("metrics"))
+    d["created_at"] = datetime.fromisoformat(d["created_at"])
+    d["updated_at"] = datetime.fromisoformat(d["updated_at"])
     return Experiment(**d)
 
 
