@@ -114,9 +114,13 @@ def test_compute_metrics_basic_distribution() -> None:
     assert metrics.trade_count == 3
     assert metrics.unique_entry_dates == 2  # 2025-06-02 と 2026-01-06(2件重複)
     assert metrics.signal_count == 5
+    # SKIPPED_POSITION_OPENはPolicy Skipであり、Execution Failureとは別集計される。
+    assert metrics.policy_skipped_count == 2
+    assert metrics.order_attempt_count == 3  # signal_count(5) - policy_skipped_count(2)
     assert metrics.executed_count == 3
-    assert metrics.unexecuted_count == 2
-    assert metrics.execution_rate == pytest.approx(3 / 5)
+    assert metrics.execution_failed_count == 0  # order_attempt_count(3) - executed_count(3)
+    assert metrics.signal_to_trade_rate == pytest.approx(3 / 5)
+    assert metrics.order_execution_rate == pytest.approx(3 / 3)
     assert metrics.execution_outcomes == {"EXECUTED": 3, "SKIPPED_POSITION_OPEN": 2}
     assert metrics.win_rate == pytest.approx(2 / 3)
     assert metrics.excess_return is not None
@@ -125,13 +129,32 @@ def test_compute_metrics_basic_distribution() -> None:
     assert metrics.stock_by_stock_distribution["9984"] == pytest.approx(0.10)
 
 
+def test_compute_metrics_distinguishes_policy_skip_from_execution_failure() -> None:
+    """SKIPPED_POSITION_OPEN(Policy Skip)とUNEXECUTABLE_NO_OPEN(Execution Failure)を
+    同じ「unexecuted」として合算しないことを直接確認する。"""
+    trades = [TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.01)]
+    metrics = compute_metrics(
+        trades,
+        data_split=DataSplit.TEST,
+        signal_count=10,
+        execution_outcomes={"EXECUTED": 1, "SKIPPED_POSITION_OPEN": 6, "UNEXECUTABLE_NO_OPEN": 3},
+    )
+    assert metrics.policy_skipped_count == 6  # Policy Skipのみ
+    assert metrics.order_attempt_count == 4  # signal_count(10) - policy_skipped_count(6)
+    assert metrics.execution_failed_count == 3  # order_attempt_count(4) - executed_count(1)
+    assert metrics.executed_count == 1
+    assert metrics.signal_to_trade_rate == pytest.approx(1 / 10)
+    assert metrics.order_execution_rate == pytest.approx(1 / 4)
+
+
 def test_compute_metrics_empty_trades_returns_none_stats() -> None:
     metrics = compute_metrics([], data_split=DataSplit.TRAIN)
     assert metrics.unique_tickers == 0
     assert metrics.trade_count == 0
     assert metrics.unique_entry_dates == 0
     assert metrics.signal_count == 0
-    assert metrics.execution_rate is None  # signal_countを渡さない場合はNone
+    assert metrics.signal_to_trade_rate is None  # signal_countを渡さない場合はNone
+    assert metrics.order_execution_rate is None
     assert metrics.average_return is None
     assert metrics.win_rate is None
 
@@ -204,7 +227,7 @@ def test_run_produces_trades_with_matched_benchmark_comparison() -> None:
     assert metrics.benchmark_return is not None
     assert metrics.excess_return is not None
     assert metrics.signal_count >= metrics.trade_count
-    assert metrics.execution_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
+    assert metrics.signal_to_trade_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
 
 
 def test_run_raises_when_benchmark_data_insufficient() -> None:
@@ -263,7 +286,7 @@ def test_run_skips_trades_with_missing_execution_price_instead_of_fallback() -> 
     # 最終的なtrade_countは変わらない場合があるが、失敗した試行自体は必ず記録される。
     assert metrics_with_gap.execution_outcomes.get(ExecutionOutcome.UNEXECUTABLE_NO_OPEN.value, 0) >= 1
     assert metrics_without_gap.execution_outcomes.get(ExecutionOutcome.UNEXECUTABLE_NO_OPEN.value, 0) == 0
-    assert metrics_with_gap.unexecuted_count >= metrics_without_gap.unexecuted_count
+    assert metrics_with_gap.execution_failed_count >= metrics_without_gap.execution_failed_count
 
 
 def test_run_is_deterministic_given_identical_inputs() -> None:
@@ -305,10 +328,15 @@ def test_no_reentry_while_position_open_skips_overlapping_signals() -> None:
     # 右肩上がりの合成データなのでlookback以降ほぼ毎営業日シグナルが出るが、
     # NO_REENTRY_WHILE_POSITION_OPENにより実際のトレードはholding期間分空けてしか成立しない。
     assert metrics.signal_count > metrics.trade_count
-    assert metrics.unexecuted_count == metrics.signal_count - metrics.trade_count
-    assert metrics.execution_outcomes.get(ExecutionOutcome.SKIPPED_POSITION_OPEN.value, 0) > 0
+    # Policy Skip(保有中の追加シグナル)とExecution Failure(Calendar範囲外等)を
+    # 同じ「unexecuted」として合算せず、別々に集計する。
+    assert metrics.policy_skipped_count == metrics.execution_outcomes.get(ExecutionOutcome.SKIPPED_POSITION_OPEN.value, 0)
+    assert metrics.policy_skipped_count > 0
+    assert metrics.execution_failed_count == metrics.execution_outcomes.get(ExecutionOutcome.OUTSIDE_DATA_RANGE.value, 0)
+    assert metrics.policy_skipped_count + metrics.execution_failed_count == metrics.signal_count - metrics.trade_count
     assert metrics.execution_outcomes.get(ExecutionOutcome.EXECUTED.value, 0) == metrics.trade_count
-    assert metrics.execution_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
+    assert metrics.signal_to_trade_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
+    assert metrics.order_execution_rate == pytest.approx(metrics.executed_count / metrics.order_attempt_count)
     # holding期間(60営業日)が重ならないよう空くため、複数トレードが成立していれば
     # entry日同士も60営業日以上離れているはず(=独立サンプルに近づく)。
     assert metrics.unique_entry_dates == metrics.trade_count

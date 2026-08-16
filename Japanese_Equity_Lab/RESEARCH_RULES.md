@@ -124,11 +124,20 @@ Execution Modelとして実装する(Ver.1では未対応)。
 ## Sample Metricsの用語とholding期間の重複 (`lib/backtest/engine.py`)
 
 「sample_size」という曖昧な名称は使わない。`BacktestMetrics`は以下を明示的に区別する。
+**Policy Skip(意図的な不執行)とExecution Failure(執行の失敗)を同じ「unexecuted」として
+合算しない**(次項「Execution Outcome」参照)。
 
 - `signal_count`: `signal_fn`がTrueを返した回数(執行できたかどうかを問わない)。
+- `policy_skipped_count`: Portfolio Policyにより最初から執行を試みなかった件数
+  (現状は`SKIPPED_POSITION_OPEN`のみ)。失敗ではない。
+- `order_attempt_count`: Policy Skipを除いた、実際に執行を試みた件数
+  (= `signal_count - policy_skipped_count`)。
 - `trade_count` / `executed_count`: 実際にトレードとして成立した数(同じ値)。
-- `unexecuted_count`: `signal_count - executed_count`。
-- `execution_rate`: `executed_count / signal_count`。
+- `execution_failed_count`: 執行を試みたが完了できなかった件数
+  (= `order_attempt_count - executed_count`)。
+- `signal_to_trade_rate`: `executed_count / signal_count`(Policy Skipも分母に含む)。
+- `order_execution_rate`: `executed_count / order_attempt_count`(Policy Skipを除いた
+  「執行を試みたもの」のうちの成功率)。
 - `unique_tickers`: 実際にトレードが成立した銘柄のユニーク数。
 - `unique_entry_dates`: 実際の執行(entry)日のユニーク数。
 
@@ -160,16 +169,26 @@ Execution Modelとして実装する(Ver.1では未対応)。
 ## Execution Outcome (`lib/backtest/engine.ExecutionOutcome`)
 
 価格欠損等でトレードが成立しなかった場合もsilent skipせず、必ず結果を記録する。
+2つの性質が異なる結末を区別する。
 
-- `EXECUTED`: 正常に約定した。
+**Policy Skip**(`POLICY_SKIP_OUTCOMES`、失敗ではない):
+- `SKIPPED_POSITION_OPEN`: 同一銘柄で既にポジションを保有中のため、シグナルを無視した。
+
+**Execution Failure**(`EXECUTION_FAILURE_OUTCOMES`、執行を試みたが完了できなかった):
 - `UNEXECUTABLE_NO_OPEN`: 執行日のOpenが欠損しており、entryできなかった。
 - `MISSING_PRICE`: entryはできたが、exit日の価格が欠損しておりcloseできなかった。
 - `OUTSIDE_DATA_RANGE`: Trading Calendarのデータ範囲外で執行日/exit日が解決できなかった。
-- `SKIPPED_POSITION_OPEN`: 同一銘柄で既にポジションを保有中のため、シグナルを無視した。
+
+**成功**:
+- `EXECUTED`: 正常に約定した。
 
 `BacktestMetrics.execution_outcomes`にExecutionOutcome別の件数を必ず保存し、
-`signal_count` / `executed_count` / `unexecuted_count` / `execution_rate`として
+`signal_count` / `policy_skipped_count` / `order_attempt_count` / `executed_count` /
+`execution_failed_count` / `signal_to_trade_rate` / `order_execution_rate`として
 分母を明示する(Multiple Testingの原則をシグナル単位にも適用する)。
+`13_tests/fixtures/portfolio_scenario.json`(System Behavior Test専用、Strategy
+Performance評価には使わない)で、Policy Skip・Execution Failure・正常Execution/Exitが
+それぞれ意図通りに区別されることを確認する(`13_tests/test_portfolio_scenario.py`)。
 
 ## Price Data: raw / corporate actions / adjusted の分離 (`lib/schemas/price_data.py`)
 

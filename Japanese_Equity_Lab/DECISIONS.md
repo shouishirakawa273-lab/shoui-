@@ -409,3 +409,66 @@ Event Studyとの違いを明文化
 (市場の大引け)から導出しており、`retrieved_at`を一切参照していないことをソースコード上でも
 直接確認した(`test_engine_derives_available_at_from_market_close_not_retrieved_at`)。
 既存実装が既にこの意味を満たしていたため、ロジック自体の修正は不要だった。
+
+---
+
+## Phase 2.2(2026-08-16, Phase2 FINAL微修正): Execution Metrics分離・Behavioral Test・Portfolio Scenario Fixture
+
+Phase2.1完了報告に対し、(1)SKIPPED_POSITION_OPENがExecution Failureと同じ
+「unexecuted」に丸められている、(2)available_at/retrieved_atのテストがソース読解に
+留まっている、(3)Portfolio Simulation固有の挙動(Policy Skip・Execution Failure・
+複数銘柄・保有中再Signal)を専用に確認するFixtureが無い、の3点の指摘を受け、
+以下を実施した。この対応をもってPhase2をFINALとして扱う(ユーザー指示)。
+
+## D0022 — Policy SkipとExecution Failureを分離した指標へ再編
+
+**変更内容**: `BacktestMetrics.unexecuted_count` / `execution_rate`(Phase2.1で導入)を
+廃止し、`policy_skipped_count` / `order_attempt_count` / `execution_failed_count` /
+`signal_to_trade_rate` / `order_execution_rate`に置き換えた。`ExecutionOutcome`は
+維持しつつ、`POLICY_SKIP_OUTCOMES`(`SKIPPED_POSITION_OPEN`)と
+`EXECUTION_FAILURE_OUTCOMES`(`UNEXECUTABLE_NO_OPEN` / `MISSING_PRICE` /
+`OUTSIDE_DATA_RANGE`)という2つの分類集合を新設し、`compute_metrics()`は
+`execution_outcomes`からこれらを機械的に集計する(呼び出し側が別途カウントを
+渡す必要はない)。
+
+**理由**: Phase2.1時点の`unexecuted_count = signal_count - executed_count`は、
+「Portfolio Policyにより意図的に見送った」ことと「執行しようとしたが失敗した」ことを
+同じ数字に丸めてしまい、Pipelineの健全性(データ欠損がどれだけあるか)と
+Portfolio Policyの効き方(重複建てをどれだけ防いでいるか)を区別できなかった。
+
+**デメリット**: またしてもBacktestMetricsのフィールドが変わるため、Phase2.1で
+一度archiveした demoデータと同様、Phase2.1時点のexperiment_registry.jsonlも
+現行スキーマでは読み込めなくなる。同じ手順(archiveへ退避、コードで再実行)で対応した。
+
+## D0023 — available_at/retrieved_atの分離をBehavioral Testで直接確認
+
+**変更内容**: `13_tests/test_available_at_vs_retrieved_at.py`に、ソースコード読解だけでなく
+実際にPipelineを動かして確認するテストを追加した。
+(1) 同一payload(同一のavailable_at相当)で`RawFetchResult.retrieved_at`だけを
+大きく変えた2つのSnapshotから、変換〜`BacktestEngine.run()`までの全経路を実行し、
+`BacktestMetrics`が完全に一致することを確認(`test_retrieved_at_changing_alone_does_not_change_the_investment_decision`)。
+(2) `available_at`だけを未来へ変更すると`BacktestEngine.build_signal_input()`が
+`LookAheadBiasError`を送出することを確認
+(`test_moving_available_at_into_the_future_triggers_lookahead_error_via_engine`)。
+
+**理由**: 「ソースコードにretrieved_atという文字列が出てこない」ことの確認だけでは、
+将来別の場所で誤って混同するリグレッションを検知できない。実際の挙動として
+「retrieved_atを変えてもInvestment Decisionは変わらない」「available_atを変えると
+PIT判定が変わる」という対称的な結果を、同じ形式のテストとして残すことで、
+今後この分離が崩れた場合にテストが失敗するようにした。
+
+## D0024 — Portfolio Scenario Fixtureを追加(System Behavior Test専用)
+
+**変更内容**: `13_tests/fixtures/portfolio_scenario.json`を新設した。既存の
+`synthetic_jquants_daily_quotes.json`(Pipeline Validation Strategy用、単調な右肩上がり/
+右肩下がりデータ)とは別に、Portfolio Simulationの分岐(Policy Skip・Execution Failure・
+複数銘柄・異なる日付でのSignal・正常なExecution/Exit)を1本のシナリオへ意図的に
+詰め込んだ。Signalの発生日は間接的な条件(モメンタム等)ではなく、fixtureの
+`_scenario.signal_dates`が示す日付そのものを使う専用のsignal_fnで直接指定する
+(`13_tests/test_portfolio_scenario.py`)。
+
+**理由**: 既存のPipeline Validation Fixtureは単調な価格推移のため、
+`SKIPPED_POSITION_OPEN`や`UNEXECUTABLE_NO_OPEN`が「たまたま」発生することはあっても、
+狙って発生させたものではなかった。Portfolio Simulation固有の分岐を確実にカバーする
+専用のFixtureを用意し、Strategy Performance評価に使うFixtureとは目的を明確に分離した
+(fixture冒頭の`_disclaimer`に明記)。

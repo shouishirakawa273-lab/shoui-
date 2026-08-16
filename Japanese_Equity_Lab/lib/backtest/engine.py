@@ -58,13 +58,31 @@ class PositionPolicy(StrEnum):
 
 
 class ExecutionOutcome(StrEnum):
-    """1回のシグナルがどうなったかを必ず記録する(silent skipしない)。"""
+    """1回のシグナルがどうなったかを必ず記録する(silent skipしない)。
+
+    2つの異なる性質を持つ結末を混同しない。
+    - Policy Skip(意図的な不執行): Portfolio Policyによって最初から執行を試みなかった。
+      失敗ではない(`SKIPPED_POSITION_OPEN`)。
+    - Execution Failure(執行の失敗): 執行を試みたが、データ欠如等の理由で完了できなかった
+      (`UNEXECUTABLE_NO_OPEN` / `MISSING_PRICE` / `OUTSIDE_DATA_RANGE`)。
+    `POLICY_SKIP_OUTCOMES` / `EXECUTION_FAILURE_OUTCOMES` で分類する
+    (`BacktestMetrics.policy_skipped_count` / `execution_failed_count`参照)。
+    """
 
     EXECUTED = "EXECUTED"
     UNEXECUTABLE_NO_OPEN = "UNEXECUTABLE_NO_OPEN"  # 執行日のOpenが欠損(entryできない)
     MISSING_PRICE = "MISSING_PRICE"  # entryはできたがexit日の価格が欠損している
     OUTSIDE_DATA_RANGE = "OUTSIDE_DATA_RANGE"  # Trading Calendarの範囲外で執行日/exit日が解決できない
-    SKIPPED_POSITION_OPEN = "SKIPPED_POSITION_OPEN"  # 同一銘柄で既にポジション保有中
+    SKIPPED_POSITION_OPEN = "SKIPPED_POSITION_OPEN"  # 同一銘柄で既にポジション保有中(Policy Skip)
+
+
+# Policy Skip: Portfolio Policyにより最初から執行を試みなかった(失敗ではない)。
+POLICY_SKIP_OUTCOMES = frozenset({ExecutionOutcome.SKIPPED_POSITION_OPEN})
+
+# Execution Failure: 執行を試みたが完了できなかった。
+EXECUTION_FAILURE_OUTCOMES = frozenset(
+    {ExecutionOutcome.UNEXECUTABLE_NO_OPEN, ExecutionOutcome.MISSING_PRICE, ExecutionOutcome.OUTSIDE_DATA_RANGE}
+)
 
 
 @dataclass(frozen=True)
@@ -175,13 +193,21 @@ class TradeResult:
 class BacktestMetrics:
     """RESEARCH_RULES.mdで要求される最低限の表示項目。
 
-    サンプル数に関する用語:
+    サンプル数・執行状況に関する用語(Policy SkipとExecution Failureを混同しない):
     - signal_count: signal_fnがTrueを返した回数(執行できたかどうかを問わない)。
+    - policy_skipped_count: Portfolio Policyにより最初から執行を試みなかった件数
+      (`POLICY_SKIP_OUTCOMES`、現状は`SKIPPED_POSITION_OPEN`のみ)。失敗ではない。
+    - order_attempt_count: Policy Skipを除いた、実際に執行を試みた件数
+      (= signal_count - policy_skipped_count)。
     - executed_count / trade_count: 実際にトレードとして成立した数(両者は同じ値になる。
       「執行の分母」という文脈ではexecuted_count、既存の「トレード数」という文脈では
       trade_countと呼ぶ)。
-    - unexecuted_count: signal_count - executed_count。
-    - execution_rate: executed_count / signal_count(signal_count=0の場合はNone)。
+    - execution_failed_count: 執行を試みたが完了できなかった件数
+      (`EXECUTION_FAILURE_OUTCOMES`、= order_attempt_count - executed_count)。
+    - signal_to_trade_rate: executed_count / signal_count(全シグナルのうち実際に
+      トレードになった割合。Policy Skipも分母に含む)。signal_count=0の場合はNone。
+    - order_execution_rate: executed_count / order_attempt_count(Policy Skipを除いた
+      「執行を試みた」もののうち実際に成立した割合)。order_attempt_count=0の場合はNone。
     - unique_tickers: 実際にトレードが成立した銘柄のユニーク数(旧sample_size)。
     - unique_entry_dates: 実際の執行(entry)日のユニーク数。trade_countとの差が大きいほど、
       同時期に多くの銘柄へエントリーしている=市場全体のレジームに従属した結果である可能性が
@@ -194,9 +220,12 @@ class BacktestMetrics:
     trade_count: int
     unique_entry_dates: int
     signal_count: int
+    policy_skipped_count: int
+    order_attempt_count: int
     executed_count: int
-    unexecuted_count: int
-    execution_rate: float | None
+    execution_failed_count: int
+    signal_to_trade_rate: float | None
+    order_execution_rate: float | None
     execution_outcomes: dict[str, int]
     average_return: float | None
     median_return: float | None
@@ -226,7 +255,7 @@ def compute_metrics(
     """税引前・取引コスト調整後のリターン分布からBacktestMetricsを計算する。
 
     signal_count / execution_outcomesを渡さない場合(0件・空のまま)、
-    signal_countはtrade_countと無関係の既定値0になり、execution_rateはNoneになる
+    signal_to_trade_rate / order_execution_rateはNoneになる
     (Event Studyのように「シグナルの分母」を追跡しない用途での直接呼び出しを想定)。
     """
     returns = [t.net_pretax_return for t in trades]
@@ -254,9 +283,13 @@ def compute_metrics(
         None if average_return is None or sector_benchmark_return is None else average_return - sector_benchmark_return
     )
 
+    outcomes = dict(execution_outcomes or {})
     executed_count = len(trades)
-    unexecuted_count = max(signal_count - executed_count, 0)
-    execution_rate = (executed_count / signal_count) if signal_count > 0 else None
+    policy_skipped_count = sum(outcomes.get(o.value, 0) for o in POLICY_SKIP_OUTCOMES)
+    order_attempt_count = max(signal_count - policy_skipped_count, 0)
+    execution_failed_count = max(order_attempt_count - executed_count, 0)
+    signal_to_trade_rate = (executed_count / signal_count) if signal_count > 0 else None
+    order_execution_rate = (executed_count / order_attempt_count) if order_attempt_count > 0 else None
 
     return BacktestMetrics(
         data_split=data_split,
@@ -264,10 +297,13 @@ def compute_metrics(
         trade_count=executed_count,
         unique_entry_dates=len({t.entry_date for t in trades}),
         signal_count=signal_count,
+        policy_skipped_count=policy_skipped_count,
+        order_attempt_count=order_attempt_count,
         executed_count=executed_count,
-        unexecuted_count=unexecuted_count,
-        execution_rate=execution_rate,
-        execution_outcomes=dict(execution_outcomes or {}),
+        execution_failed_count=execution_failed_count,
+        signal_to_trade_rate=signal_to_trade_rate,
+        order_execution_rate=order_execution_rate,
+        execution_outcomes=outcomes,
         average_return=average_return,
         median_return=median_return,
         win_rate=win_rate,
