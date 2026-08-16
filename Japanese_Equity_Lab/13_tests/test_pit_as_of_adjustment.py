@@ -253,7 +253,9 @@ def test_G_no_corporate_action_dataset_matches_pre_phase3a2_metrics_exactly() ->
 
     assert metrics_static == metrics_as_of
 
-    # Phase3A.1で確認済みの既知の値(--source fixtureデモ実行結果)と完全一致することを確認する。
+    # Phase3A.1で確認済みの既知の値(--source fixtureデモ実行結果)のうち、trade_count・
+    # 各tradeのreturnに関わる値は完全一致することを確認する(D0037はExecutionOutcomeの
+    # 分類方法のみを変更し、Signal/Executionの判定ロジック自体は変更していないため)。
     assert metrics_static.unique_tickers == 2
     assert metrics_static.trade_count == 2
     assert metrics_static.unique_entry_dates == 1
@@ -261,5 +263,13 @@ def test_G_no_corporate_action_dataset_matches_pre_phase3a2_metrics_exactly() ->
     assert metrics_static.policy_skipped_count == 120
     assert metrics_static.order_attempt_count == 90
     assert metrics_static.executed_count == 2
-    assert metrics_static.execution_failed_count == 88
     assert metrics_static.average_return == pytest.approx(0.03208160645601388)
+
+    # D0037で修正した分類: この合成データ(fixtureの短い期間)ではOUTSIDE_DATA_RANGEの
+    # 88件はすべてBacktest期間終了によるRight Censoringであり、真のExecution Failureは
+    # 0件だったことが判明した(Phase3A.1時点ではこれを誤ってexecution_failed_countへ
+    # 含めていた)。
+    assert metrics_static.censored_count == 88
+    assert metrics_static.execution_failed_count == 0
+    assert metrics_static.eligible_order_attempt_count == 2  # order_attempt_count(90) - censored_count(88)
+    assert metrics_static.order_execution_rate == pytest.approx(1.0)  # 評価可能だった2件は両方EXECUTED

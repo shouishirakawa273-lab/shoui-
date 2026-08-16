@@ -1,9 +1,9 @@
 # 99_archive/06_backtests/
 
-`BacktestMetrics`のフィールドをPhase2完了後の指摘対応で2回変更したため、
-その都度、現行の`ExperimentRegistry`では読み込めなくなった過去の
-`experiment_registry.jsonl` / `provenance.jsonl`(いずれも合成データによる
-デモ実行結果)をここへ退避している(削除はしない)。
+`BacktestMetrics`のフィールドを指摘対応で複数回変更したため、その都度、現行の
+`ExperimentRegistry`では読み込めなくなった過去の`experiment_registry.jsonl` /
+`provenance.jsonl`(いずれも合成データによるデモ実行結果)をここへ退避している
+(削除はしない)。
 
 - `*_phase2a_pre_metrics_schema_change.jsonl`: Phase2.1で`sample_size`→
   `unique_tickers`への改名、`signal_count`/`executed_count`/`unexecuted_count`/
@@ -12,5 +12,10 @@
   `execution_rate`を廃止し、`policy_skipped_count`/`order_attempt_count`/
   `execution_failed_count`/`signal_to_trade_rate`/`order_execution_rate`へ
   再編した際に退避(Policy SkipとExecution Failureを区別するため)。
+- `*_pre_d0037_censoring_split.jsonl`: 実データによる初回E2E Backtestで、Backtest期間
+  終了近くのSignal(holding_period_days分のExit Dateを観測できない)が
+  `OUTSIDE_DATA_RANGE`としてExecution Failureに誤って合算されていたことが判明した。
+  `censored_count` / `eligible_order_attempt_count`を新設し、Right Censoring
+  (`CENSORED_END_OF_SAMPLE`)をExecution Failureから分離した際に退避(D0037)。
 
 `06_backtests/`には、その時点の最新コードで再実行したデモ結果を改めて保存している。

@@ -976,3 +976,81 @@ index構築とcollision検知)、`13_tests/test_convert_phase3a.py`の
 **この確認をもって、実データ取得(`LOCAL_DATA_FETCH_GUIDE.md`の手順)を継続してよい
 状態とする。** equity_bars/equities_masterのField名自体は既存の想定(V2 Canonical
 Specification)と一致していたため、Provider Code正規化以外の追加修正は不要。
+
+---
+
+## Phase3B前の修正(2026-08-16): 実データ初回E2E Backtestで判明したEnd-of-Sample Censoring
+
+ユーザーがローカル環境で実J-Quantsデータによる初回End-to-End Backtest
+(RUN_20260816T162453577518、2022-01-04〜2024-12-30、4銘柄)に成功した。Pipeline自体は
+最後まで完走したが、`OUTSIDE_DATA_RANGE`(execution_failed_countに算入)の内訳を
+確認したところ、その多くがBacktest期間終了間際のSignalによるものと判明した。
+
+## D0037 — Right Censoring(`CENSORED_END_OF_SAMPLE`)をExecution Failureから分離する
+
+**問題**: `BacktestEngine.run()`は、holding_period_days(60営業日)分のExit Dateが
+Trading Calendarの範囲(`TradingCalendarResolutionError`)を解決できない場合、
+`ExecutionOutcome.OUTSIDE_DATA_RANGE`として記録し、これを`EXECUTION_FAILURE_OUTCOMES`
+(真の執行失敗)に分類していた。しかし、`decision_date`は常に`trading_calendar.
+trading_dates`由来(`TradingCalendar.__post_init__`で`range_start`〜`range_end`内で
+あることが保証済み)であり、`next_trading_session` / `nth_next_trading_session`が
+この経路で`TradingCalendarResolutionError`を送出しうるのは「dより後の取引日が
+`range_end`(実運用では`BacktestRunConfig.end_session`と一致)を超えて存在しない」
+場合に限られる(`lib/market_calendar.py`の実装より、他の失敗モードは無い)。
+すなわちこれは「Backtest期間終了によりExit Dateをまだ観測できていないだけ」という
+Right Censoringであり、「執行を試みたが失敗した」という真のExecution Failureとは
+性質が異なる。両者を同じ`execution_failed_count`へ合算すると、期間終端付近に
+Signalが集中する戦略・短い評価期間ほど「執行失敗が多い」という誤った印象を生む。
+
+**変更内容**:
+
+1. `ExecutionOutcome.CENSORED_END_OF_SAMPLE`を新設し、`run()`内の該当箇所
+   (`next_trading_session`/`nth_next_trading_session`の`TradingCalendarResolutionError`)
+   はこれを記録するよう変更した。`OUTSIDE_DATA_RANGE`はEnum・
+   `EXECUTION_FAILURE_OUTCOMES`には引き続き残す(過去に記録されたExperimentとの
+   互換性のため)が、`run()`はもうこれを送出しない。
+2. `CENSORING_OUTCOMES`(`CENSORED_END_OF_SAMPLE`のみ)を新設し、
+   `POLICY_SKIP_OUTCOMES` / `EXECUTION_FAILURE_OUTCOMES`と並ぶ第3の分類とした。
+3. `BacktestMetrics`に`censored_count`(Right Censoringされた件数)・
+   `eligible_order_attempt_count`(`order_attempt_count - censored_count`、
+   評価可能期間内で実際に成否を判定できた注文数)を新設した。
+   `execution_failed_count`の分母を`order_attempt_count`から
+   `eligible_order_attempt_count`へ変更し(= `eligible_order_attempt_count -
+   executed_count`)、Censoringを含まない真の失敗率になるよう修正した。
+   `order_execution_rate`も同様に分母を`eligible_order_attempt_count`へ変更した
+   (`executed_count / eligible_order_attempt_count`、「評価可能だった注文の約定率」)。
+   `order_attempt_count`・`signal_to_trade_rate`の定義・分母は変更していない
+   (Policy Skip・Censoringどちらも「シグナルからトレードへの転換」という文脈では
+   実際に起きた事実であり、隠す必要が無いため)。
+4. `signal_count == policy_skipped_count + censored_count + execution_failed_count +
+   executed_count`という会計恒等式が常に成り立つことを
+   `13_tests/test_backtest_engine.py`の
+   `test_signal_accounting_identity_across_policy_skip_censoring_and_execution_failure`
+   で直接確認した(Policy Skip・Censoring・真のExecution Failureが同時に発生する
+   1本のシナリオで4分類すべてが独立に集計されることを確認)。
+
+**BacktestMetricsスキーマ変更に伴うアーカイブ**: 既存の`06_backtests/
+experiment_registry.jsonl` / `provenance.jsonl`(合成データによるデモ)は新フィールド
+無しでは読み込めなくなるため、`99_archive/06_backtests/*_pre_d0037_censoring_split.jsonl`
+へ退避し、最新コードで再実行したデモへ差し替えた(D0017/D0022と同じ手順)。
+
+**Before/After確認(合成fixtureデータ)**: 同じfixtureデータで修正前後を比較したところ、
+`trade_count`(2件)・各tradeの`net_pretax_return`(`average_return=
+0.03208160645601388`等)は完全に一致し、`execution_failed_count`のみ88→0、
+新設の`censored_count`が0→88、`order_execution_rate`が0.0222→1.0(評価可能だった
+2件は両方EXECUTEDだったため)へ変化した。これはSignal/Executionの判定ロジック自体を
+一切変更せず、ExecutionOutcomeの分類方法のみを修正したことの直接的な証拠である。
+
+**実データSnapshotでの確認について(既知の制約)**: このセッションはネットワーク
+ポリシーにより実J-QuantsデータのRaw Snapshotへアクセスできない(ユーザーの
+RUN_20260816T162453577518はユーザー自身のローカル環境で生成されたもので、
+`01_data/raw/jquants/`はgitignore対象のためこのセッションには存在しない)。
+そのため実データでのBefore/After比較は、ユーザー自身が同一コマンド(同一期間・
+同一銘柄)をこの修正後のコードで再実行し、`trade_count`・トレードごとのReturnが
+修正前と一致すること、`execution_outcomes`の内訳(特に`CENSORED_END_OF_SAMPLE`の
+出現と`execution_failed_count`の減少)を確認する必要がある(完了報告参照)。
+
+**Multiple Testingへの影響**: 2022-01-04〜2024-12-30・当該4銘柄・当該固定Strategyの
+組み合わせは、このInfrastructure Validation Runで結果を観測済みのため、今後
+Hidden Test(未見のOut-of-Sample期間)として扱わないことをRESEARCH_RULES.mdへ記録した
+(「Infrastructure Validation Runと戦略性能Testを区別する」節)。

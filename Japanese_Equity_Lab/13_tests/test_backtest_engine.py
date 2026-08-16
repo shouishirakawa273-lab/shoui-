@@ -329,18 +329,78 @@ def test_no_reentry_while_position_open_skips_overlapping_signals() -> None:
     # 右肩上がりの合成データなのでlookback以降ほぼ毎営業日シグナルが出るが、
     # NO_REENTRY_WHILE_POSITION_OPENにより実際のトレードはholding期間分空けてしか成立しない。
     assert metrics.signal_count > metrics.trade_count
-    # Policy Skip(保有中の追加シグナル)とExecution Failure(Calendar範囲外等)を
-    # 同じ「unexecuted」として合算せず、別々に集計する。
+    # Policy Skip(保有中の追加シグナル)・Censoring(期末近くでholding期間を観測できない)・
+    # Execution Failureを同じ「unexecuted」として合算せず、別々に集計する(D0037)。
     assert metrics.policy_skipped_count == metrics.execution_outcomes.get(ExecutionOutcome.SKIPPED_POSITION_OPEN.value, 0)
     assert metrics.policy_skipped_count > 0
+    assert metrics.censored_count == metrics.execution_outcomes.get(ExecutionOutcome.CENSORED_END_OF_SAMPLE.value, 0)
     assert metrics.execution_failed_count == metrics.execution_outcomes.get(ExecutionOutcome.OUTSIDE_DATA_RANGE.value, 0)
-    assert metrics.policy_skipped_count + metrics.execution_failed_count == metrics.signal_count - metrics.trade_count
+    assert (
+        metrics.policy_skipped_count + metrics.censored_count + metrics.execution_failed_count
+        == metrics.signal_count - metrics.trade_count
+    )
     assert metrics.execution_outcomes.get(ExecutionOutcome.EXECUTED.value, 0) == metrics.trade_count
     assert metrics.signal_to_trade_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
-    assert metrics.order_execution_rate == pytest.approx(metrics.executed_count / metrics.order_attempt_count)
+    assert metrics.order_execution_rate == pytest.approx(metrics.executed_count / metrics.eligible_order_attempt_count)
     # holding期間(60営業日)が重ならないよう空くため、複数トレードが成立していれば
     # entry日同士も60営業日以上離れているはず(=独立サンプルに近づく)。
     assert metrics.unique_entry_dates == metrics.trade_count
+
+
+def test_signal_accounting_identity_across_policy_skip_censoring_and_execution_failure() -> None:
+    """D0037: signal_count / policy_skipped_count / censored_count /
+    eligible_order_attempt_count / executed_count / execution_failed_count の関係を
+    1本のシナリオ(4分類すべてが同時に発生するデータ)で明確にする。
+
+    signal_count == policy_skipped_count + censored_count + execution_failed_count + executed_count
+    という会計恒等式が常に成り立つことを確認する(Right CensoringをExecution Failureに
+    誤って合算しないという設計の直接確認)。
+    """
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    bars = _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)
+    # 21本目(最初のBUYシグナルの執行日)のOpenを欠損させ、期間の早い段階で
+    # 真のExecution Failure(MISSING_PRICEではなくUNEXECUTABLE_NO_OPEN)を発生させる
+    # (期末のCensoringとは別の、評価可能期間内の真の失敗であることを保証するため)。
+    bars[21] = AdjustedOHLCVBar(
+        code="7203",
+        session_date=bars[21].session_date,
+        open=None,
+        high=None,
+        low=None,
+        close=bars[21].close,
+        volume=1000.0,
+        split_adjustment_factor=1.0,
+        source="synthetic",
+    )
+    price_history = StaticPriceHistory({"7203": bars})
+    benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
+
+    metrics = engine.run(
+        config=_run_config(),
+        price_history=price_history,
+        benchmark_bars=benchmark_bars,
+        trading_calendar=calendar,
+        signal_fn=as_buy_signal_fn(),
+    )
+
+    # 220営業日・holding=60・lookback=21という設定上、右肩上がりデータなら
+    # 4分類すべてが実際に発生する(どれか1つでも0だとこのテストの意味が薄れるため確認する)。
+    assert metrics.policy_skipped_count > 0
+    assert metrics.censored_count > 0
+    assert metrics.execution_failed_count > 0
+    assert metrics.executed_count > 0
+
+    # 会計恒等式そのもの。
+    assert metrics.signal_count == (
+        metrics.policy_skipped_count + metrics.censored_count + metrics.execution_failed_count + metrics.executed_count
+    )
+    # 中間集計(order_attempt_count / eligible_order_attempt_count)も整合していること。
+    assert metrics.order_attempt_count == metrics.signal_count - metrics.policy_skipped_count
+    assert metrics.eligible_order_attempt_count == metrics.order_attempt_count - metrics.censored_count
+    assert metrics.execution_failed_count == metrics.eligible_order_attempt_count - metrics.executed_count
+    # order_execution_rateはCensoringを除いた「評価可能な注文」だけを分母にする。
+    assert metrics.order_execution_rate == pytest.approx(metrics.executed_count / metrics.eligible_order_attempt_count)
 
 
 def test_default_position_policy_is_no_reentry_while_position_open() -> None:

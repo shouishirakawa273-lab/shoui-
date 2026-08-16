@@ -61,26 +61,38 @@ class PositionPolicy(StrEnum):
 class ExecutionOutcome(StrEnum):
     """1回のシグナルがどうなったかを必ず記録する(silent skipしない)。
 
-    2つの異なる性質を持つ結末を混同しない。
+    3つの異なる性質を持つ結末を混同しない。
     - Policy Skip(意図的な不執行): Portfolio Policyによって最初から執行を試みなかった。
       失敗ではない(`SKIPPED_POSITION_OPEN`)。
-    - Execution Failure(執行の失敗): 執行を試みたが、データ欠如等の理由で完了できなかった
-      (`UNEXECUTABLE_NO_OPEN` / `MISSING_PRICE` / `OUTSIDE_DATA_RANGE`)。
-    `POLICY_SKIP_OUTCOMES` / `EXECUTION_FAILURE_OUTCOMES` で分類する
-    (`BacktestMetrics.policy_skipped_count` / `execution_failed_count`参照)。
+    - Censoring(Backtest期間終了による観測打ち切り): holding_period_days分の
+      Exit Dateが要求期間(`BacktestRunConfig.end_session`)を超えるため、
+      執行・結果を観測できない(`CENSORED_END_OF_SAMPLE`)。実際に執行を試みて
+      失敗したわけではなく、単に「まだ判定できない」状態であり、Execution Failureとは
+      区別する(Right Censoring、DECISIONS.md D0037参照)。
+    - Execution Failure(執行の失敗): 評価可能期間内で執行を試みたが、データ欠如等の
+      理由で完了できなかった(`UNEXECUTABLE_NO_OPEN` / `MISSING_PRICE`)。
+    `POLICY_SKIP_OUTCOMES` / `CENSORING_OUTCOMES` / `EXECUTION_FAILURE_OUTCOMES` で
+    分類する(`BacktestMetrics.policy_skipped_count` / `censored_count` /
+    `execution_failed_count`参照)。
     """
 
     EXECUTED = "EXECUTED"
     UNEXECUTABLE_NO_OPEN = "UNEXECUTABLE_NO_OPEN"  # 執行日のOpenが欠損(entryできない)
     MISSING_PRICE = "MISSING_PRICE"  # entryはできたがexit日の価格が欠損している
     OUTSIDE_DATA_RANGE = "OUTSIDE_DATA_RANGE"  # Trading Calendarの範囲外で執行日/exit日が解決できない
+    CENSORED_END_OF_SAMPLE = "CENSORED_END_OF_SAMPLE"  # Backtest期間終了によるRight Censoring(D0037)
     SKIPPED_POSITION_OPEN = "SKIPPED_POSITION_OPEN"  # 同一銘柄で既にポジション保有中(Policy Skip)
 
 
 # Policy Skip: Portfolio Policyにより最初から執行を試みなかった(失敗ではない)。
 POLICY_SKIP_OUTCOMES = frozenset({ExecutionOutcome.SKIPPED_POSITION_OPEN})
 
-# Execution Failure: 執行を試みたが完了できなかった。
+# Censoring: Backtest期間終了により観測が打ち切られた(失敗ではない、D0037)。
+CENSORING_OUTCOMES = frozenset({ExecutionOutcome.CENSORED_END_OF_SAMPLE})
+
+# Execution Failure: 評価可能期間内で執行を試みたが完了できなかった。
+# OUTSIDE_DATA_RANGEは`BacktestEngine.run()`ではもう送出されない(D0037でCENSORED_END_OF_SAMPLEへ
+# 置き換えたため)。過去に記録されたExperimentとの互換のためEnum自体とこの分類には残す。
 EXECUTION_FAILURE_OUTCOMES = frozenset(
     {ExecutionOutcome.UNEXECUTABLE_NO_OPEN, ExecutionOutcome.MISSING_PRICE, ExecutionOutcome.OUTSIDE_DATA_RANGE}
 )
@@ -194,21 +206,34 @@ class TradeResult:
 class BacktestMetrics:
     """RESEARCH_RULES.mdで要求される最低限の表示項目。
 
-    サンプル数・執行状況に関する用語(Policy SkipとExecution Failureを混同しない):
+    サンプル数・執行状況に関する用語(Policy Skip・Censoring・Execution Failureを
+    混同しない。D0037参照):
     - signal_count: signal_fnがTrueを返した回数(執行できたかどうかを問わない)。
     - policy_skipped_count: Portfolio Policyにより最初から執行を試みなかった件数
       (`POLICY_SKIP_OUTCOMES`、現状は`SKIPPED_POSITION_OPEN`のみ)。失敗ではない。
     - order_attempt_count: Policy Skipを除いた、実際に執行を試みた件数
-      (= signal_count - policy_skipped_count)。
+      (= signal_count - policy_skipped_count)。Censoringされた件数を含む
+      (「執行しようとした」こと自体は事実のため)。
+    - censored_count: holding_period_days分のExit DateがBacktest期間の終端
+      (`BacktestRunConfig.end_session`)を超えるため、結果を観測できなかった件数
+      (`CENSORING_OUTCOMES`、現状は`CENSORED_END_OF_SAMPLE`のみ)。Right Censoring
+      であり、失敗ではない(D0037)。
+    - eligible_order_attempt_count: order_attempt_countからcensored_countを除いた、
+      「評価可能期間内で実際に成否を判定できた」注文数(= order_attempt_count -
+      censored_count)。
     - executed_count / trade_count: 実際にトレードとして成立した数(両者は同じ値になる。
       「執行の分母」という文脈ではexecuted_count、既存の「トレード数」という文脈では
       trade_countと呼ぶ)。
-    - execution_failed_count: 執行を試みたが完了できなかった件数
-      (`EXECUTION_FAILURE_OUTCOMES`、= order_attempt_count - executed_count)。
+    - execution_failed_count: 評価可能期間内で執行を試みたが完了できなかった件数
+      (`EXECUTION_FAILURE_OUTCOMES`、= eligible_order_attempt_count - executed_count)。
+      Censoringされた件数は含まない(D0037で修正、以前はorder_attempt_countを分母に
+      していたためCensoringを誤ってExecution Failureとして数えていた)。
     - signal_to_trade_rate: executed_count / signal_count(全シグナルのうち実際に
-      トレードになった割合。Policy Skipも分母に含む)。signal_count=0の場合はNone。
-    - order_execution_rate: executed_count / order_attempt_count(Policy Skipを除いた
-      「執行を試みた」もののうち実際に成立した割合)。order_attempt_count=0の場合はNone。
+      トレードになった割合。Policy Skip・Censoringも分母に含む)。signal_count=0の
+      場合はNone。
+    - order_execution_rate: executed_count / eligible_order_attempt_count(Policy Skip・
+      Censoringを除いた「評価可能な注文」のうち実際に成立した割合、D0037で分母を修正)。
+      eligible_order_attempt_count=0の場合はNone。
     - unique_tickers: 実際にトレードが成立した銘柄のユニーク数(旧sample_size)。
     - unique_entry_dates: 実際の執行(entry)日のユニーク数。trade_countとの差が大きいほど、
       同時期に多くの銘柄へエントリーしている=市場全体のレジームに従属した結果である可能性が
@@ -222,7 +247,9 @@ class BacktestMetrics:
     unique_entry_dates: int
     signal_count: int
     policy_skipped_count: int
+    censored_count: int
     order_attempt_count: int
+    eligible_order_attempt_count: int
     executed_count: int
     execution_failed_count: int
     signal_to_trade_rate: float | None
@@ -287,10 +314,12 @@ def compute_metrics(
     outcomes = dict(execution_outcomes or {})
     executed_count = len(trades)
     policy_skipped_count = sum(outcomes.get(o.value, 0) for o in POLICY_SKIP_OUTCOMES)
+    censored_count = sum(outcomes.get(o.value, 0) for o in CENSORING_OUTCOMES)
     order_attempt_count = max(signal_count - policy_skipped_count, 0)
-    execution_failed_count = max(order_attempt_count - executed_count, 0)
+    eligible_order_attempt_count = max(order_attempt_count - censored_count, 0)
+    execution_failed_count = max(eligible_order_attempt_count - executed_count, 0)
     signal_to_trade_rate = (executed_count / signal_count) if signal_count > 0 else None
-    order_execution_rate = (executed_count / order_attempt_count) if order_attempt_count > 0 else None
+    order_execution_rate = (executed_count / eligible_order_attempt_count) if eligible_order_attempt_count > 0 else None
 
     return BacktestMetrics(
         data_split=data_split,
@@ -299,7 +328,9 @@ def compute_metrics(
         unique_entry_dates=len({t.entry_date for t in trades}),
         signal_count=signal_count,
         policy_skipped_count=policy_skipped_count,
+        censored_count=censored_count,
         order_attempt_count=order_attempt_count,
+        eligible_order_attempt_count=eligible_order_attempt_count,
         executed_count=executed_count,
         execution_failed_count=execution_failed_count,
         signal_to_trade_rate=signal_to_trade_rate,
@@ -403,10 +434,12 @@ class BacktestEngine:
         1回のシグナルの結末は必ずExecutionOutcomeとして記録する(silent skipしない)。
         価格が欠損している(該当日のbarが無い、またはOpenがNone)場合は、そのトレードを
         MISSING_PRICE / UNEXECUTABLE_NO_OPENとして記録しスキップする(都合の良い価格への
-        fallbackはしない)。休場日を執行日にしようとした場合はOUTSIDE_DATA_RANGEとして記録し
-        スキップする(勝手に平日扱いしない)。`config.position_policy`が
-        NO_REENTRY_WHILE_POSITION_OPEN(既定)の場合、同一銘柄で既にポジションを
-        保有している間の追加シグナルはSKIPPED_POSITION_OPENとして記録しスキップする。
+        fallbackはしない)。holding_period_days分のExit DateがBacktest期間の終端
+        (`config.end_session`)を超えて観測できない場合はCENSORED_END_OF_SAMPLEとして
+        記録しスキップする(Right Censoring、Execution Failureとは区別する、D0037)。
+        `config.position_policy`がNO_REENTRY_WHILE_POSITION_OPEN(既定)の場合、
+        同一銘柄で既にポジションを保有している間の追加シグナルはSKIPPED_POSITION_OPEN
+        として記録しスキップする。
 
         `price_history`は`PriceHistorySource`(`lib/backtest/price_history.py`)。
         Engineは「decision_at時点のPrice Historyを取得するInterface」としてのみこれを
@@ -454,8 +487,16 @@ class BacktestEngine:
                     execution_date = trading_calendar.next_trading_session(decision_date)
                     exit_date = trading_calendar.nth_next_trading_session(execution_date, config.holding_period_days)
                 except TradingCalendarResolutionError:
-                    outcome_counter[ExecutionOutcome.OUTSIDE_DATA_RANGE.value] += 1
-                    continue  # Calendarデータ範囲外 - 都合よく代替せずスキップ
+                    # decision_dateは常にtrading_calendar.trading_dates由来(=calendarの
+                    # range_start/range_end内であることが__post_init__で保証済み)のため、
+                    # ここで例外が起きるのは「decision_dateより後、あるいはholding_period_days
+                    # 分先の取引日がcalendarのrange_end(=通常BacktestRunConfig.end_sessionと
+                    # 一致)を超えて存在しない」場合のみである。すなわちこれは真のデータ欠損
+                    # (Execution Failure)ではなく、Backtest期間終了によるRight Censoring
+                    # (D0037)。holding_period_days分のExit Dateをまだ観測できないだけであり、
+                    # 執行を試みて失敗したわけではない。
+                    outcome_counter[ExecutionOutcome.CENSORED_END_OF_SAMPLE.value] += 1
+                    continue
 
                 window = build_close_to_next_open_window(
                     decision_session_date=decision_date, execution_session_date=execution_date

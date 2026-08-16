@@ -313,6 +313,24 @@ AIが多数の戦略を試した場合、良かったものだけを見せては
 
 `generated` / `tested` / `rejected` / `pending` / `paper` / `validated`
 
+### Infrastructure Validation Runと戦略性能Testを区別する
+
+Pipeline配線・実データ疎通確認そのものを目的としたRun(Corporate Action処理・
+Provider Code正規化・Execution Outcome分類等が正しく動くかの確認)は、戦略性能の
+統計的検証(Hidden Test)とは区別する。前者の結果(勝率・リターン等)を見てから
+同じ期間・同じ銘柄・同じStrategyパラメータを「未見のTest期間」として扱うと、
+実質的にはTest期間を見てから採否を決めていることになり、Look-ahead的な
+Overfittingにつながる(RESEARCH_RULES.md冒頭原則「Test期間を見た後に無断で
+パラメータを変更しない」と同じ趣旨)。
+
+**燃え尽きた(burned)期間の記録**: 2022-01-04〜2024-12-30・銘柄
+(7203/6758/8056/3626)・固定Strategy(20営業日Momentum→60営業日保有)の組み合わせは、
+Phase3B開始前のE2E Infrastructure Validation(実J-Quantsデータでの初回End-to-End
+Backtest、DECISIONS.md D0037参照)で結果を観測済みである。今後、この期間・銘柄・
+Strategyパラメータの組み合わせを「まだ結果を見ていないHidden Test」として扱っては
+ならない。Walk-Forward・真のOut-of-Sample検証を行う場合は、この期間とは異なる
+期間を新たに設定すること。
+
 ## Benchmark: Price Return / Total Return (`lib/backtest/benchmark.py`)
 
 日本株戦略は原則 **TOPIX** を基準Benchmarkとする。可能なら業種指数とも比較する。
