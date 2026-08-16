@@ -1,0 +1,209 @@
+# Disclosure Architecture(Phase4B-1、D0045)
+
+TDnet / EDINET / Company IRを将来同じArchitecture上で扱うための、
+Source非依存のDisclosure Common Coreを説明する。**このPhase(4B-1)では
+実Sourceへ一切接続していない。** 実装は`lib/disclosures/`。
+
+## Core Principle: Document != Event != Claim != Fact about business reality
+
+```
+Document publication itself is a fact.        <- Phase4B-1が扱う範囲
+Document content requires later extraction/classification.  <- 将来Phase
+```
+
+「2026-xx-xx xx:xxにこの会社がこのTitleの文書を公開した」は**FACT**として
+扱える(公開されたという事実そのもの)。しかし文書**本文**に書かれている
+内容(会社予想・経営陣の見通し・計画・経済状況の説明等)は、公開されたと
+いう事実とは別物であり、自動的にFACTへ変換しない:
+
+- **Document** ≠ **Event**(「上方修正が起きた」等のEventはDocumentから
+  導出される解釈であり、Phase4B-1では抽出しない)
+- **Document** ≠ **Claim**(本文中の会社予想・経営陣見通しは`EvidenceType.
+  CLAIM`/`INTERPRETATION`相当であり、`FACT`ではない、`lib.evidence.model.
+  EvidenceType`参照)
+- **Document** ≠ **Fact about business reality**(「業績が良い」という
+  business上の解釈は本文を読んで人間またはAIが判断すべきものであり、
+  Documentの存在自体が保証するものではない)
+
+Phase4B-1が保証するのは「公開された」という事実の記録・PIT管理・重複検知
+までであり、本文Semantic Extraction(数値抽出・Event分類・Claim抽出・
+LLM要約)は将来Phaseへ完全に切り離す。
+
+## Pipeline
+
+```
+[将来: TDnet/EDINET/Company IR API/File]
+              |
+              v (Phase4B-2以降、未実装)
+     Immutable Raw Snapshot (lib.snapshot.RawSnapshotStore)
+              |
+              v  parse_disclosure_payload()  (lib.disclosures.normalize)
+      DisclosureDocument + DisclosureAttachment
+              |
+              +--- DocumentRelationship (確認済みの場合のみ、明示的Basis必須)
+              |
+              v  disclosures_as_of(decision_at, availability_semantics)
+                 (lib.disclosures.view、Set Filter、Latest-winsではない)
+              |
+              v  disclosure_document_to_evidence()  (lib.disclosures.evidence)
+        EvidenceRecord (FACT、公開Metadataのみ、本文解釈なし)
+              |
+              v  (将来Phase、未実装)
+   Claim Extraction / Event Classification / Hypothesis Generation
+```
+
+## DisclosureDocument
+
+`lib.disclosures.model.DisclosureDocument`。Source非依存。最低限のField:
+`internal_document_id`(このLab内で常に一意、Raw値の重複可能性から独立)、
+`source_document_id`(Provider側ID、UNKNOWN=`None`可)、`entity_id`
+(Canonical Entity Registry参照)、`title`、`document_kind`、
+`originating_source`/`delivery_provider`(D0042の分離をそのまま継承)、
+`market_public_at`/`market_public_at_basis`、`provider_available_at`/
+`provider_available_at_basis`、`retrieved_at`、`source_version`(不透明な
+Provider側Version識別子、Revision Relationship推測には使わない)、
+`raw_snapshot_ref`、`language`、`attachments`。
+
+**Fundamentals(`lib.fundamentals.model.DisclosureEnvelope`)との意図的な
+違い**: FundamentalsのEnvelopeは`market_public_at_basis`のみを個別に持ち、
+`provider_available_at`は`FundamentalMetric`側の`SourceVersion.
+availability_basis`(Revision管理用)としてのみ存在した。Disclosure
+Documentでは、`market_public_at`と`provider_available_at`のそれぞれの
+確からしさを独立に追跡する必要があるため(本文Revisionの概念とは別に、
+Document自体の公開時刻とこのLabでの利用可能時刻がそれぞれ別々の確からしさを
+持ちうる)、両方を`DisclosureDocument`自身に持たせている。
+
+## DisclosureAttachment
+
+`lib.disclosures.model.DisclosureAttachment`。Document 1件に対し複数の
+Attachment(PDF/XBRL/HTML/CSV/XML/OTHER/UNKNOWN)。Phase4B-1は実Downloadを
+行わないため、`availability`は既定で`METADATA_ONLY`(存在は分かるが内容は
+未取得)、`content_hash`は通常`None`。`source_locator`はURL等の不透明な
+参照文字列として保持するのみで、このLab自身が解決・取得することはない。
+
+## Document Version / Relationship
+
+`lib.disclosures.model.DocumentRelationship`。`CORRECTS`/`RESTATES`/
+`REPLACES`/`REFERENCES`/`RELATED_TO`/`UNKNOWN`。**Providerが明示する場合、
+または公式Metadataで確認できる場合のみ**設定する。「後から出た文書だから
+前を訂正した」という時系列だけからの推測は禁止する。`parse_disclosure_
+payload()`はDocumentRelationshipを一切生成しない(構造的な確認は
+`13_tests/test_disclosures_normalize.py`の
+`test_parse_disclosure_payload_never_creates_relationship_records`/
+`test_module_never_references_corrects_or_restates_kind_automatically`参照)。
+
+過去のDisclosureDocumentは新しいDocumentで上書きされない(Append-only)。
+`DocumentRelationship`は別のRecordとして両者を結びつけるのみ。
+
+## Forecast Revision != Correction(Fundamentals Phase4Aの原則を継承)
+
+会社予想が100→120へ変わった場合、100は当時有効なDisclosureだったのであり
+「誤りだった」わけではない。Correction/Restatementは過去の開示内容
+そのものの訂正という別概念であり、公式仕様/Metadataで確認できない限り
+両者を同一視しない(`lib.fundamentals.normalize`の`is_correction=False`
+固定と同じ原則)。
+
+## PIT / Availability
+
+`market_public_at`(市場公表時刻)と`provider_available_at`(このLabの
+Pipelineから利用可能になった時刻)を区別する。`provider_available_at`は
+実際の観測ログが無い限り常に`availability_basis=UNKNOWN`とし、
+`market_public_at`へFallbackしない(D0043の原則をそのまま継承)。
+
+`disclosures_as_of(documents, decision_at, availability_semantics)`
+(`lib.disclosures.view`)は2つのAvailabilitySemanticsを切り替え可能:
+
+- **Market Information Study**(A系統、`AvailabilitySemantics.
+  MARKET_PUBLIC_AT`): `market_public_at`を基準にする。
+- **Reproducible System Simulation**(B系統、既定、
+  `AvailabilitySemantics.PROVIDER_AVAILABLE_AT`): `provider_available_at`
+  を基準にする。`availability_basis=UNKNOWN`の文書は既定で除外する
+  (`include_unknown_availability=True`で明示的opt-inのみ許容)。
+
+**単純なDate比較は禁止**: 同日でも時刻がdecision_atより後なら除外する
+(tz-aware `datetime`同士で比較、`13_tests/test_disclosures_view.py`の
+`test_same_day_later_time_document_excluded`参照)。
+
+### Fundamentals `fundamentals_as_of()`との設計上の違い(重要)
+
+Fundamentalsの`FundamentalMetric`は同じ指標の異なる時点の値がSeriesを
+構成し、`fundamentals_as_of()`はそのSeriesの「その時点で最新のVersion」を
+1件返す(Latest-wins)。DisclosureDocumentはそれぞれが独立した意味を持つ
+文書であり、同時に複数の文書が「見えている」状態が正しい。そのため
+`disclosures_as_of()`は「Latest-winsで1件返す」のではなく、「decision_at
+時点で利用可能な文書の**集合**を返す」(Set Filter)。この違いはPIT安全性
+原則を弱めるものではなく、Documentという概念の性質から来る自然な設計選択
+である。
+
+## Entity Registry Integration
+
+Provider Codeを直接Entity IDとして使わず、`lib.sources.entity_registry.
+EntityRegistry.resolve(provider_name=..., provider_identifier=...,
+as_of=...)`を経由する(PIT-aware、Fundamentals Phase4Aと同じ経路)。
+
+## Evidence Integration
+
+`disclosure_document_to_evidence()`(`lib.disclosures.evidence`)は
+「公開された」という事実のみをFACTとして記述する(例:「7203が
+『2024年3月期 決算短信』(FINANCIAL_RESULTS)を公開」)。本文の内容は
+一切含めない。`EvidenceRelation`(SUPPORTS/CONTRADICTS等)は付与しない
+(`EvidenceRecord`自体にRelation Fieldが無い既存Schema設計、D0040)。
+`source_authority_class`はSource非依存のこのModuleでは決め打ちせず、
+呼び出し側が明示的に指定する(実SourceのAuthority Class、例えばTDnet/
+EDINETは`PRIMARY_OFFICIAL`、Company IRは`COMPANY_PRIMARY`は、実接続時に
+呼び出し側が判断する)。
+
+## Deduplication(最小基盤、Phase4B-1)
+
+`lib.disclosures.normalize`の2関数のみ:
+
+- `find_exact_content_duplicate_groups(payload)`: Raw行全体の
+  Content Hash(`lib.reproducibility.hash_json_safe`を再利用)が完全一致
+  する行をグルーピングする(例: Pagination境界での重複取得の検出)。
+- `find_same_source_document_id_signals(documents)`: 同一`source_
+  document_id`を持つ複数Documentを候補として検出する。
+
+**Title/PublicDate/Codeだけを見たHeuristic判定は行わない**(この2関数の
+入力にTitleは一切含まれない)。TDnet/EDINET/Company IRの同一Eventへの
+束ね(Event Clustering)は将来Phaseへ延期。
+
+## Data Catalog
+
+`build_disclosure_common_core_dataset_descriptor()`
+(`lib.disclosures.catalog`)が`DataCapability.DISCLOSURE`配下へ
+`implementation_status=FIXTURE_ONLY`として登録する。実Source接続時
+(Phase4B-2以降)は、この登録を書き換えるのではなく、Source別の
+DatasetDescriptorを別途追加登録すること。
+
+## Offline Reproducibility
+
+`disclosures_as_of()`/`disclosure_document_to_evidence()`はいずれも
+外部呼び出しを一切持たない純粋関数(`fundamentals_as_of()`と同じ
+Offline-by-construction設計、D0042)。統合Testで、Snapshot保存 →
+(Session再起動を模した)再読み込み → 正規化、を2回独立実行して結果が
+完全に一致することを確認済み(`13_tests/test_disclosures_integration.py`)。
+
+## Future Event Extraction(将来Phase、未実装)
+
+以下はPhase4B-1のScope外であり、将来Phaseで別途設計する:
+
+- 本文からのClaim/Estimate/Plan抽出
+- Forecast Revision Event(`FORECAST_UPWARD_REVISION`等)の自動生成
+  (Fundamentals Phase4Aの`§21`と同じ理由で慎重に扱う)
+- TDnet/EDINET/Company IRの同一出来事へのEvent Clustering
+- News統合(`lib.evidence.news`との接続)
+- Hypothesis生成・Skeptic Agent・BUY/SELL判断
+
+## 既知の限界(Phase4B-1時点)
+
+- Provider-neutralなFixture Schemaのみで検証済み。実TDnet/EDINET/Company
+  IRのField名・DocKind値は未確認(接続はPhase4B-2以降)。
+- `DisclosureDocument.internal_document_id`の生成方式(`f"DOC_{internal_
+  code}_{index}"`、Raw行のIndex依存)は、`lib.fundamentals.normalize`の
+  `envelope_id`生成(`f"ENV_{internal_code}_{disc_no or index}"`)と同様、
+  Raw値(ここでは`source_document_id`)を直接使わずIndexを主に使う設計へ
+  修正済み(Phase4B-1開発中に発見: 複数行が同一`source_document_id`を
+  共有する場合、Raw値優先の生成方式だと`internal_document_id`が衝突する
+  ため)。Fundamentals側の`envelope_id`生成は本Phaseでは意図的に変更して
+  いない(Research Logic無変更の制約)。将来、同種の衝突リスクが顕在化
+  した場合は個別に確認すること。

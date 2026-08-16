@@ -146,3 +146,15 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   MISSING_OR_UNSPECIFIED/UNKNOWN)・Revision非Leak保証(`fundamentals_as_of()`)・
   Offline再現性はFixture+実データ確認で検証済み(Lab 313テスト)。
   Status = **COMPLETE**(4銘柄Local Real Data Validation完了、Phase4Bへは未着手)。
+- **Phase4A.5**: Claude Code Skills/Subagents/Workflow整備(D0044、投資研究
+  機能・Data Sourceは無追加)。`.claude/skills/`(`pit-audit`/`adversarial-
+  review`/`phase-close`/`source-onboarding`/`local-validation`)と
+  `.claude/agents/`(`pit-auditor`/`skeptic-reviewer`/`data-source-
+  researcher`、いずれも構造的Read-only)を新設。詳細は
+  `CLAUDE_CODE_RESEARCH_WORKFLOW.md`参照。
+- **Phase4B-1**: TDnet/EDINET/Company IRを将来同じArchitectureで扱うための
+  Source非依存Disclosure Common Core(`lib/disclosures/`、D0045)。実Source
+  への接続はまだ行っていない(Provider-neutralなFixtureのみ)。Document
+  publication(公開されたという事実)とDocument content(本文の内容)を
+  分離し、本文Semantic Extractionは将来Phaseへ明確に切り離した。詳細は
+  `DISCLOSURE_ARCHITECTURE.md`参照(Lab 359テスト)。

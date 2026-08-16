@@ -2114,3 +2114,130 @@ Phase4B実装・TDnet/EDINET/Company IR Connector・投資判断ロジック・
 Buy/Sell Logic・AI Research Agent実装・既存Backtest Logicの変更・
 Screening Toolの変更・Hookの自動導入(`.claude/settings.json`変更)には
 着手していない。
+
+---
+
+## D0045 — Phase4B-1: Disclosure Common Core
+
+Phase4A/Phase4A.5 COMPLETE後、Phase4B(TDnet/EDINET/Company IR接続)の
+最初のStepとして、それら3つを将来同じArchitecture上で扱うための
+Source非依存Disclosure Common Coreを実装した。**実Sourceへは一切接続して
+いない**(TDnet/EDINET/J-Quants TDnet Add-on/Company IR Crawlingいずれも
+未実装)。既存Research Logic(`core/` `app.py` `tests/`、および
+`lib/fundamentals/`を含む既存`lib/`配下)は無変更。詳細は
+`DISCLOSURE_ARCHITECTURE.md`参照。
+
+### 1. Source-independent Disclosure Common Core
+
+新規`lib/disclosures/`パッケージ(`model.py`/`normalize.py`/`view.py`/
+`evidence.py`/`catalog.py`)。既存Primitive(Phase3D/Phase4Aの
+`SourceCatalog`/`DataCapability`/`SourceMetadata`/`originating_source`/
+`delivery_provider`/`EvidenceRecord`/`EvidenceType`/`AvailabilityBasis`/
+`AvailabilitySemantics`/`EntityRegistry`/`RawSnapshotStore`)を再利用し、
+Disclosure専用に同じ概念を再実装していない。`DataCapability.DISCLOSURE`
+は既にPhase3Dで定義済みだったものをそのまま使用。
+
+### 2. Document/Event separation、Document publication vs content semantics
+
+`DISCLOSURE_ARCHITECTURE.md`の「Core Principle」参照。Document公開という
+事実のみをFACTとして扱い、本文の内容(Claim/Estimate/Event)はこの
+Phaseでは一切抽出・解釈しない(将来Phase)。
+
+### 3. Explicit relationship only、No inferred correction
+
+`DocumentRelationship`(`CORRECTS`/`RESTATES`/`REPLACES`/`REFERENCES`/
+`RELATED_TO`/`UNKNOWN`)はProviderが明示するか公式Metadataで確認できる
+場合のみ設定する。`parse_disclosure_payload()`はDocumentRelationshipを
+一切生成しない(構造的な保証、Testで確認済み)。Forecast RevisionとCorrection
+の混同禁止というFundamentals Phase4Aの原則をそのまま継承した。
+
+### 4. PIT timestamp priority
+
+`market_public_at`/`provider_available_at`/`retrieved_at`を区別し、
+`provider_available_at`は実観測ログが無い限り常に`availability_basis
+=UNKNOWN`とする(D0043の原則を継承)。「公開後の市場閉場後」パターン
+(同日でも時刻がdecision_atより後なら除外)を単純なDate比較ではなく
+tz-aware `datetime`比較で扱うことをTestで確認した。
+
+**設計上の拡張(意図的)**: `DisclosureDocument`は`market_public_at_basis`
+と`provider_available_at_basis`を独立した2つのFieldとして持つ
+(Fundamentalsの`SourceVersion.availability_basis`は1つのみだったが、
+Documentでは両方の確からしさを別々に追跡する必要があるため)。
+
+**設計上の相違点(意図的、`DISCLOSURE_ARCHITECTURE.md`に詳細記載)**:
+`disclosures_as_of()`は`fundamentals_as_of()`と異なりLatest-winsではなく
+Set Filter(decision_at時点で利用可能な文書の集合)を返す。Documentは
+Fundamentalsの指標のような「同一Seriesの異なるVersion」ではなく、それぞれ
+独立した意味を持つため。
+
+### 5. Origin vs delivery separation
+
+`originating_source`/`delivery_provider`をD0042の分離のまま
+`DisclosureDocument`/Evidence双方へ伝播させた(TDnetのOriginをJ-Quants
+TDnet Add-on経由で取得する等のケースを将来表現可能にする)。
+
+### 6. Exact duplicate vs event cluster separation
+
+`find_exact_content_duplicate_groups()`(Raw行のContent Hash完全一致、
+`lib.reproducibility.hash_json_safe`を再利用)と`find_same_source_
+document_id_signals()`(同一Provider Document ID)の2種類のみを実装した。
+**Title/PublicDate/Codeのみを見たHeuristic判定は行わない**(該当関数の
+入力にTitleを一切含めない構造的保証、Testで確認)。TDnet/EDINET/Company
+IRの同一Eventへの束ね(Event Clustering)はこのPhaseでは実装せず、
+将来Phaseへ明示的に延期した。
+
+### 7. Event extraction deferred
+
+本文からのClaim/Estimate/Plan抽出、Forecast Revision Eventの自動生成、
+Event Clustering、News統合、Hypothesis生成は全てこのPhaseのScope外
+(`DISCLOSURE_ARCHITECTURE.md`「Future Event Extraction」参照)。
+
+### 8. Attachment Model
+
+`DisclosureAttachment`(PDF/XBRL/HTML/CSV/XML/OTHER/UNKNOWN)をDocumentと
+分離。Phase4B-1は実Downloadを行わないため`availability`既定は
+`METADATA_ONLY`。未知のAttachmentKindは`UNKNOWN`へfail closed。
+
+### 9. Provider-neutral Fixture
+
+新規Golden Fixture`13_tests/fixtures/disclosure_common_core_v1.json`は
+TDnet/EDINET/Company IRいずれの実Wire Formatも模していない、完全に
+Provider-neutralな合成Schema(`_disclaimer`に明記)。実Source接続時は
+`data-source-researcher` Subagentによる公式仕様確認を経てから、実際の
+Field名Mappingを追加すること。
+
+### 開発中に発見した既存コードの潜在的Issue(このPhaseでは修正していない)
+
+`lib.disclosures.normalize.parse_disclosure_payload()`実装中、複数のRaw
+行が同一`source_document_id`を共有するケース(Dedup検出Testのために意図的に
+作成)で、`internal_document_id`をRaw値優先(`doc_id_raw or index`)で
+生成すると衝突することを発見した。`lib/disclosures/`側はIndex優先
+(`f"DOC_{internal_code}_{index}"`)へ修正済み。**`lib.fundamentals.
+normalize`の`envelope_id`生成(`f"ENV_{internal_code}_{disc_no or
+index}"`)も理論上同じパターンだが、このPhaseはFundamentals Research
+Logicへの機能変更を行わない制約のため、意図的に未修正のまま残した。**
+実データで同一`DiscNo`を持つ複数行が返る実例が確認された場合は、別途
+Decisionとして記録した上で修正すること。
+
+### Tests
+
+新規46テスト(`test_disclosures_model.py` 7件、`test_disclosures_
+normalize.py` 20件、`test_disclosures_view.py` 10件、`test_disclosures_
+integration.py` 9件)。Lab全体は313件→359件。既存313件は無変更のまま
+全通過(既存Fundamentals/Price Backtest Regression含む)。
+
+**回帰確認**: `pytest`(Lab 359件・既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`(75ファイル)いずれもclean。`git diff --stat
+-- core/ app.py tests/`で変更が無いことを確認済み。
+
+### Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+Phase4A.5で新設したSubagentsを今回から実運用した(詳細は本コミットの
+完了報告「H」「I」参照)。
+
+### このDecisionでやらないこと
+
+EDINET/TDnet/J-Quants TDnet Add-on/Company IR Connector・PDF Parse・
+XBRL Parse・OCR・LLM Summary・Event抽出・Buy/Sell判断・Strategy変更・
+Backtest条件変更・Screening Tool変更には着手していない。Phase4B-2
+(EDINET)には進んでいない。
