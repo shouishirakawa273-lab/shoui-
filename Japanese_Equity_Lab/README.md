@@ -136,3 +136,11 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   Phase4開始前のArchitecture Cleanup(D0042: Source/Delivery Provider分離、
   Backtest/Experimentの完全Offline原則、market_public_at/provider_available_at
   の区別、Fundamental Schema Contract予約)はDECISIONS.mdを参照。
+- **Phase4A**: J-Quants Fundamentals/Financial Summary(`/v2/fins/summary`)の
+  実装(`lib/fundamentals/`、D0043)。公式仕様(`jpx.gitbook.io`)へは本セッションから
+  一切疎通できず(証拠はDECISIONS.md D0043参照)、Field名は未検証のまま実装した。
+  Disclosure単位のSchema・Actual/Forecast/当期/翌期/連結非連結の分離・
+  `ValueAvailability`(PRESENT/NOT_APPLICABLE/MISSING_OR_UNSPECIFIED/UNKNOWN)・
+  Revision非Leak保証(`fundamentals_as_of()`)・Offline再現性はFixtureで検証済み
+  (Lab 291テスト)。Status = `CODE_COMPLETE_AWAITING_LOCAL_VALIDATION`
+  (実データでのローカル検証待ち、Phase4Bへは未着手)。

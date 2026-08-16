@@ -268,15 +268,18 @@ def test_availability_semantics_distinguishes_two_kinds_of_pit_research() -> Non
     assert AvailabilitySemantics.MARKET_PUBLIC_AT != AvailabilitySemantics.PROVIDER_AVAILABLE_AT
 
 
-# --- D0042: NULL/NOT_APPLICABLEを0へ潰さないSchema Contract(Phase4A準備) ---
+# --- D0042/D0043: NULL/NOT_APPLICABLEを0へ潰さないSchema Contract(Phase4A) ---
 
 
-def test_value_availability_not_applicable_is_distinct_from_zero_and_not_yet_fetched() -> None:
-    """会計基準上存在しない指標(NOT_APPLICABLE)と、単に未取得(NOT_YET_FETCHED)は
-    別概念であり、どちらも数値の0とは異なる(Phase4A Fundamental Schema Contract)。"""
-    assert ValueAvailability.NOT_APPLICABLE != ValueAvailability.NOT_YET_FETCHED
+def test_value_availability_not_applicable_is_distinct_from_zero_and_missing() -> None:
+    """会計基準上存在しない指標(NOT_APPLICABLE)と、単にProvider側で空
+    (MISSING_OR_UNSPECIFIED)は別概念であり、どちらも数値の0とは異なる
+    (Phase4A Fundamental Schema Contract、D0043)。"""
+    assert ValueAvailability.NOT_APPLICABLE != ValueAvailability.MISSING_OR_UNSPECIFIED
     assert ValueAvailability.NOT_APPLICABLE != 0
-    assert ValueAvailability.NOT_YET_FETCHED != 0
+    assert ValueAvailability.MISSING_OR_UNSPECIFIED != 0
+    assert ValueAvailability.UNKNOWN != 0
+    assert ValueAvailability.PRESENT != 0
 
 
 # --- D0042: Revision Historyへrevision_reasonを追加(Fundamentalへの拡張準備) ---

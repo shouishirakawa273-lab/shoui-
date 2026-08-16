@@ -82,12 +82,12 @@ provider_identifier, as_of)`はPIT対応(社名変更・コード変更で有効
 
 | 項目 | 内容 |
 | --- | --- |
-| Role | 日次株価(OHLCV)・TOPIX/指数・銘柄マスタ・(将来)財務諸表・配当・Corporate Action・需給データ |
+| Role | 日次株価(OHLCV)・TOPIX/指数・銘柄マスタ・財務諸表サマリ(決算短信)・(将来)配当・Corporate Action・需給データ |
 | Authority | PRIMARY_OFFICIAL |
-| PIT semantics | `/v2/equities/master`の`date`パラメータは実データ確認済みでPIT対応(D0039、6502実データ)。株価はAdjFactorによるPIT-safe As-of Adjustment実装済み(D0034/D0035) |
-| Current Implementation Status | 株価/Master/Calendar/TOPIX: CONNECTED(実データE2E検証済み、Phase3B)。Financials/Dividend/需給: NOT_IMPLEMENTED |
-| Cost/Plan dependency | Light Plan(ユーザー申告)、60req/分(D0039確認済み) |
-| Known limitations | 商品区分(ProdCat)・市場区分(Mkt)の値の意味は未検証。全市場規模のBulk取得方式は未接続(D0039) |
+| PIT semantics | `/v2/equities/master`の`date`パラメータは実データ確認済みでPIT対応(D0039、6502実データ)。株価はAdjFactorによるPIT-safe As-of Adjustment実装済み(D0034/D0035)。財務諸表(`/v2/fins/summary`)はmarket_public_at(DiscDate+DiscTime、tz-aware)を実装、provider_available_atは実観測ログが無いため常にUNKNOWN(D0043) |
+| Current Implementation Status | 株価/Master/Calendar/TOPIX: CONNECTED(実データE2E検証済み、Phase3B)。Financial Summary(`/v2/fins/summary`): FIXTURE_ONLY(Phase4A、`CODE_COMPLETE_AWAITING_LOCAL_VALIDATION`、D0043。Field名未検証、ローカル実データ検証待ち)。Dividend/需給: NOT_IMPLEMENTED |
+| Cost/Plan dependency | Light Plan(ユーザー申告)、60req/分(D0039確認済み)。`/v2/fins/summary`はEndpoint固有60req/分と仮定し`effective_limit=min(60,60)=60`(D0043、未検証) |
+| Known limitations | 商品区分(ProdCat)・市場区分(Mkt)の値の意味は未検証。全市場規模のBulk取得方式は未接続(D0039)。`/v2/fins/summary`のField名・DocType一覧・Null意味論は公式ドキュメントへ疎通できず未検証(D0043) |
 
 ### 2. EDINET
 
@@ -244,34 +244,47 @@ Phase4以降の全Data Sourceについて、Backtest/Experiment実行中に外�
 Experimentの完全Offline原則」参照)。`lib.universe.FrozenPitUniverseProvider`
 (D0042)が、事前取得済みSnapshotのみから解決する構成の実装例。
 
-### Phase4A Fundamental Schema Contract(設計指針、D0042。未実装)
+### Phase4A Fundamental Schema Contract(実装済み、`lib/fundamentals/`、D0043)
 
 Fundamental Dataを`code / date / sales / profit`のような単純なWide Tableへ
-早期に潰さない。**Phase4AではSchema確定実装まで進めなくてもよいが**、将来の
-Normalized Fundamental Recordが最低限以下を区別可能であることを設計指針として
-明記する(実装はPhase4Aで行う)。
+潰さず、Disclosure単位の`DisclosureEnvelope`(記述的Envelope)と
+Metric単位の`FundamentalMetric`(Long-form)に分離して実装した
+(`lib/fundamentals/model.py`)。
 
 ```
-# 設計指針のスケッチ(未実装、実際のFieldはPhase4Aで確定する)
-value_kind:          actual | company_forecast | next_year_forecast
-forecast_horizon:    current_year | next_year
-period:              1Q | 2Q | 3Q | FY
-period_basis:        cumulative | standalone   # 2Q累計をQ2単独値として扱わない
-consolidation:       consolidated | non_consolidated
-fiscal_period_start / fiscal_period_end
-fiscal_year_start / fiscal_year_end
-disclosure_date / disclosure_time / disclosure_number
-document_type
-accounting_standard: JGAAP | IFRS | USGAAP 等
+# 実装済みSchema(lib/fundamentals/model.py、Field名は未検証、DECISIONS.md D0043参照)
+actual_or_forecast:  ActualOrForecast(ACTUAL | COMPANY_FORECAST)
+fiscal_year_target:  FiscalYearTarget(CURRENT_FISCAL_YEAR | NEXT_FISCAL_YEAR)
+period_type:         PeriodType(1Q | 2Q | 3Q | 4Q | 5Q | FY | OTHER)
+period_basis:        PeriodBasis(CUMULATIVE | STANDALONE)  # 2Q累計をQ2単独値として扱わない
+consolidation_scope: ConsolidationScope(CONSOLIDATED | NON_CONSOLIDATED)
+disclosure_date / disclosure_time / disclosure_number  # DisclosureEnvelope
+document_type                                            # DisclosureEnvelope
+accounting_standard: str | None                          # DocType明示Mapping、未確認はNone
 revision:            SourceVersion/RevisionHistoryを流用(D0040、revision_reason含む)
 currency / unit
-value:               float | ValueAvailability(NOT_YET_FETCHED | NOT_APPLICABLE)
+raw_value: str | None / value: Decimal | None / value_availability: ValueAvailability
 ```
 
 **重要**: NULLを0へ変換しない。会計基準上存在しない指標(例: IFRS等で経常利益
 相当Fieldが存在しない場合)を0とみなさない(`lib.evidence.model.
-ValueAvailability`、`EVIDENCE_MODEL.md`「Value Availability」参照)。決算期変更
-(fiscal_period/fiscal_yearのズレ)にも耐えられる設計にする。
+ValueAvailability`、`EVIDENCE_MODEL.md`「Value Availability」参照)。
+数値は`float`ではなく`Decimal`でParseし精度を保つ(`raw_value`もそのまま
+併せて保持する)。決算期変更(fiscal_period/fiscal_yearのズレ)への耐性は
+Phase4Aでは`current_fiscal_year_start/end`等をOptionalとして持つのみで、
+自動補正は行わない。
+
+**Actual/Current-forecast/Next-forecastは常に別Record**: J-Quantsの
+`Sales`/`OP`/`NP`(実績)、`FSales`/`FOP`/`FNP`(当期予想)、`NxFSales`/
+`NxFOP`/`NxFNP`(翌期予想、想定Field名、未検証)は同じ「営業利益」概念でも
+互いに上書きしない別`FundamentalMetric`として保持する
+(`lib.fundamentals.normalize._METRIC_FIELD_MAP`)。
+
+**As-of View**: `lib.fundamentals.view.fundamentals_as_of(revision_histories,
+decision_at, availability_semantics=...)`が外部呼び出しを一切持たない
+純粋関数として、Market Information Study(A系統、`published_at`基準)/
+Reproducible System Simulation(B系統、`available_at`基準、既定)を
+切り替え可能にする(D0042「2種類のPIT研究」参照)。
 
 ### Storage Architecture(将来要件、D0042。現時点ではMigration不要)
 

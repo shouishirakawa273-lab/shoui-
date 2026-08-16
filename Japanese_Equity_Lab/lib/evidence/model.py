@@ -110,16 +110,22 @@ class AvailabilitySemantics(StrEnum):
 
 
 class ValueAvailability(StrEnum):
-    """将来のNormalized Fundamental Record等における、数値欠落の意味を区別するための
-    予約済みSentinel(D0042、Phase4A Fundamental Schema Contract)。
+    """Fundamental Metricの値そのものの状態(Stored Value State、D0043、
+    Phase4A Fundamental Schema正式実装)。
 
-    NULLを0へ変換しない、という契約を型で表現する下地。実際のFundamental Record
-    Schemaの確定実装はPhase4Aで行う(ここでは契約のみ予約する。
-    `DATA_SOURCE_ARCHITECTURE.md`「Phase4A Fundamental Schema Contract」参照)。
+    NULLを0へ変換しない、という契約を型で表現する。**As-of時点のTemporal
+    Usability(問い合わせ時点でまだ利用できないという結果)とは別概念であり
+    混同しない**: 後者はこの列挙型のメンバーとしては持たず、
+    `lib.fundamentals.view.fundamentals_as_of()`が該当Seriesに`None`を返すことで
+    表現する(Stored Value State = このMetricの値が実際どうだったか、
+    Temporal Usability = decision_at時点でその値を参照してよかったか、は
+    直交する別軸)。
     """
 
-    NOT_YET_FETCHED = "NOT_YET_FETCHED"  # 取得できていない(取得不可)
+    PRESENT = "PRESENT"  # 値が存在し、正常にParseできた
     NOT_APPLICABLE = "NOT_APPLICABLE"  # 会計基準上、そもそも存在しない指標(0ではない)
+    MISSING_OR_UNSPECIFIED = "MISSING_OR_UNSPECIFIED"  # Provider側で空だが、確定的な理由が無い(NOT_DISCLOSEDと決めつけない)
+    UNKNOWN = "UNKNOWN"  # Parse不能等、値の状態そのものが判定できない
 
 
 @dataclass(kw_only=True, frozen=True)

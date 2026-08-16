@@ -221,21 +221,35 @@ Prediction -> Actual Result -> Which Evidence Helped? -> Which Evidence Misled?
 `predicted_outcome`/`actual_outcome`は将来の検証用に空のまま保存できるFieldとして
 用意するのみ。
 
-## Value Availability(`lib.evidence.model.ValueAvailability`、Phase4A準備、D0042)
+## Value Availability(`lib.evidence.model.ValueAvailability`、Phase4A実装、D0043)
 
-将来のNormalized Fundamental Record等における、数値欠落の意味を区別するための
-予約済みSentinel。**NULLを0へ変換しない、という契約を型で表現する下地。**
+Normalized Fundamental Record(`lib.fundamentals.model.FundamentalMetric`)に
+おける、数値欠落の意味を区別するためのStored Value State。**NULLを0へ変換しない
+という契約を型で表現する。** D0042時点の2値予約(`NOT_YET_FETCHED`/
+`NOT_APPLICABLE`)から、Phase4A実装時に4値へ再設計した:
 
-- `NOT_YET_FETCHED`: 取得できていない(取得不可)。
-- `NOT_APPLICABLE`: 会計基準上、そもそも存在しない指標(0ではない。例: IFRS等で
-  経常利益相当Fieldが存在しない場合)。
+- `PRESENT`: 値が実際に開示されている。
+- `NOT_APPLICABLE`: 会計基準上、そもそも存在しない指標(0ではない。例: IFRS/
+  USGAAPで経常利益相当Fieldが存在しない場合)。会計基準から明示的に確認できる
+  場合のみこの値を使い、Rawが単に空文字列というだけでは断定しない
+  (`lib.fundamentals.normalize.resolve_value_availability()`)。
+- `MISSING_OR_UNSPECIFIED`: Provider側で値が空/未指定だが、理由が
+  会計基準起因と確認できない(単なる欠損の可能性を含む)。
+- `UNKNOWN`: Provider値のParseに失敗した等、状態自体を確定できない。
 
-実際のFundamental Record Schemaの確定実装はPhase4Aで行う(ここでは契約のみ予約
-する)。Fundamental Schema全体の設計原則(actual/company_forecast/
-next_year_forecast、quarterly period、cumulative vs standalone、consolidated/
-non_consolidated、fiscal_period/fiscal_year、disclosure_date/time/number、
-document_type、accounting_standard、revision/correction、currency/unit)は
-`DATA_SOURCE_ARCHITECTURE.md`「Phase4A Fundamental Schema Contract」参照。
+**`NOT_YET_AVAILABLE`は意図的に含めない。** これはMetric Value自体の属性ではなく、
+As-of Query(`lib.fundamentals.view.fundamentals_as_of()`)の結果側に属する
+概念であり、該当Recordが存在しない場合は`None`を返すことで表現する
+(Value StateとTemporal Usabilityの分離、D0043 Additional Safety Corrections)。
+
+実際のFundamental Record Schema(`DisclosureEnvelope`/`FundamentalMetric`)は
+`lib/fundamentals/`としてPhase4Aで実装済み(Field名は未検証、
+`DATA_SOURCE_ARCHITECTURE.md`「Phase4A Fundamental Schema Contract」・
+DECISIONS.md D0043参照)。actual/company_forecast/next_year_forecast、
+quarterly period(1Q〜5Q/FY/OTHER)、cumulative vs standalone、consolidated/
+non_consolidated、disclosure_date/time/number、document_type、
+accounting_standard、revision/correction、currency/unitはいずれも別Field/
+別Recordとして区別する。
 
 ## Ablation Lineage(`lib.schemas.experiment.Experiment.used_data_capabilities`)
 

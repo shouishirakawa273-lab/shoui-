@@ -1533,3 +1533,221 @@ Strategy探索・Parameter Optimization・BUY/SELL判断・AI Agent実装・News
 **回帰確認**: `pytest`(Lab 246件 = 従来233件+新規13件、既存Screening Tool
 37件)・`ruff check`・`ruff format --check`・`mypy`(62ファイル)いずれもclean。
 `git diff --stat`で`core/` `app.py` `tests/`への変更が無いことを確認済み。
+
+---
+
+## D0043 — Phase4A: J-Quants Fundamentals / Financial Summary 統合(Field名未検証、CODE_COMPLETE_AWAITING_LOCAL_VALIDATION)
+
+**目的**: 「好決算銘柄を探す」ことではなく、J-Quants Financial Raw ->
+Immutable Raw Snapshot -> Normalized Fundamental Record -> Canonical Entity
+-> Point-in-Time -> Revision/Correction History -> Data Catalog -> Evidence
+-> Provenance -> Frozen Offline Dataset という経路が実データでも通ることの
+検証(Infrastructure/Integration Validation)。Strategy探索・Parameter
+Optimization・Factor探索・BUY/SELL判断・Rankingはこのフェーズでは行っていない。
+
+### A. 公式仕様確認の試行結果(重要): 接続不可
+
+本セッションは`/v2/fins/summary`の公式仕様(`jpx.gitbook.io`等)へ**一切疎通できなかった**。
+証拠:
+
+- `curl -s -m 10 -o /dev/null -w "%{http_code}\n" https://jpx.gitbook.io/j-quants-en`
+  および`https://jpx-jquants.com`・`https://www.google.com` → いずれも
+  `curl: (56) Recv failure`相当のconnection failed、HTTPステータス`000`。
+- `WebFetch`で`https://jpx.gitbook.io/j-quants-en/api-reference/statements-1`を
+  取得試行 → `{"error_type":"EGRESS_BLOCKED","domain":"jpx.gitbook.io",
+  "message":"Access to jpx.gitbook.io is blocked by the network egress proxy."}`
+- `curl -sS -m 10 "$HTTPS_PROXY/__agentproxy/status"` → `recentRelayFailures`に
+  `jpx.gitbook.io`/`jpx-jquants.com`/`www.google.com`いずれも
+  `"kind":"connect_rejected","detail":"gateway answered 403 to CONNECT
+  (policy denial or upstream failure)"`が記録されている。
+
+**これはPolicyレベルの遮断であり、一時的な障害ではない**(Phase3A以降、毎Phaseで
+確認されてきたパターンと一致)。したがって`/v2/fins/summary`のField名
+(`DiscNo`/`DocType`/`DiscDate`/`DiscTime`/`CurPerType`/`Sales`/`OP`/`NP`/
+`FSales`/`FOP`/`FNP`/`NxFSales`/`NxFOP`/`NxFNP`/`NCSales`/`NCOP`/
+`OrdinaryProfit`等)・Pagination仕様・Rate Limit・Null/空文字の意味・
+Document Type一覧・会計基準の識別方法は、**このセッションでは未検証のまま**、
+ユーザーがセッション内で提示した情報のみに基づく作業仮説として実装した
+(既存`RESPONSE_SCHEMA_VERSION`/`_get_all_pages`ページネーションパターンを
+そのまま踏襲し、新規のPagination仕様は発明していない)。
+
+**ローカル環境での実データ検証が必須**(下記N参照)。ローカルで確認した実際の
+Field名・DocType一覧・Null意味論が、以下の仮定と異なる場合はコードを直接
+修正せず、本Decisionへ追記すること。
+
+### B. 実装Architecture
+
+新規`lib/fundamentals/`パッケージ(既存`core/` `app.py` `tests/`は無変更):
+
+- `model.py`: `DisclosureEnvelope`(開示1件の記述的Envelope)・
+  `FundamentalMetric`(指標1件、Long-form/Metric-based Schema)・
+  `PeriodType`/`PeriodBasis`/`ConsolidationScope`/`ActualOrForecast`/
+  `FiscalYearTarget` Enum。`NORMALIZER_VERSION`定数(Provider Schema Evolution
+  追跡用)。
+- `normalize.py`: Raw Payload(`list[dict]`) -> `(list[DisclosureEnvelope],
+  list[FundamentalMetric])`。`_METRIC_FIELD_MAP`(metric_type ->
+  Raw Field名・Actual/Forecast・当期/翌期・連結/非連結)、`_DOC_TYPE_TO_
+  ACCOUNTING_STANDARD`(DocType文字列からの明示的Mapping、未知はfail closed)、
+  `resolve_value_availability()`、`_build_market_public_at()`、
+  `_provider_available_at_and_basis()`、`build_revision_histories()`。
+- `view.py`: `fundamentals_as_of(revision_histories, decision_at,
+  availability_semantics=...)` — 外部呼び出しを一切持たない純粋関数
+  (`FrozenPitUniverseProvider`と同じOffline-by-construction設計)。
+- `evidence.py`: `disclosure_metric_to_evidence()` — FACTのみ生成、
+  解釈語なし、`EvidenceRelation`なし。
+- `catalog.py`: `build_financial_summary_dataset_descriptor()` —
+  `implementation_status=FIXTURE_ONLY`でCatalog登録。
+- `lib/data_sources/jquants.py`/`fixture.py`/`local_snapshot.py`に
+  `fetch_financial_statements()`を追加(既存`fetch_equity_bars`等と同じ
+  `RawFetchResult`パターン)。`fetch_dividends()`はScope外のため未実装
+  (`FundamentalDataProvider` Protocolを完全には満たさない、意図的)。
+
+### C. Fundamental Schema
+
+Wide Tableへ早期に潰さず、Disclosure単位(`DisclosureEnvelope`)+
+Metric単位(`FundamentalMetric`、Long-form)に分離した。1つのDisclosure行から
+最大12個の`FundamentalMetric`(sales/operating_profit/net_profit ×
+actual/current_forecast/next_forecast、および非連結2種、経常利益1種)を生成する。
+`series_id = internal_code|metric_type|fiscal_year_target|period_type|
+consolidation_scope|accounting_standard`でRevision系列を識別する。
+
+### D. ValueAvailability(Stored Value State)の最終設計
+
+D0042での2値予約(`NOT_YET_FETCHED`/`NOT_APPLICABLE`)を、Additional Safety
+Correctionsに基づき4値へ再設計した: `PRESENT` / `NOT_APPLICABLE` /
+`MISSING_OR_UNSPECIFIED` / `UNKNOWN`。**`NOT_YET_AVAILABLE`は意図的に含めない**
+— これはMetric Valueそのものの属性ではなく、As-of Queryの結果側
+(`fundamentals_as_of()`が`None`を返すことで表現)に属する概念であるため。
+Raw値が空文字列というだけでは`NOT_APPLICABLE`と断定しない
+(`resolve_value_availability()`)。会計基準から明示的に確認できる場合
+(現時点ではユーザー確認済みの1事実、IFRS/USGAAPの経常利益相当のみ)に限り
+`NOT_APPLICABLE`とし、それ以外の空値は`MISSING_OR_UNSPECIFIED`とする。
+
+### E. Actual/Forecast/Period/Scope
+
+ACTUAL/COMPANY_FORECAST、CURRENT_FISCAL_YEAR/NEXT_FISCAL_YEAR、
+CONSOLIDATED/NON_CONSOLIDATEDは常に別Recordとして保持し、上書きしない。
+`CurPerType`は公式仕様上1Q/2Q/3Q/4Q/5Q/FYを取りうるとされ、`PeriodType`は
+これに`OTHER`を加えた7値。未知の生値はException停止ではなくwarningログ+
+`OTHER`へfail closedする(`_parse_period_type()`、Provider Schema Change検知)。
+2Q累計をQ2単独値として扱う自動導出はPhase4Aでは一切行わない
+(`PeriodBasis`は現状`CUMULATIVE`固定、Standalone導出は将来DERIVED Recordとして
+別途実装)。連結/非連結の判定はDocTypeのsubstring heuristicではなく、
+値をどのField群(`Sales`/`OP` vs `NCSales`/`NCOP`)から取得したかという構造的
+事実で決める。
+
+### F. PIT semantics — market_public_at
+
+`DiscDate`+`DiscTime`の両方が確認できた場合のみ、Asia/Tokyo tz-awareな
+`market_public_at`を構築し`AvailabilityBasis.EXACT`とする
+(`_build_market_public_at()`)。`DiscTime`が空/不明な場合、15:00や15:30等の
+推測補完は一切行わず`market_public_at=None`・`AvailabilityBasis.UNKNOWN`と
+する(Fixtureの8056/BIPROGY行で確認)。
+
+### G. Provider availability handling — provider_available_at
+
+**実際の観測ログ(Polling Log)がこのセッションには存在しないため、
+`provider_available_at`は常に`AvailabilityBasis.UNKNOWN`とする**
+(`_provider_available_at_and_basis()`)。「18:00頃速報」のような
+Provider Update Policyの「頃」表現をExact Timestampへ変換することを明示的に
+禁止する(Additional Safety Correction #2)。構造上必須の`SourceVersion.
+available_at`Fieldには保守的なAnchor(`market_public_at`、無ければ
+`retrieved_at`)を入れるが、`availability_basis=UNKNOWN`である限り
+`RevisionHistory.as_of()`の既定動作(UNKNOWN Version除外、D0040/D0042)により、
+Reproducible System Simulation(B系統)からは自動的に除外される
+(架空の「確認済み事実」として誤用されない)。
+
+### H. Revision/Correction handling
+
+同一`series_id`の複数Disclosureは、公式仕様でRevision Relationship
+(どのDiscNoが何を訂正したか)を確認できないため、`supersedes_version_id`は
+常に`None`(=関係不明)のまま独立した時系列として保持する
+(`build_revision_histories()`)。`is_correction`は常に`False`
+(Forecast RevisionとCorrection/Restatementは概念上別物であり、Phase4Aでは
+自動でCorrectionを検出しない、Additional Safety Correction #4)。
+`RevisionHistory.as_of()`は`available_at`/`availability_basis`のみで
+「その時点で使えた最新Version」を安全に選択するため、明示的なsupersedes chainが
+無くても正しく機能する(Toyota(7203)Fixtureの2回のForecast改定で確認)。
+
+### I. Offline reproducibility
+
+`fundamentals_as_of()`/`as_of_by_semantics()`は外部呼び出しを一切持たない
+純粋関数(`FrozenPitUniverseProvider`と同じ設計)。統合テストで、
+`RawSnapshotStore.save()` → (Session再起動を模した)`RawSnapshotStore.load()`
+→ 正規化 → As-of View、を2回独立実行して結果が完全に一致することを確認した
+(`test_fundamentals_integration.py::test_full_pipeline_is_reproducible_offline_from_saved_snapshot`)。
+
+### J. Data Catalog / Evidence integration
+
+`build_financial_summary_dataset_descriptor()`で`DataCapability.FUNDAMENTAL`
+配下へ`implementation_status=FIXTURE_ONLY`として登録(実データ疎通前段階を
+明示)。`disclosure_metric_to_evidence()`はFACTのみ生成し(例:
+「7203: operating_profit_current_year_forecast(CURRENT_FISCAL_YEAR, FY,
+COMPANY_FORECAST, CONSOLIDATED)を120000として開示」)、「好調」「Bullish」
+「買い」等の解釈語を含まない。`EvidenceRelation`はHypothesisが存在しない限り
+付与しない(`EvidenceRecord`自体にRelation Fieldが無いことは既存Schema設計、
+D0040のまま)。`originating_source="JQUANTS_SOURCE_DATA"`/
+`delivery_provider="JQUANTS"`(D0042の分離を使用)。
+
+### K. Tests
+
+新規45テスト(`test_fundamentals_model.py` 8件、`test_fundamentals_normalize.py`
+20件、`test_fundamentals_view.py` 10件、`test_fundamentals_integration.py` 7件)、
+および`test_evidence_model.py`の`ValueAvailability`再設計に伴う既存テスト1件の
+更新。Lab全体は246件 → 291件。
+要求された20項目Fixture Test全てを網羅(Raw Immutable・Provider/Internal
+Code混同なし・Actual/Forecast混同なし・当期/翌期混同なし・連結/非連結混同なし・
+2Q累計とQ2単独の混同なし・0とNULLの区別・NOT_APPLICABLEと0の区別・
+IFRS経常利益blankを0扱いしない・market_public_atのtz-aware性・
+provider_available_at UNKNOWN時の自動Fallback禁止・未来Disclosure/Forecast
+Revision/Correctionの非Leak・Revision前後のas_of View変化・Entity Registry
+Mapping・Raw→Normalized→Evidence Provenance・Frozen Dataset Offline再現性・
+既存Price Backtest/Screening Tool無変更)に加え、Property/Invariant Test
+(usable_records ⊆ available<=decision_at、t1<t2で未来Leakなし、Revision追加が
+過去as_ofを変えない、同一Raw+同一normalizer_versionで同一Normalized Hash)を実装。
+
+### L. 既存Screening Tool無変更の確認
+
+`git diff --stat -- core/ app.py tests/`は空(変更なし)。既存Screening Tool
+の37テストは無変更のまま全通過。
+
+### M. 既知の限界
+
+- `/v2/fins/summary`のField名・DocType一覧・Pagination・Rate Limit・
+  Null/空文字の意味論は本セッションでは一切実データ検証できていない
+  (上記A参照)。ローカル実データで異なる仕様が判明した場合、コードを
+  無断で書き換えず本Decisionへ追記すること。
+- `_DOC_TYPE_TO_ACCOUNTING_STANDARD`は実際のDocType文字列を含まない
+  (Fixture Test専用の仮エントリ`"FYFinancialStatements_Consolidated_IFRS_SYNTH"`
+  のみ)。実データでのDocType一覧確認後、正式なMapping Tableへ置き換える必要がある。
+  未知のDocTypeは`accounting_standard=None`へfail closedし、warningログを残す
+  (Exceptionで全処理停止しない)。
+- `provider_available_at`は実データでも当面`availability_basis=UNKNOWN`の
+  ままとなる(実際のPolling/Observation Logを構築するまで)。B系統
+  (Reproducible System Simulation)のAs-of Queryは、明示的に
+  `include_unknown_availability=True`を指定しない限り`None`を返し続ける
+  (安全側デフォルト、意図的)。
+- Revision Relationship(あるDiscNoが別のDiscNoをsupersedeする関係)は
+  公式仕様が未確認のため一切保持しない。実データでDiscNo/DocTypeから
+  安全に確認できる方法が判明した場合のみ、将来`supersedes_version_id`を
+  埋める設計へ拡張する。
+- Rate Limitは`min(plan_limit=60, endpoint_limit=60)=60`req/分と結論し、
+  既存の共有`_RATE_LIMIT_INTERVAL_SEC=1.05秒`(~57req/分)で両方を
+  満たすため追加のコード変更は行っていない(Endpoint別スロットリングの
+  必要が生じた場合の拡張点としてのみ記録)。
+
+### N. Local Real Data Validation(必須、下記PowerShellコマンド参照)
+
+本Phase4Aは`CODE_COMPLETE_AWAITING_LOCAL_VALIDATION`とし、完全COMPLETEとは
+自称しない。ユーザーのローカルPC環境(`.env`に`JQUANTS_API_KEY`設定済み)で
+以下を実行し、実データでの疎通・PIT/Revision挙動を確認すること
+(具体的なコマンドは完了報告(タスク#71)に記載)。
+
+### O. Commit
+
+このDecision自体は実装完了後にコミットする(タスク#71でCommit Hashを記録)。
+
+**このDecisionでやらないこと**: Strategy探索・Parameter Optimization・
+Factor探索・BUY/SELL判断・Ranking・「好決算」の定義・News/TDnet/EDINET/
+Company IR接続・全市場Bulk Historical Fetch・Portfolio Construction・
+AI Interpretationには着手していない。Phase4Bには進んでいない。

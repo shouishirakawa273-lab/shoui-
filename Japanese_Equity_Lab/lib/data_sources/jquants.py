@@ -184,3 +184,44 @@ class JQuantsAdapter:
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
+
+    def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
+        """``GET /v2/fins/summary``: 決算短信サマリ(実績・会社予想・修正等)を取得する(Phase4A、D0043)。
+
+        **未検証(重要)**: このセッションはJ-Quants公式ドキュメントへの接続を試みたが
+        Egress Proxyにより拒否された(DECISIONS.md D0043、接続試行の記録参照)。
+        Endpoint名・クエリパラメータ名(`code`/`from`/`to`)は、他のV2 Endpointと
+        同じ規約(コード指定+期間指定、`{"data": [...], "pagination_key": ...}`の
+        ページネーション)を踏襲した作業仮説であり、公式仕様で確認したものではない。
+        本番投入前に必ずローカル環境で疎通確認し、パラメータ名・ページネーション
+        挙動が異なる場合は修正すること。レスポンスFieldの解釈(意味論)は
+        `lib.fundamentals.normalize`側で行う(このメソッドはRaw Payloadをそのまま返す)。
+
+        **Rate Limit**: `/v2/fins/summary`にはEndpoint固有の60リクエスト/分制限が
+        あるとユーザーから提示された。実効レート制限は
+        ``effective_limit = min(plan_limit, endpoint_limit)`` として扱うべきだが、
+        現在のPlan-wide throttle(`_RATE_LIMIT_INTERVAL_SEC=1.05秒 ≈ 57req/分`、
+        D0039確認済みの60req/分Plan制限に対する安全マージン)は、既にこの
+        Endpoint固有の60req/分制限(`min(60, 60)=60`)も下回っているため、
+        追加の調整は不要と判断した。将来、より厳しいEndpoint固有制限を持つ
+        Endpointを追加する場合は、Endpointごとの独立したThrottleが必要になる
+        (未実装、既知の拡張ポイントとして記録するのみ)。
+        """
+        records: list[dict[str, object]] = []
+        for code in codes:
+            records.extend(
+                self._get_all_pages(
+                    "/fins/summary",
+                    {"code": code, "from": start_date.isoformat(), "to": end_date.isoformat()},
+                    error_label=f"{code} のFinancial Summary",
+                )
+            )
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/v2/fins/summary",
+            request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
+            retrieved_at=datetime.now(UTC),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )

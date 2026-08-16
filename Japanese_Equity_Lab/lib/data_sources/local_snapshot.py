@@ -179,3 +179,33 @@ class LocalSnapshotAdapter:
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
+
+    def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
+        """`financial_summary_<code>.json`(または`.csv`)を読み込む(Phase4A、D0043)。
+        各行は`DiscDate`で期間フィルタする(equity_barsの`Date`とは異なるField名)。
+        """
+        records: list[dict[str, Any]] = []
+        latest_path: Path | None = None
+        missing: list[str] = []
+        for code in codes:
+            path = self._find_file(f"financial_summary_{code}")
+            if path is None:
+                missing.append(code)
+                continue
+            latest_path = path
+            rows = self._read_rows(path)
+            records.extend(row for row in rows if start_date <= date.fromisoformat(str(row["DiscDate"])) <= end_date)
+        if missing:
+            raise DataSourceError(
+                f"以下の銘柄のfinancial_summaryファイルが見つかりません: {missing}。"
+                f"{self._dir} に financial_summary_<code>.json (または .csv) を配置してください。"
+            )
+        return RawFetchResult(
+            source="jquants_local",
+            endpoint="/v2/fins/summary",
+            request_parameters={"codes": list(codes), "from": start_date.isoformat(), "to": end_date.isoformat()},
+            retrieved_at=self._retrieved_at_for(latest_path) if latest_path else datetime.now(UTC),
+            data_period=f"{start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )

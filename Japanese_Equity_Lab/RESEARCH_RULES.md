@@ -626,6 +626,48 @@ availability_semantics`で、どちらの基準を使用したExperimentかを�
 Positive/Negative自動分類・News Relevance AI・Hypothesis生成・Skeptic Agent・
 Ablation Engine・BUY/SELL判断は、いずれもPhase5/Phase6以降に送る。
 
+### Fundamental Data(Phase4A、D0043): J-Quants Financial Summary統合
+
+`lib/fundamentals/`(`model.py`/`normalize.py`/`view.py`/`evidence.py`/
+`catalog.py`)で、上記Multi-Source Data Foundationを財務データ(`/v2/fins/summary`)
+の実データ統合で初めて使った。**公式仕様(`jpx.gitbook.io`)へはこのセッションから
+一切疎通できなかった**(DECISIONS.md D0043「A」参照、curl/WebFetch/Proxy Statusで
+Policyレベルの遮断を確認済み)ため、Field名・DocType一覧・Null意味論は
+未検証のまま、ユーザー提示情報に基づく作業仮説として実装している。
+ローカル実データで異なる仕様が判明した場合はコードを無断で書き換えず、
+DECISIONS.mdへ追記すること。
+
+- **Fail-closed(fail-crashではない)**: `CurPerType`(公式仕様上1Q〜5Q/FYを
+  取りうる)やDocTypeのような、公式仕様が完全には確認できないEnum的な生値は、
+  未知の値を検出しても例外で全処理を停止しない。warningログを残しつつ
+  安全な既定値(`PeriodType.OTHER`、`accounting_standard=None`)へfail closed
+  する。これはProvider Schema Change(Field追加・値体系変更)を「検出はするが
+  クラッシュはしない」形で扱うための一般原則であり、Phase4B以降の新規Source
+  接続にも適用する。
+- **DocType Mapping はsubstring heuristicを禁止**: Accounting Standard・
+  Consolidation Scope・Disclosure Event Type等をDocType文字列の部分一致で
+  推測しない。明示的なMapping Table(`_DOC_TYPE_TO_ACCOUNTING_STANDARD`)を
+  使い、未確認のDocTypeは`None`/`UNKNOWN`へfail closedする。Consolidated/
+  Non-Consolidatedの判定はDocType解析ではなく、値をどのField群
+  (`Sales`/`OP` vs `NCSales`/`NCOP`)から取得したかという構造的事実で決める。
+- **`provider_update_policy`と`provider_available_at`を混同しない**:
+  「18:00頃速報」のような Provider側の更新Policy記述は、個々の過去Recordの
+  正確な利用可能時刻(Exact Timestamp)ではない。実際のPolling/Observation Log
+  が存在しない限り、`provider_available_at`の`AvailabilityBasis`は`UNKNOWN`の
+  ままとする(`market_public_at`へ安易にFallbackしない、D0043「G」参照)。
+- **Forecast RevisionとCorrection/Restatementは別概念**: 会社予想100が後日120へ
+  変わった場合、100は「その時点で正しかった市場情報」であり、120による
+  上書き・訂正ではない。Correction/Restatementは過去の開示内容そのものの
+  訂正という別の概念であり、公式仕様でRevision Relationship(どのDiscNoが
+  何を訂正したか)が確認できない限り、両者を安易に同一視・自動判定しない。
+- **Provider Schema Evolutionへの前方互換性**: Rawペイロードに含まれる未知の
+  Fieldは無視するだけで、Raw自体を破棄・拒否しない。Normalizerは既知のField
+  のみを安全に正規化し、`normalizer_version`(`lib.fundamentals.model.
+  NORMALIZER_VERSION`)でSchema変更を追跡可能にする。
+- **Effective Rate Limit**: `/v2/fins/summary`のようなEndpoint固有のRate
+  Limitがある場合、`effective_limit = min(plan_limit, endpoint_limit)`を
+  使う。Plan全体のLimitだけを参照して個別Endpointの制約を見落とさない。
+
 ## Provenance (`lib/registry/provenance.py`)
 
 すべての重要な知見は生成元まで遡って追跡可能にする。

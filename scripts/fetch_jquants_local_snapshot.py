@@ -28,6 +28,13 @@ Adapter側で行われる)。認証情報(APIキー)はいかなるファイル�
         --codes 7203 6758 8056 3626 \\
         --start 2022-01-04 --end 2024-12-30
 
+`--fetch-financial-summary`(Phase4A/D0043): `/v2/fins/summary`も取得し
+`financial_summary_<code>.json`へ保存する(既定では取得しない)。Field名
+(DiscNo/DocType/DiscDate/DiscTime/CurPerType/Sales/OP/NP等)はこのセッションでは
+未検証(ネットワーク遮断のため公式ドキュメントへ接続できない、DECISIONS.md D0043
+参照)。取得後、`python scripts/jquants_financial_summary_diagnostic.py`で
+時系列確認できる。
+
 `--master-pit-check`(Phase3C/D0038): `/v2/equities/master`の`date`パラメータが
 真のPoint-in-Time上場状況(過去に存在したが現在は廃止済みの銘柄を含む)を返すのか、
 単に「現在の上場状況」を返すだけなのかは未検証(DECISIONS.md D0038参照)。この
@@ -64,7 +71,7 @@ def _save(path: Path, *, records: list[dict[str, object]]) -> None:
     print(f"  -> {path} ({len(records)}件)")
 
 
-def fetch_all(*, codes: list[str], start: date, end: date, output_dir: Path) -> None:
+def fetch_all(*, codes: list[str], start: date, end: date, output_dir: Path, fetch_financial_summary: bool = False) -> None:
     load_dotenv()
     adapter = JQuantsAdapter()
     if not adapter.configured:
@@ -105,6 +112,19 @@ def fetch_all(*, codes: list[str], start: date, end: date, output_dir: Path) -> 
     except DataSourceError as exc:
         raise SystemExit(f"銘柄マスタ取得に失敗しました: {exc}") from exc
     _save(output_dir / "equities_master.json", records=master_result.payload)
+
+    if fetch_financial_summary:
+        print(f"Financial Summary(/v2/fins/summary、Phase4A、Field名未検証)取得: {codes} ({start} 〜 {end})")
+        for code in codes:
+            try:
+                fins_result = adapter.fetch_financial_statements(codes=[code], start_date=start, end_date=end)
+            except DataSourceError as exc:
+                raise SystemExit(f"{code} のFinancial Summary取得に失敗しました: {exc}") from exc
+            _save(output_dir / f"financial_summary_{code}.json", records=fins_result.payload)
+        print(
+            "\n診断: 取得したFinancial Summaryを時系列で確認するには、以下のコマンドを実行してください:\n"
+            f"python scripts/jquants_financial_summary_diagnostic.py --snapshot-dir {output_dir} --code <CODE>"
+        )
 
     print("\n完了。以下のコマンドでPipelineを実行できます:\n")
     print(
@@ -204,6 +224,12 @@ def main() -> None:
         default=None,
         help="--master-pit-check使用時の対象内部Code(4桁)。過去に上場廃止された銘柄を指定すること。",
     )
+    parser.add_argument(
+        "--fetch-financial-summary",
+        action="store_true",
+        help="Phase4A(D0043): /v2/fins/summaryも取得しfinancial_summary_<code>.jsonへ保存する"
+        "(既定では取得しない。Field名は未検証、DECISIONS.md D0043参照)。",
+    )
     args = parser.parse_args()
 
     if args.master_pit_check is not None:
@@ -220,6 +246,7 @@ def main() -> None:
         start=args.start,
         end=args.end,
         output_dir=args.output_dir,
+        fetch_financial_summary=args.fetch_financial_summary,
     )
 
 
