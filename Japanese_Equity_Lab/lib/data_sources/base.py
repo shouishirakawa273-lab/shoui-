@@ -22,6 +22,16 @@ class RawFetchResult:
 
     request_parametersに認証情報(トークン・APIキー等)を含めてはならない
     (Snapshot manifestとしてそのまま保存されるため)。
+
+    `retrieved_at`は「Research Labがこのデータを取得した日時」であり、
+    `lib.point_in_time.PointInTimeRecord.available_at`(「市場参加者が当時実際に
+    参照可能になった日時」)とは別物である。両者を混同すると、例えば数年前の
+    株価データを今日取得した場合に`available_at`まで「今日」だと誤認し、
+    過去のバックテストで一切そのデータを使えなくなる(=Look-ahead防止のつもりが
+    過度に保守的になる)、あるいは逆に混同の仕方によっては未来情報の混入を見逃す、
+    といった誤りにつながる。`available_at`は常に市場の営業時間(`lib/market_calendar.py`)
+    から導出し、`retrieved_at`から導出しないこと
+    (`13_tests/test_available_at_vs_retrieved_at.py`で確認する)。
     """
 
     source: str

@@ -33,7 +33,7 @@ from lib.data_sources.fixture import FixtureDataSourceAdapter  # noqa: E402
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
-from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe  # noqa: E402
+from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
 from lib.schemas.experiment import Experiment, ExperimentStatus, ReproducibilityFingerprint  # noqa: E402
 from lib.schemas.hypothesis import Hypothesis  # noqa: E402
 from lib.schemas.price_data import apply_split_adjustments  # noqa: E402
@@ -63,6 +63,15 @@ def run_pipeline(
     commission_bps: float,
     slippage_bps: float,
 ) -> None:
+    if source == "jquants":
+        print(
+            "!!! BLOCKING TODO(実日本株Backtestでは未解決) !!!\n"
+            "Corporate Actions(株式分割・併合等)の実データSourceが未実装のため、\n"
+            "対象期間・対象銘柄に分割等があった場合、価格系列が不連続になり\n"
+            "Backtest結果が誤ります。実際の投資判断にこの結果を使用しないでください。\n"
+            "(DECISIONS.md D0014 / RESEARCH_RULES.md参照)\n"
+        )
+
     load_dotenv()
     adapter = _build_adapter(source, fixture_path)
     snapshot_store = RawSnapshotStore(_LAB_DIR / "01_data" / "raw")
@@ -80,8 +89,9 @@ def run_pipeline(
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
 
-    # Corporate Actionsの取得元が未実装(Phase3 TODO)のため、現時点ではsplit調整なし
-    # (actions=[])でRaw->Adjustedへ明示的に変換する(RawとAdjustedを混同しない)。
+    # BLOCKING TODO(Phase3): Corporate Actionsの取得元が未実装のため、現時点ではsplit
+    # 調整なし(actions=[])でRaw->Adjustedへ明示的に変換している(RawとAdjustedを
+    # 混同しない、という設計自体は満たすが、分割があった銘柄では価格が不連続になる)。
     price_history = {code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items() if code in codes}
     benchmark_bars = apply_split_adjustments(raw_by_code.get(benchmark_code, []), [])
 
@@ -129,13 +139,21 @@ def run_pipeline(
             "transaction_cost": asdict(run_config.transaction_cost),
         }
     )
+    git_dirty = is_git_dirty(cwd=str(_REPO_ROOT))
     fingerprint = ReproducibilityFingerprint(
         run_id=run_id,
         dataset_hash=dataset_hash,
         strategy_hash=strategy_hash,
         config_hash=config_hash,
         code_commit=current_code_commit(cwd=str(_REPO_ROOT)),
+        git_dirty=git_dirty,
     )
+    if git_dirty:
+        print(
+            "警告: working treeに未コミットの変更があります。"
+            "code_commitが指すコミット内容と実行時のコードが一致しないため、"
+            "完全な再現性は保証されません。"
+        )
 
     experiment = Experiment(
         experiment_id=f"BT_{run_id}",

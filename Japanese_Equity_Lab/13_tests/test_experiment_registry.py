@@ -12,8 +12,14 @@ from lib.schemas.experiment import Experiment, ExperimentStatus, Reproducibility
 def _metrics() -> BacktestMetrics:
     return BacktestMetrics(
         data_split=DataSplit.TEST,
-        sample_size=10,
+        unique_tickers=10,
         trade_count=15,
+        unique_entry_dates=12,
+        signal_count=20,
+        executed_count=15,
+        unexecuted_count=5,
+        execution_rate=0.75,
+        execution_outcomes={"EXECUTED": 15, "UNEXECUTABLE_NO_OPEN": 5},
         average_return=0.04,
         median_return=0.03,
         win_rate=0.6,
@@ -56,6 +62,7 @@ def test_record_and_read_back_roundtrip_preserves_reproducibility(tmp_path: Path
         strategy_hash="def456",
         config_hash="ghi789",
         code_commit="f30d1a9",
+        git_dirty=True,
     )
     experiment = Experiment(
         experiment_id="BT0002",

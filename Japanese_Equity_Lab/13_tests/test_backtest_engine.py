@@ -9,6 +9,8 @@ from lib.backtest.engine import (
     BenchmarkDataInsufficientError,
     DataSplit,
     DecisionWindow,
+    ExecutionOutcome,
+    PositionPolicy,
     TradeResult,
     TransactionCostConfig,
     build_close_to_next_open_window,
@@ -95,9 +97,9 @@ def test_build_close_to_next_open_window_rejects_non_later_session() -> None:
 
 def test_compute_metrics_basic_distribution() -> None:
     trades = [
-        TradeResult(code="7203", sector="Auto", year=2025, net_pretax_return=0.05),
-        TradeResult(code="7203", sector="Auto", year=2026, net_pretax_return=-0.02),
-        TradeResult(code="9984", sector="Tech", year=2026, net_pretax_return=0.10),
+        TradeResult(code="7203", sector="Auto", year=2025, entry_date=date(2025, 6, 2), net_pretax_return=0.05),
+        TradeResult(code="7203", sector="Auto", year=2026, entry_date=date(2026, 1, 6), net_pretax_return=-0.02),
+        TradeResult(code="9984", sector="Tech", year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.10),
     ]
     metrics = compute_metrics(
         trades,
@@ -105,9 +107,17 @@ def test_compute_metrics_basic_distribution() -> None:
         benchmark_return=0.03,
         sector_benchmark_return=0.04,
         transaction_cost_bps=10,
+        signal_count=5,
+        execution_outcomes={"EXECUTED": 3, "SKIPPED_POSITION_OPEN": 2},
     )
-    assert metrics.sample_size == 2
+    assert metrics.unique_tickers == 2
     assert metrics.trade_count == 3
+    assert metrics.unique_entry_dates == 2  # 2025-06-02 と 2026-01-06(2件重複)
+    assert metrics.signal_count == 5
+    assert metrics.executed_count == 3
+    assert metrics.unexecuted_count == 2
+    assert metrics.execution_rate == pytest.approx(3 / 5)
+    assert metrics.execution_outcomes == {"EXECUTED": 3, "SKIPPED_POSITION_OPEN": 2}
     assert metrics.win_rate == pytest.approx(2 / 3)
     assert metrics.excess_return is not None
     assert metrics.year_by_year_performance[2026] == pytest.approx((-0.02 + 0.10) / 2)
@@ -117,8 +127,11 @@ def test_compute_metrics_basic_distribution() -> None:
 
 def test_compute_metrics_empty_trades_returns_none_stats() -> None:
     metrics = compute_metrics([], data_split=DataSplit.TRAIN)
-    assert metrics.sample_size == 0
+    assert metrics.unique_tickers == 0
     assert metrics.trade_count == 0
+    assert metrics.unique_entry_dates == 0
+    assert metrics.signal_count == 0
+    assert metrics.execution_rate is None  # signal_countを渡さない場合はNone
     assert metrics.average_return is None
     assert metrics.win_rate is None
 
@@ -154,8 +167,9 @@ def _uptrend_bars(code: str, days: list[date], *, base: float, step: float) -> l
 
 
 # lookback(20)の起算に21本、entry用に1本、holding(60、DEFAULT_CONFIG準拠)分で
-# 計82本以上あれば複数トレードが完成する。
-_DAYS = _weekdays(date(2026, 1, 5), 100)  # 2026-01-05は月曜
+# 計82本以上あれば1トレードが完成する。NO_REENTRY_WHILE_POSITION_OPENの下で複数の
+# (重ならない)トレードが完成するには、82本区切りが複数回入るだけの本数が必要。
+_DAYS = _weekdays(date(2026, 1, 5), 220)  # 2026-01-05は月曜
 
 
 def _run_config(**overrides: object) -> BacktestRunConfig:
@@ -185,10 +199,12 @@ def test_run_produces_trades_with_matched_benchmark_comparison() -> None:
     )
 
     assert metrics.trade_count > 0
-    assert metrics.sample_size == 1
+    assert metrics.unique_tickers == 1
     assert metrics.average_return is not None and metrics.average_return > 0  # 右肩上がりの合成データなので正のリターン
     assert metrics.benchmark_return is not None
     assert metrics.excess_return is not None
+    assert metrics.signal_count >= metrics.trade_count
+    assert metrics.execution_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
 
 
 def test_run_raises_when_benchmark_data_insufficient() -> None:
@@ -242,8 +258,12 @@ def test_run_skips_trades_with_missing_execution_price_instead_of_fallback() -> 
         trading_calendar=calendar,
         signal_fn=as_buy_signal_fn(),
     )
-    # 欠損があった分だけトレード数が減る(架空の価格で埋めて水増ししない)。
-    assert metrics_with_gap.trade_count < metrics_without_gap.trade_count
+    # 欠損があった試行はUNEXECUTABLE_NO_OPENとして記録される(架空の価格で埋めない)。
+    # NO_REENTRY_WHILE_POSITION_OPENの下では翌営業日に再試行が成功しうるため、
+    # 最終的なtrade_countは変わらない場合があるが、失敗した試行自体は必ず記録される。
+    assert metrics_with_gap.execution_outcomes.get(ExecutionOutcome.UNEXECUTABLE_NO_OPEN.value, 0) >= 1
+    assert metrics_without_gap.execution_outcomes.get(ExecutionOutcome.UNEXECUTABLE_NO_OPEN.value, 0) == 0
+    assert metrics_with_gap.unexecuted_count >= metrics_without_gap.unexecuted_count
 
 
 def test_run_is_deterministic_given_identical_inputs() -> None:
@@ -264,3 +284,40 @@ def test_run_is_deterministic_given_identical_inputs() -> None:
     first = _run()
     second = _run()
     assert first == second
+
+
+def test_no_reentry_while_position_open_skips_overlapping_signals() -> None:
+    """同一銘柄で既にポジションを保有している間の追加シグナルはSKIPPED_POSITION_OPENになり、
+    holding期間が重なるトレードとして二重に計上されない(デフォルトのPositionPolicy)。"""
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
+
+    metrics = engine.run(
+        config=_run_config(),
+        price_history=price_history,
+        benchmark_bars=benchmark_bars,
+        trading_calendar=calendar,
+        signal_fn=as_buy_signal_fn(),
+    )
+
+    # 右肩上がりの合成データなのでlookback以降ほぼ毎営業日シグナルが出るが、
+    # NO_REENTRY_WHILE_POSITION_OPENにより実際のトレードはholding期間分空けてしか成立しない。
+    assert metrics.signal_count > metrics.trade_count
+    assert metrics.unexecuted_count == metrics.signal_count - metrics.trade_count
+    assert metrics.execution_outcomes.get(ExecutionOutcome.SKIPPED_POSITION_OPEN.value, 0) > 0
+    assert metrics.execution_outcomes.get(ExecutionOutcome.EXECUTED.value, 0) == metrics.trade_count
+    assert metrics.execution_rate == pytest.approx(metrics.trade_count / metrics.signal_count)
+    # holding期間(60営業日)が重ならないよう空くため、複数トレードが成立していれば
+    # entry日同士も60営業日以上離れているはず(=独立サンプルに近づく)。
+    assert metrics.unique_entry_dates == metrics.trade_count
+
+
+def test_default_position_policy_is_no_reentry_while_position_open() -> None:
+    assert (
+        BacktestRunConfig(
+            universe_codes=("7203",), start_session=_DAYS[0], end_session=_DAYS[-1], holding_period_days=20
+        ).position_policy
+        == PositionPolicy.NO_REENTRY_WHILE_POSITION_OPEN
+    )

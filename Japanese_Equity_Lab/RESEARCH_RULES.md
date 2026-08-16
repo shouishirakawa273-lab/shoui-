@@ -95,6 +95,17 @@ Experiment Registry を一本のPipelineとして実行できる。
 違反したレコードが1件でも渡された場合に `LookAheadBiasError` を送出して拒否する
 (黙って除外しない)。
 
+### `available_at` と `retrieved_at` を混同しない
+
+`available_at`(市場参加者が当時実際に参照可能になった日時)と、
+`lib.data_sources.base.RawFetchResult.retrieved_at`(Research Labがこのデータを
+**取得した**日時)は全く別の概念である。混同すると、例えば数年前の株価データを
+「今日」取得しただけで当時のバックテストが全て使えなくなる(過度に保守的な誤り)、
+あるいは逆に安全確認を誤魔化す方向にも働きうる。`available_at`は常に市場の営業時間
+(`lib/market_calendar.py`)から導出し、`retrieved_at`から導出しないこと
+(`lib/backtest/engine.py`の実装、および
+`13_tests/test_available_at_vs_retrieved_at.py`で確認する)。
+
 ### Close-to-Close Look-ahead防止
 
 `available_at <= information_used_at` だけでは不十分で、「当日Closeの情報でSignalを作り、
@@ -109,6 +120,56 @@ Daily Closeまでの情報 -> Signal生成(decision_at = 当日大引け) -> 次
 `LookAheadBiasError`で構築自体を拒否する。この既定の窓は`build_close_to_next_open_window()`
 で組み立てる。特殊なClosing Auction戦略(`ExecutionModel.CLOSING_AUCTION`)は将来別
 Execution Modelとして実装する(Ver.1では未対応)。
+
+## Sample Metricsの用語とholding期間の重複 (`lib/backtest/engine.py`)
+
+「sample_size」という曖昧な名称は使わない。`BacktestMetrics`は以下を明示的に区別する。
+
+- `signal_count`: `signal_fn`がTrueを返した回数(執行できたかどうかを問わない)。
+- `trade_count` / `executed_count`: 実際にトレードとして成立した数(同じ値)。
+- `unexecuted_count`: `signal_count - executed_count`。
+- `execution_rate`: `executed_count / signal_count`。
+- `unique_tickers`: 実際にトレードが成立した銘柄のユニーク数。
+- `unique_entry_dates`: 実際の執行(entry)日のユニーク数。
+
+**holding期間が重なるtradeを、統計的に独立なサンプルとして扱わない。** `trade_count`が
+大きくても、多くのtradeが同時期に同じ市場環境へエクスポージャーを持っている場合、
+実質的な独立サンプル数(有効サンプルサイズ)は`trade_count`よりずっと小さい。
+`unique_entry_dates`が`trade_count`に比べて著しく少ない場合、それは「多数の独立した
+検証」ではなく「少数の市場局面への賭け」を意味する可能性が高いことを、レポートで
+明記すること。`BacktestEngine.run()`は既定で`PositionPolicy.NO_REENTRY_WHILE_POSITION_OPEN`
+により同一銘柄の重複建てを防ぐが、複数銘柄が同時にシグナルを出すケース(市場全体の
+地合いに従属したシグナル)までは防がない。
+
+## Event StudyとPortfolio Simulationの違い
+
+この2つは目的が異なり、扱いも変える。
+
+- **Event Study**: 個々のシグナル前後のリターンを、ポジションの重なりを気にせず
+  統計的に集計する分析手法。同一銘柄・同時期のoverlapping observationsを許容できる
+  (例:「決算サプライズ後N営業日のリターン分布」を見る場合、保有していたかどうかは
+  関係ない)。ただし**overlapを許容していることを必ず明記する**こと。`compute_metrics()`
+  を独自に集めたTradeResult列へ直接適用すればEvent Study用途にも使えるが、
+  `unique_entry_dates`と`trade_count`の差からoverlapの程度を確認し、レポートに含める。
+- **Portfolio Simulation**: 実際に資金を配分する前提のシミュレーション。
+  `BacktestEngine.run()`はこちらであり、デフォルトの Execution/Position Policy は
+  `PositionPolicy.NO_REENTRY_WHILE_POSITION_OPEN`(同一銘柄で既にポジションを
+  保有している間に出た追加シグナルは新規建てしない、`ExecutionOutcome.SKIPPED_POSITION_OPEN`
+  として記録される)。ピラミッディングや複数ポジションの重ね持ちはVer.1では行わない。
+
+## Execution Outcome (`lib/backtest/engine.ExecutionOutcome`)
+
+価格欠損等でトレードが成立しなかった場合もsilent skipせず、必ず結果を記録する。
+
+- `EXECUTED`: 正常に約定した。
+- `UNEXECUTABLE_NO_OPEN`: 執行日のOpenが欠損しており、entryできなかった。
+- `MISSING_PRICE`: entryはできたが、exit日の価格が欠損しておりcloseできなかった。
+- `OUTSIDE_DATA_RANGE`: Trading Calendarのデータ範囲外で執行日/exit日が解決できなかった。
+- `SKIPPED_POSITION_OPEN`: 同一銘柄で既にポジションを保有中のため、シグナルを無視した。
+
+`BacktestMetrics.execution_outcomes`にExecutionOutcome別の件数を必ず保存し、
+`signal_count` / `executed_count` / `unexecuted_count` / `execution_rate`として
+分母を明示する(Multiple Testingの原則をシグナル単位にも適用する)。
 
 ## Price Data: raw / corporate actions / adjusted の分離 (`lib/schemas/price_data.py`)
 
@@ -139,6 +200,16 @@ Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(.
 混入している場合は`LookAheadBiasError`で拒否する(黙って除外しない)。一方、発表済みだが
 まだ効力発生前のCorporate Actionは、エラーにはせず単に調整対象から除外する
 (意図した挙動であり、データ不備ではない)。Raw priceはこの調整でも一切書き換えない。
+
+### 🚫 BLOCKING TODO: Corporate Actions実データSourceが無いと実日本株Backtestは開始できない
+
+`announced_at`付きでCorporate Actions(株式分割・併合等)を取得するデータSourceは
+**未実装**(Phase3 TODO、DECISIONS.md D0014)。現在の`scripts/jquants_lab_pipeline.py`は
+`apply_split_adjustments(bars, actions=[])`で常に無調整のまま`AdjustedOHLCVBar`へ変換して
+いる。**対象期間・対象銘柄に株式分割等があった場合、価格系列が不連続になりBacktest結果が
+誤る。** 実際の日本株を対象にした(投資判断に使う)Backtestを開始する前に、必ず
+Corporate Actionsの実データSourceを確定し、`apply_split_adjustments_as_of`をPipelineへ
+組み込むこと。それまでは合成データによるPipeline配線の検証にとどめる。
 
 ## Multiple Testing
 
@@ -196,6 +267,20 @@ Phase1.1はInterfaceとsynthetic data向けの素朴な実装(`ListingBasedUnive
 例: YouTube URL → Comment ID → Idea → Hypothesis → Backtest → Paper Test → Knowledge。
 AIの要約と原文は必ず区別して保存する。`ProvenanceStore` は追記専用のリンク台帳で、
 `trace_to_origin()` で終点から起点までのchainを取得できる。
+
+## Reproducibility (`lib/reproducibility.py`)
+
+同じRaw Snapshot・同じStrategy version・同じConfig・同じCode versionであれば
+同じBacktest結果になることを検証できるよう、`Experiment.reproducibility`
+(`ReproducibilityFingerprint`)に以下を記録する。
+
+- `run_id` / `dataset_hash`(使用したRaw Snapshotのcontent_hashから導出) /
+  `strategy_hash` / `config_hash`
+- `code_commit`: 実行時点のgit commit hash(取得できない場合はNone)
+- `git_dirty`: working treeに未コミットの変更があったか(判定不能ならNone)。
+  **`git_dirty=True`の場合、`code_commit`が指すコミット内容と実行時のコードが
+  完全には一致していない可能性があり、完全な再現性は保証されない。**
+  この場合はレポート・Experimentの`notes`等に明記すること。
 
 ## 全schema共通のメタデータ (`lib/schemas/base.py`)
 

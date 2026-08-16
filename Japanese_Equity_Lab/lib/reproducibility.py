@@ -39,3 +39,25 @@ def current_code_commit(*, cwd: str | None = None) -> str | None:
         return None
     commit = result.stdout.strip()
     return commit or None
+
+
+def is_git_dirty(*, cwd: str | None = None) -> bool | None:
+    """working treeに未コミットの変更(untracked含む)があるかを返す。
+
+    Trueの場合、`code_commit`が指すコミットの内容とその実行時のコード内容が完全には
+    一致していない可能性があり、完全な再現性は保証されない(呼び出し側はこのフラグを
+    ユーザーに明示すること)。gitが使えない等で判定できない場合はNoneを返す
+    (推測で埋めない)。
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
+            cwd=cwd,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bool(result.stdout.strip())

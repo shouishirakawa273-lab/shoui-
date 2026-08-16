@@ -74,7 +74,7 @@ def test_fixture_pipeline_runs_end_to_end_and_is_reproducible(tmp_path: Path) ->
     # 7203/6758は右肩上がりの合成データなのでBUYシグナルが出てトレードが発生する。
     # 9984は右肩下がりなのでBUYシグナルが一度も出ず、トレードが発生しない。
     assert metrics.trade_count > 0
-    assert metrics.sample_size == 2
+    assert metrics.unique_tickers == 2
     assert "9984" not in metrics.stock_by_stock_distribution
     assert metrics.benchmark_return is not None
     assert metrics.excess_return is not None

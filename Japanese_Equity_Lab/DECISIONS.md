@@ -285,7 +285,7 @@ Benchmark比較機能そのものは、fixtureデータに含めた合成Benchma
 実在する個別銘柄コードを指定しない限り、真のTOPIX Benchmark比較はできない
 (Phase3で`/indices`相当のfetchメソッドを追加するまでの既知の制約)。
 
-## D0014 — Corporate Actionsの取得元が未実装のため、Phase2のPipelineはsplit調整なし
+## D0014 — 🚫 BLOCKING TODO: Corporate Actionsの取得元が未実装のため、Phase2のPipelineはsplit調整なし
 
 **判断**: `scripts/jquants_lab_pipeline.py`は`RawOHLCVBar` -> `AdjustedOHLCVBar`の変換に
 `apply_split_adjustments(bars, actions=[])`を使う(=常に無調整)。理由は、
@@ -294,6 +294,11 @@ J-Quantsから「株式分割の公表時刻(announced_at)」を取得する具�
 明示する」方が安全なため。RawとAdjustedを明示的に分離する変換ステップ自体は必ず通す
 (=`RawOHLCVBar`をそのまま返さず、`AdjustedOHLCVBar`(factor=1.0)へ変換してから
 Backtest Engineに渡す)。
+
+**🚫 BLOCKING(Phase2.1で格上げ)**: これは単なるTODOではなく、**実際の日本株を対象にした
+(投資判断に使う)Backtestを開始する前に必ず解決しなければならないBLOCKING TODO**である。
+対象期間・対象銘柄に株式分割等があった場合、無調整のまま計算されたリターンは誤りになる。
+`scripts/jquants_lab_pipeline.py`は`--source jquants`実行時にこの警告を必ず表示する。
 
 **Phase3 TODO**: J-Quants(または他のソース)からCorporate Actionsを
 `announced_at`付きで取得する方法を確定し、`apply_split_adjustments_as_of`を
@@ -323,3 +328,84 @@ Source Request」を、各ノードが直接の親を1つだけ持つ線形チ�
 **理由**: 実データのRaw Snapshotは銘柄数・期間が増えると容量が大きくなり、
 個人の取得タイミングに依存する(誰が実行しても同じ内容にはならない)ため、
 `data/*.sqlite3`が既存リポジトリでgitignoreされているのと同じ理由で追跡しない。
+
+---
+
+## Phase 2.1(2026-08-16): Backtest Sample Metrics厳密化・Execution Outcome記録・再現性強化
+
+Phase2完了報告に対し、sample_sizeの曖昧さ・Event StudyとPortfolio Simulationの区別・
+価格欠損時のsilent skip・available_at/retrieved_atの混同確認・reproducibilityへの
+git_dirty追加・Corporate ActionのBLOCKING TODO明示の6点の指摘を受け、以下を実施した。
+
+## D0017 — `BacktestMetrics.sample_size`を廃止し、signal/execution関連の指標を明示
+
+**変更内容**: `sample_size`(意味が曖昧: 銘柄数なのかトレード数なのか不明瞭だった)を
+`unique_tickers`に改名した。さらに`signal_count` / `executed_count` / `unexecuted_count` /
+`execution_rate` / `unique_entry_dates` / `execution_outcomes`を新設した。
+`TradeResult`に`entry_date: date`を追加(`unique_entry_dates`計算に必要)。
+
+**理由**: 「trade_countが多い」ことと「独立した検証を多数行った」ことは同義ではない。
+holding期間が重なるtradeは統計的に独立なサンプルとみなせない。`unique_entry_dates`を
+`trade_count`と並べて表示することで、この違いを利用者が見落とさないようにする。
+また、「シグナルは出たが執行できなかった」件数を隠さず`unexecuted_count`として
+表示することも、Multiple Testingの原則(良い結果だけを見せない)をシグナル単位にも
+拡張する狙いがある。
+
+**デメリット**: `BacktestMetrics`のフィールド数が増え、`compute_metrics()`の呼び出しが
+やや複雑になった(`signal_count`/`execution_outcomes`を渡さない場合は
+`execution_rate=None`になる後方互換動作とした)。
+
+## D0018 — Portfolio SimulationのデフォルトをNO_REENTRY_WHILE_POSITION_OPENとし、
+Event Studyとの違いを明文化
+
+**変更内容**: `PositionPolicy`(現時点では`NO_REENTRY_WHILE_POSITION_OPEN`のみ)を
+`BacktestRunConfig`に追加し、`BacktestEngine.run()`の既定動作とした。同一銘柄で
+既にポジションを保有している間に出た追加シグナルは`ExecutionOutcome.SKIPPED_POSITION_OPEN`
+として記録し、新規建てしない。RESEARCH_RULES.mdに「Event StudyとPortfolio Simulationの
+違い」を新設し、Event Studyでoverlapping observationsを許容する場合はその旨を明記する
+運用ルールを追加した。
+
+**理由**: `run()`が実装するのはPortfolio Simulation(実際に資金を配分する前提)であり、
+同一銘柄への重複建てを黙って許すとholding期間の重複によるサンプルの疑似独立性が
+生まれてしまう。Event Study的な分析(overlap許容)をしたい場合は`compute_metrics()`を
+直接使う経路を用意し、`run()`とは別の関心事として明確に分離した。
+
+## D0019 — Execution Outcomeを必ず記録し、silent skipを廃止
+
+**変更内容**: `ExecutionOutcome`(`EXECUTED` / `UNEXECUTABLE_NO_OPEN` / `MISSING_PRICE` /
+`OUTSIDE_DATA_RANGE` / `SKIPPED_POSITION_OPEN`)を導入し、`run()`内の全ての
+`continue`(スキップ)経路で対応するoutcomeを`Counter`に記録するようにした。
+`BacktestMetrics.execution_outcomes`として最終結果に残す。
+
+**理由**: Phase2完了時点の実装は、価格欠損・Calendar範囲外のトレードを黙って
+スキップしており、「何件のシグナルのうち何件が何の理由で執行できなかったか」が
+結果から分からなかった。これは「良い結果だけを見せない」というRESEARCH_RULES.mdの
+原則に反する。
+
+**テスト時に判明した注意点**: `NO_REENTRY_WHILE_POSITION_OPEN`の下では、ある1回の
+価格欠損が「その特定のトレードを消す」とは限らない(翌営業日に再試行して成功しうる)。
+このためテストは`trade_count`の増減ではなく`execution_outcomes`の中身を直接検証する
+形に修正した(`test_run_skips_trades_with_missing_execution_price_instead_of_fallback`)。
+
+## D0020 — Reproducibility Fingerprintに`git_dirty`を追加
+
+**変更内容**: `lib/reproducibility.is_git_dirty()`(`git status --porcelain`の出力有無で判定、
+判定不能ならNone)を追加し、`ReproducibilityFingerprint.git_dirty`として記録するようにした。
+`scripts/jquants_lab_pipeline.py`はdirtyな場合、標準出力に警告を表示する。
+
+**理由**: `code_commit`だけでは、そのコミット以降にworking treeを変更した状態で
+実行した場合に「完全に同じコードで実行した」ことを保証できない。`git_dirty=True`を
+明示することで、再現性が保証されない実行だったことをExperiment記録から追跡できる。
+
+## D0021 — available_atとretrieved_atの分離を専用テストで確認
+
+**変更内容**: `13_tests/test_available_at_vs_retrieved_at.py`を新設し、(1)数年前の市場
+データを「今日」取得しても`available_at`は当時の大引けのままであること、(2)仮に
+`retrieved_at`を`available_at`として誤用した場合にLook-ahead判定が壊れることの両方を
+直接確認した。`lib/data_sources/base.RawFetchResult.retrieved_at`のdocstringに
+両者の違いを明記した。
+
+**確認結果**: `BacktestEngine.run()`は`available_at`を常に`lib.market_calendar.session_close_at()`
+(市場の大引け)から導出しており、`retrieved_at`を一切参照していないことをソースコード上でも
+直接確認した(`test_engine_derives_available_at_from_market_close_not_retrieved_at`)。
+既存実装が既にこの意味を満たしていたため、ロジック自体の修正は不要だった。
