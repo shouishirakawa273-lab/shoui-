@@ -1,13 +1,11 @@
-"""Backtest Engineの骨格。
+"""Backtest Engine。
 
-Phase1では実データでの売買シミュレーションは実装しない(Phase2で実施、DECISIONS.md D0003参照)。
-ここで実装するのは以下の3点。どれも外部APIなしでsynthetic dataだけでテストできる。
+Phase1〜1.1では骨格(指標計算・PIT検証・Close-to-Close防止)のみを実装した
+(DECISIONS.md D0003)。Phase2で`BacktestEngine.run()`を実装し、以下を一本の
+再現可能なPipelineとして通す。
 
-1. Look-ahead biasを混入させないための入力検証
-   (information_used_at時点でまだ利用不可能な情報が渡されたら拒否する)
-2. Close-to-Close実行の禁止
-   (当日Closeの情報で意思決定した場合、同日中の価格では約定できないようにする)
-3. 指標計算(sample_size, win_rate, benchmark比較, 年度別/セクター別/銘柄別分布等)
+Data -> Feature -> Signal -> Decision -> Execution -> Position -> Exit/Evaluation
+-> Return -> Benchmark Comparison
 
 税金はスコープ外とし、ここで扱うリターンは手数料・スリッページ控除後、税引前
 (Net Pre-tax Return)である。税引後シミュレーションは将来別モジュールで扱う。
@@ -16,14 +14,15 @@ Phase1では実データでの売買シミュレーションは実装しない(P
 from __future__ import annotations
 
 import statistics
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 
 from lib.errors import LookAheadBiasError
-from lib.market_calendar import session_close_at, session_open_at
+from lib.market_calendar import TradingCalendar, TradingCalendarResolutionError, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord, assert_no_lookahead
+from lib.schemas.price_data import AdjustedOHLCVBar
 
 
 class DataSplit(StrEnum):
@@ -122,7 +121,11 @@ class SignalInput:
 
 @dataclass(frozen=True)
 class TradeResult:
-    """1トレードの結果(手数料・スリッページ控除後、税引前)。"""
+    """1トレードの結果(取引コスト控除前・税引前のgross return)。
+
+    手数料・スリッページは個々のTradeResultには織り込まず、compute_metrics()の
+    transaction_cost_bpsで一括して調整する(二重控除を避けるため)。
+    """
 
     code: str
     sector: str | None
@@ -219,19 +222,144 @@ def _max_drawdown(period_returns: Sequence[float]) -> float:
     return max_dd
 
 
-class BacktestEngine:
-    """Phase2で実データ連携する売買シミュレーションのインターフェース。
+class BenchmarkDataInsufficientError(Exception):
+    """Benchmarkデータが要求されたBacktest期間を全区間カバーしていない場合に送出する。"""
 
-    Phase1時点では、information_used_at時点で利用可能な情報だけを使ってSignalInputを
-    構築するところまでを実装する(build_signal_input)。シグナル生成〜約定の
-    シミュレーションループはPhase2で実装する(run)。
+
+@dataclass(frozen=True)
+class TransactionCostConfig:
+    """Simple Cost Model。commission/slippageは往復(entry+exit)それぞれに掛かる想定。"""
+
+    commission_bps: float = 0.0
+    slippage_bps: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.commission_bps < 0 or self.slippage_bps < 0:
+            raise ValueError("commission_bps / slippage_bps は0以上である必要があります")
+
+    def round_trip_bps(self) -> float:
+        """entry・exitそれぞれにcommission+slippageがかかるため2倍する。"""
+        return 2 * (self.commission_bps + self.slippage_bps)
+
+
+@dataclass(frozen=True)
+class BacktestRunConfig:
+    """`BacktestEngine.run()`の実行設定。パラメータ最適化を目的とした探索には使わない
+    (Pipeline Validation Strategyのパラメータは固定し、変更しない)。"""
+
+    universe_codes: tuple[str, ...]
+    start_session: date
+    end_session: date
+    holding_period_days: int
+    transaction_cost: TransactionCostConfig = field(default_factory=TransactionCostConfig)
+    data_split: DataSplit = DataSplit.TEST
+
+    def __post_init__(self) -> None:
+        if self.start_session > self.end_session:
+            raise ValueError("start_session は end_session 以前である必要があります")
+        if self.holding_period_days < 1:
+            raise ValueError("holding_period_days は1以上である必要があります")
+
+
+class BacktestEngine:
+    """Signal生成〜Return計算〜Benchmark比較までを通すBacktest Engine。
+
+    SignalそのものはEngineの外(`signal_fn`)から与える(SignalとPortfolio Construction/
+    Execution Modelを分離する、というRESEARCH_RULES.mdの方針を反映)。
     """
 
     def build_signal_input(self, window: DecisionWindow, records: Iterable[PointInTimeRecord]) -> SignalInput:
         return SignalInput(window=window, records=tuple(records))
 
-    def run(self) -> BacktestMetrics:
-        raise NotImplementedError(
-            "実データでの売買シミュレーションはPhase2で実装する(DECISIONS.md D0003参照)。"
-            "Phase1ではbuild_signal_input()とcompute_metrics()のみ提供する。"
+    def run(
+        self,
+        *,
+        config: BacktestRunConfig,
+        price_history: Mapping[str, Sequence[AdjustedOHLCVBar]],
+        benchmark_bars: Sequence[AdjustedOHLCVBar],
+        trading_calendar: TradingCalendar,
+        signal_fn: Callable[[Sequence[AdjustedOHLCVBar]], bool],
+        sector_by_code: dict[str, str] | None = None,
+    ) -> BacktestMetrics:
+        """Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較を実行する。
+
+        価格が欠損している(該当日のbarが無い、またはOpenがNone)場合は、そのトレードを
+        スキップする(都合の良い価格へのfallbackはしない)。休場日を執行日にしようとした
+        場合は`trading_calendar`が`TradingCalendarResolutionError`を送出するため、
+        そのトレードもスキップする(勝手に平日扱いしない)。
+        """
+        benchmark_dates = {b.session_date for b in benchmark_bars}
+        if not benchmark_dates or min(benchmark_dates) > config.start_session or max(benchmark_dates) < config.end_session:
+            raise BenchmarkDataInsufficientError(
+                f"Benchmarkデータが要求期間({config.start_session}〜{config.end_session})を"
+                "全区間カバーしていません。都合の良い期間へ勝手に切り詰めず失敗させます。"
+            )
+        benchmark_by_date = {b.session_date: b for b in benchmark_bars}
+
+        decision_dates = sorted(d for d in trading_calendar.trading_dates if config.start_session <= d <= config.end_session)
+
+        trades: list[TradeResult] = []
+        matched_benchmark_returns: list[float] = []
+
+        for code in config.universe_codes:
+            bars_for_code = sorted(price_history.get(code, ()), key=lambda b: b.session_date)
+            bars_by_date = {b.session_date: b for b in bars_for_code}
+
+            for decision_date in decision_dates:
+                bars_up_to_decision = [b for b in bars_for_code if b.session_date <= decision_date]
+                if not signal_fn(bars_up_to_decision):
+                    continue
+
+                try:
+                    execution_date = trading_calendar.next_trading_session(decision_date)
+                    exit_date = trading_calendar.nth_next_trading_session(execution_date, config.holding_period_days)
+                except TradingCalendarResolutionError:
+                    continue  # Calendarデータ範囲外 - 都合よく代替せずスキップ
+
+                window = build_close_to_next_open_window(
+                    decision_session_date=decision_date, execution_session_date=execution_date
+                )
+                records = tuple(
+                    PointInTimeRecord(
+                        value_date=b.session_date,
+                        published_at=session_close_at(b.session_date),
+                        available_at=session_close_at(b.session_date),
+                        label=f"{code} close",
+                    )
+                    for b in bars_up_to_decision
+                )
+                self.build_signal_input(window, records)  # PIT違反があればLookAheadBiasErrorで即失敗させる
+
+                entry_bar = bars_by_date.get(execution_date)
+                exit_bar = bars_by_date.get(exit_date)
+                if entry_bar is None or entry_bar.open is None or exit_bar is None or exit_bar.open is None:
+                    continue  # 価格欠損 - 都合の良い価格へfallbackせずスキップ
+
+                benchmark_entry = benchmark_by_date.get(execution_date)
+                benchmark_exit = benchmark_by_date.get(exit_date)
+                if (
+                    benchmark_entry is None
+                    or benchmark_entry.open is None
+                    or benchmark_exit is None
+                    or benchmark_exit.open is None
+                ):
+                    continue  # このトレード窓に対応するBenchmark価格が無い - スキップ
+
+                gross_return = exit_bar.open / entry_bar.open - 1
+                trades.append(
+                    TradeResult(
+                        code=code,
+                        sector=(sector_by_code or {}).get(code),
+                        year=execution_date.year,
+                        net_pretax_return=gross_return,
+                    )
+                )
+                matched_benchmark_returns.append(benchmark_exit.open / benchmark_entry.open - 1)
+
+        benchmark_return = statistics.fmean(matched_benchmark_returns) if matched_benchmark_returns else None
+        return compute_metrics(
+            trades,
+            data_split=config.data_split,
+            benchmark_return=benchmark_return,
+            transaction_cost_bps=config.transaction_cost.round_trip_bps(),
         )

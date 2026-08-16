@@ -1,19 +1,24 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 from lib.backtest.engine import (
     BacktestEngine,
+    BacktestRunConfig,
+    BenchmarkDataInsufficientError,
     DataSplit,
     DecisionWindow,
     TradeResult,
+    TransactionCostConfig,
     build_close_to_next_open_window,
     compute_metrics,
 )
 from lib.errors import LookAheadBiasError
-from lib.market_calendar import JST, session_close_at, session_open_at
+from lib.market_calendar import JST, TradingCalendar, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord
+from lib.schemas.price_data import AdjustedOHLCVBar
+from lib.strategies.fixed_pipeline_validation import DEFAULT_CONFIG, as_buy_signal_fn
 
 
 def _close_to_next_open_window(decision_date: date, execution_date: date) -> DecisionWindow:
@@ -118,6 +123,144 @@ def test_compute_metrics_empty_trades_returns_none_stats() -> None:
     assert metrics.win_rate is None
 
 
-def test_run_is_not_implemented_in_phase1() -> None:
-    with pytest.raises(NotImplementedError):
-        BacktestEngine().run()
+def _weekdays(start: date, count: int) -> list[date]:
+    days: list[date] = []
+    current = start
+    while len(days) < count:
+        if current.weekday() < 5:
+            days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _uptrend_bars(code: str, days: list[date], *, base: float, step: float) -> list[AdjustedOHLCVBar]:
+    bars = []
+    for i, d in enumerate(days):
+        price = base + step * i
+        bars.append(
+            AdjustedOHLCVBar(
+                code=code,
+                session_date=d,
+                open=price,
+                high=price + 1,
+                low=price - 1,
+                close=price,
+                volume=1000.0,
+                split_adjustment_factor=1.0,
+                source="synthetic",
+            )
+        )
+    return bars
+
+
+# lookback(20)の起算に21本、entry用に1本、holding(60、DEFAULT_CONFIG準拠)分で
+# 計82本以上あれば複数トレードが完成する。
+_DAYS = _weekdays(date(2026, 1, 5), 100)  # 2026-01-05は月曜
+
+
+def _run_config(**overrides: object) -> BacktestRunConfig:
+    defaults: dict[str, object] = dict(
+        universe_codes=("7203",),
+        start_session=_DAYS[0],
+        end_session=_DAYS[-1],
+        holding_period_days=DEFAULT_CONFIG.holding_period_days,
+    )
+    defaults.update(overrides)
+    return BacktestRunConfig(**defaults)  # type: ignore[arg-type]
+
+
+def test_run_produces_trades_with_matched_benchmark_comparison() -> None:
+    """Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較が一本通る。"""
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
+
+    metrics = engine.run(
+        config=_run_config(),
+        price_history=price_history,
+        benchmark_bars=benchmark_bars,
+        trading_calendar=calendar,
+        signal_fn=as_buy_signal_fn(),
+    )
+
+    assert metrics.trade_count > 0
+    assert metrics.sample_size == 1
+    assert metrics.average_return is not None and metrics.average_return > 0  # 右肩上がりの合成データなので正のリターン
+    assert metrics.benchmark_return is not None
+    assert metrics.excess_return is not None
+
+
+def test_run_raises_when_benchmark_data_insufficient() -> None:
+    """要求期間をBenchmarkデータが全区間カバーしない場合、都合よく切り詰めず失敗する。"""
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    short_benchmark_bars = _uptrend_bars("TOPIX", _DAYS[:10], base=2000.0, step=0.5)  # 期間の一部しかない
+
+    with pytest.raises(BenchmarkDataInsufficientError):
+        engine.run(
+            config=_run_config(),
+            price_history=price_history,
+            benchmark_bars=short_benchmark_bars,
+            trading_calendar=calendar,
+            signal_fn=as_buy_signal_fn(),
+        )
+
+
+def test_run_skips_trades_with_missing_execution_price_instead_of_fallback() -> None:
+    """執行日の価格が欠損している場合、代替の価格へfallbackせずそのトレードをスキップする。"""
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    bars = _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)
+    # 21本目(最初にBUYシグナルが出た次の営業日=執行日)のOpenを欠損させる。
+    bars[21] = AdjustedOHLCVBar(
+        code="7203",
+        session_date=bars[21].session_date,
+        open=None,
+        high=None,
+        low=None,
+        close=bars[21].close,
+        volume=1000.0,
+        split_adjustment_factor=1.0,
+        source="synthetic",
+    )
+    price_history = {"7203": bars}
+    benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
+
+    metrics_with_gap = engine.run(
+        config=_run_config(),
+        price_history=price_history,
+        benchmark_bars=benchmark_bars,
+        trading_calendar=calendar,
+        signal_fn=as_buy_signal_fn(),
+    )
+    metrics_without_gap = engine.run(
+        config=_run_config(),
+        price_history={"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)},
+        benchmark_bars=benchmark_bars,
+        trading_calendar=calendar,
+        signal_fn=as_buy_signal_fn(),
+    )
+    # 欠損があった分だけトレード数が減る(架空の価格で埋めて水増ししない)。
+    assert metrics_with_gap.trade_count < metrics_without_gap.trade_count
+
+
+def test_run_is_deterministic_given_identical_inputs() -> None:
+    """同じRaw相当データ・同じStrategy・同じConfigなら同じBacktest結果になる(再現性)。"""
+    engine = BacktestEngine()
+    calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
+    benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
+
+    def _run() -> object:
+        return engine.run(
+            config=_run_config(transaction_cost=TransactionCostConfig(commission_bps=5, slippage_bps=3)),
+            price_history={"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)},
+            benchmark_bars=benchmark_bars,
+            trading_calendar=calendar,
+            signal_fn=as_buy_signal_fn(),
+        )
+
+    first = _run()
+    second = _run()
+    assert first == second

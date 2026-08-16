@@ -34,8 +34,13 @@ Japanese_Equity_Lab/
   13_tests/             pytest テスト(lib/ と1対1対応)
   99_archive/           削除ではなく退避したデータ・実験
   lib/                  UI非依存の共有Pythonロジック(schemas / backtest / registry /
-                         market_calendar / point_in_time / universe)
+                         market_calendar / point_in_time / universe / data_sources / snapshot)
 ```
+
+親リポジトリの `scripts/jquants_lab_pipeline.py` で、Data取得 -> Feature -> Signal ->
+Decision -> Execution -> Return -> Benchmark比較 -> Experiment Registry -> Provenance を
+一本通しで実行できる(`--source fixture` は合成データでの動作確認用、
+`--source jquants` はローカル環境での実データ実行用)。
 
 `lib/` はこの構成案に対する追加提案(詳細は DECISIONS.md)。数字プレフィックスの各ディレクトリは
 成果物置き場、`lib/` はそれらを生成・検証するコード置き場という役割分担。
@@ -63,10 +68,24 @@ cd ..   # リポジトリルート
 pytest Japanese_Equity_Lab/13_tests/ -q
 ```
 
-## 現在の状態(Phase 1.1)
+## 現在の状態(Phase 2)
 
-フォルダ構造・方針文書・主要schema・Backtest Engineの骨格・Benchmark比較・
-Experiment Registry・Provenance管理を実装済み。Phase1.1で、東証取引時間の制度変更対応
-(`lib/market_calendar.py`)・Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time
-安全性・Point-in-Time Universe(`lib/universe.py`)のInterfaceを追加し、`Japanese_Equity_Lab/lib`
-をmypyの対象に含めた。実データを使ったBacktest実行はPhase 2以降。
+Phase1〜1.1(フォルダ構造・方針文書・主要schema・東証取引時間の制度変更対応・
+Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)に加え、
+Phase2で以下を実装した。
+
+- `lib/data_sources/`: `DataSourceAdapter` Interfaceと`JQuantsAdapter`(実データ)・
+  `FixtureDataSourceAdapter`(合成データ)。両者は同じInterfaceを満たす。
+- `lib/snapshot.py`: Raw SnapshotのImmutable保存(manifest付き、認証情報の混入を検知)。
+- `lib/market_calendar.TradingCalendar`: 実データに基づく取引日カレンダー
+  (祝日等をデータから判定し、範囲外は失敗させる)。
+- `lib/strategies/fixed_pipeline_validation.py`: Pipeline検証専用の固定Strategy。
+- `lib/backtest/engine.BacktestEngine.run()`: Data〜Benchmark比較までの実装。
+- `lib/reproducibility.py`: 再現性検証用のhash計算。
+
+**既知の制約**: このセッションは外部API(J-Quants含む)へ一切疎通できない
+ネットワークポリシー下で動作しているため、実際のJ-Quants接続での検証は行えていない。
+Pipeline配線は`FixtureDataSourceAdapter`(合成データ、`13_tests/fixtures/README.md`参照)で
+検証済み。ローカル環境で`.env`にJQUANTS_REFRESH_TOKENを設定した上で
+`python scripts/jquants_lab_pipeline.py --source jquants` を実行し、実データで疎通確認すること。
+TOPIX等のインデックス取得・Corporate Actions(株式分割等)の取得元はPhase3のTODO。

@@ -241,3 +241,85 @@ append-only Experiment Registryやfrozen dataclass設計とどう整合させる
 **デメリット**: 既存の `apply_split_adjustments_as_of` 呼び出し側(まだ実運用は無い)の
 挙動が変わる。announced_atのみで判定していた前提のコードがあれば要修正だが、
 Phase1.1〜1.2時点でこの関数の呼び出し実績は無いため影響なし。
+
+---
+
+## Phase 2(2026-08-16): 実データPipelineの実装
+
+## D0012 — このセッションはJ-Quants等の外部APIに一切疎通できない(ネットワークポリシー)
+
+**事実確認**: `api.jquants.com` / Yahoo Finance / `example.com` 等、複数のホストへの
+接続を試みた結果、すべてエージェントプロキシのポリシーにより403で拒否された
+(`curl: CONNECT tunnel failed, response 403`)。これはこのセッション固有の一時的な
+問題ではなく、環境のネットワークポリシーによる恒久的な制限である。
+
+**判断**(ユーザーとの確認の上で決定): `JQuantsAdapter`はJ-Quants公式ドキュメントに
+基づいて完全に実装するが、実際の接続確認はこのセッションでは行わない。Pipeline全体の
+動作確認は、`DataSourceAdapter` Interfaceを満たす`FixtureDataSourceAdapter`(合成データ)
+で行う。合成データであることは`13_tests/fixtures/README.md`、
+`lib/data_sources/fixture.py`のdocstring、Snapshot manifestの`source="fixture"`
+フィールドなど複数箇所で明示し、実際のJ-Quants出力であるかのように偽装しない。
+
+**メリット**: `DataSourceAdapter`という抽象化のおかげで、Backtest Engine側のコードは
+実データか合成データかを一切区別しない。ユーザーがローカル環境で
+`.env`にJQUANTS_REFRESH_TOKENを設定した上で
+`python scripts/jquants_lab_pipeline.py --source jquants` を実行すれば、
+同じPipelineがそのまま実データで動く設計になっている。
+
+**デメリット**: `JQuantsAdapter`のエンドポイント・フィールド名は実レスポンスで検証できて
+いない(既存の`core/providers/jquants.py`と同じ既知の制約)。本番投入前に必ず
+ローカル環境で疎通確認すること。
+
+## D0013 — TOPIX等のインデックス取得は未実装(Phase3 TODO)
+
+**問題**: J-Quantsの個別銘柄日次株価(`/prices/daily_quotes`)とTOPIX等の指数データは
+別エンドポイント(`/indices`等)で提供されている可能性が高いが、このセッションからは
+実際のAPI仕様を検証できないため、確度の低い実装を「TOPIX取得」として書くことを避けた。
+
+**判断**: `JQuantsAdapter`は個別銘柄用の`fetch_daily_quotes`のみを実装し、指数専用の
+fetchメソッドは実装しない(Phase3で実データ疎通確認後に追加する)。Pipelineの
+Benchmark比較機能そのものは、fixtureデータに含めた合成Benchmark系列(`TOPIX_SYNTH`、
+実際のTOPIXではないことを明示)で動作確認した。
+
+**デメリット**: `--source jquants`で実行する場合、呼び出し側が`--benchmark-code`に
+実在する個別銘柄コードを指定しない限り、真のTOPIX Benchmark比較はできない
+(Phase3で`/indices`相当のfetchメソッドを追加するまでの既知の制約)。
+
+## D0014 — Corporate Actionsの取得元が未実装のため、Phase2のPipelineはsplit調整なし
+
+**判断**: `scripts/jquants_lab_pipeline.py`は`RawOHLCVBar` -> `AdjustedOHLCVBar`の変換に
+`apply_split_adjustments(bars, actions=[])`を使う(=常に無調整)。理由は、
+J-Quantsから「株式分割の公表時刻(announced_at)」を取得する具体的なエンドポイントを
+このセッションでは検証できておらず、確度の低い実装をするより「未調整であることを
+明示する」方が安全なため。RawとAdjustedを明示的に分離する変換ステップ自体は必ず通す
+(=`RawOHLCVBar`をそのまま返さず、`AdjustedOHLCVBar`(factor=1.0)へ変換してから
+Backtest Engineに渡す)。
+
+**Phase3 TODO**: J-Quants(または他のソース)からCorporate Actionsを
+`announced_at`付きで取得する方法を確定し、`apply_split_adjustments_as_of`を
+Pipelineに組み込む。
+
+## D0015 — Provenanceの6段階チェーンは単純な線形モデルとして実装
+
+**内容**: 「Experiment -> Hypothesis -> Strategy -> Processed Dataset -> Raw Snapshot ->
+Source Request」を、各ノードが直接の親を1つだけ持つ線形チェーンとして実装した
+(`lib/registry/provenance.py`の`ProvenanceStore`は元々D0009時点でこの制約を持つ)。
+
+**理由**: 実際には1つのExperimentが複数のRaw Snapshot(価格+カレンダー等)や
+複数のHypothesis由来のIdeaに依存しうるため、真に正確なモデルは有向非巡回グラフ(DAG)
+だが、Phase2の目的は「Pipelineが最後まで一本通る再現可能な経路を持つこと」であり、
+完全なDAG追跡の実装は過剰設計と判断した。`trace_to_origin()`は代表的な1系統
+(daily_quotes snapshot経由)のみを遡る。
+
+**Phase3以降で再検討する条件**: 複数の親を辿る必要が実運用で生じた場合、
+`ProvenanceStore.all()`で全リンクを取得した上で、DAG探索に拡張する。
+
+## D0016 — Raw Snapshot(実データ)は`.gitignore`対象、fixture Snapshotのみ追跡
+
+**内容**: `Japanese_Equity_Lab/01_data/raw/jquants/`を`.gitignore`に追加した。
+`01_data/raw/fixture/`(このセッションで動作確認した合成データのSnapshot)は
+追跡対象のまま残す(Pipelineが実際に動いた証跡として、小さく再現可能なため)。
+
+**理由**: 実データのRaw Snapshotは銘柄数・期間が増えると容量が大きくなり、
+個人の取得タイミングに依存する(誰が実行しても同じ内容にはならない)ため、
+`data/*.sqlite3`が既存リポジトリでgitignoreされているのと同じ理由で追跡しない。

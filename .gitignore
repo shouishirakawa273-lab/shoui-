@@ -15,6 +15,10 @@ data/*.sqlite3
 data/*.db
 !data/.gitkeep
 
+# Japanese Equity Research Lab: 実データのRaw Snapshotは大きくなりうるため追跡しない。
+# fixtureによる合成データのSnapshot(Pipeline動作例)は小さいため追跡する。
+Japanese_Equity_Lab/01_data/raw/jquants/
+
 # Streamlit
 .streamlit/secrets.toml
 

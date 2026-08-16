@@ -13,3 +13,10 @@ class HypothesisImmutabilityError(Exception):
 
 class AppendOnlyViolationError(Exception):
     """追記専用ストレージ(Experiment Registry等)への上書き・重複IDを検知した場合に送出する。"""
+
+
+class DataSourceError(Exception):
+    """外部データソース(J-Quants等)への接続・認証・取得に失敗した場合に送出する。
+
+    メッセージ・chained exceptionにAPIキー/トークンを含めないこと
+    (URLクエリパラメータに認証情報を載せるAPIのエラーは特に注意する)。"""

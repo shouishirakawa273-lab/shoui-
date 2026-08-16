@@ -34,6 +34,36 @@ AIで大量の戦略を探索すると、偶然過去データに適合しただ
 - 上場廃止銘柄の履歴データは無料ソースでは網羅できないことが多い。
   Survivorship biasを完全には排除できない場合、`09_knowledge/` にその旨を制約として記録する。
 - 上記制約はごまかさず、Backtest結果・レポートに明記する。「制約がある」ことを隠さない。
+- クラウドの開発セッションは外部APIへ疎通できないことがある(README.md参照)。
+  実データでの疎通確認は必ずローカル環境で行う。Pipeline配線の検証には合成データ
+  (`13_tests/fixtures/`)を使ってよいが、**実際のデータであるかのように偽装しない**
+  (Snapshotの`source`フィールド等で常に区別する)。
+
+## Pipeline全体の構成 (`scripts/jquants_lab_pipeline.py`)
+
+Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較 ->
+Experiment Registry を一本のPipelineとして実行できる。
+
+- `lib/data_sources/base.DataSourceAdapter`: 外部データソースへの依存を切り離すInterface。
+  `lib/data_sources/jquants.JQuantsAdapter`(実データ)と
+  `lib/data_sources/fixture.FixtureDataSourceAdapter`(合成データ)が同じInterfaceを満たす。
+- `lib/snapshot.RawSnapshotStore`: APIレスポンスを`01_data/raw/`へImmutableに保存する
+  (manifestにsource/endpoint/request_parameters/retrieved_at/data_period/
+  response_schema_version/content_hash/local_file/record_countを記録)。
+  認証情報らしきキーが混入していたら`SecretLeakageError`で保存を拒否する。
+- `lib/data_sources/convert.py`: Raw Payload(J-Quants/fixture共通の形状) ->
+  `RawOHLCVBar` / `TradingCalendar` への変換。
+- `lib/market_calendar.TradingCalendar`: `next_trading_session` / `previous_trading_session` /
+  `is_trading_session` を実データのCalendarから解決する。範囲外の問い合わせは
+  `TradingCalendarResolutionError`で失敗させ、土日だけで機械的に代替しない。
+- `lib/strategies/fixed_pipeline_validation.py`: Pipeline検証専用の固定Strategy
+  (20営業日Price Return > 0 -> 次営業日Open執行 -> 60営業日保有)。
+  **パラメータ最適化は禁止。このStrategyの収益性は評価対象ではない。**
+- `lib/backtest/engine.BacktestEngine.run()`: 上記を実際に実行し、価格欠損時は
+  fallbackせずそのトレードをスキップし、Benchmarkデータが要求期間を全区間
+  カバーしない場合は`BenchmarkDataInsufficientError`で失敗する。
+- `lib/reproducibility.py`: `run_id` / `dataset_hash` / `strategy_hash` / `config_hash` /
+  `code_commit` を`Experiment.reproducibility`へ記録し、同一Inputでの再現性を検証できる。
 
 ## 東証取引時間 (`lib/market_calendar.py`)
 

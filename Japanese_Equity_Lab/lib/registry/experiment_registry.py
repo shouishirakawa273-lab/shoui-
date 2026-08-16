@@ -16,7 +16,7 @@ from typing import Any
 
 from lib.backtest.engine import BacktestMetrics, DataSplit
 from lib.errors import AppendOnlyViolationError
-from lib.schemas.experiment import Experiment, ExperimentStatus
+from lib.schemas.experiment import Experiment, ExperimentStatus, ReproducibilityFingerprint
 
 # JSON Lines <-> dataclass の変換は実行時にしか型を検証できない(JSONにはenum/datetime/
 # 整数キーが無いため)。ここだけ dict[str, Any] を使い、以降のコードはdataclass経由で
@@ -42,10 +42,17 @@ def _metrics_from_dict(data: dict[str, Any] | None) -> BacktestMetrics | None:
     return BacktestMetrics(**d)
 
 
+def _reproducibility_from_dict(data: dict[str, Any] | None) -> ReproducibilityFingerprint | None:
+    if data is None:
+        return None
+    return ReproducibilityFingerprint(**data)
+
+
 def _experiment_from_dict(data: dict[str, Any]) -> Experiment:
     d: dict[str, Any] = dict(data)
     d["status"] = ExperimentStatus(d["status"])
     d["metrics"] = _metrics_from_dict(d.get("metrics"))
+    d["reproducibility"] = _reproducibility_from_dict(d.get("reproducibility"))
     d["created_at"] = datetime.fromisoformat(d["created_at"])
     d["updated_at"] = datetime.fromisoformat(d["updated_at"])
     return Experiment(**d)

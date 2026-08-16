@@ -6,7 +6,7 @@ import pytest
 from lib.backtest.engine import BacktestMetrics, DataSplit
 from lib.errors import AppendOnlyViolationError
 from lib.registry.experiment_registry import ExperimentRegistry
-from lib.schemas.experiment import Experiment, ExperimentStatus
+from lib.schemas.experiment import Experiment, ExperimentStatus, ReproducibilityFingerprint
 
 
 def _metrics() -> BacktestMetrics:
@@ -46,6 +46,29 @@ def test_record_and_read_back_roundtrip(tmp_path: Path) -> None:
     assert loaded[0].experiment_id == "BT0001"
     assert loaded[0].metrics is not None
     assert loaded[0].metrics.year_by_year_performance == {2025: 0.03, 2026: 0.05}
+
+
+def test_record_and_read_back_roundtrip_preserves_reproducibility(tmp_path: Path) -> None:
+    registry = ExperimentRegistry(tmp_path / "experiments.jsonl")
+    fingerprint = ReproducibilityFingerprint(
+        run_id="RUN0001",
+        dataset_hash="abc123",
+        strategy_hash="def456",
+        config_hash="ghi789",
+        code_commit="f30d1a9",
+    )
+    experiment = Experiment(
+        experiment_id="BT0002",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+        reproducibility=fingerprint,
+    )
+    registry.record(experiment)
+
+    loaded = registry.all()[0]
+    assert loaded.reproducibility == fingerprint
 
 
 def test_duplicate_experiment_id_is_rejected(tmp_path: Path) -> None:
