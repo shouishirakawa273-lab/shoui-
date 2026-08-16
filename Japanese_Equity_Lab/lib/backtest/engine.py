@@ -31,6 +31,7 @@ from lib.errors import LookAheadBiasError
 from lib.market_calendar import TradingCalendar, TradingCalendarResolutionError, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord, assert_no_lookahead
 from lib.schemas.price_data import AdjustedOHLCVBar
+from lib.universe import UniverseProvider
 
 
 class DataSplit(StrEnum):
@@ -428,6 +429,7 @@ class BacktestEngine:
         trading_calendar: TradingCalendar,
         signal_fn: Callable[[Sequence[AdjustedOHLCVBar]], bool],
         sector_by_code: dict[str, str] | None = None,
+        universe_provider: UniverseProvider | None = None,
     ) -> BacktestMetrics:
         """Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較を実行する。
 
@@ -446,6 +448,14 @@ class BacktestEngine:
         扱い、Corporate Action Adjustmentの具体的な実装を一切知らない(D0034/D0035)。
         全期間共通の事前計算済みAdjusted Seriesを保持・使い回すことはしない
         (decision_atごとに`price_history.bars_up_to(code, as_of=decision_at)`を呼ぶ)。
+
+        `universe_provider`(省略可、既定None)を渡すと、decision_atごとに
+        `universe_provider.as_of(decision_at)`を解決し、その時点でUniverseに
+        含まれない銘柄はSignal自体を評価しない(Universe Selection自体にも
+        PIT原則を適用する、D0038)。省略した場合は`config.universe_codes`を
+        そのままUniverseとして扱う(既存の挙動と完全互換)。全期間共通の
+        Universeを1回だけ解決して使い回すことはしない(Corporate Action
+        Adjustmentと同じ理由、D0034参照)。
         """
         benchmark_dates = {b.session_date for b in benchmark_bars}
         if not benchmark_dates or min(benchmark_dates) > config.start_session or max(benchmark_dates) < config.end_session:
@@ -461,12 +471,27 @@ class BacktestEngine:
         matched_benchmark_returns: list[float] = []
         signal_count = 0
         outcome_counter: Counter[str] = Counter()
+        universe_snapshot_cache: dict[date, frozenset[str]] = {}
 
         for code in config.universe_codes:
             position_open_until: date | None = None  # NO_REENTRY_WHILE_POSITION_OPEN用
 
             for decision_date in decision_dates:
                 decision_at = session_close_at(decision_date)
+
+                if universe_provider is not None:
+                    if decision_date not in universe_snapshot_cache:
+                        # decision_dateごとにUniverseを解決する(全期間共通のUniverseを
+                        # 1回だけ解決して使い回さない、D0038)。同じdecision_dateは
+                        # 銘柄間で共有できるため、日付単位でcacheする。
+                        universe_snapshot_cache[decision_date] = frozenset(universe_provider.as_of(decision_at).codes)
+                    if code not in universe_snapshot_cache[decision_date]:
+                        # その時点でUniverseに含まれない(未上場/上場廃止後/対象外の
+                        # 銘柄種別等)銘柄はSignal自体を評価しない。ExecutionOutcomeの
+                        # 対象にもしない(Trading Calendar外の日付を最初から
+                        # decision_datesに含めないのと同じ扱い)。
+                        continue
+
                 # decision_atごとにPrice Historyを取得する(全期間共通の事前計算済み
                 # Adjusted Seriesを使い回さない、D0034/D0035)。これにより、まだ
                 # effectiveになっていないCorporate Actionが混入する余地は構造的に無い。

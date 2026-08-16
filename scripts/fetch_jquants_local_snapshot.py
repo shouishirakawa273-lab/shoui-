@@ -27,6 +27,16 @@ Adapter側で行われる)。認証情報(APIキー)はいかなるファイル�
     python scripts/fetch_jquants_local_snapshot.py \\
         --codes 7203 6758 8056 3626 \\
         --start 2022-01-04 --end 2024-12-30
+
+`--master-pit-check`(Phase3C/D0038): `/v2/equities/master`の`date`パラメータが
+真のPoint-in-Time上場状況(過去に存在したが現在は廃止済みの銘柄を含む)を返すのか、
+単に「現在の上場状況」を返すだけなのかは未検証(DECISIONS.md D0038参照)。この
+フラグは、廃止日を挟む前後2つの日付でMasterを取得し、指定Codeが含まれるかどうかを
+比較表示するだけの診断専用モードで、`--output-dir`へは何も書き込まない
+(`LocalSnapshotAdapter`用のSnapshotを汚さない)。過去に上場廃止されたことが
+分かっている銘柄コードで実行することを想定している:
+    python scripts/fetch_jquants_local_snapshot.py \\
+        --master-pit-check 2023-01-01 2024-01-01 --master-pit-check-code 1234
 """
 
 from __future__ import annotations
@@ -43,6 +53,7 @@ sys.path.insert(0, str(_LAB_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
+from lib.data_sources.ticker_codes import TickerCodeNormalizationError, normalize_provider_code_to_internal  # noqa: E402
 from lib.errors import DataSourceError  # noqa: E402
 
 _CALENDAR_BUFFER_DAYS = 45  # 前後の取引日解決(lookback/holding)に余裕を持たせる
@@ -103,17 +114,107 @@ def fetch_all(*, codes: list[str], start: date, end: date, output_dir: Path) -> 
     )
 
 
+def _codes_at(adapter: JQuantsAdapter, as_of: date) -> set[str]:
+    """指定as_ofでのMasterから、内部Codeへ正規化できた銘柄Codeの集合を返す。
+
+    正規化に失敗した行(普通株以外の可能性)はこの診断の対象外として単に除く
+    (equities_master_payload_to_listing_recordsと同じ非厳格な扱い、D0036)。
+    """
+    try:
+        master_result = adapter.fetch_equities_master(as_of=as_of)
+    except DataSourceError as exc:
+        raise SystemExit(f"銘柄マスタ(as_of={as_of.isoformat()})取得に失敗しました: {exc}") from exc
+    codes: set[str] = set()
+    for row in master_result.payload:
+        provider_code = str(row["Code"])
+        try:
+            codes.add(normalize_provider_code_to_internal(provider_code))
+        except TickerCodeNormalizationError:
+            continue
+    return codes
+
+
+def run_master_pit_check(*, date_before: date, date_after: date, code: str) -> None:
+    """`/v2/equities/master`のdateパラメータが真のPoint-in-Time Snapshotかどうかを診断する。
+
+    出力先ディレクトリへは何も保存しない(LocalSnapshotAdapter用のSnapshotを汚さない、
+    診断専用モード)。判定結果自体は目視確認用であり、このスクリプトが自動で
+    `resolution`等を書き換えることはしない(DECISIONS.md D0038参照)。
+    """
+    load_dotenv()
+    adapter = JQuantsAdapter()
+    if not adapter.configured:
+        raise SystemExit(
+            "JQUANTS_API_KEY が設定されていません。リポジトリルートの.envに設定してください"
+            "(絶対にリポジトリへコミットしないこと)。"
+        )
+
+    print(f"銘柄マスタ(as_of={date_before.isoformat()})取得")
+    codes_before = _codes_at(adapter, date_before)
+    print(f"  -> {len(codes_before)}件(正規化済み)")
+
+    print(f"銘柄マスタ(as_of={date_after.isoformat()})取得")
+    codes_after = _codes_at(adapter, date_after)
+    print(f"  -> {len(codes_after)}件(正規化済み)")
+
+    in_before = code in codes_before
+    in_after = code in codes_after
+    print(f"\ncode={code}: as_of={date_before.isoformat()}時点で{'含まれる' if in_before else '含まれない'}")
+    print(f"code={code}: as_of={date_after.isoformat()}時点で{'含まれる' if in_after else '含まれない'}")
+
+    if in_before and not in_after:
+        print(
+            "\n判定: dateパラメータの前後でこのCodeの有無が変化した -> "
+            "真のPoint-in-Time Snapshotである可能性が高い(ただし1銘柄・1API呼び出しのみでの"
+            "確認のため、DECISIONS.md D0038へ結果を追記し、他銘柄でも再現するか確認することを推奨)。"
+        )
+    elif in_before and in_after:
+        print(
+            "\n判定: 両方のas_ofで含まれたままだった -> このCodeでは廃止日をまたげていない"
+            "(日付の選び方が不適切な可能性がある)か、Masterが常に「現在の状態」しか"
+            "返していない可能性がある。廃止日をより確実に挟む日付、または別のCodeで再確認すること。"
+        )
+    else:
+        print(
+            "\n判定: 想定外の組み合わせ(前後どちらでも含まれない、または前で含まれず後で含まれる)。"
+            "指定したdate_before/date_after/codeの組み合わせを見直すこと。"
+        )
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--codes", nargs="+", default=["7203", "6758", "8056", "3626"])
-    parser.add_argument("--start", type=date.fromisoformat, required=True)
-    parser.add_argument("--end", type=date.fromisoformat, required=True)
+    parser.add_argument("--start", type=date.fromisoformat, default=None)
+    parser.add_argument("--end", type=date.fromisoformat, default=None)
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=_LAB_DIR / "01_data" / "raw" / "local_snapshot_input",
     )
+    parser.add_argument(
+        "--master-pit-check",
+        nargs=2,
+        metavar=("DATE_BEFORE", "DATE_AFTER"),
+        type=date.fromisoformat,
+        default=None,
+        help="通常のSnapshot取得は行わず、指定した2つの日付でMasterのPoint-in-Time性を診断する。",
+    )
+    parser.add_argument(
+        "--master-pit-check-code",
+        default=None,
+        help="--master-pit-check使用時の対象内部Code(4桁)。過去に上場廃止された銘柄を指定すること。",
+    )
     args = parser.parse_args()
+
+    if args.master_pit_check is not None:
+        if args.master_pit_check_code is None:
+            raise SystemExit("--master-pit-check使用時は --master-pit-check-code の指定が必須です。")
+        date_before, date_after = args.master_pit_check
+        run_master_pit_check(date_before=date_before, date_after=date_after, code=args.master_pit_check_code)
+        return
+
+    if args.start is None or args.end is None:
+        raise SystemExit("--start と --end の指定が必須です(--master-pit-check使用時を除く)。")
     fetch_all(
         codes=args.codes,
         start=args.start,

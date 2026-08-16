@@ -378,7 +378,7 @@ Survivorship bias排除の前提として、`UniverseProvider`(`as_of(as_of: dat
 のInterfaceを定義する。`listing_date` / `delisting_date` / `market` / `sector` /
 `tradable_from` / `tradable_until`等から、その時点で投資可能だった銘柄集合を返す。
 実データが無い/不十分な場合に架空の補完(「投資可能銘柄が0件だった」等)をせず、
-`UniverseResolution`(`RESOLVED` / `UNRESOLVED` / `DATA_UNAVAILABLE`)で明示する。
+`UniverseResolution`(`RESOLVED` / `PARTIAL` / `UNRESOLVED` / `DATA_UNAVAILABLE`)で明示する。
 Phase1.1はInterfaceとsynthetic data向けの素朴な実装(`ListingBasedUniverseProvider`)のみ。
 
 Phase3Aで`/listed/info`(V1)を接続し、Phase3A.1で
@@ -390,9 +390,50 @@ J-Quants V2の`/v2/equities/master`へ接続先を変更した(D0033)。`/v2/equ
 Ticker→会社名対応がMasterと矛盾しないか確認できる(手入力をCanonical Dataとして
 扱わない、D0033)。`UniverseSnapshot.survivorship_bias_unresolved`は、
 渡された全`ListingRecord`に`delisting_date`が1件も無い場合に自動的に`True`になる
-(`_auto_detect_survivorship_bias()`、D0028)。この場合、そのUniverseを使った
-Backtest結果はSurvivorship Biasが残存する前提で解釈すること(現在上場している銘柄だけを
-過去へ遡らせている可能性が高い)。
+(`_auto_detect_survivorship_bias()`、D0028)。
+
+### `PARTIAL` Resolution(Phase3C、D0038)
+
+`survivorship_bias_unresolved=True`の場合、`UniverseSnapshot.resolution`は
+`RESOLVED`ではなく`UniverseResolution.PARTIAL`を返す(Survivorship Biasが残ったまま
+「完全に解決できた」と自称しないため)。`PARTIAL`は「Universeの下限(現在まで
+生き残った銘柄)は判明しているが、上限(当時存在したが後に廃止された銘柄)は
+判明していない」ことを意味する。`PARTIAL`のUniverseを使ったBacktest結果は、実際より
+良い成績が出ている可能性がある前提で解釈すること(廃止された銘柄=多くの場合
+業績不振や上場廃止基準抵触による銘柄が母集団から欠落しているため)。
+
+### 普通株Universeの明示的な定義(Phase3C、D0038)
+
+`build_common_stock_universe(listings, *, common_stock_market_codes)`で、ETF・REIT・
+優先株・インフラファンド等(普通株以外)をUniverseから除外する。
+`common_stock_market_codes`(普通株の市場区分を表すMarketCodeの許可リスト)は
+呼び出し側が明示的に渡す必要があり、このモジュール自身は実際のJ-Quants MarketCodeの
+値・意味を検証・決め打ちしない。許可リストが空、またはMarketCodeが不明な場合は
+安全側(除外側)に倒す。現時点(Phase3C)では実際のMarketCode値がこのセッションでは
+未検証のため、実データPipeline(`scripts/jquants_lab_pipeline.py`)へはまだ接続していない
+(DECISIONS.md D0038)。
+
+### `BacktestEngine`のdecision_atごとのUniverse再解決(Phase3C、D0038)
+
+`BacktestEngine.run(..., universe_provider=...)`を指定すると、`decision_date`ごとに
+`universe_provider.as_of(decision_at)`を再解決し(全期間分を一度だけ事前計算して
+使い回すことはしない、`PriceHistorySource`のD0035と同じ設計思想)、その時点の
+Universeに含まれないCodeについては`signal_fn`自体を呼ばない。省略時は従来通り
+`config.universe_codes`をそのまま使う(完全後方互換)。`scripts/jquants_lab_pipeline.py`は
+実データSource利用時に`/v2/equities/master`から構築した`universe_provider`を
+`engine.run()`へ渡している。
+
+### J-Quants Light Planでの既知の未確認事項(Phase3C、D0038)
+
+- `/v2/equities/master`の`date`パラメータが真のPoint-in-Time Snapshot(廃止銘柄を
+  含む)を返すか、単に「現在の状態」を返すだけかは未検証。後者の場合、
+  Survivorship Biasは構造的に解消できず`resolution=PARTIAL`が恒常的な状態になる。
+  `scripts/fetch_jquants_local_snapshot.py --master-pit-check`で、ローカル環境から
+  実際に確認できる(使い方はスクリプトのDocstring参照)。
+- 市場区分(Prime/Standard/Growth)は2022年4月のTSE市場再編で大きく変わっており、
+  単一時点のMasterスナップショットから過去の市場区分を復元することはできない。
+  `ListingRecord.market`は「そのMasterスナップショット自身のas_of時点の区分」を
+  表すに過ぎず、過去のdecision_atにおける市場区分としては使わないこと。
 
 ## Provenance (`lib/registry/provenance.py`)
 

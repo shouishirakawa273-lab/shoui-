@@ -165,7 +165,11 @@ def run_pipeline(
     trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=start, range_end=end)
 
     # Universe: 実データSourceのみ接続する(fixtureモードでは省略、DATA_UNAVAILABLE扱い)。
+    # decision_atごとにuniverse_provider.as_of()を再解決させ(単一の事前計算Snapshotを
+    # 使い回さない、D0038)、上場廃止後の銘柄はSignal自体の対象から外す
+    # (Japanese_Equity_Lab/lib/backtest/engine.pyのuniverse_provider配線を参照)。
     universe_snapshot = None
+    universe_provider: ListingBasedUniverseProvider | None = None
     name_warnings: list[str] = []
     if is_real_source:
         master_result = adapter.fetch_equities_master()
@@ -192,6 +196,7 @@ def run_pipeline(
         benchmark_bars=benchmark_bars,
         trading_calendar=trading_calendar,
         signal_fn=as_buy_signal_fn(),
+        universe_provider=universe_provider,
     )
 
     hypothesis = Hypothesis(
@@ -316,10 +321,16 @@ def run_pipeline(
     print(f"price_adjustment={price_adjustment} adjustment_method={price_adjustment_provenance.adjustment_method}")
     if universe_snapshot is not None:
         print(
-            f"universe: resolution={universe_snapshot.resolution.value} "
+            f"universe(end={end}時点の参考Snapshot): resolution={universe_snapshot.resolution.value} "
             f"codes={len(universe_snapshot.codes)}件 "
             f"survivorship_bias_unresolved={universe_snapshot.survivorship_bias_unresolved} "
             f"note={universe_snapshot.note!r}"
+        )
+        print(
+            "universe: decision_atごとの適格性判定はBacktestへ適用済み"
+            "(universe_provider.as_of(decision_at)、上場廃止日以降はSignal自体を評価しない。"
+            "上記のSnapshotは末尾日end時点の参考表示に過ぎず、実際に各decision_atで使われた"
+            "判定そのものではない)"
         )
     if name_warnings:
         print(f"company name consistency warnings: {name_warnings}")

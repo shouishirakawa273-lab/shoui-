@@ -1054,3 +1054,96 @@ RUN_20260816T162453577518はユーザー自身のローカル環境で生成さ�
 組み合わせは、このInfrastructure Validation Runで結果を観測済みのため、今後
 Hidden Test(未見のOut-of-Sample期間)として扱わないことをRESEARCH_RULES.mdへ記録した
 (「Infrastructure Validation Runと戦略性能Testを区別する」節)。
+
+---
+
+## Phase3C(2026-08-16): 固定4銘柄からPoint-in-Time Universeへ
+
+Phase3Bの実J-Quants E2E Validation(RUN_20260816T164133244945)完了後、ユーザーより
+Phase3Cの開始指示があった。目的は「固定4銘柄ではなく、日本株のPoint-in-Time Universeを
+安全に扱えるようにすること」であり、特に`survivorship_bias_unresolved=True`
+(D0028で自動検出のみ導入済みだったが、未解消のまま放置されていた)の解決を最優先とする。
+
+## D0038 — Point-in-Time Universe: `PARTIAL` Resolutionの明示、普通株Universeの
+明示的な定義、`BacktestEngine`のdecision_atごとのUniverse再解決
+
+**問題**: それまでの`ListingBasedUniverseProvider`は、`survivorship_bias_unresolved`を
+自動検出(全listingに`delisting_date`が無ければTrue)するところまでは実装済み
+(D0028)だったが、(1)この場合でも`UniverseSnapshot.resolution`は`RESOLVED`のままで、
+「Survivorship Biasが残ったままRESOLVEDと自称する」矛盾した状態だった。また
+(2)ETF・REIT・優先株等(普通株以外)を明示的に除外する経路が無く、(3)
+`BacktestEngine.run()`は`universe_codes`(呼び出し側が指定したCode一覧)をそのまま
+使うのみで、`UniverseProvider`をdecision_atごとに問い合わせて銘柄の適格性を
+判定する経路が無かった(=Universeの観点ではPIT-safeではなかった)。
+
+**変更内容**:
+
+1. `UniverseResolution`に`PARTIAL`(RESOLVEDとUNRESOLVEDの間)を新設した。
+   `ListingBasedUniverseProvider.as_of()`は、`survivorship_bias_unresolved=True`の
+   場合(自動検出 or 明示指定)は`resolution=PARTIAL`を返すよう修正した
+   (以前は`RESOLVED`のままだった)。`note`には「delisting_dateが無いlistingのみのため、
+   廃止銘柄を捕捉できていない可能性がある(Survivorship Bias未解消、Universe下限のみ判明)」
+   という理由を明記する。`survivorship_bias_unresolved=False`の場合のみ`RESOLVED`。
+2. `build_common_stock_universe()`を新設し、呼び出し側が明示的に渡す
+   `common_stock_market_codes`(MarketCodeの許可リスト)に基づいて普通株Universeを
+   構築するようにした。**このモジュール自身は実際のJ-Quants MarketCodeの値・意味を
+   検証しておらず、値を推測で決め打ちしない**(許可リストが空、またはMarketCodeが
+   不明な場合は安全側=除外側に倒す)。除外した銘柄とMarketCode別件数は
+   `CommonStockFilterResult.excluded_market_codes`で必ず追跡できるようにした
+   (監査可能性)。
+3. `BacktestEngine.run()`に`universe_provider: UniverseProvider | None = None`を
+   追加した(省略時は従来通り`config.universe_codes`をそのまま使い、完全後方互換)。
+   指定した場合、`decision_date`ごとに`universe_provider.as_of(decision_at)`を
+   再解決し(D0035の`PriceHistorySource.as_of()`と同じ設計思想:全期間分を
+   一度だけ事前計算して使い回すと、Universeの観点でLook-ahead biasを生みうるため)、
+   その時点のUniverseに含まれないCodeについては`signal_fn`自体を呼ばない
+   (Signal評価対象から除外する)。decision_dateごとの重複解決を避けるため、
+   実行1回あたりの`dict[date, frozenset[str]]`キャッシュのみ保持する
+   (Provider自体は毎回問い合わせる)。
+4. `scripts/jquants_lab_pipeline.py`は、実データSource(`jquants`/`local`)利用時に
+   `/v2/equities/master`から構築した`universe_provider`を、**表示用のSnapshot取得**
+   だけでなく`engine.run(..., universe_provider=universe_provider)`として実際の
+   Backtest実行にも渡すよう修正した(修正前はSnapshotを取得・表示するのみで、
+   Backtestの銘柄適格性判定には使われていなかった)。
+
+**普通株Universeフィルタ(`build_common_stock_universe`)をPipelineへまだ接続していない
+理由**: 実際のJ-Quants MarketCodeの値・意味(どの値がPrime/Standard/Growth=普通株で、
+どの値がETF/REIT/優先株か)はこのセッションでは未検証。要件上「値を推測で決め打ちしない」
+ため、確認できていない値を許可リストとして決め打ちしてPipelineへ組み込むことはしない。
+関数自体はTest済み・利用可能な状態にしてあるので、ユーザーがローカル環境で実際の
+MarketCode値を確認した後、その確定値を許可リストとして渡す形でPipelineへ接続する
+(D0038、下記「未確認事項」参照)。
+
+**未確認事項(推測で埋めていない項目、DECISIONS.mdとして明示)**:
+
+- `/v2/equities/master`の`date`パラメータ(`fetch_equities_master(as_of=...)`)が、
+  指定日時点の真のPoint-in-Time上場状況(当時存在したが現在は廃止済みの銘柄を含む)を
+  返すのか、単に「現在の上場状況」を返すだけなのかは未検証。後者であれば、
+  Masterから`delisting_date`を持つ`ListingRecord`は原理的に得られず、
+  Survivorship Biasを構造的に解消できない(`survivorship_bias_unresolved=True`の
+  ままになる)。
+- Masterが上場廃止銘柄を(過去日付を指定した場合であっても)そもそも一切含まないか
+  どうかも未検証。
+- MarketCodeの実際の値・意味(どれが普通株の市場区分か)は未検証。
+- 2022年4月のTSE市場再編前後で、単一時点のMasterスナップショットから過去の市場区分を
+  復元することは構造的にできない(`lib/universe.py`のモジュールDocstring参照)。
+
+**ローカル環境での確認方法(ユーザー向け、実行推奨)**: 上記の未確認事項のうち
+「Masterの`date`パラメータが真のPIT Snapshotを返すか」は、少量のリクエストで
+安全に確認できる。例えば、過去に上場廃止されたことが分かっている銘柄コードを1つ選び、
+
+```
+python scripts/fetch_jquants_local_snapshot.py --master-as-of <廃止前の日付>
+python scripts/fetch_jquants_local_snapshot.py --master-as-of <廃止後の日付>
+```
+
+のように前後の日付でMasterを取得し、廃止前の`as_of`ではその銘柄が含まれ、廃止後の
+`as_of`では含まれなくなる(または`DelistingDate`フィールドが埋まっている)かを
+目視で確認する。含まれる場合は真のPIT Snapshotとみなせるが、含まれない場合
+(=常に「現在の状態」しか返らない)は、Light Planでは`/v2/equities/master`単体では
+Survivorship Biasを解消できないと結論できる(その場合、`resolution=PARTIAL`が
+恒常的な状態になる。これは仕様上の制約であり、コード側の不具合ではない)。
+
+**このPhaseでやらないこと**: 全市場規模でのUniverse実データ取得・普通株許可リストの
+決め打ち・戦略パラメータの探索や最適化は行っていない(要件どおり、Infrastructure
+Validationとしての固定20営業日Momentum/60営業日Hold Strategyのみを対象とする)。

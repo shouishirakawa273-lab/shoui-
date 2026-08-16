@@ -1,14 +1,29 @@
 """Point-in-Time Universe: as_of時点で投資可能だった銘柄集合を返すInterface。
 
 Survivorship bias排除の前提となる。実データ(上場日・廃止日等)が無い/不十分な場合に
-架空の補完をせず、UNRESOLVED / DATA_UNAVAILABLE を明示する(数値を推測で埋めない方針)。
-Phase1.1ではInterfaceと、synthetic dataによる素朴な実装のみを提供する。
-実際のデータソース(証券コード一覧・上場/廃止日等)との連携はPhase2以降。
+架空の補完をせず、PARTIAL / UNRESOLVED / DATA_UNAVAILABLE を明示する
+(数値を推測で埋めない方針)。
+
+**Phase3Cで判明・確定した既知の制約(DECISIONS.md D0038参照)**:
+- J-Quants API V2 `/v2/equities/master`が過去日付を指定した際に、その時点の
+  真のPoint-in-Time上場状況(=当時存在したが現在は廃止済みの銘柄を含む)を返すか、
+  単に現在の状況を返すだけかは、このセッションでは未確認(Light Planでの
+  実際の挙動はローカル環境での確認が必要)。
+- Masterが廃止銘柄を一切含まない(現在上場中の銘柄のみを返す)場合、
+  `delisting_date`を一切持たないListingRecord集合しか得られず、
+  Survivorship Biasを構造的に解消できない。この場合は
+  `survivorship_bias_unresolved=True`かつ`resolution=PARTIAL`として明示する
+  (RESOLVEDとは扱わない)。
+- 市場区分(Prime/Standard/Growth等)は2022年4月のTSE市場再編で大きく変わった。
+  単一時点のMasterスナップショットからは、ある銘柄が過去のどの時点でどの市場区分に
+  属していたかを復元できない。`ListingRecord.market`は「そのMasterスナップショット
+  自身のas_of時点での区分」を表すに過ぎず、過去のdecision_atにおける市場区分としては
+  使わないこと。
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -18,7 +33,8 @@ from lib.schemas.base import RecordMeta
 
 
 class UniverseResolution(StrEnum):
-    RESOLVED = "RESOLVED"
+    RESOLVED = "RESOLVED"  # 完全に解決できた(Survivorship Bias等の既知の欠落が無い)
+    PARTIAL = "PARTIAL"  # 部分的に解決できたが、既知の欠落(Survivorship Bias等)が残る
     UNRESOLVED = "UNRESOLVED"
     DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
 
@@ -49,8 +65,10 @@ class UniverseSnapshot:
 
     `survivorship_bias_unresolved=True`は、このUniverseが「現在上場している銘柄」を
     過去へ遡らせて構築されており、当時存在したが現在は上場廃止済みの銘柄を
-    捕捉できていない可能性があることを示す。このSnapshotを使ったBacktestの結果は
-    Survivorship biasが残存する前提で解釈すること(RESEARCH_RULES.md参照)。
+    捕捉できていない可能性があることを示す。この場合`resolution`は
+    `UniverseResolution.PARTIAL`になる(RESOLVEDとは扱わない、D0038)。このSnapshotを
+    使ったBacktestの結果はSurvivorship biasが残存する前提で解釈すること
+    (RESEARCH_RULES.md参照)。
     """
 
     as_of: datetime
@@ -112,16 +130,69 @@ class ListingBasedUniverseProvider:
             )
         target_date = as_of.date()
         codes = tuple(sorted(listing.code for listing in self._listings if _is_tradable_on(listing, target_date)))
-        note = ""
         if self._survivorship_bias_unresolved:
-            note = "delisting_dateが無いlistingのみのため、廃止銘柄を捕捉できていない可能性がある"
+            # Survivorship Biasを解消できていない=完全解決ではないため、RESOLVEDとは
+            # 扱わない(D0038)。実際に投資可能だった銘柄集合の下限(現在まで生き残った
+            # 銘柄)は分かるが、上限(当時存在したが後に廃止された銘柄)は分からない。
+            return UniverseSnapshot(
+                as_of=as_of,
+                resolution=UniverseResolution.PARTIAL,
+                codes=codes,
+                note="delisting_dateが無いlistingのみのため、廃止銘柄を捕捉できていない可能性がある"
+                "(Survivorship Bias未解消、Universe下限のみ判明)",
+                survivorship_bias_unresolved=True,
+            )
         return UniverseSnapshot(
             as_of=as_of,
             resolution=UniverseResolution.RESOLVED,
             codes=codes,
-            note=note,
-            survivorship_bias_unresolved=self._survivorship_bias_unresolved,
+            survivorship_bias_unresolved=False,
         )
+
+
+@dataclass(frozen=True)
+class CommonStockFilterResult:
+    """`build_common_stock_universe`の結果。除外した件数・理由を必ず追跡できるようにする
+    (ETF/REIT/優先株等が誤って普通株Universeへ混入していないことを監査できるように)。
+    """
+
+    included: tuple[ListingRecord, ...]
+    excluded: tuple[ListingRecord, ...]
+    excluded_market_codes: Mapping[str, int]
+
+
+def build_common_stock_universe(
+    listings: Sequence[ListingRecord],
+    *,
+    common_stock_market_codes: frozenset[str],
+) -> CommonStockFilterResult:
+    """普通株Universeを明示的に定義する(D0038)。
+
+    `common_stock_market_codes`は「普通株の上場市場区分を表すMarketCodeの集合」を
+    呼び出し側が明示的に渡す(このモジュール自身は実際のJ-Quants MarketCodeの
+    値・意味を検証しておらず、推測で決め打ちしない。DECISIONS.md D0038参照)。
+    `listing.market`がこの集合に含まれないListingRecordは、ETF・REIT・優先株・
+    インフラファンド等(普通株以外)である可能性があるとみなし、除外する。
+
+    **既定で「除外」側に倒す**: `common_stock_market_codes`が空、またはMarketCodeが
+    不明(取得不可)な場合も、安全側に倒して除外する(誤って普通株Universeへ
+    混入させるより、判断できない銘柄を除外してしまう方を選ぶ)。除外した銘柄と
+    その理由(MarketCode別件数)は`CommonStockFilterResult`で必ず追跡できる。
+    """
+    included: list[ListingRecord] = []
+    excluded: list[ListingRecord] = []
+    excluded_market_codes: dict[str, int] = {}
+    for listing in listings:
+        if listing.market in common_stock_market_codes:
+            included.append(listing)
+        else:
+            excluded.append(listing)
+            excluded_market_codes[listing.market] = excluded_market_codes.get(listing.market, 0) + 1
+    return CommonStockFilterResult(
+        included=tuple(included),
+        excluded=tuple(excluded),
+        excluded_market_codes=excluded_market_codes,
+    )
 
 
 def check_company_name_consistency(expected_names: dict[str, str], listings: Sequence[ListingRecord]) -> list[str]:
