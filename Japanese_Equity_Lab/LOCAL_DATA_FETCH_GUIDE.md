@@ -59,6 +59,12 @@ print(result.payload[:2])
 エラーが出た場合、エラーメッセージ(**APIキーの値を除いて**)を教えてもらえれば
 `lib/data_sources/jquants.py`のEndpoint・パラメータを実際の仕様に合わせて修正できる。
 
+**確認済み事項(DECISIONS.md D0036)**: `result.payload`の``"Code"``フィールドは、
+requestした内部Code("7203")ではなく5桁のProvider Code(例: "72030")で返る
+(末尾1桁は銘柄種別を表すと考えられ、普通株は"0")。これは想定通りの挙動であり、
+`lib/data_sources/convert.py`が変換時に内部Code("7203")へ自動的に正規化するため、
+`--codes`引数や`equity_bars_<code>.json`のファイル名は引き続き4桁の内部Codeを使う。
+
 ## 手順4: 実データを取得してローカルへ保存する
 
 Smoke Testが通ったら、`scripts/fetch_jquants_local_snapshot.py`を実行する。これは

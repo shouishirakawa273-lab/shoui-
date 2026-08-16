@@ -135,6 +135,19 @@ Experiment Registry を一本のPipelineとして実行できる。
 (`lib/backtest/engine.py`の実装、および
 `13_tests/test_available_at_vs_retrieved_at.py`で確認する)。
 
+### Provider CodeとInternal Codeを混同しない
+
+J-Quants API V2は銘柄コードを5桁で返す(実SmokeTestで確認済み、DECISIONS.md D0036:
+内部Code"7203"をrequestすると、Providerは``"Code": "72030"``を返す。末尾1桁は
+銘柄種別を表すと考えられ、普通株は"0")。Research Lab内部(Universe定義・
+`BacktestRunConfig.universe_codes`・Strategy等)は一貫して4桁の内部Codeを使うため、
+`lib/data_sources/convert.py`が変換時に`lib.data_sources.ticker_codes.
+normalize_provider_code_to_internal()`で正規化する。無条件に文字列の末尾を削る
+実装はしない(確認済みパターンに一致しない場合は例外を送出する)。Raw Snapshotには
+Providerの生の値(5桁)がそのまま残り、この正規化とは無関係。`RawOHLCVBar` /
+`CorporateAction` / `ListingRecord`は`code`(内部)と`provider_code`(Providerの
+生の値)を両方保持し、混同しない。
+
 ### Close-to-Close Look-ahead防止
 
 `available_at <= information_used_at` だけでは不十分で、「当日Closeの情報でSignalを作り、

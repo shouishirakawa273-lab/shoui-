@@ -911,3 +911,68 @@ Phase3A.1時点で確認済みの値(`13_tests/test_pit_as_of_adjustment.py`の
 確認した。既存の`test_backtest_engine.py`等の呼び出し箇所は`price_history`引数を
 `StaticPriceHistory(...)`でラップするよう機械的に更新したのみで、テストの意図・
 アサーションは変更していない。
+
+---
+
+## Phase3A.2 追補(2026-08-16): 実SmokeTestで判明したProvider Code(5桁)の正規化
+
+ユーザーがローカル環境で実際にJ-Quants API V2への最小Smoke Testに成功し、以下の
+事実を確認した: 内部Code(普通株、例: "7203")をrequestすると、Provider側の
+responseでは``"Code": "72030"``(5桁)として返る。その他のField(equity_bars/
+equities_master)は現在の実装の想定と一致していた。
+
+## D0036 — Provider Code(5桁)とResearch Lab内部Code(4桁)を明確に分離し、安全に
+正規化する
+
+**変更内容**: `lib/data_sources/ticker_codes.py`を新設し、
+`normalize_provider_code_to_internal(provider_code)`を実装した。
+
+- 5桁の数字文字列で末尾が"0"(普通株、実データで確認済みの唯一のパターン) ->
+  先頭4桁を内部Codeとして返す。
+- 4桁の数字文字列(Endpointによっては4桁のまま返る可能性への保守的なフォールバック) ->
+  そのまま返す。
+- 数字のみで構成されているが上記に当てはまらない場合(5桁だが末尾が"0"でない=
+  優先株等の可能性、3桁・6桁等)は、実際のProvider Codeの可能性があるあいまいな
+  ケースとして`TickerCodeNormalizationError`を送出する(無条件に末尾を削る実装は
+  しない、というユーザー指示を反映)。
+- 数字以外の文字を含む場合(fixture/testの合成ラベル、"TOPIX_SYNTH"等)は、実際の
+  J-Quants Provider Code(数字のみ)ではありえないため、そのまま変更せず返す
+  (合成データの識別子は正規化対象ではない)。
+
+`RawOHLCVBar` / `CorporateAction` / `ListingRecord`に`provider_code: str | None`
+フィールドを追加し、`code`(内部Code)とは別に、Providerが実際に返した生の値を
+保持できるようにした(provider_codeとinternal_codeを混同しないというユーザー要求)。
+`lib/data_sources/convert.py`の`equity_bars_payload_to_raw_bars` /
+`detect_corporate_action_events_from_equity_bars` /
+`equities_master_payload_to_listing_records`は、`row["Code"]`を正規化した上で
+`code`(内部)と`provider_code`(生値)の両方をセットする。
+
+**Raw Snapshotは変更しない**: `RawSnapshotStore`が保存する`RawFetchResult.payload`
+(Raw Snapshot)は、Provider APIが返したJSONそのものであり、この正規化とは無関係
+(Raw Snapshotには常にProviderの生の値"72030"がそのまま残る)。正規化は
+`convert.py`がRaw PayloadをInternal Schema(`RawOHLCVBar`等)へ変換する段階でのみ
+適用される。
+
+**Master解析はエラーではなく警告でスキップ(非対称な扱い)**: `equity_bars_payload_to_raw_bars`
+等(ユーザーが明示的に指定した少数の銘柄コードのみを対象とする)は、正規化に失敗すると
+例外を送出しPipeline全体を止める(想定外のデータ不整合の可能性が高いため)。一方、
+`equities_master_payload_to_listing_records`は全上場銘柄(ETF・優先株等、確認済み
+パターンに一致しないProvider Codeを含みうる)を対象とするため、正規化に失敗した行は
+例外にせず`logging.warning`でスキップする(Phase3Aは普通株のみを対象とするため、
+無関係な銘柄種別でMaster全体の解析が止まることを避ける。黙って無視するのではなく、
+ログで追跡可能にする)。
+
+**テスト**: `13_tests/test_ticker_codes.py`(正規化関数の単体テスト、確認済みパターン・
+あいまいなケースでの例外送出・合成ラベルのpass-through・Provider Code集合からの
+index構築とcollision検知)、`13_tests/test_convert_phase3a.py`の
+`test_provider_code_72030_and_internal_code_7203_join_correctly_in_backtest_and_universe`
+(Provider Code "72030"由来のequity_bars/equities_masterが、内部Code "7203"を使う
+`BacktestRunConfig.universe_codes`・`UniverseProvider`と正しくjoinし、価格系列を
+実際に見つけられることを直接確認)を追加した。`--source local`の手動scratch検証
+(equity_bars/equities_masterの"Code"を全て5桁化したデータ)でも、4桁のみのデータと
+完全に同じBacktestMetricsが得られることを確認済み(正規化が透過的であることの
+実行時確認)。
+
+**この確認をもって、実データ取得(`LOCAL_DATA_FETCH_GUIDE.md`の手順)を継続してよい
+状態とする。** equity_bars/equities_masterのField名自体は既存の想定(V2 Canonical
+Specification)と一致していたため、Provider Code正規化以外の追加修正は不要。

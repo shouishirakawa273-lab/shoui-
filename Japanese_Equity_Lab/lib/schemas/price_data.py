@@ -32,7 +32,13 @@ class CorporateActionType(StrEnum):
 
 @dataclass(kw_only=True, frozen=True)
 class RawOHLCVBar(RecordMeta):
-    """調整前の生の日次OHLCV。取得元の値をそのまま保持し、後から書き換えない。"""
+    """調整前の生の日次OHLCV。取得元の値をそのまま保持し、後から書き換えない。
+
+    `code`はResearch Lab内部Code(普通株4桁、例: "7203")。J-Quants API V2は
+    Provider Code(5桁、例: "72030")を返すため、`convert.py`が変換時に正規化する
+    (`lib.data_sources.ticker_codes`、DECISIONS.md D0036)。正規化前のProvider側の
+    生の値は`provider_code`に別途保持し、両者を混同しない。
+    """
 
     code: str
     session_date: date
@@ -41,11 +47,16 @@ class RawOHLCVBar(RecordMeta):
     low: float | None
     close: float | None
     volume: float | None
+    provider_code: str | None = None
 
 
 @dataclass(kw_only=True, frozen=True)
 class CorporateAction(RecordMeta):
-    """株式分割・併合・配当・合併・上場廃止等の企業イベント。"""
+    """株式分割・併合・配当・合併・上場廃止等の企業イベント。
+
+    `code`はResearch Lab内部Code。`provider_code`はProvider側の生の値
+    (DECISIONS.md D0036、RawOHLCVBar参照)。
+    """
 
     code: str
     action_type: CorporateActionType
@@ -59,6 +70,7 @@ class CorporateAction(RecordMeta):
     別に、Provider側の生の値を検証可能な形で残す。この値をPrice調整へ適用する
     公式の計算方法(ex-dateより前の価格へ乗算)は確定している
     (``build_provider_derived_adjusted_bars``、DECISIONS.md D0034参照)。"""
+    provider_code: str | None = None
     note: str | None = None
 
 

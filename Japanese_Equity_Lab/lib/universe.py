@@ -25,7 +25,12 @@ class UniverseResolution(StrEnum):
 
 @dataclass(kw_only=True, frozen=True)
 class ListingRecord(RecordMeta):
-    """銘柄1件の上場・取引可能期間に関する情報。"""
+    """銘柄1件の上場・取引可能期間に関する情報。
+
+    `code`はResearch Lab内部Code(普通株4桁)。`provider_code`はJ-Quants等の
+    Provider側の生の値(5桁等)を混同しないよう別途保持する
+    (`lib.data_sources.ticker_codes`、DECISIONS.md D0036)。
+    """
 
     code: str
     market: str
@@ -35,6 +40,7 @@ class ListingRecord(RecordMeta):
     delisting_date: date | None = None
     tradable_from: date | None = None
     tradable_until: date | None = None
+    provider_code: str | None = None
 
 
 @dataclass(frozen=True)

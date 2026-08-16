@@ -8,6 +8,7 @@ import pytest
 from lib.data_sources.convert import (
     detect_corporate_action_events_from_equity_bars,
     equities_master_payload_to_listing_records,
+    equity_bars_payload_to_raw_bars,
     topix_bars_payload_to_raw_bars,
 )
 from lib.errors import LookAheadBiasError
@@ -208,6 +209,78 @@ def test_check_company_name_consistency_flags_unresolvable_code() -> None:
     warnings = check_company_name_consistency({"9999": "存在しない銘柄"}, [])
     assert len(warnings) == 1
     assert "9999" in warnings[0]
+
+
+def test_equity_bars_five_digit_provider_code_normalizes_to_internal_code() -> None:
+    """実SmokeTestで確認された事実(DECISIONS.md D0036): request code=7203に対して
+    Providerは"Code": "72030"を返す。変換後はcode="7203"(内部Code)、
+    provider_code="72030"(Providerの生の値)を両方保持する。"""
+    payload = [{"Code": "72030", "Date": "2026-01-05", "O": 2000.0, "H": 2010.0, "L": 1990.0, "C": 2005.0, "Vo": 1000}]
+    bars = equity_bars_payload_to_raw_bars(payload)
+    assert bars[0].code == "7203"
+    assert bars[0].provider_code == "72030"
+
+
+def test_equities_master_five_digit_provider_code_normalizes_to_internal_code() -> None:
+    payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111"}]
+    records = equities_master_payload_to_listing_records(payload)
+    assert records[0].code == "7203"
+    assert records[0].provider_code == "72030"
+
+
+def test_equities_master_skips_unnormalizable_codes_with_warning_not_crash(caplog: pytest.LogCaptureFixture) -> None:
+    """Masterには普通株以外(確認済みパターンに一致しないProvider Code)も含まれうるため、
+    該当行はログ警告を出してスキップし、Master全体の解析はクラッシュさせない。"""
+    payload = [
+        {"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111"},
+        {"Code": "72031", "CompanyName": "トヨタ自動車(優先株?)", "MarketCode": "0111"},  # 確認済みパターンに一致しない
+    ]
+    with caplog.at_level("WARNING"):
+        records = equities_master_payload_to_listing_records(payload)
+    assert len(records) == 1
+    assert records[0].code == "7203"
+    assert "72031" in caplog.text
+
+
+def test_provider_code_72030_and_internal_code_7203_join_correctly_in_backtest_and_universe() -> None:
+    """72030(equity_bars由来)と7203(Universe/BacktestRunConfigで指定する内部Code)が
+    同一の普通株として正しくjoinできることを確認する(DECISIONS.md D0036)。"""
+    from lib.backtest.engine import BacktestEngine, BacktestRunConfig
+    from lib.backtest.price_history import StaticPriceHistory
+    from lib.market_calendar import TradingCalendar
+    from lib.schemas.price_data import apply_split_adjustments
+    from lib.universe import ListingBasedUniverseProvider
+
+    days = [date(2026, 1, 5), date(2026, 1, 6), date(2026, 1, 7), date(2026, 1, 8), date(2026, 1, 9)]
+    equity_bars_payload = [
+        {"Code": "72030", "Date": d.isoformat(), "O": 2000.0 + i, "H": 2010.0 + i, "L": 1990.0 + i, "C": 2005.0 + i, "Vo": 1000}
+        for i, d in enumerate(days)
+    ]
+    master_payload = [{"Code": "72030", "CompanyName": "トヨタ自動車", "MarketCode": "0111", "ListingDate": "1949-05-16"}]
+
+    raw_bars = equity_bars_payload_to_raw_bars(equity_bars_payload)
+    assert {b.code for b in raw_bars} == {"7203"}  # Providerの"72030"ではなく内部Code"7203"でグルーピングできる
+
+    # Universe: internal code "7203" でas_of解決できる(provider_code="72030"はListingRecordに保持されるのみ)。
+    listing_records = equities_master_payload_to_listing_records(master_payload)
+    universe = ListingBasedUniverseProvider(listing_records)
+    snapshot = universe.as_of(session_close_at(date(2026, 1, 9)))
+    assert snapshot.codes == ("7203",)
+
+    # Backtest: universe_codes=("7203",) がprice_history(internal codeでkeyed)と正しくjoinし、
+    # 価格系列を実際に見つけられる(空にならない)ことを確認する。
+    calendar = TradingCalendar(trading_dates=frozenset(days), range_start=days[0], range_end=days[-1])
+    price_history = StaticPriceHistory({"7203": apply_split_adjustments(raw_bars, [])})
+    config = BacktestRunConfig(universe_codes=("7203",), start_session=days[0], end_session=days[-1], holding_period_days=1)
+    metrics = BacktestEngine().run(
+        config=config,
+        price_history=price_history,
+        benchmark_bars=apply_split_adjustments(raw_bars, []),
+        trading_calendar=calendar,
+        signal_fn=lambda bars: len(bars) > 0,  # 何日か経てば必ずSignalが出る
+    )
+    # "72030"のままだったらprice_history["7203"]と一致せず空振り(signal_countはゼロにはならない)。
+    assert metrics.signal_count > 0
 
 
 # JSTの再エクスポート確認用(このモジュールがmarket_calendarと整合していることを担保)。

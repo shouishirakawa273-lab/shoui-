@@ -15,11 +15,15 @@ announced_at不要)を通す。
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 
+from lib.data_sources.ticker_codes import TickerCodeNormalizationError, normalize_provider_code_to_internal
 from lib.market_calendar import TradingCalendar
 from lib.schemas.price_data import CorporateAction, CorporateActionType, RawOHLCVBar
 from lib.universe import ListingRecord
+
+logger = logging.getLogger(__name__)
 
 TOPIX_CODE = "TOPIX"
 
@@ -53,14 +57,21 @@ def equity_bars_payload_to_raw_bars(payload: list[dict[str, object]], *, source:
 
     Adjusted系フィールド(AdjO/AdjH/AdjL/AdjC/AdjVo)・AdjFactor・ExRT等の調整済み/
     イベント情報は使わず、O/H/L/C/Vo(未調整値)のみをそのまま使う。
+
+    ``Code``はProvider Code(実データでは5桁、例: "72030")のため、
+    `normalize_provider_code_to_internal`でResearch Lab内部Code(4桁)へ正規化し、
+    `RawOHLCVBar.code`へ格納する(元の値は`provider_code`に保持、混同しない。
+    DECISIONS.md D0036参照)。
     """
     bars: list[RawOHLCVBar] = []
     for row in payload:
-        code = str(row["Code"])
+        provider_code = str(row["Code"])
+        internal_code = normalize_provider_code_to_internal(provider_code)
         session_date = date.fromisoformat(str(row["Date"]))
         bars.append(
             RawOHLCVBar(
-                code=code,
+                code=internal_code,
+                provider_code=provider_code,
                 session_date=session_date,
                 open=_to_float_or_none(row.get("O")),
                 high=_to_float_or_none(row.get("H")),
@@ -140,9 +151,11 @@ def detect_corporate_action_events_from_equity_bars(payload: list[dict[str, obje
         is_event_day = (factor is not None and factor != 1.0) or (ex_rights is not None and ex_rights != "")
         if not is_event_day:
             continue
+        provider_code = str(row["Code"])
         events.append(
             CorporateAction(
-                code=str(row["Code"]),
+                code=normalize_provider_code_to_internal(provider_code),
+                provider_code=provider_code,
                 action_type=CorporateActionType.ADJUSTMENT_EVENT,
                 effective_date=date.fromisoformat(str(row["Date"])),
                 announced_at=None,
@@ -164,12 +177,32 @@ def equities_master_payload_to_listing_records(payload: list[dict[str, object]])
     `UniverseSnapshot.survivorship_bias_unresolved`参照)。会社名(`company_name`)は
     Ticker/Company Name整合性チェック(`lib/universe.check_company_name_consistency`)
     に使うため、フィールド名は暫定的に"CompanyName"を想定している(未検証)。
+
+    ``Code``はProvider Codeのため、`normalize_provider_code_to_internal`で
+    Research Lab内部Codeへ正規化する(元の値は`provider_code`に保持。DECISIONS.md
+    D0036参照)。Masterには普通株以外(優先株・ETF等、確認済みパターンに一致しない
+    Provider Code)も含まれうるため、それらの行は例外にせずログへ警告を出して
+    スキップする(Phase3Aは普通株のみを対象とするため。黙って無視するのではなく、
+    `logging`で追跡可能にする)。一方、ユーザーが明示的に指定した銘柄コード群
+    (`equity_bars_payload_to_raw_bars`等)で正規化に失敗した場合は、想定外の
+    データ不整合の可能性が高いため引き続き例外を送出する(Master解析とは非対称)。
     """
     records: list[ListingRecord] = []
     for row in payload:
+        provider_code = str(row["Code"])
+        try:
+            internal_code = normalize_provider_code_to_internal(provider_code)
+        except TickerCodeNormalizationError:
+            logger.warning(
+                "equities_master: provider_code=%s を内部Codeへ正規化できないためスキップします"
+                "(普通株以外の可能性、DECISIONS.md D0036参照)",
+                provider_code,
+            )
+            continue
         records.append(
             ListingRecord(
-                code=str(row["Code"]),
+                code=internal_code,
+                provider_code=provider_code,
                 market=str(row.get("MarketCode") or row.get("MarketCodeName") or "取得不可"),
                 sector=_optional_str(row.get("Sector33Code") or row.get("Sector33CodeName")),
                 company_name=_optional_str(row.get("CompanyName")),
