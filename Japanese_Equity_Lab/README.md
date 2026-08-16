@@ -129,4 +129,7 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   DEFAULT STANCE = DISCONFIRM, NOT CONFIRMを上位原則としてRESEARCH_RULES.mdへ
   追加し、情報件数の多数決禁止・Evidence不足の自動昇格禁止をSchema/testで
   構造的に強制する(Anti-Confirmation Test、`13_tests/test_evidence_packet.py`)。
-  詳細は`DATA_SOURCE_ARCHITECTURE.md`/`EVIDENCE_MODEL.md`参照。
+  **Source Authority(出所の位置づけ)とEvidence Content(内容そのものの信頼性)は
+  分離して扱う**(D0041、`SourceAuthorityClass`は信頼度スコアではない)。
+  詳細は`DATA_SOURCE_ARCHITECTURE.md`/`EVIDENCE_MODEL.md`参照。Phase4の
+  接続順・優先原則も`DATA_SOURCE_ARCHITECTURE.md`「Phase4 Roadmap」参照。

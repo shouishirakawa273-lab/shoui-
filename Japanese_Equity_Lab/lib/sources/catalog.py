@@ -36,10 +36,18 @@ class DataCapability(StrEnum):
 class SourceAuthorityClass(StrEnum):
     """Sourceそのものの権威づけ(内容の正しさではなく、情報の出所としての位置づけ)。
 
+    **これは信頼度の単純な順位・点数ではなく、Sourceの性質を表すカテゴリである**
+    (D0041)。`PRIMARY_OFFICIAL=100点、SOCIAL=10点`のような単純なスコアリングや、
+    Authority Classに基づく多数決・重み付け投票に使ってはならない。
+
     **重要**: `PRIMARY_OFFICIAL`だからといって、その内容の解釈(将来予測・経営者の
     見通し等)まで正しいとは限らない。「会社が発表した数字」(FACT)と
     「会社経営陣の将来見通し」(CLAIM)は別概念であり、Authority Classだけで
-    Evidence Typeを代替しない(`lib.evidence.model.EvidenceType`参照)。
+    Evidence Typeを代替しない(`lib.evidence.model.EvidenceType`参照)。例えば
+    企業IR(`COMPANY_PRIMARY`)は「営業利益予想を100億円と発表した」という事実の
+    確認には非常に強いSourceである一方、「今後も需要は堅調である」という経営陣の
+    将来見通しの真偽まで自動的に高信頼とみなしてはならない。**Source Authority
+    (出所の位置づけ)とEvidence Content(内容そのものの信頼性)は分離して扱う。**
     """
 
     PRIMARY_OFFICIAL = "PRIMARY_OFFICIAL"  # 取引所・監督当局・政府統計等

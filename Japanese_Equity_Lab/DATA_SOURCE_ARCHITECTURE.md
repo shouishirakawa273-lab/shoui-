@@ -195,3 +195,44 @@ Hypothesis生成、Skeptic Agent、Ablation Engine、BUY/SELL判断、実際のB
 Skeleton Adapter(公式仕様未確認のため推測実装しない)、実際のBulk/File Download
 Endpoint接続(仕様未確認)、外部API Key取得・有料契約・大量Download・Web
 Scraping・News Crawling・TDnet Add-on契約・Consensus契約。これらはPhase5/6以降。
+
+## Phase4 Roadmap(D0041、Planningのみ。Phase4A自体はまだ未着手)
+
+**最初の実データ接続はJ-Quants V2 Fundamentals/Financial Summaryから開始する**
+(TDnetからではない)。理由:
+
+- J-Quants V2認証は既に実データで動作確認済み(Phase3B、`x-api-key`)。
+- Raw Snapshot / PIT / Provenance / Entity Mappingとの統合を、新規Provider認証・
+  新規APIスキーマという2つの未知数を同時に抱えずに、最も小さい追加リスクで検証できる。
+- Phase3D Foundation(Catalog/Provider Protocol/Entity Registry/Evidence Model)を
+  本物の企業財務データで最初に実戦テストできる。
+- 「Foundation自体の設計に問題があるか」と「TDnet/EDINET等、新規Source固有の
+  接続問題か」を切り分けやすい(新規Source認証と新規Foundation検証を同時に
+  デバッグしない)。
+
+| Phase | 対象Source | 主な追加DataCapability |
+| --- | --- | --- |
+| **4A** | J-Quants Fundamentals / Financial Summary | FUNDAMENTAL |
+| **4B** | TDnet + EDINET + Company IR | DISCLOSURE |
+| **4C** | Positioning / 需給(信用・空売り・投資部門別等) | POSITIONING |
+| **4D** | Japan Macro(BOJ / e-Stat / 財務省 / 経産省 / 貿易統計等) | MACRO |
+| **4E** | Japan News / Global Market Data / Global News / Consensus | NEWS / GLOBAL_MARKET / EXPECTATIONS |
+| (Phase6) | Idea Sources(X / YouTube / Papers) | IDEA |
+
+Idea Sourcesは方針上Crawlingを伴うため後続Phase6へ送る(Phase4には含めない)。
+
+### Phase4Aで最優先する原則
+
+**Phase4Aは「好決算銘柄を探す」ことを目的にしない。** 最優先は、以下の経路が
+実データで正しく通ることである。
+
+```
+J-Quants Financial Raw -> Normalized Fundamental Record -> Canonical Entity
+-> PIT -> Revision History -> Catalog -> Evidence -> Provenance
+```
+
+**最重要Validation項目は「後日修正された会社予想・財務データを、修正前の
+DecisionへLeakさせないこと」**(`lib.evidence.model.RevisionHistory.as_of()`が
+実データでも正しく機能することの確認)。Phase4Aでは戦略探索・パラメータ
+最適化・BUY/SELL判断は一切行わない(Phase3Cの固定Strategy検証時と同じ、
+Infrastructure/Integration Validationとしての位置づけ)。

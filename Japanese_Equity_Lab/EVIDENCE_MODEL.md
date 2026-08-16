@@ -48,6 +48,22 @@ Hypothesisが存在する場合のみ付与できる、Evidenceとの関係。**
 判定し、`retrieved_at`の新しさに影響されない(後日取得した古い情報が、実際より
 早く「使えた」ことにならない)。
 
+## Source AuthorityとEvidence Contentの信頼性を分離する(D0041)
+
+`SourceAuthorityClass`(PRIMARY_OFFICIAL/COMPANY_PRIMARY/VERIFIED_SECONDARY/
+SECONDARY/SOCIAL/USER_SUPPLIED)は、**信頼度の単純な順位・点数ではなく、
+Sourceの性質を表すカテゴリである。** 将来、`PRIMARY_OFFICIAL=100点、
+SOCIAL=10点`のような単純なスコアリングや、Authority Classに基づく多数決・
+重み付け投票に使ってはならない(「情報件数の多数決を禁止する」という
+RESEARCH_RULES.md「0.5」の原則と同様の理由による)。
+
+例えば企業IR(`COMPANY_PRIMARY`)は、「会社が営業利益予想を100億円と発表した」
+という事実の確認には非常に強いSourceである一方、「今後も需要は堅調である」という
+経営陣の将来見通しの真偽まで自動的に高信頼とみなしてはならない。前者は
+`EvidenceType.FACT`(発表したこと自体は事実)、後者は`EvidenceType.CLAIM`
+(内容の真偽は別、上記Evidence Type表参照)であり、**Source Authority(出所の
+位置づけ)とEvidence Content(内容そのものの信頼性)は常に分離して扱う。**
+
 ## Raw / Normalized / Derived(`lib.evidence.model.DataLayer`)
 
 - **Raw**: Providerから取得した原文・Payload。既存`lib.snapshot.RawSnapshotStore`で

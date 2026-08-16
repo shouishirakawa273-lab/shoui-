@@ -1391,3 +1391,53 @@ Add-on契約・Consensus契約は一切行っていない。
 37件)・`ruff check`・`ruff format --check`・`mypy`(62ファイル)いずれもclean。
 `git diff --stat`で`core/` `app.py` `tests/`への変更が無いことを確認済み。
 戦略パラメータの探索・最適化は行っていない。
+
+---
+
+## D0041 — Phase4開始前のDocumentation/Planning Cleanup(Phase3Dは引き続きCOMPLETE)
+
+**Phase3Dのstatusは変更しない。** 本Decisionは、Phase4着手前にユーザーから指摘された
+2点の設計上の誤解・誤情報を、実装ではなくドキュメント上で正すためのCleanupである
+(Phase3Dの再オープンではない)。
+
+**変更内容**:
+
+1. **`SourceAuthorityClass`は信頼度の単純な順位・点数ではなく、Sourceの性質を表す
+   カテゴリであることを明文化した。** `PRIMARY_OFFICIAL=100点、SOCIAL=10点`の
+   ような単純なスコアリングや、Authority Classに基づく多数決・重み付け投票に
+   将来使ってはならないことを、`lib/sources/catalog.py`の`SourceAuthorityClass`
+   Docstring、`EVIDENCE_MODEL.md`、`RESEARCH_RULES.md`(「0.5 情報収集の上位
+   原則」)、`README.md`へ明記した。企業IR(`COMPANY_PRIMARY`)の例
+   (「営業利益予想100億円」という発表事実=FACTは強いSourceだが、「今後も需要は
+   堅調」という経営陣の見通し=CLAIMの真偽までは自動的に高信頼としない)を
+   全箇所で共通の説明として使う。**Source Authority(出所の位置づけ)と
+   Evidence Content(内容そのものの信頼性)は分離して扱う**ことを明示した。
+   既存Schema(`SourceAuthorityClass`のEnum値自体)は変更していない
+   (Docstring/ドキュメントの追記のみ)。
+2. **Phase4の最初の実データ接続順を訂正した。** 完了報告で「TDnet」を最初と
+   述べていたが、正しくは**J-Quants V2 Fundamentals/Financial Summaryから
+   開始する**。理由: (a) J-Quants V2認証は既にPhase3Bで実データ動作確認済みであり、
+   新規Provider認証という未知数を増やさずにFoundation自体を検証できる、
+   (b) Raw Snapshot/PIT/Provenance/Entity Mappingとの統合を最も小さい追加
+   リスクで検証できる、(c) Phase3D Foundationを本物の企業財務データで最初に
+   実戦テストできる、(d) 「Foundation自体の問題」と「TDnet/EDINET等、新規Source
+   固有の接続問題」を切り分けやすい。`DATA_SOURCE_ARCHITECTURE.md`へ
+   「Phase4 Roadmap」節を新設し、Phase4A(J-Quants Fundamentals)→
+   4B(TDnet+EDINET+Company IR)→4C(Positioning/需給)→4D(Japan Macro)→
+   4E(Japan News/Global Market/Global News/Consensus)の順を明記した
+   (Idea SourcesはCrawlingを伴うため引き続きPhase6)。
+3. **Phase4Aで最優先する原則を明記した。** Phase4Aは「好決算銘柄を探す」ことを
+   目的にしない。最優先は`J-Quants Financial Raw -> Normalized Fundamental
+   Record -> Canonical Entity -> PIT -> Revision History -> Catalog ->
+   Evidence -> Provenance`という経路が実データで正しく通ることであり、
+   **最重要Validation項目は「後日修正された会社予想・財務データを、修正前の
+   DecisionへLeakさせないこと」**(`RevisionHistory.as_of()`の実データ確認)。
+   Phase4Aでは戦略探索・パラメータ最適化・BUY/SELL判断は一切行わない
+   (`DATA_SOURCE_ARCHITECTURE.md`「Phase4 Roadmap」節参照)。
+
+**Phase4Aの実装自体には、本Decisionの時点ではまだ着手していない。**
+
+**回帰確認**: `pytest`(Lab 233件、既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`いずれもclean。`git diff --stat`で`core/` `app.py`
+`tests/`への変更が無いことを確認済み。既存Schema(Enum値・Field構成)は無変更、
+Docstring/ドキュメントの追記のみ。

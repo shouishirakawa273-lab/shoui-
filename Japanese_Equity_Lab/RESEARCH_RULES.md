@@ -50,6 +50,14 @@ Evidenceそのものへ、収集した時点でPositive/Negativeを固定しな�
   Positive/Negativeへ分類しない。`EvidencePacket`はConclusion/Verdictに相当する
   Fieldを意図的に持たない(Evidence不足を自動でPositive/Negativeへ昇格させる経路が
   存在しない、Schemaで構造的に防ぐ)。
+- **Source Authority(`SourceAuthorityClass`)とEvidence Content(内容そのものの
+  信頼性)を分離する(D0041)。** `SourceAuthorityClass`は信頼度の単純な順位・点数
+  ではなくSourceの性質を表すカテゴリであり、`PRIMARY_OFFICIAL=100点、SOCIAL=10点`
+  のようなスコアリングや、Authority Classに基づく多数決・重み付け投票に使っては
+  ならない(情報件数の多数決禁止と同じ理由)。例えば企業IR(`COMPANY_PRIMARY`)は
+  「営業利益予想を100億円と発表した」というFACTの確認には強いSourceだが、
+  「今後も需要は堅調」という経営陣の見通し(CLAIM)の真偽まで自動的に高信頼と
+  みなさない(`EVIDENCE_MODEL.md`参照)。
 
 ### Evidence Type(`lib.evidence.model.EvidenceType`)
 
