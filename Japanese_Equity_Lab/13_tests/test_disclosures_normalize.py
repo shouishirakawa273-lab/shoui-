@@ -40,6 +40,23 @@ def test_parsing_does_not_mutate_raw_payload() -> None:
     assert payload == payload_copy
 
 
+# --- pit-auditor Finding(D0045追記): 同一source_document_idを持つ複数行でも
+# internal_document_idが衝突しないことを回帰確認する(FIX-D-006/007) ---
+
+
+def test_internal_document_id_is_unique_even_when_source_document_id_repeats() -> None:
+    documents = parse_disclosure_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    internal_ids = [d.internal_document_id for d in documents]
+    assert len(internal_ids) == len(set(internal_ids))
+    # FIX-D-006/FIX-D-007はいずれもFixture上でsource_document_idが重複する行。
+    fix_006_docs = [d for d in documents if d.source_document_id == "FIX-D-006"]
+    fix_007_docs = [d for d in documents if d.source_document_id == "FIX-D-007"]
+    assert len(fix_006_docs) == 2
+    assert len(fix_007_docs) == 2
+    assert fix_006_docs[0].internal_document_id != fix_006_docs[1].internal_document_id
+    assert fix_007_docs[0].internal_document_id != fix_007_docs[1].internal_document_id
+
+
 # --- Test 11: 未知のDocumentKindはfail closed(即例外で全処理停止しない) ---
 
 
@@ -72,6 +89,39 @@ def test_doc_kind_mapping_does_not_use_substring_matching() -> None:
 
 
 # --- Test 5: unknown timestamp(PublicTime空文字列)はmarket_public_atをNoneにfail closed ---
+
+
+def test_malformed_public_date_fails_closed_per_row_not_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """pit-auditor Finding(D0045追記): 不正なPublicDate(空でないが解釈不能な
+    文字列)が1行あっても、全体のParseを異常終了させず、その行のEntity解決
+    のみをスキップする(fail closed、他の既知FieldのParseと同じ方針)。"""
+    payload = [
+        {
+            "DocId": "MALFORMED-DATE",
+            "Code": "72030",
+            "Title": "不正な日付テスト",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024/05/08",  # ISO 8601ではない不正な形式
+            "PublicTime": "10:00",
+        },
+        {
+            "DocId": "VALID-AFTER-MALFORMED",
+            "Code": "72030",
+            "Title": "正常な行(不正行の後)",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024-05-09",
+            "PublicTime": "10:00",
+        },
+    ]
+    with caplog.at_level("WARNING"):
+        documents = parse_disclosure_payload(payload, retrieved_at=_RETRIEVED_AT)
+    assert len(documents) == 2  # 不正な行もスキップされず、entity_id=Noneのまま処理は継続する
+    malformed_doc = next(d for d in documents if d.source_document_id == "MALFORMED-DATE")
+    assert malformed_doc.entity_id is None
+    assert malformed_doc.market_public_at is None  # DiscDate自体が不正なためmarket_public_atも構築されない
+    valid_doc = next(d for d in documents if d.source_document_id == "VALID-AFTER-MALFORMED")
+    assert valid_doc.market_public_at is not None
+    assert "不正なPublicDate値" in caplog.text
 
 
 def test_missing_public_time_yields_none_market_public_at_not_guessed() -> None:

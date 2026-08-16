@@ -124,6 +124,20 @@ def _parse_attachment_kind(raw: object) -> AttachmentKind:
     return kind
 
 
+def _parse_date_or_none(date_raw: str | None) -> date | None:
+    """不正/欠損の`PublicDate`はNoneへfail closedする(pit-auditor Finding、
+    D0045追記)。他のRaw Fieldと同じく、1行のParse失敗で全体の`parse_
+    disclosure_payload`呼び出しを異常終了させない(即例外で全処理停止しない
+    既存方針をこのFieldにも適用する)。"""
+    if not date_raw:
+        return None
+    try:
+        return date.fromisoformat(date_raw)
+    except ValueError:
+        logger.warning("disclosures: 不正なPublicDate値 '%s' を検出しました(この行のentity解決はスキップします)", date_raw)
+        return None
+
+
 def _build_market_public_at(date_raw: str | None, time_raw: str | None) -> tuple[datetime | None, AvailabilityBasis]:
     """PublicDate+PublicTimeからmarket_public_atを構築する。時刻不明時、
     15:00等を推測で補完しない(D0043と同じ方針)。"""
@@ -205,7 +219,7 @@ def parse_disclosure_payload(
         doc_id_raw = _optional_str(row.get("DocId"))
         date_raw = _optional_str(row.get("PublicDate"))
         time_raw = _optional_str(row.get("PublicTime"))
-        public_date = date.fromisoformat(date_raw) if date_raw else None
+        public_date = _parse_date_or_none(date_raw)
         market_public_at, market_public_at_basis = _build_market_public_at(date_raw, time_raw)
         provider_available_at, provider_available_at_basis = _provider_available_at_and_basis(market_public_at, retrieved_at)
 

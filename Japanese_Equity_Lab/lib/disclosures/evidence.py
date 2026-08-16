@@ -32,6 +32,21 @@ def disclosure_document_to_evidence(
     `disclosure_metric_to_evidence()`と同じ保守的な選択である
     (`market_public_at`は`provider_available_at`以前であるため、
     `available_at`を過大評価しない)。
+
+    **重要な注意(pit-auditor Finding、D0045追記)**: `SourceMetadata`には
+    `availability_basis`相当のFieldが無いため、`document.provider_
+    available_at_basis=UNKNOWN`という情報はこのEvidenceRecordへ変換した
+    時点で失われる。`disclosures_as_of()`はUNKNOWN Basisの文書を既定で
+    除外する安全側設計だが、この`EvidenceRecord`を`lib.evidence.retrieval`
+    の汎用PIT Filter(`filter_usable_at()`、既定でB系統=`available_at`
+    基準)へ直接渡すと、そのSafety Netを経由せず`available_at`(=
+    `market_public_at`)だけで「利用可能」と判定されてしまう。したがって
+    実際のDecision/Backtestで使う場合は、必ず先に`disclosures_as_of()`で
+    PIT Filterした上でEvidenceへ変換すること(この関数の戻り値を汎用
+    Retrieval経路へそのまま流し込まない)。この制約はFundamentals
+    Phase4Aの`disclosure_metric_to_evidence()`にも同様に存在する
+    (このPhaseでは既存コードへの機能変更を行わないため、Docstring上の
+    注意喚起のみ追加している)。
     """
     entity_label = document.entity_id or document.internal_document_id
     content = (

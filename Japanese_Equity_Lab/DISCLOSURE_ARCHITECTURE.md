@@ -55,8 +55,13 @@ LLM要約)は将来Phaseへ完全に切り離す。
 ## DisclosureDocument
 
 `lib.disclosures.model.DisclosureDocument`。Source非依存。最低限のField:
-`internal_document_id`(このLab内で常に一意、Raw値の重複可能性から独立)、
-`source_document_id`(Provider側ID、UNKNOWN=`None`可)、`entity_id`
+`internal_document_id`(**1回の`parse_disclosure_payload()`呼び出し内では
+常に一意**。Raw行のIndexから生成するため、同一`Code`/`source_document_id`
+を持つ複数行が混在しても衝突しない。**ただし複数回の呼び出しをまたいだ
+一意性は保証しない**(pit-auditor Finding、D0045追記)。Phase4B-2以降で
+複数Snapshotをまたいで蓄積するStoreを設計する場合は、`retrieved_at`や
+`source_snapshot_id`を含めたID生成、またはContent Hashベースの生成方式へ
+拡張すること)、`source_document_id`(Provider側ID、UNKNOWN=`None`可)、`entity_id`
 (Canonical Entity Registry参照)、`title`、`document_kind`、
 `originating_source`/`delivery_provider`(D0042の分離をそのまま継承)、
 `market_public_at`/`market_public_at_basis`、`provider_available_at`/
@@ -152,6 +157,19 @@ as_of=...)`を経由する(PIT-aware、Fundamentals Phase4Aと同じ経路)。
 呼び出し側が明示的に指定する(実SourceのAuthority Class、例えばTDnet/
 EDINETは`PRIMARY_OFFICIAL`、Company IRは`COMPANY_PRIMARY`は、実接続時に
 呼び出し側が判断する)。
+
+**既知の制約(pit-auditor Finding、D0045追記)**: 既存`SourceMetadata`
+(`lib.sources.catalog`)には`availability_basis`相当のFieldが無いため、
+`document.provider_available_at_basis=UNKNOWN`という情報は
+`EvidenceRecord`へ変換した時点で失われる。`disclosures_as_of()`のUNKNOWN
+Basis除外という安全側Filterを経由せず、この`EvidenceRecord`を
+`lib.evidence.retrieval`の汎用PIT Filterへ直接渡すと、`available_at`
+(=`market_public_at`)だけで「利用可能」と誤判定されうる。実際の
+Decision/Backtestで使う場合は、必ず`disclosures_as_of()`でPIT Filterした
+Documentのみを変換すること。この制約はFundamentals Phase4Aの
+`disclosure_metric_to_evidence()`にも同様に存在する既存の設計上の制約で
+あり、`EvidenceRecord`/`SourceMetadata`自体への`availability_basis`
+追加は将来Phase(実Source接続前)で検討する。
 
 ## Deduplication(最小基盤、Phase4B-1)
 
