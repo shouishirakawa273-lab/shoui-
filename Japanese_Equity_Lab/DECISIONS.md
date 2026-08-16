@@ -1871,3 +1871,97 @@ Fallback禁止の再確認)。Lab全体は291件→309件。既存45テスト(�
 Local Real Data Validationは7203の一部Fieldの単発確認であり、ユーザーが
 指示した4銘柄(7203/6758/8056/3626)での本格的なValidationはまだ完了して
 いない。Phase4Bへは進んでいない。
+
+---
+
+## D0043 追記2 — Phase4A: 4銘柄Local Real Data Validation完了、Phase4A正式COMPLETE
+
+2026-08-16、ユーザーが4銘柄(7203/6758/8056/3626)全てでローカルPCから実際に
+`/v2/fins/summary`へ接続し、Validationを完了した。
+
+### 4銘柄Validation結果(ユーザー報告)
+
+| Code | 確認されたDocType Pattern | 確認されたPeriod Type |
+| --- | --- | --- |
+| 7203 | `*FinancialStatements_Consolidated_IFRS` | 1Q/2Q/3Q/FY |
+| 6758 | `*FinancialStatements_Consolidated_IFRS` | 1Q/2Q/3Q/FY |
+| 8056 | `*FinancialStatements_Consolidated_IFRS` | 1Q/2Q/3Q/FY |
+| 3626 | `*FinancialStatements_Consolidated_JP` | 1Q/2Q/3Q/FY |
+
+Raw CoverageがRequested Research Windowを超える挙動(D0043追記1参照)も
+4銘柄すべてで再確認された。
+
+### JP DocType対応(重要: 名称を推測しない)
+
+3626で確認された`*FinancialStatements_Consolidated_JP`を
+`_DOC_TYPE_TO_ACCOUNTING_STANDARD`へ追加した(`1Q`/`2Q`/`3Q`/`FY`の4パターン
+全て)。**ただし`"_JP"`接尾辞が公式に何を意味するか(例: 日本基準=JGAAPと
+同義かどうか)は、公式ドキュメントへ接続できないため確認できていない。**
+したがって`"JGAAP"`という名称をMapping先として採用せず、IFRSとは区別
+できるが特定の会計基準名を主張しない中立的な識別子
+`lib.fundamentals.normalize.ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP`
+(値: `"PROVIDER_SUFFIX_JP"`)を新設し、これへMappingした。`IFRS`用の
+Mappingは変更していない(`ACCOUNTING_STANDARD_IFRS`定数として明示化のみ)。
+`_NOT_APPLICABLE_UNDER_STANDARD`には`PROVIDER_SUFFIX_JP`を追加していない
+(この会計基準で経常利益が存在しない、という事実は確認できていないため)。
+公式仕様で`"_JP"`の正式な意味が確認できた時点で、Mapping先のLabelのみを
+変更すること(Mappingの構造自体は変更不要)。
+
+### Tests
+
+新規4テスト(`test_fundamentals_wire_format.py`へ追加): JP接尾辞DocTypeが
+fail closed(UNKNOWN)にならないこと、IFRSとは異なる値になること、
+`"JGAAP"`という名称を採用していないこと、`_NOT_APPLICABLE_UNDER_STANDARD`
+へ未確認のまま登録していないこと。Fixtureの3626行のDocTypeを、これまでの
+仮値(`SYNTH_DOC_TYPE`)から実在確認済みの`2QFinancialStatements_
+Consolidated_JP`へ更新した(既存の「未知Field保持」テストへの影響なし、
+CurPerType="2Q"との整合も取れている)。Lab全体は309件→313件。
+
+### Remaining Known Limitations(未確認、推測実装していない)
+
+- Non-Consolidated DocType(連結DocTypeのみ確認済み)
+- USGAAPのDocType(IFRS/`_JP`のみ確認済み)
+- 4Q/5Qの実データ(1Q/2Q/3Q/FYのみ4銘柄で確認済み)
+- Forecast Revision専用DocType(有無・形式とも未確認)
+- Correction/Restatement Relationship(DiscNo間の親子関係、未確認のため
+  `supersedes_version_id`は引き続き常に`None`)
+- Endpoint Paginationの実挙動(複数ページに渡る場合の`pagination_key`挙動)
+- `"_JP"`接尾辞の公式な意味(上記参照)
+- `TA`/`Eq`/`EqAR`/`CFO`/`CFI`/`CFF`/`CashEq`/配当関連/株式数関連/`ROE`等の
+  Field(実在は報告されたがMetricへは未マッピング、Rawには保持)
+
+### Catalog Status更新
+
+`lib.fundamentals.catalog.build_financial_summary_dataset_descriptor()`の
+`implementation_status`を`FIXTURE_ONLY`から`CONNECTED`へ更新した(4銘柄での
+実データ疎通確認完了を反映)。`known_limitations`も上記Remaining Known
+Limitationsへ更新した。
+
+### 既存PIT/Revision/Offline原則(変更なし)
+
+`RevisionHistory.as_of()`のUNKNOWN Basis除外既定、`fundamentals_as_of()`の
+Offline-by-construction設計、2種類のAvailabilitySemantics、Forecast
+RevisionとCorrectionの概念分離、DiscNoからの日付推測禁止(D0043追記1)、
+Raw Coverage/Research Windowの分離(D0043追記1)はいずれも変更していない。
+
+### 回帰確認
+
+`pytest`(Lab 313件・既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`(69ファイル)いずれもclean。`git diff --stat
+-- core/ app.py tests/`で変更が無いことを確認済み。既存J-Quants Price
+Backtestテスト(`test_available_at_vs_retrieved_at.py`等)は無変更のまま
+全通過。
+
+### Status変更: Phase4A正式COMPLETE
+
+4銘柄(7203/6758/8056/3626)でのLocal Real Data Validationが完了し、
+J-Quants Financial Raw -> Immutable Raw Snapshot -> Normalized Fundamental
+Record -> Canonical Entity -> PIT -> Revision History -> Data Catalog ->
+Evidence -> Provenance -> Frozen Offline Datasetの経路が実データで機能する
+ことを確認した。Field名・DocType値の一部確認、Wire Format(数値・boolean
+文字列)の確認、Raw Coverage/Research Window分離の確認、DiscNo≠DiscDateの
+確認を含む。上記Remaining Known Limitationsに列挙した未確認事項は残るが、
+これらはPhase4Aのスコープ(Infrastructure/Integration Validation)に必須
+ではなく、将来Phaseでの拡張ポイントとして記録するのみで足りる、という
+ユーザー判断に基づき、**Phase4Aのstatusを`CODE_COMPLETE_AWAITING_LOCAL_
+VALIDATION`から`COMPLETE`へ変更する。** Phase4Bには着手していない。

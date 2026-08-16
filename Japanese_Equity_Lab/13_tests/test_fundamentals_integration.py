@@ -53,7 +53,7 @@ def test_financial_summary_dataset_is_registered_in_catalog_under_fundamental_ca
     catalog = SourceCatalog([build_financial_summary_dataset_descriptor()])
     found = catalog.find(capability=DataCapability.FUNDAMENTAL)
     assert [d.dataset_id for d in found] == ["jquants_fins_summary"]
-    assert found[0].implementation_status == ImplementationStatus.FIXTURE_ONLY
+    assert found[0].implementation_status == ImplementationStatus.CONNECTED  # 4銘柄Local Real Data Validation済み(D0043)
     assert found[0].pit_available is True
 
 

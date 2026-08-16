@@ -2,22 +2,27 @@
 
 **確認状況(D0043 + Local Real Data Validation追記)**: このセッション自体は
 J-Quants公式ドキュメントへ引き続き疎通できない(DECISIONS.md D0043「A」)。
-ただし2026-08-16、ユーザーがローカルPC環境で実際に`/v2/fins/summary`(7203)へ
-接続し、実Raw Responseの一部Field名・Wire Format(値の型)・DocType値を確認した
-(DECISIONS.md D0043「Local Real Data Validation Results」参照)。以下はその
-確認状況を反映している:
+ただし2026-08-16、ユーザーがローカルPC環境で実際に`/v2/fins/summary`
+(7203/6758/8056/3626の4銘柄)へ接続し、実Raw Responseの一部Field名・
+Wire Format(値の型)・DocType値を確認した(DECISIONS.md D0043「Local Real
+Data Validation Results」参照)。以下はその確認状況を反映している:
 
 - **Local Real Dataで確認済み**: `Sales`/`OP`/`OdP`/`NP`/`EPS`/`BPS`/`NxFSales`/
   `SigChgInC`/`RetroRst`/`MatChgSub`のField名が実在すること、数値も文字列
   (例: `Sales="15481299000000"`、`EPS="109.28"`)として返ること、欠損値は
   空文字列として返ること、boolean的な値も文字列(`MatChgSub="false"`)として
-  返ること、DocTypeとして`1Q`/`2Q`/`3Q`/`FYFinancialStatements_Consolidated_
-  IFRS`が実在すること、`DiscNo`が`DiscDate`から機械的に導出できる値ではないこと
-  (実観測例: `DiscNo=20220204580837`だが`DiscDate=2022-02-09`)。
+  返ること、`DiscNo`が`DiscDate`から機械的に導出できる値ではないこと(実観測例:
+  `DiscNo=20220204580837`だが`DiscDate=2022-02-09`)。DocTypeについて、4銘柄
+  すべてで`1Q`/`2Q`/`3Q`/`FY`の各期間で`*FinancialStatements_Consolidated_
+  IFRS`(7203/6758/8056)または`*FinancialStatements_Consolidated_JP`
+  (3626)のいずれかを確認した。**ただし`_JP`接尾辞が公式に何を意味するか
+  (例: JGAAPと同義か)は未確認であり、`"JGAAP"`という名称は採用していない**
+  (`ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP`参照)。
 - **依然未検証**: 上記以外のField(`TA`/`Eq`/`EqAR`/`CFO`/`CFI`/`CFF`/`CashEq`/
-  Dividend関連/Share Count関連/非連結詳細/`ROE`等、Raw Payloadには保持されるが
-  Metricへは未マッピング)、Pagination仕様、Rate Limit、JGAAP/USGAAPのDocType
-  値、`from`/`to`パラメータの実際の意味(下記参照)。
+  Dividend関連/Share Count関連/`ROE`等、Raw Payloadには保持されるがMetricへは
+  未マッピング)、Non-Consolidated DocType、USGAAPのDocType、4Q/5Qの実データ、
+  Forecast Revision専用DocType、Correction/Restatement Relationship、
+  Pagination実挙動、Rate Limit実挙動、`_JP`接尾辞の公式な意味。
 
 **`_METRIC_FIELD_MAP`/`_DOC_TYPE_TO_ACCOUNTING_STANDARD`は上記の確認状況を反映した
 ものであり、それでもなお完全な公式仕様確認ではない。** ローカル環境で追加のField
@@ -174,20 +179,41 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
     ),
 }
 
+# Providerが使う会計基準を表すLabel文字列。IFRSは公式仕様(IFRS/USGAAPには
+# 経常利益相当概念が無い)から意味が確認済みの値。一方"_JP"接尾辞DocType
+# (下記)は、4銘柄Local Real Data Validation(2026-08-16、7203/6758/8056/
+# 3626)でDocType文字列としての実在は確認できたが、この接尾辞が公式仕様上
+# 正式に何を意味するか(例: 日本基準=JGAAPと同義か)はJ-Quants公式ドキュメント
+# へ疎通できないため確認できていない(DECISIONS.md D0043参照)。したがって
+# "JGAAP"という名称を推測で採用せず、"IFRSとは別の会計基準カテゴリである"と
+# いう構造的な事実のみを表す`PROVIDER_SUFFIX_JP`という中立的な識別子を使う。
+# 公式仕様で正式名称が確認できた時点でMapping先を変更すること(値の意味は
+# 変わらない、ラベルのみ変更)。
+ACCOUNTING_STANDARD_IFRS = "IFRS"
+ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP = "PROVIDER_SUFFIX_JP"
+
 # DocType文字列 -> Accounting Standard の明示的Mapping(substring heuristic禁止)。
-# 以下4件はLocal Real Data Validationで実在するDocType値として確認済み
-# (D0043追記)。それ以外(JGAAP/USGAAPのDocType等)は未確認のため、既定で
+# IFRS 4件・"_JP"接尾辞4件は4銘柄Local Real Data Validationで実在する
+# DocType値として確認済み(D0043追記)。それ以外(Non-Consolidated DocType・
+# USGAAPのDocType・Forecast Revision専用DocType等)は未確認のため、既定で
 # fail closed(None)する。
 _DOC_TYPE_TO_ACCOUNTING_STANDARD: dict[str, str] = {
-    "1QFinancialStatements_Consolidated_IFRS": "IFRS",
-    "2QFinancialStatements_Consolidated_IFRS": "IFRS",
-    "3QFinancialStatements_Consolidated_IFRS": "IFRS",
-    "FYFinancialStatements_Consolidated_IFRS": "IFRS",
+    "1QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "2QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "3QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "FYFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "1QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "2QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "3QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "FYFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
 }
 
 # 会計基準上、そもそも存在しない指標(ユーザー確認済み公式仕様、D0043)。
+# `PROVIDER_SUFFIX_JP`はここに含めない: 経常利益(ordinary_profit)が
+# "_JP"接尾辞の会計基準で存在しない、という事実は確認できていないため
+# (未確認事項を推測で埋めない、D0043)。
 _NOT_APPLICABLE_UNDER_STANDARD: dict[str, frozenset[str]] = {
-    "IFRS": frozenset({"ordinary_profit"}),
+    ACCOUNTING_STANDARD_IFRS: frozenset({"ordinary_profit"}),
     "USGAAP": frozenset({"ordinary_profit"}),
 }
 
@@ -476,6 +502,8 @@ def build_revision_histories(
 
 
 __all__ = [
+    "ACCOUNTING_STANDARD_IFRS",
+    "ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP",
     "NORMALIZER_VERSION",
     "build_revision_histories",
     "parse_boolean_string",

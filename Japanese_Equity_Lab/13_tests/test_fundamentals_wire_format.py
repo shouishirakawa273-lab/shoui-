@@ -19,8 +19,15 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from lib.evidence.model import ValueAvailability
-from lib.fundamentals.normalize import parse_boolean_string, parse_financial_summary_payload, raw_disclosure_date_range
+from lib.fundamentals.normalize import (
+    ACCOUNTING_STANDARD_IFRS,
+    ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    parse_boolean_string,
+    parse_financial_summary_payload,
+    raw_disclosure_date_range,
+)
 
 _FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "financial_summary_v2.json"
 _RETRIEVED_AT = datetime(2026, 1, 1, tzinfo=UTC)
@@ -180,6 +187,51 @@ def test_raw_disclosure_date_range_ignores_rows_without_parseable_disc_date() ->
 def test_raw_disclosure_date_range_returns_none_when_no_valid_dates() -> None:
     assert raw_disclosure_date_range([]) == (None, None)
     assert raw_disclosure_date_range([{"Code": "72030"}]) == (None, None)
+
+
+# --- "_JP"接尾辞DocType(4銘柄Local Real Data Validation、3626で確認済み) ---
+
+
+def test_jp_suffix_doc_type_is_recognized_not_fail_closed_to_unknown(caplog: pytest.LogCaptureFixture) -> None:
+    """3626(TIS)の実DocType"2QFinancialStatements_Consolidated_JP"は既知の
+    DocTypeとしてMappingされ、未知DocType警告(fail closed)は発生しない。"""
+    with caplog.at_level("WARNING"):
+        envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    tis = next(e for e in envelopes if e.envelope_id == "ENV_3626_20240525001")
+    assert tis.document_type == "2QFinancialStatements_Consolidated_JP"
+    assert tis.accounting_standard is not None
+    assert "2QFinancialStatements_Consolidated_JP" not in caplog.text
+
+
+def test_jp_suffix_doc_type_maps_to_neutral_label_not_ifrs_and_not_jgaap() -> None:
+    """ "_JP"接尾辞の公式な意味(JGAAPと同義か等)は未確認のため、"JGAAP"という
+    名称は採用しない。IFRSとは区別できる、中立的な識別子を使う(D0043追記)。"""
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    tis = next(e for e in envelopes if e.envelope_id == "ENV_3626_20240525001")
+    assert tis.accounting_standard == ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP
+    assert tis.accounting_standard != ACCOUNTING_STANDARD_IFRS
+    assert tis.accounting_standard != "JGAAP"
+
+
+def test_jp_suffix_accounting_standard_distinct_from_ifrs_accounting_standard() -> None:
+    """3626("_JP")と6758("_IFRS")のaccounting_standardは異なる値になる。"""
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    tis = next(e for e in envelopes if e.internal_code == "3626")
+    sony = next(e for e in envelopes if e.internal_code == "6758")
+    assert tis.accounting_standard != sony.accounting_standard
+    assert sony.accounting_standard == ACCOUNTING_STANDARD_IFRS
+
+
+def test_jp_suffix_accounting_standard_not_registered_as_ordinary_profit_not_applicable() -> None:
+    """ "_JP"接尾辞について経常利益がNOT_APPLICABLEになるという事実は確認できて
+    いないため、_NOT_APPLICABLE_UNDER_STANDARDへは登録しない(未確認事項を
+    推測で埋めない、D0043追記)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    tis_odp = next((m for m in metrics if m.envelope_id == "ENV_3626_20240525001" and m.metric_type == "ordinary_profit"), None)
+    assert tis_odp is not None
+    # TIS Fixture行にOdPフィールド自体が無いためraw_value=None -> MISSING_OR_UNSPECIFIED
+    # (会計基準から確認できない空値の既定、NOT_APPLICABLEへの誤った昇格ではない)。
+    assert tis_odp.value_availability == ValueAvailability.MISSING_OR_UNSPECIFIED
 
 
 # --- Provider Schema Evolution: 未知Fieldは引き続きRawで保持される(念のため再確認) ---

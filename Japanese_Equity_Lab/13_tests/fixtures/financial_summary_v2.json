@@ -1,5 +1,5 @@
 {
-  "_disclaimer": "J-Quants API V2 /v2/fins/summary の生レスポンス形状を模したGolden Fixture。大半は合成データだが、一部Field(7203の1件目: Sales/EPS/OdP/BPS/NxFSales/SigChgInC/RetroRst/MatChgSub)は2026-08-16のLocal Real Data Validationでユーザーが実際に確認した7203の実Raw Response値をそのまま使用している(ただしDiscDate/DiscTime/DocType/CurPerType等との対応関係はこのメッセージでは特定されていないため、既存の合成Disclosure行へ便宜上載せているだけであり、この行全体が7203の実際の開示内容だと主張するものではない)。DocType(1Q/2Q/3Q/FYFinancialStatements_Consolidated_IFRS)もLocal Real Data Validationで実在を確認済み。それ以外のField名・値は依然未検証。DECISIONS.md D0043参照。",
+  "_disclaimer": "J-Quants API V2 /v2/fins/summary の生レスポンス形状を模したGolden Fixture。大半は合成データだが、一部Field(7203の1件目: Sales/EPS/OdP/BPS/NxFSales/SigChgInC/RetroRst/MatChgSub)は2026-08-16のLocal Real Data Validationでユーザーが実際に確認した7203の実Raw Response値をそのまま使用している(ただしDiscDate/DiscTime/DocType/CurPerType等との対応関係はこのメッセージでは特定されていないため、既存の合成Disclosure行へ便宜上載せているだけであり、この行全体が7203の実際の開示内容だと主張するものではない)。DocType(1Q/2Q/3Q/FYFinancialStatements_Consolidated_IFRS、および3626で確認された1Q/2Q/3Q/FYFinancialStatements_Consolidated_JP)は4銘柄(7203/6758/8056/3626)Local Real Data Validationで実在を確認済み。ただし'_JP'接尾辞の公式な意味(JGAAPと同義かどうか等)は未確認であり、'JGAAP'という名称は使用していない(lib.fundamentals.normalize.ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP参照)。それ以外のField名・値は依然未検証。DECISIONS.md D0043参照。",
   "data": [
     {
       "Code": "72030",
@@ -76,7 +76,7 @@
     {
       "Code": "36260",
       "DiscNo": "20240525001",
-      "DocType": "SYNTH_DOC_TYPE",
+      "DocType": "2QFinancialStatements_Consolidated_JP",
       "DiscDate": "2024-05-25",
       "DiscTime": "15:00",
       "CurPerType": "2Q",

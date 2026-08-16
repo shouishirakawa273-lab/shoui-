@@ -85,7 +85,7 @@ provider_identifier, as_of)`はPIT対応(社名変更・コード変更で有効
 | Role | 日次株価(OHLCV)・TOPIX/指数・銘柄マスタ・財務諸表サマリ(決算短信)・(将来)配当・Corporate Action・需給データ |
 | Authority | PRIMARY_OFFICIAL |
 | PIT semantics | `/v2/equities/master`の`date`パラメータは実データ確認済みでPIT対応(D0039、6502実データ)。株価はAdjFactorによるPIT-safe As-of Adjustment実装済み(D0034/D0035)。財務諸表(`/v2/fins/summary`)はmarket_public_at(DiscDate+DiscTime、tz-aware)を実装、provider_available_atは実観測ログが無いため常にUNKNOWN(D0043) |
-| Current Implementation Status | 株価/Master/Calendar/TOPIX: CONNECTED(実データE2E検証済み、Phase3B)。Financial Summary(`/v2/fins/summary`): FIXTURE_ONLY(Phase4A、`CODE_COMPLETE_AWAITING_LOCAL_VALIDATION`、D0043。2026-08-16に7203の一部Field/DocTypeをLocal Real Data Validationで確認済みだが、4銘柄本格Validationは未完了)。Dividend/需給: NOT_IMPLEMENTED |
+| Current Implementation Status | 株価/Master/Calendar/TOPIX: CONNECTED(実データE2E検証済み、Phase3B)。Financial Summary(`/v2/fins/summary`): CONNECTED(Phase4A COMPLETE、D0043。2026-08-16に4銘柄(7203/6758/8056/3626)でLocal Real Data Validation完了)。Dividend/需給: NOT_IMPLEMENTED |
 | Cost/Plan dependency | Light Plan(ユーザー申告)、60req/分(D0039確認済み)。`/v2/fins/summary`はEndpoint固有60req/分と仮定し`effective_limit=min(60,60)=60`(D0043、未検証) |
 | Known limitations | 商品区分(ProdCat)・市場区分(Mkt)の値の意味は未検証。全市場規模のBulk取得方式は未接続(D0039)。`/v2/fins/summary`のField名・DocType一覧の一部はLocal Real Data Validationで確認済み(D0043追記)だがPagination仕様・Rate Limit実挙動・JGAAP/USGAAPのDocType値は未検証。`code`指定クエリは`from`/`to`で絞り込まれず対象Codeの全履歴を返すことを確認済み(D0043追記) |
 
@@ -196,7 +196,7 @@ Skeleton Adapter(公式仕様未確認のため推測実装しない)、実際�
 Endpoint接続(仕様未確認)、外部API Key取得・有料契約・大量Download・Web
 Scraping・News Crawling・TDnet Add-on契約・Consensus契約。これらはPhase5/6以降。
 
-## Phase4 Roadmap(D0041、Planningのみ。Phase4A自体はまだ未着手)
+## Phase4 Roadmap(D0041でPlanning、Phase4AはD0043でCOMPLETE)
 
 **最初の実データ接続はJ-Quants V2 Fundamentals/Financial Summaryから開始する**
 (TDnetからではない)。理由:
