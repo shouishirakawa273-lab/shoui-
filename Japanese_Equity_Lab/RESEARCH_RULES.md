@@ -81,9 +81,18 @@ Experiment Registry を一本のPipelineとして実行できる。
   **パラメータ最適化は禁止。このStrategyの収益性は評価対象ではない。**
 - `lib/backtest/engine.BacktestEngine.run()`: 上記を実際に実行し、価格欠損時は
   fallbackせずそのトレードをスキップし、Benchmarkデータが要求期間を全区間
-  カバーしない場合は`BenchmarkDataInsufficientError`で失敗する。
+  カバーしない場合は`BenchmarkDataInsufficientError`で失敗する。`price_history`引数は
+  `lib/backtest/price_history.PriceHistorySource` Protocol(decision_atごとにPrice
+  Historyを取得するInterface)であり、全期間共通の事前計算済みSeriesは保持しない
+  (Phase3A.2、D0035)。`StaticPriceHistory`(無調整・fixture向け)と
+  `AsOfAdjustedPriceHistory`(Raw + Corporate ActionからPIT-safeに都度構築)の
+  2実装があり、`scripts/jquants_lab_pipeline.py`の`--price-adjustment {none,pit}`で
+  切り替える。
 - `lib/reproducibility.py`: `run_id` / `dataset_hash` / `strategy_hash` / `config_hash` /
   `code_commit` を`Experiment.reproducibility`へ記録し、同一Inputでの再現性を検証できる。
+  `Experiment.price_adjustment`(`PriceAdjustmentProvenance`)には
+  `adjustment_method` / `as_of_policy` / `corporate_action_source` /
+  `raw_snapshot_ids`を記録する(D0035)。
 
 ## 東証取引時間 (`lib/market_calendar.py`)
 
@@ -259,30 +268,30 @@ Adjusted OHLCVをFeature生成に使う場合は`apply_split_adjustments_as_of(.
   ex-right eventのmetadataとして保持するのみで、`AdjFactor == 1`の日にExRTだけが
   存在してもPrice Adjustmentは行わない。
 
-### 🚫 BLOCKING TODO: 実データBacktestでは依然としてsplit調整を適用していない
+### Price Series連続化(Case B)はPipelineへ統合済み(Phase3A.2、D0035)
 
-Case A(Announcementを使う用途)のデータSourceは引き続き**未実装**(DECISIONS.md D0014)。
-Case B(Price Series連続化)は`build_provider_derived_adjusted_bars()`としてPIT-safeに
-実装済みで、AdjFactorの計算方法(乗算/除算の向き含む)も公式仕様として確定した
-(DECISIONS.md D0034)。しかし、`BacktestEngine.run()`(`lib/backtest/engine.py`)は
-`price_history`を1回だけ事前計算し、各`decision_at`ではそこから
-`session_date <= decision_date`のスライスを取り出すだけの設計になっている。単一の
-固定`as_of`で`build_provider_derived_adjusted_bars()`を事前計算すると、Walk-Forwardで
-複数のdecision_atを横断する場合、一部のdecision_atが「まだ知り得ないはずの将来の
-Corporate Actionで調整された価格」を見てしまう。この配線変更(decision_atごとの
-再計算、あるいはEngine内でCorporate Actionイベントを直接扱う設計への変更)は
-既存Backtest Engineの構造変更を伴うため、Phase3A.1では見送った(D0034)。
-`scripts/jquants_lab_pipeline.py`は引き続き`apply_split_adjustments(bars, actions=[])`
-(常に無調整)を使う。**対象期間・対象銘柄に株式分割等があった場合、価格系列が不連続に
-なりBacktest結果が誤る。** 実際の日本株を対象にした(投資判断に使う)Backtestを開始する
-前に、必ずこのEngine配線課題を解決すること。それまでは合成データによるPipeline配線の
-検証にとどめる。
+Case A(Announcementを使う用途)のデータSourceは引き続き**未実装**(DECISIONS.md D0014、
+`announced_at`付きデータSourceが無いため)。Case B(Price Series連続化)は
+`build_provider_derived_adjusted_bars()`としてPIT-safeに実装済みで、AdjFactorの
+計算方法(乗算/除算の向き含む)も公式仕様として確定している(DECISIONS.md D0034)。
+
+D0034で特定した「`BacktestEngine.run()`が`price_history`を1回だけ事前計算し使い回すため、
+単一のas_ofで事前調整するとWalk-Forwardの一部decision_atが未来のCorporate Actionで
+調整された価格を見てしまう」という問題は、Phase3A.2で`PriceHistorySource` Protocol
+(`lib/backtest/price_history.py`)を導入して解消した(D0035)。`BacktestEngine`は
+decision_atごとに`price_history.bars_up_to(code, as_of=decision_at)`を呼ぶため、
+全期間共通の事前計算済みSeriesは存在しない。
+
+`scripts/jquants_lab_pipeline.py`は`--price-adjustment {none,pit}`(既定`pit`)で
+選択できる。`pit`は`AsOfAdjustedPriceHistory`(decision_atごとのPIT-safe As-of
+Adjustment)を、`none`は`StaticPriceHistory`(無調整)を使う。実データBacktestでは
+`pit`を推奨する。
 
 `lib/data_sources/convert.detect_corporate_action_events_from_equity_bars()`
 (旧`detect_split_hints_from_daily_quotes()`、D0032で置き換え)は、その日の行が
-`AdjFactor != 1`または`ExRT`ありであればEvent当日として抽出する参考情報にすぎず、
-Pipelineの標準出力に「情報提供のみ、Backtestには未適用」として表示するだけで、実際の
-Adjusted価格系列には一切反映しない。
+`AdjFactor != 1`または`ExRT`ありであればEvent当日として抽出する。`--price-adjustment pit`
+使用時はこのEventがBacktestへ実際に反映される(`--price-adjustment none`では
+情報提供のみで、Adjusted価格系列には反映しない)。
 
 ## Multiple Testing
 

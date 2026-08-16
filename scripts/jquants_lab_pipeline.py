@@ -13,12 +13,19 @@ LOCAL_DATA_FETCH_GUIDE.mdも参照)。
 --source fixture は合成データによるPipeline配線の検証用で、ネットワーク接続なしで
 どこでも実行できる(Strategy Performance評価には使わない)。
 
+--price-adjustment pit(既定、実データBacktestで推奨)は、decision_atごとにPIT-safeな
+As-of Adjustment(`AsOfAdjustedPriceHistory`、D0034/D0035)を使う。
+--price-adjustment none は無調整のまま(Phase3A.1以前と同じ、`StaticPriceHistory`)。
+いずれもCorporate Action Announcementを取引Signalとして使う機能(Case A)ではない
+(Price Series連続化専用、Case B)。Case Aはannounced_at付きデータSourceが無いため
+引き続き未実装。
+
 使い方:
     python scripts/jquants_lab_pipeline.py --source fixture
     python scripts/jquants_lab_pipeline.py --source jquants --codes 7203 6758 8056 3626 \
         --start 2024-01-04 --end 2026-07-24
     python scripts/jquants_lab_pipeline.py --source local --local-snapshot-dir /path/to/snapshots \
-        --codes 7203 6758 8056 3626 --start 2024-01-04 --end 2026-07-24
+        --codes 7203 6758 8056 3626 --start 2024-01-04 --end 2026-07-24 --price-adjustment none
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ sys.path.insert(0, str(_LAB_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, TransactionCostConfig  # noqa: E402
+from lib.backtest.price_history import AsOfAdjustedPriceHistory, PriceHistorySource, StaticPriceHistory  # noqa: E402
 from lib.data_sources.base import DataSourceAdapter  # noqa: E402
 from lib.data_sources.convert import (  # noqa: E402
     detect_corporate_action_events_from_equity_bars,
@@ -50,7 +58,12 @@ from lib.market_calendar import session_close_at  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
 from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
-from lib.schemas.experiment import Experiment, ExperimentStatus, ReproducibilityFingerprint  # noqa: E402
+from lib.schemas.experiment import (  # noqa: E402
+    Experiment,
+    ExperimentStatus,
+    PriceAdjustmentProvenance,
+    ReproducibilityFingerprint,
+)
 from lib.schemas.hypothesis import Hypothesis  # noqa: E402
 from lib.schemas.price_data import apply_split_adjustments  # noqa: E402
 from lib.snapshot import RawSnapshotStore  # noqa: E402
@@ -84,31 +97,23 @@ def run_pipeline(
     local_snapshot_dir: Path | None,
     commission_bps: float,
     slippage_bps: float,
+    price_adjustment: str = "pit",
     expected_company_names: dict[str, str] | None = None,
 ) -> None:
     is_real_source = source in ("jquants", "local")
-    if is_real_source:
+    print(
+        "!!! 未実装(Case A) !!!\n"
+        "Corporate Action Announcement(公表)をSignalとして使う用途(Case A)の\n"
+        "データSourceは未実装のため、この用途には使用できません(announced_atが必要)。\n"
+        "一方、Price Series連続化(Case B)はPIT-safeに実装済みで、--price-adjustment pit\n"
+        "(既定)により decision_atごとに正しく適用されます(DECISIONS.md D0034/D0035)。\n"
+    )
+    if is_real_source and source == "jquants":
         print(
-            "!!! BLOCKING TODO(実日本株Backtestでは未解決) !!!\n"
-            "Corporate Action Announcement(公表)をSignalとして使う用途(Case A)の\n"
-            "データSourceは未実装のため、この用途には使用できません。一方、Price Series\n"
-            "連続化(Case B)はAdjFactorの公式計算方法が確定し(DECISIONS.md D0034)、\n"
-            "build_provider_derived_adjusted_bars()としてPIT-safeに実装済みです。\n"
-            "ただし、BacktestEngine.run()は現状price_historyを1回だけ事前計算する設計のため、\n"
-            "単一のas_ofで事前調整すると、Walk-Forwardで複数のdecision_atをまたぐ場合に\n"
-            "特定の日付範囲でPIT安全性が崩れる可能性がある(decision_atごとの再計算が必要)。\n"
-            "このEngine側の配線変更をまだ行っていないため、本Pipelineの実行結果は\n"
-            "依然としてsplit調整なし(actions=[])のままです。\n"
-            "対象期間・対象銘柄に分割等があった場合、価格系列が不連続になり\n"
-            "Backtest結果が誤ります。実際の投資判断にこの結果を使用しないでください。\n"
-            "(DECISIONS.md D0014/D0025/D0032/D0034、RESEARCH_RULES.md参照)\n"
+            "現在の契約プランはLightと申告されています。daily_prices/trading_calendar/"
+            "topix/listed_masterはLightプランでも利用可能と想定していますが未検証です"
+            "(DataSourceCapabilities、DECISIONS.md D0033参照)。\n"
         )
-        if source == "jquants":
-            print(
-                "現在の契約プランはLightと申告されています。daily_prices/trading_calendar/"
-                "topix/listed_masterはLightプランでも利用可能と想定していますが未検証です"
-                "(DataSourceCapabilities、DECISIONS.md D0033参照)。\n"
-            )
 
     load_dotenv()
     adapter = _build_adapter(source, fixture_path, local_snapshot_dir)
@@ -127,18 +132,20 @@ def run_pipeline(
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
 
-    # BLOCKING TODO(Phase3B以降): Case A(Announcementを使う用途)のデータSourceは
-    # 未実装。Case B(V2 AdjFactorによるPrice Series連続化)は
-    # build_provider_derived_adjusted_bars()としてPIT-safeに実装済み(D0034)だが、
-    # BacktestEngine.run()が単一のprice_historyを事前計算してから複数のdecision_atへ
-    # 使い回す設計のため、単一as_ofでの事前調整はWalk-Forwardの一部decision_atで
-    # PIT安全性を壊しうる(decision_atごとの再計算にはEngine側の配線変更が必要、
-    # D0034参照)。そのためこのPipelineでは引き続きsplit調整なし(actions=[])で
-    # Raw->Adjustedへ明示的に変換している(RawとAdjustedを混同しない、という設計自体は
-    # 満たすが、分割があった銘柄では価格が不連続になりうる)。
-    # V2 AdjFactor/ExRTからの検出候補は情報提供のみ行う。
-    price_history = {code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items()}
+    # Corporate Action Event(V2 AdjFactor/ExRT由来)を銘柄ごとにグルーピングする。
+    # Case A(Announcementを使う用途)のデータSourceは未実装のまま(announced_atが必要)。
     corporate_action_events = detect_corporate_action_events_from_equity_bars(quotes_result.payload)
+    events_by_code: dict[str, list] = {code: [] for code in codes}
+    for event in corporate_action_events:
+        events_by_code.setdefault(event.code, []).append(event)
+
+    price_history: PriceHistorySource
+    if price_adjustment == "pit":
+        # decision_atごとにPIT-safeなAs-of Adjustmentを適用する(D0034/D0035)。
+        # 全期間共通の事前計算済みAdjusted Seriesを保持・使い回すことはしない。
+        price_history = AsOfAdjustedPriceHistory(raw_by_code, events_by_code)
+    else:
+        price_history = StaticPriceHistory({code: apply_split_adjustments(bars, []) for code, bars in raw_by_code.items()})
 
     # Benchmark: fixtureモードは従来通りequity_barsベースの擬似コード(後方互換)、
     # jquants/localモードはTOPIX専用Endpoint(/v2/indices/bars/daily/topix)を使う。
@@ -228,6 +235,12 @@ def run_pipeline(
             "完全な再現性は保証されません。"
         )
 
+    price_adjustment_provenance = PriceAdjustmentProvenance(
+        adjustment_method=("PIT_AS_OF_ADJFACTOR_V1" if price_adjustment == "pit" else "NONE"),
+        as_of_policy=("decision_at" if price_adjustment == "pit" else "static"),
+        corporate_action_source=("jquants_v2_adjfactor" if is_real_source else "none"),
+        raw_snapshot_ids=(quotes_manifest.snapshot_id,),
+    )
     experiment = Experiment(
         experiment_id=f"BT_{run_id}",
         hypothesis_id=hypothesis.hypothesis_id,
@@ -235,6 +248,7 @@ def run_pipeline(
         status=ExperimentStatus.TESTED,
         metrics=metrics,
         reproducibility=fingerprint,
+        price_adjustment=price_adjustment_provenance,
         notes=f"source={source}",
     )
     ExperimentRegistry(_LAB_DIR / "06_backtests" / "experiment_registry.jsonl").record(experiment)
@@ -293,10 +307,13 @@ def run_pipeline(
     print(f"quotes snapshot: {quotes_manifest.snapshot_id} (record_count={quotes_manifest.record_count})")
     print(f"calendar snapshot: {calendar_manifest.snapshot_id} (record_count={calendar_manifest.record_count})")
     print(f"benchmark snapshot: {benchmark_manifest.snapshot_id} (record_count={benchmark_manifest.record_count})")
-    print(
-        f"corporate action events(情報提供のみ、Backtestには未適用): {len(corporate_action_events)}件 "
-        f"({[e.code for e in corporate_action_events]})"
-    )
+    if price_adjustment == "pit":
+        applied_note = "PIT-safeにBacktestへ適用済み(decision_atごとのAs-of Adjustment)"
+    else:
+        applied_note = "情報提供のみ、Backtestには未適用"
+    event_codes = [e.code for e in corporate_action_events]
+    print(f"corporate action events({applied_note}): {len(corporate_action_events)}件 ({event_codes})")
+    print(f"price_adjustment={price_adjustment} adjustment_method={price_adjustment_provenance.adjustment_method}")
     if universe_snapshot is not None:
         print(
             f"universe: resolution={universe_snapshot.resolution.value} "
@@ -336,6 +353,13 @@ def main() -> None:
     )
     parser.add_argument("--commission-bps", type=float, default=5.0)
     parser.add_argument("--slippage-bps", type=float, default=5.0)
+    parser.add_argument(
+        "--price-adjustment",
+        choices=["none", "pit"],
+        default="pit",
+        help="pit(既定): decision_atごとのPIT-safe As-of Adjustmentを適用(D0034/D0035)。"
+        "none: 無調整のまま(Phase3A.1以前と同じ)。",
+    )
     args = parser.parse_args()
 
     run_pipeline(
@@ -348,6 +372,7 @@ def main() -> None:
         local_snapshot_dir=args.local_snapshot_dir,
         commission_bps=args.commission_bps,
         slippage_bps=args.slippage_bps,
+        price_adjustment=args.price_adjustment,
     )
 
 

@@ -16,6 +16,7 @@ from lib.backtest.engine import (
     build_close_to_next_open_window,
     compute_metrics,
 )
+from lib.backtest.price_history import StaticPriceHistory
 from lib.errors import LookAheadBiasError
 from lib.market_calendar import JST, TradingCalendar, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord
@@ -210,7 +211,7 @@ def test_run_produces_trades_with_matched_benchmark_comparison() -> None:
     """Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較が一本通る。"""
     engine = BacktestEngine()
     calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
-    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    price_history = StaticPriceHistory({"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)})
     benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
 
     metrics = engine.run(
@@ -234,7 +235,7 @@ def test_run_raises_when_benchmark_data_insufficient() -> None:
     """要求期間をBenchmarkデータが全区間カバーしない場合、都合よく切り詰めず失敗する。"""
     engine = BacktestEngine()
     calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
-    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    price_history = StaticPriceHistory({"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)})
     short_benchmark_bars = _uptrend_bars("TOPIX", _DAYS[:10], base=2000.0, step=0.5)  # 期間の一部しかない
 
     with pytest.raises(BenchmarkDataInsufficientError):
@@ -264,7 +265,7 @@ def test_run_skips_trades_with_missing_execution_price_instead_of_fallback() -> 
         split_adjustment_factor=1.0,
         source="synthetic",
     )
-    price_history = {"7203": bars}
+    price_history = StaticPriceHistory({"7203": bars})
     benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
 
     metrics_with_gap = engine.run(
@@ -276,7 +277,7 @@ def test_run_skips_trades_with_missing_execution_price_instead_of_fallback() -> 
     )
     metrics_without_gap = engine.run(
         config=_run_config(),
-        price_history={"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)},
+        price_history=StaticPriceHistory({"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}),
         benchmark_bars=benchmark_bars,
         trading_calendar=calendar,
         signal_fn=as_buy_signal_fn(),
@@ -298,7 +299,7 @@ def test_run_is_deterministic_given_identical_inputs() -> None:
     def _run() -> object:
         return engine.run(
             config=_run_config(transaction_cost=TransactionCostConfig(commission_bps=5, slippage_bps=3)),
-            price_history={"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)},
+            price_history=StaticPriceHistory({"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}),
             benchmark_bars=benchmark_bars,
             trading_calendar=calendar,
             signal_fn=as_buy_signal_fn(),
@@ -314,7 +315,7 @@ def test_no_reentry_while_position_open_skips_overlapping_signals() -> None:
     holding期間が重なるトレードとして二重に計上されない(デフォルトのPositionPolicy)。"""
     engine = BacktestEngine()
     calendar = TradingCalendar(trading_dates=frozenset(_DAYS), range_start=_DAYS[0], range_end=_DAYS[-1])
-    price_history = {"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)}
+    price_history = StaticPriceHistory({"7203": _uptrend_bars("7203", _DAYS, base=1000.0, step=1.0)})
     benchmark_bars = _uptrend_bars("TOPIX", _DAYS, base=2000.0, step=0.5)
 
     metrics = engine.run(

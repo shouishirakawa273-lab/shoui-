@@ -828,3 +828,86 @@ Case Bの要件が噛み合わないことによる、より上位の設計課�
 「必要性がない限り変更しない」というPhase3Aの指示を踏まえ、Phase3A.1では見送り、
 Phase3B以降の検討事項とした。したがって`scripts/jquants_lab_pipeline.py`は引き続き
 `apply_split_adjustments(bars, [])`(無調整)のままである。
+
+---
+
+## Phase3A.2(2026-08-16): PIT-safe Corporate Action AdjustmentのEngine配線
+
+Phase3A.1をFINALとした上で、D0034で特定した「全期間共通の事前計算済みAdjusted
+price_historyを使い回すため、Walk-Forwardの一部decision_atが未来のCorporate Actionで
+調整された価格を見てしまいうる」という問題**だけ**を解消することをPhase3A.2として
+実施した(新機能追加はせず、この問題の修正に限定)。
+
+## D0035 — `PriceHistorySource` Protocolを導入し、`BacktestEngine`をdecision_atごとの
+As-of Adjustmentへ対応させる
+
+**変更内容**: `lib/backtest/price_history.py`を新設し、以下を実装した。
+
+- `PriceHistorySource`(Protocol): `bars_up_to(code, as_of)` /
+  `bar_on(code, session_date, as_of=...)`の2メソッドのみを持つ。`BacktestEngine`は
+  このInterfaceにしか依存せず、Corporate Action Adjustmentの具体的な実装
+  (Provider固有ロジック含む)を一切知らない(ユーザー要求のとおり)。
+- `StaticPriceHistory`: 既に確定したBar列をそのまま返す(Corporate Action調整をしない)。
+  Phase3A.1以前の`price_history`引数(plain dict)と完全に同じ挙動を再現する
+  (fixture・株式分割を扱わないテスト向け)。
+- `AsOfAdjustedPriceHistory`: Raw Price History + Corporate Action Eventsから、
+  呼び出しのたびに(=decision_atごとに)`build_provider_derived_adjusted_bars`を
+  呼び出してPIT-safeなAdjusted Bar列を構築する。銘柄ごとに独立して計算するため、
+  Ticker間の影響が構造的に混入しない。
+
+`lib/backtest/engine.py`の`BacktestEngine.run()`は、`price_history`引数の型を
+`Mapping[str, Sequence[AdjustedOHLCVBar]]`から`PriceHistorySource`へ変更した。
+内部の実装は、以前は`price_history`(dict)を一度だけ`code`でスライスして
+`bars_for_code`を作り、それをループ全体で使い回していたが、これを廃止し、
+decision_dateごとに`price_history.bars_up_to(code, as_of=session_close_at(decision_date))`
+を呼ぶよう変更した。全期間共通の事前計算済みSeriesを保持する変数は存在しない。
+
+**Trade Entry/Exit価格の扱い(スコープ拡張の必要性)**: Feature/Signal計算だけでなく、
+Entry/Exitの約定価格取得(旧`bars_by_date.get(execution_date)`)も同じ`price_history`
+(廃止された単一の全期間Series)から取っていたため、これも`price_history.bar_on()`
+経由に変更する必要があった。Entry/Exitは両方とも`trade_as_of = session_close_at(exit_date)`
+という同一のas_ofで取得する(保有期間中にCorporate Actionが発生していても、Entry/Exitを
+同じ基準で調整することでReturn計算の連続性を保つ。これはdecisionのPIT制約とは別の関心事:
+「未来の情報を意思決定に使う」のではなく、「既に確定した実現ReturnをEntry/Exit間で
+正しく測定する」ための処理であり、Look-ahead Biasには当たらない)。これは
+「新機能追加」ではなく、旧アーキテクチャで暗黙に存在した「単一の全期間Series」を
+削除する以上、Entry/Exit価格の取得元も必然的に何らかのas_of基準を持つ必要があった
+ための、D0034問題の修正に不可欠な変更として扱った。
+
+**Future Eventの扱い(仕様変更)**: D0032/D0034時点の`build_provider_derived_adjusted_bars`
+は、as_of時点でまだ取得可能でないはずのEventが渡されると`LookAheadBiasError`を
+送出していた。しかしユーザー提示のTest A(as_of=2024-01-10、1/11の未来Splitが存在しても
+例外にはならず980を返す)を踏まえ、**Raw Dataset自体にdecision_atより未来のCorporate
+Action Eventが存在することは正常**という理解に立ち、例外を送出せず黙って調整対象から
+除外する挙動へ既に変更済み(Phase3A.1追補、DECISIONS.md参照)。Phase3A.2ではこの挙動を
+そのまま利用し、Engine配線側で追加のフィルタリングは行っていない(Dataset自体に未来情報が
+存在することと、それをdecisionに使うことを区別する、という設計をEngineレベルでも維持)。
+
+**Provenance**: `lib/schemas/experiment.PriceAdjustmentProvenance`
+(`adjustment_method` / `as_of_policy` / `corporate_action_source` /
+`raw_snapshot_ids`)を新設し、`Experiment.price_adjustment`(Optional、既定None)に
+記録する。`adjustment_method`はバージョン識別子として扱う
+(`PIT_AS_OF_ADJFACTOR_V1` = decision_atごとのPIT-safe調整、`NONE` = 無調整)。
+既存の`ExperimentRegistry`は`price_adjustment`キーが無い過去のレコードも
+問題なく読み込める(Optionalフィールドの既定値、後方互換テストで確認)。
+
+**Pipeline統合**: `scripts/jquants_lab_pipeline.py`に`--price-adjustment {none,pit}`
+(既定`pit`)を追加した。`pit`は`AsOfAdjustedPriceHistory`(V2 AdjFactor Eventから
+生成したPIT-safe As-of Adjustment)を、`none`は`StaticPriceHistory`(無調整、
+Phase3A.1以前と同じ)を使う。Corporate Action Announcementを取引Signalとして使う
+機能(Case A)は、`announced_at`付きデータSourceが無いため引き続き未実装のまま
+(Price Series連続化=Case Bとは独立)。
+
+**Performance**: 正確性を優先し、`AsOfAdjustedPriceHistory`はdecision_atごとに
+その銘柄のRaw bars/Eventsをas_ofで絞り込んで`build_provider_derived_adjusted_bars`を
+再計算する(as_of単位のcacheや累積factorの差分更新は行わない)。銘柄ごとの事前index
+(コンストラクタで`session_date`昇順にソート済みのリストを保持)により、将来
+最適化を追加しやすい構造にはしているが、Phase3A.2では最適化自体を主目的としていない。
+
+**Regression確認**: Corporate Actionが存在しないDatasetでは、`StaticPriceHistory`経由と
+`AsOfAdjustedPriceHistory`(空Events)経由とでBacktestMetricsが完全一致し、かつ両者とも
+Phase3A.1時点で確認済みの値(`13_tests/test_pit_as_of_adjustment.py`の
+`test_G_no_corporate_action_dataset_matches_pre_phase3a2_metrics_exactly`)と一致することを
+確認した。既存の`test_backtest_engine.py`等の呼び出し箇所は`price_history`引数を
+`StaticPriceHistory(...)`でラップするよう機械的に更新したのみで、テストの意図・
+アサーションは変更していない。

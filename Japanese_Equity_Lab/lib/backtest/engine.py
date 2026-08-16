@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 
+from lib.backtest.price_history import PriceHistorySource
 from lib.errors import LookAheadBiasError
 from lib.market_calendar import TradingCalendar, TradingCalendarResolutionError, session_close_at, session_open_at
 from lib.point_in_time import PointInTimeRecord, assert_no_lookahead
@@ -391,7 +392,7 @@ class BacktestEngine:
         self,
         *,
         config: BacktestRunConfig,
-        price_history: Mapping[str, Sequence[AdjustedOHLCVBar]],
+        price_history: PriceHistorySource,
         benchmark_bars: Sequence[AdjustedOHLCVBar],
         trading_calendar: TradingCalendar,
         signal_fn: Callable[[Sequence[AdjustedOHLCVBar]], bool],
@@ -406,6 +407,12 @@ class BacktestEngine:
         スキップする(勝手に平日扱いしない)。`config.position_policy`が
         NO_REENTRY_WHILE_POSITION_OPEN(既定)の場合、同一銘柄で既にポジションを
         保有している間の追加シグナルはSKIPPED_POSITION_OPENとして記録しスキップする。
+
+        `price_history`は`PriceHistorySource`(`lib/backtest/price_history.py`)。
+        Engineは「decision_at時点のPrice Historyを取得するInterface」としてのみこれを
+        扱い、Corporate Action Adjustmentの具体的な実装を一切知らない(D0034/D0035)。
+        全期間共通の事前計算済みAdjusted Seriesを保持・使い回すことはしない
+        (decision_atごとに`price_history.bars_up_to(code, as_of=decision_at)`を呼ぶ)。
         """
         benchmark_dates = {b.session_date for b in benchmark_bars}
         if not benchmark_dates or min(benchmark_dates) > config.start_session or max(benchmark_dates) < config.end_session:
@@ -423,12 +430,14 @@ class BacktestEngine:
         outcome_counter: Counter[str] = Counter()
 
         for code in config.universe_codes:
-            bars_for_code = sorted(price_history.get(code, ()), key=lambda b: b.session_date)
-            bars_by_date = {b.session_date: b for b in bars_for_code}
             position_open_until: date | None = None  # NO_REENTRY_WHILE_POSITION_OPEN用
 
             for decision_date in decision_dates:
-                bars_up_to_decision = [b for b in bars_for_code if b.session_date <= decision_date]
+                decision_at = session_close_at(decision_date)
+                # decision_atごとにPrice Historyを取得する(全期間共通の事前計算済み
+                # Adjusted Seriesを使い回さない、D0034/D0035)。これにより、まだ
+                # effectiveになっていないCorporate Actionが混入する余地は構造的に無い。
+                bars_up_to_decision = price_history.bars_up_to(code, as_of=decision_at)
                 if not signal_fn(bars_up_to_decision):
                     continue
                 signal_count += 1
@@ -462,7 +471,14 @@ class BacktestEngine:
                 )
                 self.build_signal_input(window, records)  # PIT違反があればLookAheadBiasErrorで即失敗させる
 
-                entry_bar = bars_by_date.get(execution_date)
+                # Entry/ExitのReturn計算は、両者を同一のas_of(exit_dateの大引け)で
+                # 揃えて取得する。これはdecision(=Signal生成)のPIT制約とは別の関心事:
+                # 保有期間中にCorporate Actionが発生していても、両者を同じ基準で
+                # 調整することでReturnの連続性を保つ(未来のCorporate Actionを
+                # 「decisionに使う」わけではなく、既に確定した実現Returnを正しく
+                # 測定するための処理)。
+                trade_as_of = session_close_at(exit_date)
+                entry_bar = price_history.bar_on(code, execution_date, as_of=trade_as_of)
                 if entry_bar is None or entry_bar.open is None:
                     outcome_counter[ExecutionOutcome.UNEXECUTABLE_NO_OPEN.value] += 1
                     continue  # 価格欠損 - 都合の良い価格へfallbackせずスキップ
@@ -470,7 +486,7 @@ class BacktestEngine:
                 # entryが確定した時点でポジションは保有中とみなす(exit価格の有無に関わらず)。
                 position_open_until = exit_date
 
-                exit_bar = bars_by_date.get(exit_date)
+                exit_bar = price_history.bar_on(code, exit_date, as_of=trade_as_of)
                 if exit_bar is None or exit_bar.open is None:
                     outcome_counter[ExecutionOutcome.MISSING_PRICE.value] += 1
                     continue  # entryはできたがexit価格が欠損 - fallbackせずスキップ

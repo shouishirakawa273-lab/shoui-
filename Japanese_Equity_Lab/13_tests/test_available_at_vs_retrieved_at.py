@@ -19,6 +19,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, build_close_to_next_open_window
+from lib.backtest.price_history import StaticPriceHistory
 from lib.data_sources.base import RawFetchResult
 from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.errors import LookAheadBiasError
@@ -143,7 +144,7 @@ def _run_full_pipeline(quotes_payload: list[dict[str, object]]) -> object:
     どの段階でも使わないため、この経路の出力にはretrieved_atが一切影響しないはず)。"""
     calendar_payload = _trading_calendar_payload(_BEHAVIOR_DAYS)
     raw_bars = equity_bars_payload_to_raw_bars(quotes_payload)
-    price_history = {"7203": apply_split_adjustments(raw_bars, [])}
+    price_history = StaticPriceHistory({"7203": apply_split_adjustments(raw_bars, [])})
     bench_payload = _equity_bars_payload("BENCH", _BEHAVIOR_DAYS, base=2000.0, step=0.3)
     benchmark_bars = apply_split_adjustments(equity_bars_payload_to_raw_bars(bench_payload), [])
     trading_calendar = trading_calendar_payload_to_calendar(

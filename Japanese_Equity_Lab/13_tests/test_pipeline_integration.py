@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from lib.backtest.engine import BacktestEngine, BacktestRunConfig, TransactionCostConfig, build_close_to_next_open_window
+from lib.backtest.price_history import StaticPriceHistory
 from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.data_sources.fixture import FixtureDataSourceAdapter
 from lib.errors import LookAheadBiasError
@@ -50,7 +51,7 @@ def test_fixture_pipeline_runs_end_to_end_and_is_reproducible(tmp_path: Path) ->
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
 
-    price_history = {code: apply_split_adjustments(raw_by_code[code], []) for code in _CODES}
+    price_history = StaticPriceHistory({code: apply_split_adjustments(raw_by_code[code], []) for code in _CODES})
     benchmark_bars = apply_split_adjustments(raw_by_code[_BENCHMARK_CODE], [])
     trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=_START, range_end=_END)
 
@@ -118,7 +119,8 @@ def test_fixture_pipeline_never_uses_same_day_close_execution(tmp_path: Path) ->
     calendar_result = adapter.fetch_trading_calendar(start_date=_START, end_date=_END)
 
     raw_bars = equity_bars_payload_to_raw_bars(quotes_result.payload)
-    price_history = {"7203": apply_split_adjustments(raw_bars, [])}
+    adjusted_bars = apply_split_adjustments(raw_bars, [])
+    price_history = StaticPriceHistory({"7203": adjusted_bars})
     trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=_START, range_end=_END)
 
     # holding_period_days=0はDecisionWindow/BacktestRunConfigのバリデーションで拒否される
@@ -138,7 +140,7 @@ def test_fixture_pipeline_never_uses_same_day_close_execution(tmp_path: Path) ->
     metrics = engine.run(
         config=BacktestRunConfig(universe_codes=("7203",), start_session=_START, end_session=_END, holding_period_days=20),
         price_history=price_history,
-        benchmark_bars=price_history["7203"],
+        benchmark_bars=adjusted_bars,
         trading_calendar=trading_calendar,
         signal_fn=lambda bars: len(bars) > 0,
     )

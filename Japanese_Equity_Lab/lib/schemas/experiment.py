@@ -39,6 +39,22 @@ class ReproducibilityFingerprint:
 
 
 @dataclass(kw_only=True, frozen=True)
+class PriceAdjustmentProvenance:
+    """このExperimentのPrice Seriesがどのように調整されたかを追跡する(D0035)。
+
+    `adjustment_method`はバージョン識別子として扱う(例: ``PIT_AS_OF_ADJFACTOR_V1``
+    = decision_atごとにPIT-safeなAdjFactor調整を適用、``NONE`` = 無調整)。
+    調整方法自体が変わった場合はこの識別子を新しいバージョンへ変更し、過去の
+    Experimentの記録はそのまま(上書きせず)残す。
+    """
+
+    adjustment_method: str
+    as_of_policy: str  # 例: "decision_at" (PIT-safe) / "static" (無調整・調整不要)
+    corporate_action_source: str  # 例: "jquants_v2_adjfactor" / "none"
+    raw_snapshot_ids: tuple[str, ...] = ()
+
+
+@dataclass(kw_only=True, frozen=True)
 class Experiment(RecordMeta):
     experiment_id: str
     hypothesis_id: str
@@ -46,4 +62,5 @@ class Experiment(RecordMeta):
     status: ExperimentStatus
     metrics: BacktestMetrics | None = None
     reproducibility: ReproducibilityFingerprint | None = None
+    price_adjustment: PriceAdjustmentProvenance | None = None
     notes: str = ""

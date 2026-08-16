@@ -71,11 +71,11 @@ cd ..   # リポジトリルート
 pytest Japanese_Equity_Lab/13_tests/ -q
 ```
 
-## 現在の状態(Phase 3A.1)
+## 現在の状態(Phase 3A.2)
 
 Phase1〜1.1(フォルダ構造・方針文書・主要schema・東証取引時間の制度変更対応・
 Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)、Phase2〜2.2
-(実データPipelineの実装、Execution Metrics、Reproducibility)に加え、Phase3A・3A.1で
+(実データPipelineの実装、Execution Metrics、Reproducibility)に加え、Phase3A・3A.1・3A.2で
 以下を実装した。
 
 - `lib/data_sources/`: `DataSourceAdapter` Interface(J-Quants API V2ベース)と
@@ -87,10 +87,15 @@ Close-to-Close look-ahead防止・Corporate ActionのPoint-in-Time安全性)、P
   (祝日等をデータから判定し、範囲外は失敗させる)。
 - `lib/strategies/fixed_pipeline_validation.py`: Pipeline検証専用の固定Strategy。
 - `lib/backtest/engine.BacktestEngine.run()`: Data〜Benchmark比較までの実装。
+  `price_history`は`lib/backtest/price_history.PriceHistorySource` Protocol経由で
+  decision_atごとに取得し、全期間共通の事前計算済みSeriesは保持しない(D0035)。
 - `lib/reproducibility.py`: 再現性検証用のhash計算。
 - `lib/schemas/price_data.py`: Corporate ActionをCase A(Announcement Signal、
-  `announced_at`必須)とCase B(Price Series連続化、Provider由来Event、
-  `build_provider_derived_adjusted_bars`)に分離(D0032)。
+  `announced_at`必須、引き続き未実装)とCase B(Price Series連続化、Provider由来Event、
+  `build_provider_derived_adjusted_bars`)に分離(D0032)。Case BはAdjFactorの公式計算
+  方法が確定し(D0034)、decision_atごとのPIT-safe As-of Adjustmentとして
+  `scripts/jquants_lab_pipeline.py --price-adjustment pit`(既定)で実際のBacktestへ
+  適用される(D0035)。
 
 **既知の制約**: このセッションは外部API・公式ドキュメント(J-Quants含む)へ一切疎通できない
 ネットワークポリシー下で動作しているため、実際のJ-Quants API V2接続での検証は行えていない。
@@ -98,5 +103,4 @@ Pipeline配線は`FixtureDataSourceAdapter`(合成データ、`13_tests/fixtures
 手作業で用意したV2形状のscratch dataによる`--source local`経路で検証済み。ローカル環境で
 `.env`にJQUANTS_API_KEYを設定した上で`python scripts/jquants_lab_pipeline.py --source jquants`
 を実行するか、`LOCAL_DATA_FETCH_GUIDE.md`の手順で実データ疎通確認すること。Corporate Action
-Announcement(Case A)の取得元、AdjFactorの適用方向の検証はPhase3B以降のTODO
-(DECISIONS.md D0031〜D0033参照)。
+Announcement(Case A)の取得元はPhase3B以降のTODO(DECISIONS.md D0031〜D0035参照)。

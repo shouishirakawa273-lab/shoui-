@@ -26,6 +26,7 @@ from lib.backtest.engine import (
     BacktestRunConfig,
     ExecutionOutcome,
 )
+from lib.backtest.price_history import StaticPriceHistory
 from lib.data_sources.convert import equity_bars_payload_to_raw_bars, trading_calendar_payload_to_calendar
 from lib.schemas.price_data import AdjustedOHLCVBar, apply_split_adjustments
 
@@ -59,10 +60,11 @@ def test_portfolio_scenario_exercises_policy_skip_execution_failure_and_normal_f
 
     quotes = fixture["equity_bars"]  # type: ignore[assignment]
     codes = ["PSIM_A", "PSIM_B"]
-    price_history = {}
+    price_history_by_code = {}
     for code in codes:
         raw_bars = equity_bars_payload_to_raw_bars(quotes[code])  # type: ignore[index]
-        price_history[code] = apply_split_adjustments(raw_bars, [])
+        price_history_by_code[code] = apply_split_adjustments(raw_bars, [])
+    price_history = StaticPriceHistory(price_history_by_code)
 
     benchmark_raw = equity_bars_payload_to_raw_bars(quotes["PSIM_BENCH"])  # type: ignore[index]
     benchmark_bars = apply_split_adjustments(benchmark_raw, [])

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 from lib.backtest.engine import BacktestMetrics, DataSplit
 from lib.errors import AppendOnlyViolationError
 from lib.registry.experiment_registry import ExperimentRegistry
-from lib.schemas.experiment import Experiment, ExperimentStatus, ReproducibilityFingerprint
+from lib.schemas.experiment import Experiment, ExperimentStatus, PriceAdjustmentProvenance, ReproducibilityFingerprint
 
 
 def _metrics() -> BacktestMetrics:
@@ -79,6 +80,55 @@ def test_record_and_read_back_roundtrip_preserves_reproducibility(tmp_path: Path
 
     loaded = registry.all()[0]
     assert loaded.reproducibility == fingerprint
+
+
+def test_record_and_read_back_roundtrip_preserves_price_adjustment(tmp_path: Path) -> None:
+    """PriceAdjustmentProvenance(D0035)が追記専用Registryを往復しても保持される。"""
+    registry = ExperimentRegistry(tmp_path / "experiments.jsonl")
+    price_adjustment = PriceAdjustmentProvenance(
+        adjustment_method="PIT_AS_OF_ADJFACTOR_V1",
+        as_of_policy="decision_at",
+        corporate_action_source="jquants_v2_adjfactor",
+        raw_snapshot_ids=("SNAP_TEST_equity_bars",),
+    )
+    experiment = Experiment(
+        experiment_id="BT0003",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+        price_adjustment=price_adjustment,
+    )
+    registry.record(experiment)
+
+    loaded = registry.all()[0]
+    assert loaded.price_adjustment == price_adjustment
+    assert loaded.price_adjustment.raw_snapshot_ids == ("SNAP_TEST_equity_bars",)
+
+
+def test_old_records_without_price_adjustment_key_still_load(tmp_path: Path) -> None:
+    """price_adjustmentフィールド新設前(Phase3A.1以前)の既存レコードが、
+    キー自体を持たなくても引き続き読み込める(後方互換)。"""
+    storage_path = tmp_path / "experiments.jsonl"
+    old_style_experiment = Experiment(
+        experiment_id="BT_OLD",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+    )
+    registry = ExperimentRegistry(storage_path)
+    registry.record(old_style_experiment)
+
+    # price_adjustmentキー自体が無い(Phase3A.1以前の実データを模す)状態を作る。
+    lines = storage_path.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[0])
+    del record["price_adjustment"]
+    storage_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    loaded = ExperimentRegistry(storage_path).all()[0]
+    assert loaded.price_adjustment is None
+    assert loaded.experiment_id == "BT_OLD"
 
 
 def test_duplicate_experiment_id_is_rejected(tmp_path: Path) -> None:
