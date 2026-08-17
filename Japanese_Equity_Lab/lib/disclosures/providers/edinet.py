@@ -10,9 +10,13 @@
   実際に`metadata.status="200"`・`metadata.resultset.count`付きレスポンスを
   観測済み。
 - Document Download(``GET /documents/{docID}``)の``type``パラメータは
-  公式仕様で1〜5の意味が確認され、``type=1``(提出本文書及び監査報告書)の
-  実Downloadで`Content-Type: application/octet-stream`・ZIPマジックバイト
-  (``50 4b 03 04``)を観測し、公式仕様と一致することを確認済み。
+  ユーザーがローカルで参照した公式仕様書の記述として1〜5の意味を得たが、
+  実際にDownloadして観測したのは``type=1``(提出本文書及び監査報告書)のみ
+  (`Content-Type: application/octet-stream`・ZIPマジックバイト`50 4b 03 04`
+  を観測、仕様の記述と一致)。``type=2〜5``は仕様書の記述をそのまま反映した
+  ものであり、この Session/Repository自身は一度もDownloadを試みていない
+  (`EdinetDownloadType`のDocstring参照、skeptic-reviewer Finding、
+  D0046追記)。
 
 **それでもなお未確認/未実装のまま残っている項目**(詳細は
 `Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md`・`DECISIONS.md` D0046参照):
@@ -74,15 +78,28 @@ _DOCUMENTS_LIST_SUCCESS_STATUS = "200"
 
 
 class EdinetDownloadType(IntEnum):
-    """Document Downloadの``type``パラメータ(公式仕様 + ローカル実データで確認済み、
-    2026-08-17)。ZIP系(1/3/4/5)とPDF(2)で成功時のContent-Typeが異なる
-    (`_SUCCESSFUL_DOWNLOAD_CONTENT_TYPES`参照)。"""
+    """Document Downloadの``type``パラメータ。
 
-    MAIN_DOCUMENT_AND_AUDIT_REPORT = 1  # 提出本文書及び監査報告書(ZIP)。実Download観測済み。
-    PDF = 2  # PDF
-    ALTERNATIVE_ATTACHMENTS = 3  # 代替書面・添付文書(ZIP)
-    ENGLISH_DOCUMENTS = 4  # 英文ファイル(ZIP)
-    CSV = 5  # CSV(ZIP)
+    **確度はメンバーごとに異なる(skeptic-reviewer Finding、D0046追記で明記)**:
+    `MAIN_DOCUMENT_AND_AUDIT_REPORT`(1)のみ、ユーザーのローカル環境で実際に
+    Downloadし、Content-Type(`application/octet-stream`)・ZIPマジックバイト・
+    SHA-256を観測して確認済み(`OBSERVED`)。それ以外(2/3/4/5)は、ユーザーが
+    ローカルで参照した公式仕様書の記述をそのまま反映したものであり、この
+    Repository/Session自身では一度もDownloadを試みていない(`SPEC_CLAIM_ONLY`)。
+    参照した仕様書の正確な版・URLはこのSession単独では特定できていない
+    (`EDINET_SOURCE_ONBOARDING.md`が指摘した2024年7月版/2026年6月版のいずれか、
+    または別版の可能性がある)。値を誤って取り違えていても、成功判定
+    (`_SUCCESSFUL_DOWNLOAD_CONTENT_TYPES`によるContent-Type Allowlist)は
+    それを検知できない(誤った`type`でも同じAllowlist内のContent-Typeが返れば
+    成功と判定されてしまう)。値そのものを使う前に、各typeを一度は実際に
+    Downloadして確認することを推奨する。
+    """
+
+    MAIN_DOCUMENT_AND_AUDIT_REPORT = 1  # 提出本文書及び監査報告書(ZIP)。OBSERVED(2026-08-17、docID=S100TD9S)。
+    PDF = 2  # PDF。SPEC_CLAIM_ONLY(未Download確認)。
+    ALTERNATIVE_ATTACHMENTS = 3  # 代替書面・添付文書(ZIP)。SPEC_CLAIM_ONLY(未Download確認)。
+    ENGLISH_DOCUMENTS = 4  # 英文ファイル(ZIP)。SPEC_CLAIM_ONLY(未Download確認)。
+    CSV = 5  # CSV(ZIP)。SPEC_CLAIM_ONLY(未Download確認)。
 
 
 # type=2(PDF)のみapplication/pdf、それ以外(1/3/4/5、いずれもZIP)は

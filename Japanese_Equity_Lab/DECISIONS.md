@@ -2519,9 +2519,24 @@ Downloadの実疎通・実Field構造を確認した(`EDINET_SOURCE_ONBOARDING.m
 
 ### Confirmed By Official Spec(ユーザーがローカル環境で参照した公式仕様書)
 
+**skeptic-reviewer Finding(このFinding自体への対応として本節末尾に追記)**:
+「Confirmed By Official Spec」という区分は、D0043のLocal Real Data
+Validation(実際のHTTP応答という再現可能な一次証拠)と同列に扱うには
+確度が弱い — ユーザーが一度読んだ文書の記述の要約であり、この
+Session/Repository自身が参照した仕様書の正確な版・URLを特定できていない
+(`EDINET_SOURCE_ONBOARDING.md`が指摘した2024年7月版/2026年6月版のいずれか
+不明)。特にDocument Downloadの`type`値は、実際にDownloadして観測したのは
+`type=1`のみで、`type=2〜5`は仕様書の記述をそのまま反映したに過ぎない
+(下記「Confirmed By Local Observation」との違いに注意)。誤った対応関係が
+あっても、現在の成功判定(Content-Type Allowlist)はそれを検知できない。
+`lib.disclosures.providers.edinet.EdinetDownloadType`のDocstring・
+`build_edinet_dataset_descriptor()`の`known_limitations`へ、この区別を
+明示した(`OBSERVED` vs `SPEC_CLAIM_ONLY`)。
+
 - Document Downloadの`type`パラメータ: `1`=提出本文書及び監査報告書
-  (ZIP)、`2`=PDF、`3`=代替書面・添付文書(ZIP)、`4`=英文ファイル(ZIP)、
-  `5`=CSV(ZIP)。ZIP成功時`Content-Type: application/octet-stream`、
+  (ZIP、**OBSERVED**)、`2`=PDF、`3`=代替書面・添付文書(ZIP)、
+  `4`=英文ファイル(ZIP)、`5`=CSV(ZIP)(`2`〜`5`は**SPEC_CLAIM_ONLY**、
+  未Download確認)。ZIP成功時`Content-Type: application/octet-stream`、
   PDF成功時`Content-Type: application/pdf`、失敗時
   `Content-Type: application/json; charset=utf-8`。
 - `withdrawalStatus`("0"=その他/"1"=取下書/"2"=取り下げられた書類)・
@@ -2691,11 +2706,63 @@ ListをRaw保存するForward Collection Architecture(継続的なSnapshot
 
 ### Reviewer Findings(pit-auditor / skeptic-reviewer)
 
-(実施結果はこのDecisionの追記、または完了報告に記載する。)
+両Subagentを実運用した(§21で指定された重点項目に沿って)。
+
+**pit-auditor**: `PIT AUDIT: CLEAN`。指定された6項目(Historical list
+mutation、submitDateTime誤用、processDateTime誤用、Retroactive
+withdrawal/nullified records、filer/issuer mapping、availability
+fallback)すべてPASS、加えて今回のCritical Fix(HTTP 200 +
+metadata.statusエラー検知)自体もTestが実際にその経路を演習している
+ことをコード読解で確認(Tautologicalでない)。[LOW]1件: 既存(この
+Round非対象)の`disclosure_document_to_evidence()`の`available_at =
+market_public_at or retrieved_at`Fallbackは、将来EDINET Documentを
+このEvidence変換経路へ直接(disclosures_as_of()を経由せず)投入した
+場合にPIT-unsafeになりうるという既知の注意喚起(Phase4B-1から継続、
+今回変更なし、対応不要)。
+
+**skeptic-reviewer**: `PASS_WITH_CONCERNS`。[MEDIUM]2件、[LOW]2件、
+[LOW/procedural]1件:
+1. [MEDIUM]「Confirmed By Official Spec」の確度がD0043のLocal Real
+   Data Validationと同列に扱うには弱く、特に`EdinetDownloadType`の
+   `type=2〜5`は未Download確認のまま。**対応済み**(上記「Confirmed By
+   Official Spec」節・`EdinetDownloadType`Docstring・Catalog
+   `known_limitations`へOBSERVED/SPEC_CLAIM_ONLYの区別を明示)。
+2. [MEDIUM] `test_edinet_pit_available_false_is_documentation_only_
+   not_a_runtime_gate`のDocstringが「DisclosureDocument/EvidenceRecord
+   を一切構築していない」という、`edinet_normalize.py`追加により事実と
+   異なる説明をそのまま残していた。**対応済み**(Docstringを修正し、
+   実際の保護機構(`AvailabilityBasis.UNKNOWN` + `disclosures_as_of()`
+   のNoneタイムスタンプ除外)を明示する新規Test`test_edinet_pit_
+   safety_comes_from_availability_basis_unknown_not_from_no_
+   construction`を追加)。
+3. [LOW] Catalogの`known_limitations`がValidationのSample Size(1日分・
+   1文書のみ)を明示していなかった。**対応済み**(上記の通り追記)。
+4. [LOW] `docDescription`欠損時のTitle Placeholder
+   (`f"[EDINET docID=...: docDescription unavailable]"`)は、機械的に
+   「合成された値」と判別できるStructural Signalを持たない(文字列の
+   見た目のみ)。現時点でEDINET Documentを`disclosure_document_to_
+   evidence()`等の実運用経路へ投入する呼び出し元は存在しないため、
+   実害はまだ無い(skeptic-reviewer自身もSeverity LOW・将来のDesign
+   Hygiene注意として位置づけ)。**対応**: コード変更はせず(呼び出し元が
+   存在しない段階での構造追加は過剰実装と判断)、このDecisionへ既知の
+   制約として明示的に記録するに留める。EDINET Documentを実際にEvidence
+   Pipelineへ接続する将来Phaseで、このPlaceholder Titleを機械的に
+   識別する必要が生じた場合は、Boolean Field(例: `title_is_
+   placeholder`)の追加を検討すること。
+5. [LOW/procedural] skeptic-reviewer自身はBash Toolを持たずgit diffを
+   実行できなかった(内容Grepでの代替確認のみ)。Main Claude側で別途
+   `git diff --stat -- core/ app.py tests/`を実行し空であることを確認
+   済み(下記「最終回帰確認」)。
+
+再Reviewは実施していない(全Finding対応がDocstring修正・known_
+limitations追記・Test追加という局所的な変更で完結し、Field-level
+Semantics自体への変更を伴わないため)。
 
 ### 最終回帰確認
 
-(全Finding対応後、完了報告に記載する。)
+(全Finding対応後): `pytest`(Lab 429件・既存Screening Tool 37件)・
+`ruff check`・`ruff format --check`・`mypy`(78ファイル)いずれもclean。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを再確認済み。
 
 ### このDecisionでやらないこと
 

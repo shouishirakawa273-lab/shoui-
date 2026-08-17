@@ -84,10 +84,15 @@ def build_edinet_dataset_descriptor() -> DatasetDescriptor:
         applicable_countries=("JP",),
         cost_or_plan_dependency="UNKNOWN(APIキー取得は確認済みだが、料金体系・プラン区分は未確認)",
         known_limitations=(
-            "Local Real Data Validation(2026-08-17)によりDocuments List/"
-            "Document Downloadの疎通・認証(query_param)・エラー形状(HTTP 200 + "
-            "metadata.statusでのエラー表現)・確認済みField一覧・Lifecycle "
-            "Status値・Download type=1..5マッピングは確認済み。ただし: "
+            "Local Real Data Validation(2026-08-17、ユーザーのローカル環境から"
+            "1日分[2024-05-08]のDocuments List・1件[docID=S100TD9S, type=1]の"
+            "Document Downloadのみ)によりDocuments List/Document Downloadの"
+            "疎通・認証(query_param)・エラー形状(HTTP 200 + metadata.statusでの"
+            "エラー表現)・確認済みField一覧・Lifecycle Status値は確認済み。"
+            "Download type=1..5のマッピングは実際にDownloadして観測したのは"
+            "type=1のみで、2〜5はユーザーがローカルで参照した公式仕様書の記述"
+            "そのまま(SPEC_CLAIM_ONLY、`EdinetDownloadType`のDocstring参照、"
+            "skeptic-reviewer Finding)。ただし: "
             "(1) market_public_at/provider_available_atはsubmitDateTimeから"
             "自動反映していない(意味論未確認のまま)。(2) document_kindは"
             "公式別紙1 Form Code List未確認のため常にUNKNOWN。(3) entity_idは"
