@@ -212,3 +212,59 @@ print(result.payload['content_type'])
 print(len(result.payload['content_base64']))
 "
 ```
+
+## J. Forward Snapshot PoC Procedure(4A.5.1-7、設計・Procedureのみ、実行はまだしない)
+
+**目的**: このLabの`RawSnapshotStore`(既存、新規Storage機構は作らない)を
+使い、同一対象(例: 同一日付のDocuments List、または同一docID)を
+**複数日にわたって繰り返しFetch・保存**し、Providerの実際の挙動
+(Historical List Is Mutable、D0046)を将来の複数回観測で確認できる
+土台とする。
+
+**重要な区別(過剰主張しない)**: Forward Snapshot(これから先の観測を
+蓄積すること)と、Historical Provider PIT Reconstruction(過去のある
+時点でProviderがどう見えていたかを遡って完全再現すること)は**別の
+主張である**。今から観測を始めても、2026-08-17より前の時点でEDINETが
+どう見えていたかを遡って再現することはできない。観測期間中に何も変化が
+無かったとしても、それは「将来も不変である」ことの証明にはならない
+(観測は確率的Evidenceであり、仕様保証ではない)。
+
+### 保存するSnapshot命名規則(案)
+
+既存`RawSnapshotStore.save(result, snapshot_id=...)`をそのまま使う。
+`snapshot_id`に日付・連番を含めることで、同一対象への繰り返しRetrieval
+を別Artifactとして共存させる(Append-only設計と両立、新規コード不要):
+
+```
+edinet_historical_docs_{対象日付YYYYMMDD}_{Retrieval実施日YYYYMMDD}_v{連番}
+```
+
+例: 2026-08-17付のDocuments Listを、2026-08-17・2026-08-24・
+2026-08-31の3回観測する場合:
+`edinet_historical_docs_20260817_20260817_v1`、
+`edinet_historical_docs_20260817_20260824_v1`、
+`edinet_historical_docs_20260817_20260831_v1`。
+
+### 記録するField(既存Manifest Fieldそのまま、新規Field追加なし)
+
+| Field | 導出元 |
+|---|---|
+| request params | `RawFetchResult.request_parameters`(既存) |
+| requested_at | 実際にRequestを送信した時刻(Adapter呼び出し直前にUserが記録) |
+| retrieved_at | `RawFetchResult.retrieved_at`(既存) |
+| response metadata(status/headers等) | 既存`RawFetchResult`の該当Field |
+| raw hash | Manifest既存の`content_hash` |
+| canonical hash(Document本体をDownloadした場合のみ) | `compute_canonical_zip_content_hash()`の結果Hex Digest(**Byte列自体は保存しない**、D0046追記2の運用方針を踏襲) |
+| immutable snapshot path | `RawSnapshotStore`が既存の仕組みで自動決定(手動管理しない) |
+| manifest / index | 既存Manifest File(JSON、`RawSnapshotStore`が自動生成) |
+| source | `"EDINET"`(固定、Multi-Source化した場合のみ変数化) |
+| API/status result | Adapterの戻り値の成否(既存Errorハンドリングをそのまま使う、新規例外型は作らない) |
+
+### 実行タイミング
+
+このRoundでは**実行しない**(Procedure設計のみ)。TDnet Add-on Local
+Validation後、Userのローカル環境で複数日にわたり実施する(ユーザー
+2026-08-17 Task指示 §4A.5.1-7、および前Round`PHASE4A5_1_PLAN.md`の
+Deferred Items記載通り)。実施した場合の観測結果は、D0046追記2と同じ
+形式(Confirmed Fact/OBSERVED_BEHAVIORの区別を保つ)でDECISIONS.mdへ
+追記する。

@@ -261,6 +261,61 @@ Outer Hashが不一致であるという事実だけでは、それがContainer�
 Modelingが本格的に必要になった時点で、`EXACT_RAW_ARTIFACT_DUPLICATE`/
 `EXACT_CANONICAL_CONTENT_DUPLICATE`のような概念分離を検討する。
 
+#### Artifact Difference Workflow(4A.5.1-8、上記原則の判定手順を一般化)
+
+上記原則を、実際に差異を判定する際の手順として一般化する(新規Codeは
+追加しない、既存の判定材料をどの順序で見るかを明文化するだけ):
+
+```
+raw同一(raw_retrieval_hashが一致)
+  → IDENTICAL_RAW(差異なし、判定終了)
+
+raw不一致
+  → そのContainer形式用のCanonicalizerが存在するか?
+
+     存在する(例: EDINET ZIP、compute_canonical_zip_content_hash())
+       → Canonical Hashも算出する
+
+          Canonical同一
+            → CONTAINER_ONLY_CHANGE
+              (Timestamp等Container Metadataのみの差異、Document内容は不変。
+               この事実だけではRevision/訂正とは判定しない)
+
+          Canonical不一致
+            → CONTENT_CHANGE_DETECTED
+              (実際にDocument内容が変化した可能性がある。ただしこれも
+               「訂正された」と自動的にDocumentRelationshipへ変換しない
+               — 明示的な根拠[Provider宣言・公式Metadata]が別途必要、
+               EVIDENCE-003)
+              → 調査・必要ならQuarantine対象として人間が確認する
+
+     存在しない(例: TDnet ── 現状Document本体を一切Fetchしていないため
+     対象コード自体が無い、下記「Container形式ごとの適用範囲」参照)
+       → RAW_CHANGE_REQUIRES_INSPECTION
+         (自動判定できない、Raw Bytesを人間が直接確認するまで結論を
+          保留する)
+```
+
+**重要な原則の繰り返し**: `raw_retrieval_hash`不一致 != Revision。
+この判定手順のどの分岐でも、Hash比較の結果だけから`DocumentRelationship`
+を自動構築しない(`.claude/skills/source-integration/SKILL.md`の
+`RAW-002`/`EVIDENCE-003`参照)。
+
+**Container形式ごとの適用範囲(一般化してはいけない部分)**:
+`compute_canonical_zip_content_hash()`はZIP形式に特化した実装であり、
+他のContainer形式(署名付きPDF等)へそのまま適用できない。Format非依存の
+抽象Canonicalizer Interfaceは設計しない(過剰Engineering、実際の複数
+Format経験が無いまま抽象化しても正しい抽象になる保証が無い)。
+
+**TDnetへの適用状況(2026-08-17時点)**: TDnetは現状Document本体(PDF)を
+一切Fetchしていない(`lib.disclosures.providers.tdnet_normalize`の
+`docs_raw`はOpaque Raw値として保持するのみで、PDF Byte自体をDownloadする
+Adapter Methodが存在しない)。したがって、この判定手順の「Canonicalizer
+不在」分岐(`RAW_CHANGE_REQUIRES_INSPECTION`)はTDnetには**現時点では
+そもそも到達しない**(Raw Artifact自体を取得していないため差異判定の
+対象が無い)。TDnet Document本体Fetchが将来実装された場合、その時点で
+PDF固有のCanonicalization要否を改めて調査する。
+
 ## Data Catalog
 
 `build_disclosure_common_core_dataset_descriptor()`
