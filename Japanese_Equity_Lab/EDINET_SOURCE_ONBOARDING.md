@@ -333,3 +333,27 @@ API V2へ接続した。以下は`DECISIONS.md` D0046の要約(詳細はそち�
 だったDisclosure Universeの再現を保証しない(上記「過去日付のDocuments
 Listは日次更新される」の直接的帰結)。過去に実際に保存されたImmutable
 Snapshotが無い限り、Historical Backtestでの利用にはこの限界が伴う。
+
+---
+
+## 追記2(2026-08-17): Document Download再取得の非決定性
+
+同一`docID=S100TD9S`・同一`download_type=1`を2回Downloadしたところ、
+Outer ZIP自体のbytes/SHA-256は毎回異なった(OLD:
+`2515dd689d673c9dbd32148b5450fc34f0aa0ddd7ba8831f5e5c08067b2a4d1c`、
+NEW: `2a30a239deeb2beeb477443f645a2a6ea1202da813190491a507889a24d98db6`)。
+ZIP内部を比較したところ、Member名・Member Size・Member CRC・Member
+Content SHA-256はすべて一致し、唯一の差はZIP Member自体のTimestamp
+(OLD `2026-08-17 21:56:12` / NEW `2026-08-17 22:33:08`、全Memberで
+同一Pattern)のみだった。
+
+**原因は断定しない**(「EDINETが必ず取得時刻をZIP Timestampとして
+再生成している」という未確認の説明を事実として書かない)。確認できた
+Factは`OBSERVED_BEHAVIOR`として: 同一文書の同一条件でのRetrievalでも、
+Outer ZIP Container Bytesは変わりうる、というところまで。
+
+この結果、`Raw Artifact Identity`(取得したbytesそのものの同一性)と
+`Document Content Identity`(実際のDocument内容の同一性)は別概念である
+ことが実データで確認された。詳細な実装対応は`DECISIONS.md` D0046
+追記2、`DISCLOSURE_ARCHITECTURE.md`「Raw Artifact Identity !=
+Document Content Identity」を参照。

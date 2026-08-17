@@ -105,10 +105,10 @@ def test_binary_content_hash_stable_across_repeated_computation(tmp_path: Path) 
     # test_edinet_adapter.pyの別Testで確認済み)。
     result_a = EdinetAdapter(api_key="k", session=_DownloadSession()).fetch_document_raw("S100TD9S", download_type=1)  # type: ignore[arg-type]
     result_b = EdinetAdapter(api_key="k", session=_DownloadSession()).fetch_document_raw("S100TD9S", download_type=1)  # type: ignore[arg-type]
-    assert result_a.payload["content_sha256"] == result_b.payload["content_sha256"]
+    assert result_a.payload["raw_retrieval_hash"] == result_b.payload["raw_retrieval_hash"]
 
     store = RawSnapshotStore(tmp_path)
     store.save(result_a, snapshot_id="edinet_doc_S100TD9S")
     _loaded_manifest, loaded_payload = store.load("EDINET", "edinet_doc_S100TD9S")
-    assert loaded_payload["content_sha256"] == result_a.payload["content_sha256"]
+    assert loaded_payload["raw_retrieval_hash"] == result_a.payload["raw_retrieval_hash"]
     assert json.dumps(loaded_payload, sort_keys=True) == json.dumps(result_a.payload, sort_keys=True)

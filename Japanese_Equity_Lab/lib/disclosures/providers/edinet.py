@@ -258,10 +258,22 @@ class EdinetAdapter:
 
         レスポンスは通常バイナリ(ZIP/PDF)のため、`RawFetchResult.payload`は
         `lib.snapshot.RawSnapshotStore`(JSON保存)と互換になるよう
-        ``{"content_base64": ..., "content_type": ..., "content_sha256": ...}``
+        ``{"content_base64": ..., "content_type": ..., "raw_retrieval_hash": ...}``
         の形でBase64エンコードして保持する(base64は可逆でありByte-for-Byteの
-        整合性を保つ。`content_sha256`は元のバイト列(Base64化前)に対して
-        計算したCanonical Hash。Content自体の解析・展開は一切行わない)。
+        整合性を保つ)。
+
+        **`raw_retrieval_hash`は「今回のRetrievalで実際に返ってきたRaw
+        bytesそのもの」のSHA-256であり、Document自体のContent Identityを
+        表さない**(D0046追記: Local Real Data Validationで、同一`docID`・
+        同一`download_type`を2回Downloadしたところ、ZIP Member内容は完全に
+        一致したにもかかわらずouter ZIP自体のbytesは毎回異なった —
+        Container内のTimestampがRetrievalごとに変わりうることをOBSERVED_
+        BEHAVIORとして確認済み、原因は断定しない)。実際のDocument内容が
+        同一かどうかを判定するには`lib.disclosures.providers.edinet_zip.
+        compute_canonical_zip_content_hash()`(Container Metadataを除外した
+        Canonical Content Hash)を別途使うこと。`raw_retrieval_hash`同士が
+        異なるからといって、Document内容が変わった(訂正・改版された)とは
+        判定しない。
         """
         recorded_params = {"type": str(download_type)}
         resp = self._request(f"/documents/{source_document_id}", recorded_params, error_label="EDINET Document Download")
@@ -281,7 +293,7 @@ class EdinetAdapter:
         payload = {
             "content_base64": base64.b64encode(raw_bytes).decode("ascii"),
             "content_type": content_type,
-            "content_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+            "raw_retrieval_hash": hashlib.sha256(raw_bytes).hexdigest(),
         }
         return RawFetchResult(
             source="EDINET",

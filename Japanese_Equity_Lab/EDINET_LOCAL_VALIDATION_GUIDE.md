@@ -106,6 +106,18 @@ print(json.dumps(result.payload, ensure_ascii=False, indent=2)[:3000])
 
 ## D. Raw Snapshotとして保存する
 
+**重要(2026-08-17追記)**: 同一`docID`・同一`download_type`でも、
+Retrievalごとに返ってくるRaw ZIP bytesが異なりうることが実データで
+確認されている(Outer ZIP自体のTimestampがRetrievalごとに変わる、
+ZIP内部のMember Contentは変わらない — 詳細は`EDINET_SOURCE_
+ONBOARDING.md`追記2参照)。`RawSnapshotStore`は同じ`snapshot_id`への
+上書きを拒否する(`AppendOnlyViolationError`)ため、同じ`docID`を複数回
+Downloadして保存したい場合は、`snapshot_id`に取得時刻や連番を含めて
+別Artifactとして保存すること(例:
+`f"edinet_doc_{doc_id}_{retrieved_at:%Y%m%dT%H%M%S}"`)。同じ
+`snapshot_id`を使い回して「更新」しようとするのは誤り — Raw Snapshotは
+常にAppend-onlyのImmutable Artifactとして扱う。
+
 ```powershell
 python -c "
 from dotenv import load_dotenv

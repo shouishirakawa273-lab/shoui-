@@ -222,6 +222,40 @@ Documentのみを変換すること。この制約はFundamentals Phase4Aの
 入力にTitleは一切含まれない)。TDnet/EDINET/Company IRの同一Eventへの
 束ね(Event Clustering)は将来Phaseへ延期。
 
+### Raw Artifact Identity != Document Content Identity(Phase4B-2、D0046追記)
+
+**一般原則**: ZIP/XBRL Package等のContainer形式でDownloadされる
+Attachment/Documentについて、「Retrievalで実際に返ってきたRaw bytesの
+同一性(Raw Artifact Identity)」と「その中に含まれる実際のDocument内容の
+同一性(Document Content Identity)」は別概念であり、混同してはならない。
+
+EDINETのLocal Real Data Validation(2026-08-17)で、同一`docID`・同一
+`download_type`を2回Downloadしたところ、ZIP Member(実データ)は完全に
+一致したにもかかわらず、outer ZIP自体のbytes/SHA-256は毎回異なった
+(ZIP Member自体のTimestampがRetrievalごとに変わっていた)。原因は
+断定しない(`OBSERVED_BEHAVIOR`として記録するのみ、`DECISIONS.md` D0046
+参照)。
+
+したがって、既存の`find_exact_content_duplicate_groups()`
+(Documents ListのJSON行全体をHashする、Container形式ではない)自体は
+この問題の影響を受けないが、**Container形式のAttachment/Documentへ
+Dedup機能を拡張する場合、単純にRaw bytesのHash一致だけをExact Content
+Duplicateの判定基準にしてはならない**。EDINETでは
+`lib.disclosures.providers.edinet_zip.compute_canonical_zip_content_hash()`
+がContainer Metadata(Timestamp・圧縮方式・Member順序)を除外した
+Canonical Content Hashを提供する。
+
+`raw_retrieval_hash`(Raw Artifact Identity)の不一致だけをもって
+「Documentが訂正・改版された」と自動推論することも禁止する — それは
+単にRetrievalごとのContainer側の差異である可能性が高く、実際の内容
+比較には必ずCanonical Content Hashを使う。
+
+**既存Common Core(`lib.disclosures.model.DuplicateRelationKind`)は
+このPhaseでは変更しない**(最小変更を優先する判断、`DECISIONS.md` D0046
+参照)。将来、Container形式のAttachmentに対するDedup/Relationship
+Modelingが本格的に必要になった時点で、`EXACT_RAW_ARTIFACT_DUPLICATE`/
+`EXACT_CANONICAL_CONTENT_DUPLICATE`のような概念分離を検討する。
+
 ## Data Catalog
 
 `build_disclosure_common_core_dataset_descriptor()`

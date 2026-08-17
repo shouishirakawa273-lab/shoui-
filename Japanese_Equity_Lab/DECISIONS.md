@@ -2769,3 +2769,118 @@ Semantics自体への変更を伴わないため)。
 XBRL本文Parse・ZIP展開・財務抽出・PDF Parse・LLM本文解釈・大量保有分析・
 Event Extraction・Buy/Sell判断・Strategy変更・Backtest条件変更・
 Screening Tool変更・TDnet(Phase4B-3)には着手していない。
+
+## D0046 追記2 — Phase4B-2: Document Download再取得の非決定性、Raw Artifact Identity != Document Content Identity
+
+### A. Real Observation
+
+同一`docID=S100TD9S`・同一`download_type=1`を2回Downloadしたところ:
+
+- Outer ZIP SHA-256: OLD
+  `2515dd689d673c9dbd32148b5450fc34f0aa0ddd7ba8831f5e5c08067b2a4d1c`、
+  NEW `2a30a239deeb2beeb477443f645a2a6ea1202da813190491a507889a24d98db6`
+  (Outer bytes identical = False)。
+- ZIP内部比較: same member names = True、全member size一致、全member
+  CRC一致、全member content SHA-256一致。
+- 唯一の差: ZIP Member自体のTimestamp(OLD `2026-08-17 21:56:12` /
+  NEW `2026-08-17 22:33:08`、全memberで同一Pattern)。
+
+**原因は`OBSERVED_BEHAVIOR`として記録し、断定しない**(「EDINETが必ず
+取得時刻をZIP Timestampとして再生成している」という未確認の説明を
+公式仕様であるかのように書かない)。Confirmed Factは: 「same document
+retrieval → outer ZIP bytes/hash changed → member contents unchanged
+→ ZIP member timestamps changed」まで。
+
+### B. Raw vs Canonical Hash設計
+
+`lib.disclosures.providers.edinet.EdinetAdapter.fetch_document_raw()`の
+Payload Fieldを`content_sha256`から`raw_retrieval_hash`へRename した
+(意味を正確に表す名前へ変更、「今回のRetrievalで実際に返ってきたRaw
+bytesそのもの」のHashであり、Document Content Identityではないことを
+名前自体で示す)。
+
+新設`lib.disclosures.providers.edinet_zip.compute_canonical_zip_content_hash()`:
+ZIP Container Metadata(Timestamp・圧縮方式・Member順序)を除外し、
+各Member(Directory Entryを除く)の`filename`・`byte length`・
+`SHA-256(member raw content)`をfilenameでSortしてDeterministicに
+直列化し、その全体のSHA-256を計算する。ZIP展開先へのDisk書き出しは
+行わない(メモリ上でのみ読み取る)。
+
+**A. raw_retrieval_hash**(`EdinetAdapter`が計算): Provenance・Snapshot
+Integrity・「このRetrievalで実際に取得したArtifactそのもの」の識別に
+使う。同じdocIDでもRetrievalごとに変わりうる。
+
+**B. canonical_content_hash**(`edinet_zip`が計算、呼び出し側が必要な
+時に別途実行): 実Document Content Identity比較に使う。Container
+Metadataに依存しない。
+
+### C. Duplicate Semantics
+
+`lib.disclosures.model.DuplicateRelationKind`(Phase4B-1のCommon Core、
+Documents ListのJSON行全体Hashを対象とする既存機能)は**このPhaseでは
+変更しない**(既存Common Coreを壊さない最小変更を優先する、ユーザー
+指示通り)。Outer ZIP Hash不一致は「Document内容が変わった」ことを
+意味せず、Outer ZIP Hash一致は「同じRetrieval Bytes」を、Canonical
+Content Hash一致は「同じ抽出済みMember内容」を意味する、という3種類の
+判定を明確に区別する。将来、Container形式のAttachmentに対する正式な
+Dedup/Relationship Modelingが必要になった時点で、
+`EXACT_RAW_ARTIFACT_DUPLICATE`/`EXACT_CANONICAL_CONTENT_DUPLICATE`の
+ような概念分離を検討する(このPhaseでは導入しない)。
+
+### D. Snapshot Behavior
+
+`RawSnapshotStore`は既存のAppend-only設計(同一`snapshot_id`への上書き
+拒否)をそのまま踏襲する — 新規コードは追加していない。同一docIDを
+複数回Downloadして保存する場合は、`snapshot_id`にRetrieval時刻・連番を
+含めることで別Artifactとして共存させる設計とし、`EDINET_LOCAL_
+VALIDATION_GUIDE.md`のStep Dへその慣習を追記した。Canonical Content
+Hashが一致する場合の`CONTENT_UNCHANGED`的なDerived Observationは、
+このPhaseでは実装しない(Lifecycle/Event Inferenceを過度に増やさない、
+ユーザー指示通り)。
+
+### E. PIT / Revision Implication
+
+Outer Raw Hashの変化だけで「Documentが訂正・改版・変更された」と判定
+することを明示的に禁止する(`edinet_zip.py`が`DocumentRelationship`/
+`DuplicateRelationKind`のいずれもImportしないことを構造Testで確認、
+`test_edinet_zip_module_never_constructs_document_relationship`)。
+今回の観測(Outer変化・Canonical不変)自体は、`document content change
+evidence = NONE`として扱う(Canonical Content Hashが一致している限り、
+内容変更の証拠は無い)。
+
+### F. Safety(Canonical Hash生成時)
+
+ZIP展開先へのDisk書き出しをしない(メモリ上のみ)、Path Traversal対策
+(絶対Path・`..`セグメントをFail Closed)、Symlink等の特殊Entryを
+Fail Closed、重複Filenameを明示的にFail Closed、Malformed ZIPを
+Fail Closed、暗号化ZIP(General Purpose Bit Flag bit 0)をFail Closed。
+HTML/XML/XBRL内部のWhitespace・Encoding・属性順序等のSemantic
+Normalizationは一切行わない(Member Raw Bytesが異なればCanonical
+Content Hashも異なる。意味的同一性判定は将来Phase)。
+
+### G. Tests
+
+`13_tests/test_edinet_zip_canonicalize.py`(18件): Local Observationの
+直接再現(同一Member内容・異なるZIP Timestamp → Outer異なりCanonical
+一致)、Member Content/Filename変更・追加・削除でCanonical Hashが変わる
+こと、Member順序のみ変更・圧縮方式のみ変更ではCanonical Hashが変わら
+ないこと、Malformed/重複Filename/Path Traversal/Symlink/暗号化ZIPが
+それぞれFail Closedすること、Directory Entry除外、Offline再現性
+(Pure Function)、Raw Bytes不変性、`DocumentRelationship`/
+`DuplicateRelationKind`を一切Importしないことの構造確認。
+
+### Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+(実施結果はこのDecisionの追記、または完了報告に記載する。)
+
+### 最終回帰確認
+
+(全Finding対応後、完了報告に記載する。)
+
+### このDecisionでやらないこと
+
+XBRL/PDF/HTML本文の意味解析・Semantic Normalization・`CONTENT_
+UNCHANGED`等のDerived Event生成・`DuplicateRelationKind`のEnum拡張・
+`DocumentRelationship`の自動生成・Buy/Sell判断・Strategy変更・
+Backtest条件変更・Screening Tool変更・TDnet(Phase4B-3)には着手して
+いない。

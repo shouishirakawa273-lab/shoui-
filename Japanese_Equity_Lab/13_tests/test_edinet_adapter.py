@@ -253,7 +253,7 @@ def test_fetch_document_raw_base64_encodes_binary_content_round_trip() -> None:
     assert result.payload["content_type"] == "application/octet-stream"
     decoded = base64.b64decode(result.payload["content_base64"])
     assert decoded == raw_bytes  # Byte-for-Byteの往復整合性
-    assert result.payload["content_sha256"] == hashlib.sha256(raw_bytes).hexdigest()
+    assert result.payload["raw_retrieval_hash"] == hashlib.sha256(raw_bytes).hexdigest()
 
 
 def test_fetch_document_raw_pdf_content_type_is_accepted_as_success() -> None:
