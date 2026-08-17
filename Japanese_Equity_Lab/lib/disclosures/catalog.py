@@ -40,52 +40,71 @@ def build_disclosure_common_core_dataset_descriptor() -> DatasetDescriptor:
 
 
 def build_edinet_dataset_descriptor() -> DatasetDescriptor:
-    """EDINET(金融庁 開示書類システム) API V2 のCatalog登録情報(Phase4B-2)。
+    """EDINET(金融庁 開示書類システム) API V2 のCatalog登録情報(Phase4B-2、
+    D0046追記: 2026-08-17 Local Real Data Validation完了を反映)。
 
-    `implementation_status=NOT_IMPLEMENTED`: `lib.disclosures.providers.edinet.
-    EdinetAdapter`はDocuments List/Document DownloadのRaw HTTP Fetchのみを
-    提供し、`DisclosureDocument`への正規化(field mapping)は一切行っていない。
-    本セッションは`api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続できず
-    (egressポリシーによりブロック、`curl`で`CONNECT tunnel failed, 403`を
-    独立に確認済み)、`data-source-researcher`によるOnboarding調査も
-    二次情報のみに基づく未確認結果(一部相互矛盾)に留まった
-    (`EDINET_SOURCE_ONBOARDING.md`参照)。したがって`SKELETON`
-    (実仕様に基づくAdapter骨格)ではなく`NOT_IMPLEMENTED`とする —
-    Raw Fetch用のコードは存在するが、その対象Field名・Query仕様自体が
-    未確認であるため。
+    `implementation_status=CONNECTED`: ユーザーのローカル環境から実際に
+    `api.edinet-fsa.go.jp`へ接続し、Documents List(`metadata.status="200"`・
+    実Field構造)・Document Download(type=1、ZIP、SHA-256確認済み)いずれも
+    実データで疎通・Parseを確認した(本Claude Cloudセッション自身は依然
+    `api.edinet-fsa.go.jp`へ接続できない — `EdinetAdapter`/`edinet_normalize`
+    はユーザー提供の実観測結果に基づいて実装されている)。
+
+    ただし`pit_available=False`のまま: `market_public_at`/
+    `provider_available_at`はいずれも`submitDateTime`から自動反映しておらず
+    (意味論が未確認、D0046 §9)、`DisclosureDocument`のPIT Fieldは常に
+    `UNKNOWN`のままである。「実データを取得・Parseできる」ことと「PIT安全な
+    As-of Viewを提供できる」ことは別であり、後者はまだ達成していない。
+
+    `document_kind`のMapping(公式別紙1のForm Code List)・`entity_id`の
+    Role-aware解決(Entity Registry統合)はいずれも未実装のまま(D0046 §12/
+    §14、Local Descriptionのみからの推測Mappingを避けるため意図的)。
+
+    **Historical Point-in-Time Reconstructionはできない**(D0046 §7/§8、
+    最重要の既知の制約): EDINETの過去日付のDocuments Listは日次更新され、
+    縦覧期間満了・取下げ・書類情報修正により後から書き換わる。現在
+    `date=2024-05-08`を取得しても、それが2024-05-08時点で市場が実際に
+    観測できたUniverseと同一である保証はない。過去に実際に保存された
+    Immutable Snapshotが無い限り、Historical Backtestでの利用には
+    この限界が伴う(Source固有の不可避な制約であり、Architecture上のBugでは
+    ない)。
 
     `originating_source`と`delivery_provider`は、EDINET APIを直接呼び出す
-    設計である限り同一(`"EDINET"`)— 別Provider経由での配信は現時点で
-    想定していない(D0042のOrigin/Delivery分離を踏襲、値が分かれるのは
-    将来他Provider経由でEDINET由来情報を取得する場合のみ)。
+    設計である限り同一(`"EDINET"`)。
     """
     return DatasetDescriptor(
         dataset_id="edinet_disclosures",
         source_id="EDINET",
         capability=DataCapability.DISCLOSURE,
         authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
-        implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
-        update_frequency="UNKNOWN(公式資料未確認、更新頻度・縦覧期間の範囲が未確定)",
+        implementation_status=ImplementationStatus.CONNECTED,
+        update_frequency="UNKNOWN(日次更新らしいが正式な更新頻度・SLAは未確認)",
         pit_available=False,
         applicable_codes=None,
         applicable_countries=("JP",),
-        cost_or_plan_dependency="UNKNOWN(無料と思われるが一次資料で未確認)",
+        cost_or_plan_dependency="UNKNOWN(APIキー取得は確認済みだが、料金体系・プラン区分は未確認)",
         known_limitations=(
-            "公式FSA/EDINET資料・API本体への接続がいずれも本セッションからブロックされて"
-            "おり(EGRESS_BLOCKED、独立にcurlでも確認)、Documents Listの実フィールド名・"
-            "submitDateTime/opeDateTimeの意味論・parentDocIDの訂正関係・"
-            "withdrawalStatusの列挙値・secCode形式・Document Downloadのtype値、"
-            "いずれも未確認(一部は情報源間で相互矛盾)。詳細は"
-            "EDINET_SOURCE_ONBOARDING.mdを参照。ローカル環境での実API疎通確認が"
-            "完了するまで、DisclosureDocumentへの正規化(field mapping)・"
-            "DocumentKind/Form Codeマッピング・Entity Registry統合・"
-            "market_public_at/provider_available_atへの反映は一切行わない"
-            "(pit_available=Falseはこれを表す — Raw Fetchはできても、"
-            "確認済みのPIT意味論に基づくAs-of Viewはまだ提供できない)。"
+            "Local Real Data Validation(2026-08-17)によりDocuments List/"
+            "Document Downloadの疎通・認証(query_param)・エラー形状(HTTP 200 + "
+            "metadata.statusでのエラー表現)・確認済みField一覧・Lifecycle "
+            "Status値・Download type=1..5マッピングは確認済み。ただし: "
+            "(1) market_public_at/provider_available_atはsubmitDateTimeから"
+            "自動反映していない(意味論未確認のまま)。(2) document_kindは"
+            "公式別紙1 Form Code List未確認のため常にUNKNOWN。(3) entity_idは"
+            "filer/issuer/subject Role未解決のため常にNone(Raw Roleは"
+            "EdinetDocumentMetadataに保持)。(4) Historical Listは日次更新・"
+            "書き換わるため、現在の取得は過去時点のPIT Snapshotの代替にならない"
+            "(最重要の制約、D0046 §7/§8)。(5) Documents Listの日付範囲・銘柄"
+            "コード直接クエリ対応は未確認(1回1日のみ)。(6) レート制限は"
+            "公式な数値未確認のまま暫定値を使用。詳細はEDINET_SOURCE_"
+            "ONBOARDING.md・DECISIONS.md D0046参照。"
         ),
         notes=(
-            "Raw Fetchのみ: lib.disclosures.providers.edinet.EdinetAdapter。"
-            "originating_source=delivery_provider='EDINET'(直接接続、Phase4B-2時点)。"
+            "Raw Fetch: lib.disclosures.providers.edinet.EdinetAdapter。"
+            "Normalize: lib.disclosures.providers.edinet_normalize"
+            "(EDINET固有FieldはEdinetDocumentMetadataへ保持、Common Core"
+            "DisclosureDocumentへは持ち込まない)。"
+            "originating_source=delivery_provider='EDINET'。"
         ),
     )
 

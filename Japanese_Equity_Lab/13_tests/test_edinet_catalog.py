@@ -6,11 +6,14 @@ from lib.disclosures.catalog import build_disclosure_common_core_dataset_descrip
 from lib.sources.catalog import DataCapability, ImplementationStatus, SourceAuthorityClass, SourceCatalog
 
 
-def test_edinet_registered_under_disclosure_capability_as_not_implemented() -> None:
+def test_edinet_registered_under_disclosure_capability_as_connected_but_pit_unavailable() -> None:
+    """D0046追記: Local Real Data Validation完了によりCONNECTEDへ更新した。
+    ただしPIT意味論(market_public_at/provider_available_at)は依然未確認
+    のため、pit_availableはFalseのまま(「取得できる」≠「PIT安全に使える」)。"""
     catalog = SourceCatalog([build_edinet_dataset_descriptor()])
     found = catalog.find(capability=DataCapability.DISCLOSURE)
     assert [d.dataset_id for d in found] == ["edinet_disclosures"]
-    assert found[0].implementation_status == ImplementationStatus.NOT_IMPLEMENTED
+    assert found[0].implementation_status == ImplementationStatus.CONNECTED
     assert found[0].pit_available is False
 
 
@@ -36,10 +39,10 @@ def test_edinet_known_limitations_references_onboarding_report_and_key_unconfirm
     未確認と判定された具体的な項目名がknown_limitationsへ反映されていることまで
     確認する(空欄のまま参照だけ書く、という劣化を検知できるようにする)。"""
     descriptor = build_edinet_dataset_descriptor()
-    assert "EDINET_SOURCE_ONBOARDING" in descriptor.known_limitations
-    assert "EGRESS_BLOCKED" in descriptor.known_limitations
     assert "submitDateTime" in descriptor.known_limitations
-    assert "secCode" in descriptor.known_limitations
+    assert "document_kind" in descriptor.known_limitations
+    assert "entity_id" in descriptor.known_limitations
+    assert "D0046" in descriptor.known_limitations
 
 
 def test_edinet_pit_available_false_is_documentation_only_not_a_runtime_gate() -> None:

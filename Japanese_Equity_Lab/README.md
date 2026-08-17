@@ -159,12 +159,22 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   分離し、本文Semantic Extractionは将来Phaseへ明確に切り離した。詳細は
   `DISCLOSURE_ARCHITECTURE.md`参照(Lab 365テスト、pit-auditor/
   skeptic-reviewerによる初回Review完了)。
-- **Phase4B-2**: EDINET API V2への接続を試みた(D0046)が、本セッションは
-  `api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続できず(EGRESS_
-  BLOCKED、独立にcurlでも確認)、`data-source-researcher`によるOnboarding
-  調査(`EDINET_SOURCE_ONBOARDING.md`)も二次情報のみに基づく未確認結果
-  (一部相互矛盾)に留まった。このため`lib/disclosures/providers/edinet.py`
-  の`EdinetAdapter`はDocuments List/Document DownloadのRaw HTTP Fetchのみ
-  実装し(Field-level Normalizationは未実装)、Source Catalogには
-  `implementation_status=NOT_IMPLEMENTED`として登録した。ローカル環境での
-  実API疎通確認手順は`EDINET_LOCAL_VALIDATION_GUIDE.md`参照。
+- **Phase4B-2**: EDINET API V2への接続(D0046)。本セッション自身は
+  `api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続できないままだったが
+  (EGRESS_BLOCKED、独立にcurlでも確認)、2026-08-17にユーザーがローカル
+  環境から実際に接続し、Documents List・Document Downloadの疎通・認証・
+  実Field構造・エラー形状・Download type=1〜5マッピングを確認した
+  (`EDINET_SOURCE_ONBOARDING.md`追記、`EDINET_LOCAL_VALIDATION_GUIDE.md`)。
+  この過程で「EDINETはエラー時もHTTP 200を返し実StatusはJSON内の
+  `metadata.status`に埋め込まれる」という重要な挙動が判明し、既存
+  `EdinetAdapter`の誤判定Bugを修正した。`lib/disclosures/providers/
+  edinet_normalize.py`で確認済みFieldのみをNormalizeし、EDINET固有情報
+  (Role別識別子・Lifecycle Status等)はProvider-neutralなCommon Coreへは
+  持ち込まず別Dataclass(`EdinetDocumentMetadata`)で保持する。`document_
+  kind`Mapping・`entity_id`解決・PIT Field(`market_public_at`/`provider_
+  available_at`)反映はいずれも未実装のまま(公式Form Code List・PIT
+  意味論いずれも未確認のため)。Source Catalogには`implementation_
+  status=CONNECTED`(`pit_available=False`のまま)として登録。**最重要の
+  発見**: EDINETの過去日付のDocuments Listは日次更新され後から書き換わる
+  ため、現在の取得は過去時点のPIT Snapshotの代替にならない
+  (`DISCLOSURE_ARCHITECTURE.md`「Historical List Is Mutable」参照)。

@@ -1,42 +1,53 @@
-"""EDINET API V2 への未検証の一次接続(Phase4B-2)。
+"""EDINET API V2 への接続(Phase4B-2、D0046)。
 
-**この時点でField-level実装は一切行わない**(Documents Listの実レスポンス
-スキーマ・Document Downloadの`type`値・認証方式の正確な形、いずれも公式資料への
-疎通ができず未確認。`Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md`参照)。
-ここで提供するのはRaw HTTPレスポンスをそのまま取得するための最小限のClientのみで
-あり、`DisclosureDocument`への正規化(normalize)・`DocumentKind`マッピング・
-Entity解決などは一切行わない(それらはField名が確認できるまで意図的に未実装)。
+**Local Real Data Validation完了(2026-08-17、ユーザーのローカル環境から)**。
+以下はローカル実データ観測 + 公式仕様(EDINET API仕様書 Version 2、金融庁
+企画市場局企業開示課)に基づき確認済み:
 
-**認証方式は未確認。** 検索により得られた二次情報は「`Subscription-Key`という
-クエリパラメータ」を示唆するものと、当初タスク側で仮定していた
-「`Ocp-Apim-Subscription-Key`ヘッダ」の両方が存在するが、いずれも一次資料では
-確認できていない。`auth_style`引数でどちらを試すか明示的に選べるようにしてある
-(既定は`"query_param"`。`EDINET_SOURCE_ONBOARDING.md` §1参照)。
+- Base URL(``https://api.edinet-fsa.go.jp/api/v2``)・認証方式
+  (``Subscription-Key``クエリパラメータ)は実際に到達・認証成功を確認済み。
+- Documents List(``GET /documents.json``、``date``/``type``パラメータ)は
+  実際に`metadata.status="200"`・`metadata.resultset.count`付きレスポンスを
+  観測済み。
+- Document Download(``GET /documents/{docID}``)の``type``パラメータは
+  公式仕様で1〜5の意味が確認され、``type=1``(提出本文書及び監査報告書)の
+  実Downloadで`Content-Type: application/octet-stream`・ZIPマジックバイト
+  (``50 4b 03 04``)を観測し、公式仕様と一致することを確認済み。
 
-**エンドポイントURLも未確認の候補。** `BASE_URL`は検索結果で繰り返し言及された
-`https://api.edinet-fsa.go.jp/api/v2`を候補として採用しているが、本セッションは
-このホストへの接続自体がegressポリシーによりブロックされており(`curl`で
-`CONNECT tunnel failed, 403`を確認済み)、公式資料はおろか疎通そのものが
-検証できていない。
+**それでもなお未確認/未実装のまま残っている項目**(詳細は
+`Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md`・`DECISIONS.md` D0046参照):
 
-**Document Downloadの`type`パラメータは矛盾する情報しか見つかっていない**
-(`EDINET_SOURCE_ONBOARDING.md` §7: 二次資料間で同じ数値が別の形式を指している)。
-`fetch_document_raw()`はこの値を必須の明示的引数として要求し、既定値は持たせない
-— 呼び出し側が値を推測しないよう強制する設計。
+- Documents Listが日付範囲・銘柄コードによる直接クエリに対応しているかは
+  依然未確認(1回の呼び出しにつき1日、というAdapter設計は維持)。
+- **EDINETの過去日付のDocuments Listは日次更新され、後から書き換わりうる**
+  (縦覧期間満了・取下げ・書類情報修正等により、`date=2024-05-08`を今取得しても、
+  それが2024-05-08時点で実際に観測可能だった内容と同一である保証はない)。
+  このAdapter/Normalizerは現在時点のRetrievalしか行わず、Historical PIT
+  Snapshotの再構成を主張しない(過去に実際に保存されたImmutable Snapshotが
+  無い限り、Historical Point-in-Timeの完全性は達成できない — 既知の
+  Source固有の制約であり、Architecture上のBugではない)。
 
-このAdapterが返す`RawFetchResult.request_parameters`には、認証方式にかかわらず
-APIキーを一切含めない(`lib.snapshot.RawSnapshotStore`のSecret Leakage Checkとは
-独立に、ここでも二重に保証する)。
+**重要なエラー処理上の注意**: EDINET APIはエラー時もHTTP Status 200を返し、
+実際のStatusはJSON Body内の``metadata.status``フィールドに埋め込まれる
+(ローカル検証で`StatusCode=401`相当のエラーが`metadata.status="401"`という
+形でHTTP 200のJSONとして返ってくることを確認済み)。したがって
+``requests.Response.raise_for_status()``だけでは検知できず、本モジュールは
+`metadata.status`とレスポンス構造そのものを明示的に検証する。
+
+このAdapterが返す`RawFetchResult.request_parameters`には、認証方式に
+かかわらずAPIキーを一切含めない。
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 import os
 import time
 from datetime import UTC, date, datetime
-from typing import Literal
+from enum import IntEnum
+from typing import Any, Literal
 
 import requests
 
@@ -47,9 +58,9 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.edinet-fsa.go.jp/api/v2"
 RESPONSE_SCHEMA_VERSION = (
-    "edinet-v2(未検証: 公式資料へ疎通不可、二次情報のみ、一部矛盾あり。"
-    "Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md参照。実装前に必ず"
-    "ローカル環境で実レスポンスを確認すること)"
+    "edinet-v2(2026-08-17ローカル実データ検証済み: Documents List/Document "
+    "Downloadの疎通・認証・エラー形状を確認。Field-level意味論は一部のみ確認 — "
+    "Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md参照)"
 )
 
 AuthStyle = Literal["query_param", "header"]
@@ -59,15 +70,59 @@ _HEADER_AUTH_KEY_NAME = "Ocp-Apim-Subscription-Key"
 # 非公式情報(実運用上3〜5秒間隔が必要との言及)に基づく暫定的な安全マージン。
 _RATE_LIMIT_INTERVAL_SEC = 5.0
 
+_DOCUMENTS_LIST_SUCCESS_STATUS = "200"
+
+
+class EdinetDownloadType(IntEnum):
+    """Document Downloadの``type``パラメータ(公式仕様 + ローカル実データで確認済み、
+    2026-08-17)。ZIP系(1/3/4/5)とPDF(2)で成功時のContent-Typeが異なる
+    (`_SUCCESSFUL_DOWNLOAD_CONTENT_TYPES`参照)。"""
+
+    MAIN_DOCUMENT_AND_AUDIT_REPORT = 1  # 提出本文書及び監査報告書(ZIP)。実Download観測済み。
+    PDF = 2  # PDF
+    ALTERNATIVE_ATTACHMENTS = 3  # 代替書面・添付文書(ZIP)
+    ENGLISH_DOCUMENTS = 4  # 英文ファイル(ZIP)
+    CSV = 5  # CSV(ZIP)
+
+
+# type=2(PDF)のみapplication/pdf、それ以外(1/3/4/5、いずれもZIP)は
+# application/octet-stream。ローカル実データで type=1 の application/octet-stream
+# を確認済み。type=2/3/4/5 の実Content-Typeは未検証だが、公式仕様の記述
+# (ZIP/PDF)からこの2値のいずれかになると判断する。
+_SUCCESSFUL_DOWNLOAD_CONTENT_TYPES = frozenset({"application/octet-stream", "application/pdf"})
+_ERROR_CONTENT_TYPE_PREFIX = "application/json"
+
+
+class EdinetApiError(DataSourceError):
+    """EDINET APIがHTTP 200かつ`metadata.status`がエラーを示す場合、または
+    Document DownloadがエラーJSONを返した場合に送出する(`DataSourceError`の
+    サブクラス、メッセージにAPIキーは含めない)。"""
+
+
+def _safe_error_message(body: Any) -> str:
+    """エラーレスポンスのJSON Bodyから、APIキーを含まない診断メッセージを組み立てる。
+
+    EDINETのエラーBodyはServer側が生成するものであり、Client側のAPIキーが
+    そのまま反射される既知の挙動は確認されていないが、念のため`metadata`
+    以下の値のみを使い、Bodyの他の部分やRequest URLは含めない。
+    """
+    if not isinstance(body, dict):
+        return "(レスポンスBodyが辞書形式ではありません)"
+    metadata = body.get("metadata")
+    if not isinstance(metadata, dict):
+        return "(metadataフィールドが見つかりません)"
+    status = metadata.get("status", "UNKNOWN")
+    message = metadata.get("message", "(messageフィールドなし)")
+    return f"metadata.status={status!r}, metadata.message={message!r}"
+
 
 class EdinetAdapter:
-    """EDINET API V2 への最小限のRaw HTTP Client(Phase4B-2)。
+    """EDINET API V2 への Raw HTTP Client(Phase4B-2、Local Real Data Validation済み)。
 
     Documents List(``/documents.json``)とDocument Download
     (``/documents/{docID}``)のRaw Fetchのみを提供する。Field-level
-    Normalizationは一切行わない。`lib.sources.providers.DisclosureProvider`
-    Protocolはまだ満たさない — ``fetch_disclosures(codes=...)``によるcode絞り込みには
-    確認済みのField名(``secCode``等)が必要なため、Phase4B-2では意図的に未実装。
+    Normalizationは`lib.disclosures.providers.edinet_normalize`が別途担う
+    (このモジュール自体はNormalize/Entity解決を行わない)。
     """
 
     def __init__(
@@ -100,12 +155,10 @@ class EdinetAdapter:
         """認証情報を含めたHTTPリクエストを実行するが、`recorded_params`
         (Snapshotへそのまま記録される側)には認証情報を一切含めない。
 
-        pit-auditor Finding(D0046追記): ``raise ... from None`` だけでは
-        `__suppress_context__`が立つのみで、捕捉した例外オブジェクト自体
-        (query_param認証方式ではAPIキーを含むURLを保持しうる)は新しい例外の
-        `__context__`から依然参照可能なままになる。これを避けるため、`raise`文を
-        `except`節の外側(例外ハンドリングが終わった後)に置き、`__context__`が
-        自動設定されない形にする。
+        `raise_for_status()`はTransport層(真のHTTP 4xx/5xx)のみを検知する。
+        EDINET自身のアプリケーションレベルのエラー(HTTP 200 + metadata.status
+        でのエラー表現)はここでは検知できないため、呼び出し元
+        (`fetch_documents_list_raw`/`fetch_document_raw`)が個別に検証する。
         """
         api_key = self._require_configured()
         outgoing_params = dict(recorded_params)
@@ -135,14 +188,16 @@ class EdinetAdapter:
     def fetch_documents_list_raw(self, target_date: date, *, list_type: int) -> RawFetchResult:
         """``GET /documents.json``: 指定日のDocuments Listを未加工のまま取得する。
 
-        `date`/`type`という候補パラメータ名は未確認(EDINET_SOURCE_ONBOARDING.md §8)。
-        `list_type`に既定値を持たせないのは`fetch_document_raw`の`download_type`と
-        同じ理由 — `type=2`(メタデータ+リスト)という値も単一の未検証スニペットのみに
-        基づく候補であり、`download_type`の値が情報源間で矛盾していたのと確度の面で
-        本質的に変わらないため(pit-auditor/skeptic-reviewer共通Finding、D0046追記:
-        「同じ未確認度合いのパラメータの一方だけ既定値を持たせるのは一貫しない」)。
-        1回の呼び出しにつき1日のみ(日付範囲・銘柄コードによるクエリが可能かは未確認、
-        そのため本メソッドにcodes/date-range引数は持たせていない)。
+        成功条件(すべて満たす場合のみ成功): (1) HTTP成功(Transport層)、
+        (2) レスポンスBodyがJSONとして解釈できる、(3) ``metadata.status
+        == "200"``、(4) ``results``キーがリストとして存在する。いずれかを
+        満たさない場合は`EdinetApiError`を送出する(401/403/404/429/5xx相当の
+        `metadata.status`はすべてこの経路でfail closedになる)。
+
+        `date`/`type`という候補パラメータ名はローカル実データで実際に機能する
+        ことを確認済み。1回の呼び出しにつき1日のみ(日付範囲・銘柄コードによる
+        クエリが可能かは未確認、そのため本メソッドにcodes/date-range引数は
+        持たせていない)。
         """
         recorded_params = {"date": target_date.isoformat(), "type": str(list_type)}
         resp = self._request("/documents.json", recorded_params, error_label="EDINET Documents List")
@@ -150,6 +205,15 @@ class EdinetAdapter:
             body = resp.json()
         except ValueError as exc:
             raise DataSourceError("EDINET Documents Listのレスポンスが JSON として解釈できません") from exc
+
+        if not isinstance(body, dict) or not isinstance(body.get("metadata"), dict):
+            raise EdinetApiError("EDINET Documents Listのレスポンスに想定される'metadata'構造がありません")
+        status = body["metadata"].get("status")
+        if status != _DOCUMENTS_LIST_SUCCESS_STATUS:
+            raise EdinetApiError(f"EDINET Documents Listが失敗を報告しました: {_safe_error_message(body)}")
+        if not isinstance(body.get("results"), list):
+            raise EdinetApiError("EDINET Documents Listのレスポンスに'results'リストがありません")
+
         return RawFetchResult(
             source="EDINET",
             endpoint="/documents.json",
@@ -161,23 +225,46 @@ class EdinetAdapter:
         )
 
     def fetch_document_raw(self, source_document_id: str, *, download_type: int) -> RawFetchResult:
-        """``GET /documents/{docID}``: 指定書類のダウンロード(スモークテスト用)。
+        """``GET /documents/{docID}``: 指定書類のダウンロード。
 
-        `download_type`(`type`パラメータ)の値と意味は情報源間で矛盾しており
-        (EDINET_SOURCE_ONBOARDING.md §7)、既定値は持たせない — 呼び出し側が
-        明示的に値を選ぶことを強制する。
+        成功条件(すべて満たす場合のみ成功): (1) HTTP成功(Transport層)、
+        (2) Content-Typeが`_SUCCESSFUL_DOWNLOAD_CONTENT_TYPES`のいずれか
+        (``application/octet-stream``または``application/pdf``)。
+        Content-Typeが``application/json``系の場合はエラーBody(EDINET側の
+        既知の挙動、ローカル実データで確認済み)とみなし`EdinetApiError`を
+        送出する。それ以外の未知Content-Typeもfail closedで拒否する
+        (「成功として知られている型のみ許可」というAllowlist方式)。
 
-        レスポンスは通常バイナリ(ZIP等)と想定されるため、`RawFetchResult.payload`は
+        `download_type`(`type`パラメータ)は`EdinetDownloadType`で公式仕様 +
+        ローカル実データ(type=1)により意味が確認されているが、値そのものは
+        呼び出し側が明示的に指定する(既定値は持たせない)。
+
+        レスポンスは通常バイナリ(ZIP/PDF)のため、`RawFetchResult.payload`は
         `lib.snapshot.RawSnapshotStore`(JSON保存)と互換になるよう
-        ``{"content_base64": ..., "content_type": ...}`` の形でBase64エンコードして
-        保持する(base64は可逆でありByte-for-Byteの整合性を保つ。Content自体の
-        解析・展開は一切行わない)。
+        ``{"content_base64": ..., "content_type": ..., "content_sha256": ...}``
+        の形でBase64エンコードして保持する(base64は可逆でありByte-for-Byteの
+        整合性を保つ。`content_sha256`は元のバイト列(Base64化前)に対して
+        計算したCanonical Hash。Content自体の解析・展開は一切行わない)。
         """
         recorded_params = {"type": str(download_type)}
         resp = self._request(f"/documents/{source_document_id}", recorded_params, error_label="EDINET Document Download")
+
+        content_type = resp.headers.get("Content-Type", "")
+        content_type_base = content_type.split(";")[0].strip()
+        if content_type_base.startswith(_ERROR_CONTENT_TYPE_PREFIX):
+            try:
+                error_body = resp.json()
+            except ValueError:
+                error_body = None
+            raise EdinetApiError(f"EDINET Document Downloadが失敗を報告しました: {_safe_error_message(error_body)}")
+        if content_type_base not in _SUCCESSFUL_DOWNLOAD_CONTENT_TYPES:
+            raise EdinetApiError(f"EDINET Document Downloadの Content-Type が想定外です(observed={content_type_base!r})")
+
+        raw_bytes = resp.content
         payload = {
-            "content_base64": base64.b64encode(resp.content).decode("ascii"),
-            "content_type": resp.headers.get("Content-Type"),
+            "content_base64": base64.b64encode(raw_bytes).decode("ascii"),
+            "content_type": content_type,
+            "content_sha256": hashlib.sha256(raw_bytes).hexdigest(),
         }
         return RawFetchResult(
             source="EDINET",
@@ -190,4 +277,10 @@ class EdinetAdapter:
         )
 
 
-__all__ = ["EdinetAdapter", "BASE_URL", "RESPONSE_SCHEMA_VERSION"]
+__all__ = [
+    "EdinetAdapter",
+    "EdinetApiError",
+    "EdinetDownloadType",
+    "BASE_URL",
+    "RESPONSE_SCHEMA_VERSION",
+]

@@ -140,6 +140,43 @@ Fundamentalsの`FundamentalMetric`は同じ指標の異なる時点の値がSeri
 原則を弱めるものではなく、Documentという概念の性質から来る自然な設計選択
 である。
 
+## Historical List Is Mutable(Phase4B-2、D0046で発見、一般原則として追記)
+
+**「現在時点でSourceのDocuments Listを取得すること」と「過去のある時点で
+実際に観測可能だったDocuments Listを再現すること」は別概念であり、混同
+してはならない。**
+
+EDINETのLocal Real Data Validation(2026-08-17)で確認された通り、Disclosure
+SourceのDocuments List(一覧API)は、単なる「新しい行の追記」ではなく
+**過去日付のRecordそのものが後から書き換わる**ことがある: 縦覧期間満了・
+書類の取下げ(withdrawal)・財務局職員による書類情報修正等により、
+過去に提出された文書のFieldが後日変化する(例: 縦覧期間満了後、`docID`等の
+一部Fieldを残して他のFieldがnullへ更新される)。
+
+したがって、**「`date=2024-05-08`のDocuments Listを2026年に取得する」ことは、
+「2024-05-08時点で市場参加者が実際に観測できたDocuments List」とは
+同一ではない**。この区別は、単に「未来の情報が見えてしまう」という通常の
+Look-ahead Bias(本Labが既に`disclosures_as_of()`等で防いでいるもの)とは
+別種のリスクである — 過去日付を指定して取得しているにもかかわらず、
+その中身自体が「現在」の状態を反映してしまう。
+
+**この制約への対応方針**:
+
+1. 現在のRetrievalは常に`retrieved_at`(いつ取得したか)を伴う「今の観測」
+   として扱い、`decision_at`が過去である場合にそのRetrieval結果を
+   その過去時点のUniverseの代替として使わない。
+2. Historical Backtestで真にPIT安全なDisclosure Universeが必要な場合は、
+   (A) その過去時点で実際に取得・保存したImmutable Raw Snapshotを使うか、
+   (B) Historical Point-in-Time Snapshotを保証する別のSourceを使うか、
+   のいずれかが必要である。現在のAPIから遡って取得したものだけでは
+   代替できない。
+3. 将来、日次/定期的にDocuments ListをRaw保存する Forward Collection
+   Architecture(継続的なSnapshot蓄積)を検討できるが、これは将来Phaseの
+   Scopeであり、Phase4B-2ではSchedulerを実装しない。
+
+この原則はEDINETに限らず、Documents Listを提供するDisclosure Source全般
+(TDnet等、将来接続時)に適用しうる一般原則として、ここへ明示的に記録する。
+
 ## Entity Registry Integration
 
 Provider Codeを直接Entity IDとして使わず、`lib.sources.entity_registry.
@@ -212,10 +249,13 @@ Offline-by-construction設計、D0042)。統合Testで、Snapshot保存 →
 - News統合(`lib.evidence.news`との接続)
 - Hypothesis生成・Skeptic Agent・BUY/SELL判断
 
-## 既知の限界(Phase4B-1時点)
+## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記)
 
-- Provider-neutralなFixture Schemaのみで検証済み。実TDnet/EDINET/Company
-  IRのField名・DocKind値は未確認(接続はPhase4B-2以降)。
+- Provider-neutralなFixture Schemaのみで検証済み。実TDnet/Company IRの
+  Field名・DocKind値は未確認(TDnetはPhase4B-3以降)。EDINETは
+  Phase4B-2でLocal Real Data Validation完了(D0046、`DATA_SOURCE_
+  ARCHITECTURE.md`のEDINET行参照)、ただし`document_kind`Mapping・
+  `entity_id`解決・PIT Field反映はいずれも未実装のまま。
 - `DisclosureDocument.internal_document_id`の生成方式(`f"DOC_{internal_
   code}_{index}"`、Raw行のIndex依存)は、`lib.fundamentals.normalize`の
   `envelope_id`生成(`f"ENV_{internal_code}_{disc_no or index}"`)と同様、

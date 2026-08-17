@@ -2,6 +2,16 @@
 
 `.claude/skills/local-validation/SKILL.md` の手順に従って生成。
 
+## 検証結果(2026-08-17、追記)
+
+この手順に従ったLocal Real Data Validationは完了した。Documents List・
+Document Download(`docID=S100TD9S`、`type=1`)いずれも成功を確認、
+検証中にHTTP 200 + `metadata.status`エラー表現という重要な仕様を発見し
+`EdinetAdapter`のエラー処理Bugを修正した。詳細な観測結果は
+`EDINET_SOURCE_ONBOARDING.md`「追記(2026-08-17)」および`DECISIONS.md`
+D0046参照。以下の手順は今後同種の検証(Field追加確認・Rate Limit実測等)を
+再実行する際にそのまま再利用できる。
+
 ## なぜこの手順が必要か
 
 このセッション(クラウド環境)は `api.edinet-fsa.go.jp`・`disclosure2dl.edinet-fsa.go.jp`

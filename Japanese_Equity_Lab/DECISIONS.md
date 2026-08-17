@@ -2509,3 +2509,196 @@ EDINET専用Normalizer・DocumentKind/Form Codeマッピング・Entity Mapping
 の実値投入・Document Download本文の解析・XBRL/PDFパース・LLM要約・
 Event抽出・Buy/Sell判断・Strategy変更・Backtest条件変更・Screening Tool
 変更・TDnet(Phase4B-3)には着手していない。
+
+## D0046 追記 — Phase4B-2: Local Real Data Validation結果の反映、正式実装
+
+2026-08-17、ユーザーが`EDINET_LOCAL_VALIDATION_GUIDE.md`の手順に従い
+ローカル環境から実際にEDINET API V2へ接続し、Documents List・Document
+Downloadの実疎通・実Field構造を確認した(`EDINET_SOURCE_ONBOARDING.md`
+「追記」参照)。以下、確認内容と、それに基づく実装変更を記録する。
+
+### Confirmed By Official Spec(ユーザーがローカル環境で参照した公式仕様書)
+
+- Document Downloadの`type`パラメータ: `1`=提出本文書及び監査報告書
+  (ZIP)、`2`=PDF、`3`=代替書面・添付文書(ZIP)、`4`=英文ファイル(ZIP)、
+  `5`=CSV(ZIP)。ZIP成功時`Content-Type: application/octet-stream`、
+  PDF成功時`Content-Type: application/pdf`、失敗時
+  `Content-Type: application/json; charset=utf-8`。
+- `withdrawalStatus`("0"=その他/"1"=取下書/"2"=取り下げられた書類)・
+  `docInfoEditStatus`("0"=その他/"1"=財務局職員が修正した情報/"2"=修正
+  された書類)・`disclosureStatus`("0"=その他/"1"=不開示開始情報/
+  "2"=不開示中書類/"3"=不開示解除情報)・`legalStatus`("0"=閲覧期間満了等/
+  "1"=縦覧中/"2"=延長期間中)の正式な列挙値。
+- `submitDateTime`(提出日時)・`opeDateTime`(財務局職員による書類情報
+  修正・不開示・磁気ディスク提出・紙面提出等の操作日時)・
+  `processDateTime`(Documents List自体の更新日時、Document公開日時では
+  ない)の区別。日時はJapan time。
+- 「訂正」(提出者が新しい書類管理番号で訂正報告書を提出)と「書類情報
+  修正」(財務局職員がHeader等を修正、書類管理番号は不変)は別概念。
+  `parentDocID`の存在だけから`CORRECTS`を推論しない方針を維持。
+- **過去日付のDocuments Listは日次更新され、縦覧期間満了・取下げ・書類
+  情報修正により後から書き換わる**(最重要の発見、下記「Critical PIT
+  Finding」参照)。
+
+### Confirmed By Local Observation(実際に観測)
+
+- `Subscription-Key`クエリパラメータ認証: 成功。
+- Documents List: `date=2024-05-08&type=2` →
+  `metadata.status="200"`・`metadata.message="OK"`・
+  `metadata.resultset.count=239`。実Field一覧(`seqNumber`/`docID`/
+  `edinetCode`/`secCode`/`JCN`/`filerName`/`fundCode`/`ordinanceCode`/
+  `formCode`/`docTypeCode`/`periodStart`/`periodEnd`/`submitDateTime`/
+  `docDescription`/`issuerEdinetCode`/`subjectEdinetCode`/
+  `subsidiaryEdinetCode`/`currentReportReason`/`parentDocID`/
+  `opeDateTime`/`withdrawalStatus`/`docInfoEditStatus`/
+  `disclosureStatus`/`xbrlFlag`/`pdfFlag`/`attachDocFlag`/
+  `englishDocFlag`/`csvFlag`/`legalStatus`)を確認。
+- Document Download: `docID=S100TD9S`、`type=1` →
+  `Content-Type: application/octet-stream`、`byte_length=16397`、
+  `sha256=2515dd689d673c9dbd32148b5450fc34f0aa0ddd7ba8831f5e5c08067b2a4d1c`、
+  magic bytes `50 4b 03 04`(ZIP)。公式仕様と一致。
+- `secCode`実例: 7203(Toyota)で`"72030"`(5桁string)。
+- `withdrawalStatus="0"`/`docInfoEditStatus="0"`/`disclosureStatus="0"`/
+  `xbrlFlag="1"`/`pdfFlag="1"`/`attachDocFlag="0"`/`englishDocFlag="0"`/
+  `csvFlag="1"`/`legalStatus="1"`等、いずれも文字列型であることを確認
+  (Python truthinessの罠、`bool("0")==True`を再び回避する必要がある
+  ことの直接的な確認)。
+- `docID`のみ存在し他の多くのFieldがnullになったRecordを確認(縦覧期間
+  満了・取下げ等)。
+- 大量保有報告書で`filer(提出者) != issuer(発行会社)`の実例を確認。
+- `docTypeCode`の実例(`"140"`=四半期報告書、`"135"`=確認書、
+  `"180"`=臨時報告書、`"350"`=大量保有/変更報告、`"150"`=訂正四半期
+  報告書、`"236"`=訂正内部統制報告書等)を、`docDescription`という
+  Local観測時の説明文から間接的に確認。**ただしこれを根拠に
+  `DocumentKind`へMappingすることはしない**(下記参照)。
+
+### Critical Fix: HTTP 200 + `metadata.status`エラー表現の検知漏れ
+
+Local Validation中、EDINET APIが認証失敗時(`StatusCode=401`相当)にも
+HTTP 200を返し、実際のStatusを`metadata.status="401"`という形でJSON
+Body内に埋め込むことが判明した。既存`EdinetAdapter`は
+`requests.Response.raise_for_status()`(Transport層のHTTP 4xx/5xxのみ
+検知)にしか依存しておらず、この種のApplication層エラーを検知できず、
+Smoke Testが`SUCCESS`と誤表示していた。
+
+**修正**: `fetch_documents_list_raw()`は(1) HTTP成功、(2) JSONとして
+解釈可能、(3) `metadata.status == "200"`、(4) `results`がlistとして
+存在、の4条件すべてを満たす場合のみ成功とし、いずれかを満たさない場合
+`EdinetApiError`(新設、`DataSourceError`のサブクラス)を送出する。
+`fetch_document_raw()`は(1) HTTP成功、(2) Content-Typeが
+`{application/octet-stream, application/pdf}`のいずれか(Allowlist方式)、
+の2条件を満たす場合のみ成功とし、`application/json`系Content-Typeは
+エラーBodyとみなして`EdinetApiError`を送出、それ以外の未知Content-Type
+もfail closedで拒否する。エラーメッセージには`metadata.status`/
+`metadata.message`のみを含め、APIキーやRequest URLは含めない
+(`_safe_error_message()`)。
+
+### 実装スコープの拡張: Raw Fetchのみ → Normalizer実装
+
+前回のD0046(本文冒頭)時点では、Field名・意味論が確認できなかったため
+Normalizer実装を見送っていたが、上記のLocal Real Data Validationにより
+確認できたField(§上記)についてのみ、`lib.disclosures.providers.
+edinet_normalize`を新設して実装した。この際、以下の設計判断を行った:
+
+**Provider-neutral Common Coreへは含めないEDINET固有情報**:
+`DisclosureDocument`(Phase4B-1のProvider-neutral Schema)へEDINET固有の
+Field名を持ち込まず、`EdinetDocumentMetadata`という別Dataclassへ保持し、
+`document_internal_id`経由で対応付ける。理由: TDnet/Company IR接続時に
+同じField名の衝突・混同を避けるため(Phase4B-1の原則をそのまま踏襲)。
+
+**`market_public_at`/`provider_available_at`への自動反映はしない**:
+`submitDateTime`が「提出日時」であることは公式仕様で確認したが、それが
+市場が実際に知りえた時刻(Market Public)と一致する保証、あるいは
+EDINET APIでの反映Timing(Provider Available)を示す保証はいずれも
+未確認。`submitDateTime`のParse結果は`EdinetDocumentMetadata.
+submitted_at`という別名で保持し、Common CoreのPIT Fieldは`None`/
+`AvailabilityBasis.UNKNOWN`のまま残す。EDINET公式FAQで「開示とAPI反映
+には通常1分程度の時間差があり解消される」との言及があるとのユーザー
+情報提供があったが、この「1分」を機械的にhistorical provider_
+available_atとして加算することは明示的に禁止する(D0043のOfficial FAQ
+非機械的Anchor化の原則と同じ)。
+
+**`document_kind`は常にUNKNOWN(このPhaseではMappingしない)**:
+`docTypeCode`の意味はLocal観測時の`docDescription`という説明文から
+間接的に読み取れたに過ぎず、公式別紙1(Form Code List)そのものは未確認。
+Local Descriptionだけからの推測Mappingは、本Labが一貫して禁止している
+Substring Heuristicと同じ危険性を持つ(「説明文にそれらしい文字列が
+含まれるから」という理由でCodeの意味を決めることになる)。`doc_type_code`
+はRaw値のまま`EdinetDocumentMetadata`へ保持し、将来公式Code Listが
+確認できた時点で明示的Mapping Tableを追加する。
+
+**`entity_id`は常にNone(Role-aware Entity Mappingは未実装)**:
+`secCode`はFiler(提出者)の証券コードであり、大量保有報告書等では
+`issuerEdinetCode`(発行会社)・`subjectEdinetCode`(公開買付対象)が
+別に存在する(Local実データで`filer != issuer`を確認済み)。単一の
+`entity_id`へ機械的に決め打ちすると誤ったRole混同を招くため、
+`DisclosureDocument.entity_id`は常に`None`のままとし、Role別の識別子
+(`filer_edinet_code`/`filer_sec_code`/`issuer_edinet_code`/
+`subject_edinet_code`/`subsidiary_edinet_code`)は`EdinetDocumentMetadata`
+の個別Fieldへ保持する。`lib.sources.entity_registry.
+EntityIdentifierMapping.provider_identifiers`は元々`{"edinet": "E02166"}`
+のような形を想定した汎用設計であり、正式なEntity Registry統合(実際の
+Mapping登録)自体にコード変更は不要と判断したが、`secCode`形式が
+J-Quantsの5桁ゼロパディング規約(D0039)と一致するかは別途確認が必要
+なため、実際の値投入は将来Phaseへ据え置く。
+
+**"0"/"1" Flag・Multi-state Lifecycle Statusの型安全なParse**:
+`xbrlFlag`等5つのFlagは文字列`"0"`/`"1"`のみを明示的Literalとして受理し
+(`bool("0")==True`という既知のPython truthinessの罠、D0043/D0045と
+同じパターンをここでも回避)、`None`(欠損)は`None`のまま保持し`False`
+へ変換しない。`withdrawalStatus`等4つのLifecycle Statusは、Booleanへ
+落とさずTyped StrEnum(`EdinetWithdrawalStatus`等)として保持し、
+未知の非null値は各EnumのUNKNOWNメンバーへfail closedする(警告ログ
+付き)。**Fieldが欠損/null(`raw is None`)の場合は`None`を返し、
+UNKNOWNメンバーとは区別する** — 「値が無いこと」と「値はあるが認識
+できないこと」は異なる情報であり、混同しない(D0046 §13 Null
+Semanticsの直接的な実装)。
+
+### Critical PIT Finding: Historical List Is Mutable
+
+**最重要の発見**。EDINET公式仕様では、過去分Documents Listは日次更新
+され、過去の日付のFileも差し替えられる。閲覧期間満了・withdrawal・
+non-disclosure・document information editによって、過去File Dateの
+Record自体が後から更新される(例: 閲覧期間満了後、`docID`等以外がnull
+へ更新される。取下げ後にも過去Recordが更新される)。
+
+したがって、**`date=2024-05-08`を2026年に取得することは、2024-05-08
+時点で実際に観測可能だったDocuments Listと同一である保証がない**。
+これは通常のLook-ahead Bias(未来の情報が見えてしまう)とは異なる種類
+のリスクであり、過去日付を指定して取得しているにもかかわらず、その
+中身自体が「現在」の状態を反映してしまう。
+
+現在取得したHistorical Listを使って「2024-05-08時点で市場が知っていた
+EDINET universe」を完全再現できると主張することを明示的に禁止する。
+Historical BacktestでのEDINET metadata利用には、(A) 当時取得・保存した
+Immutable Snapshot、または(B) Historical Point-in-Time Snapshotを保証
+するSourceが必要である。今後の運用では、日次/定期的にEDINET Documents
+ListをRaw保存するForward Collection Architecture(継続的なSnapshot
+蓄積)を検討できるが、このPhaseではSchedulerを実装しない。
+
+この原則は`DISCLOSURE_ARCHITECTURE.md`「Historical List Is Mutable」
+セクションへ、EDINETに限らずDisclosure Source全般に適用しうる一般原則
+として記録した。
+
+### Source Catalog更新
+
+`build_edinet_dataset_descriptor()`の`implementation_status`を
+`NOT_IMPLEMENTED`から`CONNECTED`へ更新した(実際に接続・Parseできる
+ことを確認したため)。ただし`pit_available`は`False`のまま — 「取得
+できる」ことと「PIT安全なAs-of Viewを提供できる」ことは別であり、後者
+はまだ達成していない(`market_public_at`/`provider_available_at`は
+依然`UNKNOWN`のまま)。
+
+### Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+(実施結果はこのDecisionの追記、または完了報告に記載する。)
+
+### 最終回帰確認
+
+(全Finding対応後、完了報告に記載する。)
+
+### このDecisionでやらないこと
+
+XBRL本文Parse・ZIP展開・財務抽出・PDF Parse・LLM本文解釈・大量保有分析・
+Event Extraction・Buy/Sell判断・Strategy変更・Backtest条件変更・
+Screening Tool変更・TDnet(Phase4B-3)には着手していない。

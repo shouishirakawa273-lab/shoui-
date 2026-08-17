@@ -274,3 +274,62 @@ Source Catalog/`DATA_SOURCE_ARCHITECTURE.md`のEDINET行において`UNKNOWN`ま
 - `/home/user/shoui-/Japanese_Equity_Lab/lib/sources/catalog.py`
 - `/home/user/shoui-/Japanese_Equity_Lab/lib/sources/entity_registry.py`
 - `/home/user/shoui-/Japanese_Equity_Lab/lib/disclosures/model.py`
+
+---
+
+## 追記(2026-08-17): Local Real Data Validation結果
+
+上記「Bottom line」の推奨(ローカル検証が最優先)に従い、ユーザーが
+`EDINET_LOCAL_VALIDATION_GUIDE.md`の手順でローカル環境から実際にEDINET
+API V2へ接続した。以下は`DECISIONS.md` D0046の要約(詳細はそちらを正)。
+
+### Confirmed By Local Observation(実際に観測・確認)
+
+- Base URL・`Subscription-Key`クエリパラメータ認証: 成功。
+- Documents List: `metadata.status="200"`・`metadata.resultset.count`構造、
+  実Field一覧(`seqNumber`/`docID`/`edinetCode`/`secCode`/`JCN`/`filerName`/
+  `fundCode`/`ordinanceCode`/`formCode`/`docTypeCode`/`periodStart`/
+  `periodEnd`/`submitDateTime`/`docDescription`/`issuerEdinetCode`/
+  `subjectEdinetCode`/`subsidiaryEdinetCode`/`currentReportReason`/
+  `parentDocID`/`opeDateTime`/`withdrawalStatus`/`docInfoEditStatus`/
+  `disclosureStatus`/`xbrlFlag`/`pdfFlag`/`attachDocFlag`/`englishDocFlag`/
+  `csvFlag`/`legalStatus`)。
+- Document Download: `docID=S100TD9S`、`type=1`で
+  `Content-Type: application/octet-stream`、ZIPマジックバイト(`50 4b 03 04`)、
+  SHA-256確認。エラー時は`Content-Type: application/json; charset=utf-8`。
+- `secCode`実例: 7203(Toyota)で`"72030"`(5桁string)。
+- `filer != issuer`(大量保有報告書で提出者と発行会社が異なる)実例確認。
+- 多くのFieldがnullになる実Record(縦覧期間満了等)を確認。
+- HTTP 200 + `metadata.status`にエラーが埋め込まれる挙動(例:
+  `metadata.status="401"`, `message="invalid subscription key"`)を確認 —
+  これにより`EdinetAdapter`が`raise_for_status()`だけに依存していた
+  既存実装のBugが発見され、修正した(D0046参照)。
+
+### Confirmed By Official Spec(ユーザーがローカルで参照した公式仕様書)
+
+- Document Downloadの`type`値: 1=提出本文書及び監査報告書(ZIP)、2=PDF、
+  3=代替書面・添付文書(ZIP)、4=英文ファイル(ZIP)、5=CSV(ZIP)。
+- `withdrawalStatus`/`docInfoEditStatus`/`disclosureStatus`/`legalStatus`
+  の列挙値の正式な意味。
+- `submitDateTime`(提出日時)・`opeDateTime`(財務局職員操作日時)・
+  `processDateTime`(Documents List自体の更新日時)の区別。日時はJST。
+- **過去日付のDocuments Listは日次更新され、縦覧期間満了・取下げ・書類
+  情報修正により後から書き換わる**(`DISCLOSURE_ARCHITECTURE.md`
+  「Historical List Is Mutable」参照、この調査で発見された最重要の制約)。
+
+### 依然Unknownのまま
+
+- Documents Listの日付範囲・銘柄コード直接クエリ対応。
+- 公式なレート制限の数値。
+- 公式別紙1(Form Code List)そのもの(Local観測時の`docDescription`から
+  間接的に読み取れた例はあるが、これを根拠に`DocumentKind`へMappingする
+  ことはしない — Substring Heuristicと同じ危険性を持つため)。
+- 過去データの正式な保持・縦覧期間ポリシーの網羅的な確認。
+- 利用規約・再配布条件。
+
+### PIT Limitation(最重要、実装というより設計原則)
+
+現在のAPIから取得したHistorical Listは、その過去時点で実際に観測可能
+だったDisclosure Universeの再現を保証しない(上記「過去日付のDocuments
+Listは日次更新される」の直接的帰結)。過去に実際に保存されたImmutable
+Snapshotが無い限り、Historical Backtestでの利用にはこの限界が伴う。
