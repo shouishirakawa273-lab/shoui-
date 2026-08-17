@@ -94,11 +94,14 @@ provider_identifier, as_of)`はPIT対応(社名変更・コード変更で有効
 | 項目 | 内容 |
 | --- | --- |
 | Role | 有価証券報告書・四半期/半期関連開示・大量保有報告書・XBRL |
-| Authority | PRIMARY_OFFICIAL |
-| PIT semantics | 提出日時(published_at)と、実際に一般縦覧可能になった時刻(available_at)は別概念として扱う必要がある(未検証、Phase3Dでは実装のみ用意) |
-| Current Implementation Status | NOT_IMPLEMENTED(`DisclosureProvider` Protocolのみ用意) |
-| Cost/Plan dependency | 取得不可(未確認) |
-| Known limitations | 公式API仕様未確認。XBRLパース方法も未検討 |
+| Authority | PRIMARY_OFFICIAL(FSA公式。ただし内容の真偽までは保証しない、`SourceAuthorityClass`のDocstring参照) |
+| Origin vs Delivery | 直接EDINET APIへ接続する設計のため`originating_source=delivery_provider="EDINET"`(D0042の分離を踏襲。別Provider経由での配信は現時点で未想定) |
+| PIT semantics | `submitDateTime`/`opeDateTime`の正確な意味(提出時刻か公衆縦覧可能時刻か)・タイムゾーンいずれも未確認(Phase4B-2、`EDINET_SOURCE_ONBOARDING.md` §4)。`market_public_at`/`provider_available_at`のいずれへも、確認が取れるまで`AvailabilityBasis.UNKNOWN`以外の根拠でマッピングしない |
+| Current Implementation Status | `NOT_IMPLEMENTED`。`lib.disclosures.providers.edinet.EdinetAdapter`がDocuments List/Document DownloadのRaw HTTP Fetchのみ実装済み(Phase4B-2)だが、`DisclosureDocument`への正規化(Field Mapping)は一切行っていない — Field名自体が未確認のため |
+| Cost/Plan dependency | UNKNOWN(無料と思われるが一次資料で未確認) |
+| Known limitations | **本セッションから`api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続不可**(egressポリシーによりブロック、`curl`で`CONNECT tunnel failed, 403`を独立に確認済み)。`data-source-researcher`によるOnboarding調査も二次情報(WebSearchスニペット)のみに基づく未確認結果に留まり、Document Downloadの`type`パラメータについては情報源間で**相互に矛盾する**値が見つかった。認証方式(クエリパラメータ vs ヘッダ)・`secCode`形式とJ-Quants(D0039)との互換性・`parentDocID`の訂正関係・`withdrawalStatus`の列挙値・過去データ範囲(縦覧期間限定の可能性)、いずれも未確認。詳細は`EDINET_SOURCE_ONBOARDING.md`、ローカル検証手順は`EDINET_LOCAL_VALIDATION_GUIDE.md`参照 |
+| Historical coverage vs API coverage | 縦覧期間+延長期間内の書類のみを対象とする可能性が示唆されている(未確認)。もし正しければ「現在APIから取得できる範囲」が「過去の全提出履歴」と一致しないことになる — 確認が取れるまでこの区別を前提に扱う |
+| Entity mapping | `lib.sources.entity_registry.EntityIdentifierMapping.provider_identifiers`は元々`{"edinet": "E02166"}`のような形を想定した汎用設計になっており、EDINETコード/secCode/JCNをこのnamespace経由で登録する設計自体はコード変更不要。ただし実際の値の形式確認(特にsecCodeがJ-Quantsの5桁ゼロパディング規約と一致するか)ができるまで、実際のMapping登録は行わない |
 
 ### 3. TDnet
 

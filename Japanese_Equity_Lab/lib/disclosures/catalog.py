@@ -39,4 +39,55 @@ def build_disclosure_common_core_dataset_descriptor() -> DatasetDescriptor:
     )
 
 
-__all__ = ["build_disclosure_common_core_dataset_descriptor"]
+def build_edinet_dataset_descriptor() -> DatasetDescriptor:
+    """EDINET(金融庁 開示書類システム) API V2 のCatalog登録情報(Phase4B-2)。
+
+    `implementation_status=NOT_IMPLEMENTED`: `lib.disclosures.providers.edinet.
+    EdinetAdapter`はDocuments List/Document DownloadのRaw HTTP Fetchのみを
+    提供し、`DisclosureDocument`への正規化(field mapping)は一切行っていない。
+    本セッションは`api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続できず
+    (egressポリシーによりブロック、`curl`で`CONNECT tunnel failed, 403`を
+    独立に確認済み)、`data-source-researcher`によるOnboarding調査も
+    二次情報のみに基づく未確認結果(一部相互矛盾)に留まった
+    (`EDINET_SOURCE_ONBOARDING.md`参照)。したがって`SKELETON`
+    (実仕様に基づくAdapter骨格)ではなく`NOT_IMPLEMENTED`とする —
+    Raw Fetch用のコードは存在するが、その対象Field名・Query仕様自体が
+    未確認であるため。
+
+    `originating_source`と`delivery_provider`は、EDINET APIを直接呼び出す
+    設計である限り同一(`"EDINET"`)— 別Provider経由での配信は現時点で
+    想定していない(D0042のOrigin/Delivery分離を踏襲、値が分かれるのは
+    将来他Provider経由でEDINET由来情報を取得する場合のみ)。
+    """
+    return DatasetDescriptor(
+        dataset_id="edinet_disclosures",
+        source_id="EDINET",
+        capability=DataCapability.DISCLOSURE,
+        authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
+        update_frequency="UNKNOWN(公式資料未確認、更新頻度・縦覧期間の範囲が未確定)",
+        pit_available=False,
+        applicable_codes=None,
+        applicable_countries=("JP",),
+        cost_or_plan_dependency="UNKNOWN(無料と思われるが一次資料で未確認)",
+        known_limitations=(
+            "公式FSA/EDINET資料・API本体への接続がいずれも本セッションからブロックされて"
+            "おり(EGRESS_BLOCKED、独立にcurlでも確認)、Documents Listの実フィールド名・"
+            "submitDateTime/opeDateTimeの意味論・parentDocIDの訂正関係・"
+            "withdrawalStatusの列挙値・secCode形式・Document Downloadのtype値、"
+            "いずれも未確認(一部は情報源間で相互矛盾)。詳細は"
+            "EDINET_SOURCE_ONBOARDING.mdを参照。ローカル環境での実API疎通確認が"
+            "完了するまで、DisclosureDocumentへの正規化(field mapping)・"
+            "DocumentKind/Form Codeマッピング・Entity Registry統合・"
+            "market_public_at/provider_available_atへの反映は一切行わない"
+            "(pit_available=Falseはこれを表す — Raw Fetchはできても、"
+            "確認済みのPIT意味論に基づくAs-of Viewはまだ提供できない)。"
+        ),
+        notes=(
+            "Raw Fetchのみ: lib.disclosures.providers.edinet.EdinetAdapter。"
+            "originating_source=delivery_provider='EDINET'(直接接続、Phase4B-2時点)。"
+        ),
+    )
+
+
+__all__ = ["build_disclosure_common_core_dataset_descriptor", "build_edinet_dataset_descriptor"]

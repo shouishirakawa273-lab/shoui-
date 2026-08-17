@@ -159,3 +159,12 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   分離し、本文Semantic Extractionは将来Phaseへ明確に切り離した。詳細は
   `DISCLOSURE_ARCHITECTURE.md`参照(Lab 365テスト、pit-auditor/
   skeptic-reviewerによる初回Review完了)。
+- **Phase4B-2**: EDINET API V2への接続を試みた(D0046)が、本セッションは
+  `api.edinet-fsa.go.jp`・FSA公式資料のいずれへも接続できず(EGRESS_
+  BLOCKED、独立にcurlでも確認)、`data-source-researcher`によるOnboarding
+  調査(`EDINET_SOURCE_ONBOARDING.md`)も二次情報のみに基づく未確認結果
+  (一部相互矛盾)に留まった。このため`lib/disclosures/providers/edinet.py`
+  の`EdinetAdapter`はDocuments List/Document DownloadのRaw HTTP Fetchのみ
+  実装し(Field-level Normalizationは未実装)、Source Catalogには
+  `implementation_status=NOT_IMPLEMENTED`として登録した。ローカル環境での
+  実API疎通確認手順は`EDINET_LOCAL_VALIDATION_GUIDE.md`参照。

@@ -2288,3 +2288,131 @@ EDINET/TDnet/J-Quants TDnet Add-on/Company IR Connector・PDF Parse・
 XBRL Parse・OCR・LLM Summary・Event抽出・Buy/Sell判断・Strategy変更・
 Backtest条件変更・Screening Tool変更には着手していない。Phase4B-2
 (EDINET)には進んでいない。
+
+## D0046 — Phase4B-2: EDINET V2 Disclosure Integration(Onboarding調査ブロック、Raw Fetchのみ実装)
+
+### §0 Tooling修正: `phase-close`の`disable-model-invocation`問題
+
+Phase4A.5で`.claude/skills/phase-close/SKILL.md`に設定した
+`disable-model-invocation: true`は、ユーザー(`/phase-close`)からしか
+呼び出せず、Main Claudeが`Skill`ツール経由で明示的に呼び出そうとしても
+ハードエラーで拒否されることが判明した(「意図せず自発的に実行しない」と
+「必要な時にMain Claudeも実行できる」の中間を表すFrontmatterフィールドは
+存在しない、公式仕様確認済み)。`disable-model-invocation: true`を削除し
+(既定=ユーザー・Claude双方から呼び出し可能)、「実際にPhaseのCloseを
+求められた時のみ呼び出す」という抑制意図はBody Textのガイダンスへ移した
+(Access Controlではなく行動規範として表現)。自動commit/push・自動Phase
+遷移の禁止は変更していない。
+
+### §2/§24 Source Onboarding調査: ほぼ全面ブロック
+
+`data-source-researcher` Subagent(`source-onboarding` Skill使用)による
+EDINET API V2の公式仕様調査を実施した。**結果は severe**: `WebFetch`で
+試みたFSA/EDINET公式URL(仕様書PDF、`disclosure2.edinet-fsa.go.jp`、
+`www.fsa.go.jp`等)は全て`EGRESS_BLOCKED`で拒否され、副次資料(ブログ・
+Qiita・Zenn・Wikipedia・Web Archive等)への接続もほぼ全て同様にブロック
+された。到達できたのは`github.com`(サードパーティ製OSS Wrapper)と
+`pypi.org`のみで、いずれもFSA発行コンテンツではない。
+
+**Main Claude自身によるcurlでの独立検証**(Subagent報告を鵜呑みにせず
+再現確認): `curl https://api.edinet-fsa.go.jp/...`および
+`curl https://disclosure2dl.edinet-fsa.go.jp/...`はいずれも
+`CONNECT tunnel failed, response 403`。これはJ-Quants公式ドキュメントが
+過去に到達不可だった(D0012/D0025/D0031)のと同種の制約だが、今回は
+**API本体(認証前のホスト到達性)まで含めてブロックされている**点がより
+厳しい — J-Quantsは少なくともユーザーがCanonical Specificationを
+本セッション内で直接明示できたが、EDINETについてはユーザーからの
+実仕様提示もなく、調査自体がWebSearchスニペット合成に頼らざるを得な
+かった。
+
+得られた情報の質も低い: 認証方式(`Subscription-Key`クエリパラメータ
+vs `Ocp-Apim-Subscription-Key`ヘッダ)は未確定、Documents Listの
+実フィールド名は複数の断片的な裏付けしかなく体系的な確認はできず、
+**Document Downloadの`type`パラメータについては2つの情報源が
+互いに矛盾する値を主張していた**(同じ数字が別の形式を指す)。
+`submitDateTime`/`opeDateTime`の意味論(PIT判定の核心)も未確認。
+詳細は`Japanese_Equity_Lab/EDINET_SOURCE_ONBOARDING.md`に、
+Confirmed/Unknown/Requires Local Validationへ分けて記録した
+(Confirmedに昇格した項目は実質ゼロ)。
+
+### 実装スコープの決定: Field Mapping/Normalizerは実装しない
+
+上記の状況を踏まえ、`data-source-researcher`自身の明示的な推奨
+(「この報告内容をEDINET Adapter/Normalizer実装の根拠にすべきではない」)
+に従い、**Phase4B-2ではEDINET専用のNormalizer・DocumentKindマッピング・
+Form Codeマッピング・Entity解決・PIT Field Mapping(market_public_at/
+provider_available_atへの反映)を一切実装しない**ことを決定した。これは
+「未確認のProvider仕様を推測で埋めない」という本Lab全体の原則
+(ルートCLAUDE.md・Japanese_Equity_Lab/CLAUDE.md共通)を、情報源が
+実際に相互矛盾していた今回のケースで特に厳格に適用した結果である。
+
+一方で、Phase4Aの`JQuantsAdapter`が「ユーザー明示のCanonical
+Specification(未検証)に基づくRaw Fetch実装 → 後日ローカル環境で
+実データ確認 → Field名を確定」という手順を踏んだ前例に倣い、
+**Raw HTTP Fetchのみ**を提供する`lib.disclosures.providers.edinet.
+EdinetAdapter`を実装した:
+
+- `fetch_documents_list_raw(target_date, list_type=2)`:
+  Documents List APIの候補パラメータ(`date`/`type`)でRaw JSONを取得する
+  のみ。日付範囲・銘柄コードによるクエリ対応は未確認のため、そのような
+  引数は意図的に持たせていない。
+- `fetch_document_raw(source_document_id, *, download_type)`:
+  Document Download APIのスモークテスト用。`download_type`
+  (`type`パラメータ)は情報源間で矛盾する値しか無いため**既定値を
+  持たせず**、呼び出し側に明示的な選択を強制する。レスポンスは
+  バイナリと想定されるため、Base64エンコードして
+  `lib.snapshot.RawSnapshotStore`(JSON保存)と互換な形で保持する
+  (Byte-for-Byteの往復整合性はTestで確認)。
+- 認証方式は`auth_style`引数(`"query_param"`/`"header"`)で明示的に
+  選択できるようにし、どちらが正しいかは未確定であることをDocstringで
+  明記した。
+- `RawFetchResult.request_parameters`(Snapshotへそのまま記録される側)
+  には認証方式にかかわらずAPIキーを一切含めない設計とし、Testで確認。
+- `DisclosureDocument`/`DocumentKind`/`normalize`/`view`のいずれも
+  importしないことを構造的にTestで確認(未確認Field名が正規化ロジックへ
+  混入する経路自体が存在しないことを保証)。
+
+### Source Catalog登録
+
+`lib.disclosures.catalog.build_edinet_dataset_descriptor()`を新設し、
+`implementation_status=NOT_IMPLEMENTED`(`SKELETON`ではない — Raw Fetch
+用のコードは存在するが、対象Field名・Query仕様自体が未確認のため、
+「実仕様に基づく骨格」とは言えない)、`authority_class=PRIMARY_OFFICIAL`、
+`pit_available=False`として登録した。`originating_source=
+delivery_provider="EDINET"`(直接接続、D0042のOrigin/Delivery分離を
+踏襲)。`known_limitations`に`EDINET_SOURCE_ONBOARDING.md`参照を明記。
+`disclosure_common_core`(Phase4B-1、Architecture自体のDescriptor)は
+書き換えず、新規Descriptorとして追加した(既存Descriptor不変更の原則)。
+
+### Entity Registry: コード変更不要と判断
+
+`lib.sources.entity_registry.EntityIdentifierMapping.provider_
+identifiers`は元々`Mapping[str, str]`の汎用設計で、Docstring自体が
+`{"edinet": "E02166"}`のような形を例示していた。EDINETコード/secCode/
+JCNをこのnamespace経由で登録する設計自体に新規コードは不要と判断した。
+ただし、secCode形式がJ-Quantsの5桁ゼロパディング規約(D0039)と一致するか
+未確認のため、実際のMapping登録(実際の値の投入)はローカル検証完了まで
+行わない。
+
+### ローカル検証手順
+
+`local-validation` Skillの手順(A-I)に従い
+`Japanese_Equity_Lab/EDINET_LOCAL_VALIDATION_GUIDE.md`を新設した。
+git同期・`EDINET_API_KEY`有無確認(値非表示)・Documents List 1日分の
+Smoke Test(両認証方式を順に試す)・Raw Snapshot保存・生JSON確認・
+Offline再実行・期待される観測結果・貼り付けてよい/悪い内容、を明記した。
+このPhaseの主目的はJ-Quants Phase3A/Phase4Aと異なり「既に実装した
+Normalizerの実データ確認」ではなく「そもそもの仕様確認とField名の
+発見」であるため、手順Eで実際に観測されたFieldをユーザーに報告して
+もらうことを次のPhaseへのゲートとして明記した。
+
+### Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+(実施結果はこのDecisionの追記、または完了報告に記載する。)
+
+### このDecisionでやらないこと
+
+EDINET専用Normalizer・DocumentKind/Form Codeマッピング・Entity Mapping
+の実値投入・Document Download本文の解析・XBRL/PDFパース・LLM要約・
+Event抽出・Buy/Sell判断・Strategy変更・Backtest条件変更・Screening Tool
+変更・TDnet(Phase4B-3)には着手していない。
