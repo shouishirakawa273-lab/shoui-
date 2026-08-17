@@ -23,7 +23,7 @@ echo "[hook] mypy ..."
 "$PY" -m mypy core app.py scripts Japanese_Equity_Lab/lib || fail=1
 
 echo "[hook] pytest ..."
-"$PY" -m pytest tests/ -q || fail=1
+"$PY" -m pytest tests/ Japanese_Equity_Lab/13_tests/ -q || fail=1
 
 if [ "$fail" -ne 0 ]; then
   echo "[hook] 品質ゲートに失敗しました。上記のエラーを修正してください。" >&2
