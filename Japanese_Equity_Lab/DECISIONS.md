@@ -4021,3 +4021,52 @@ User側ローカル環境で行う。
 Architecture・大規模Observability Infrastructure・Phase4B-4(Company
 IR)・TDnet Local Validationのいずれにも着手していない。Phase4B-3の
 Status(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は変更していない。
+
+### 追記 — pit-auditor Reviewの結果と訂正(Audit History)
+
+上記Plan(`PHASE4A5_1_PLAN.md`)についてユーザー指示§19通り`pit-auditor`
+Reviewを実施した。`PIT AUDIT: 7 FINDINGS(highest severity: HIGH)`。
+全FindingをMain Claude自身が実Codeへ当たって検証し(Grep/Read)、7件
+すべてCONFIRMEDと判定、Planへ反映した(コードは変更していない、Plan
+Document自体の訂正のみ)。**このLabの方針「以前の判断が間違っていたこと
+自体もAudit Historyとして残す」に従い、以下は隠さず記録する**:
+
+1. **[HIGH、CONFIRMED]** Planは当初`phase-close`の`disable-model-
+   invocation: true`を`EXISTS`(Machine Enforcement)としていたが誤り。
+   実際にFrontmatterを確認したところ存在せず、Grepでも0件。**遡って
+   確認したところ、D0046 §0で意図的に削除された経緯があった**
+   (User以外がPhase Closeを正当に必要とする場合にHard Errorになる
+   ことが判明したため、Access ControlからBody Text Guidanceへ変更
+   済み)。D0044時点の記述をそのまま引き写し、D0046 §0による後続の
+   訂正をこのPlan作成時にGrepし直さなかったことが原因。
+2. **[HIGH、CONFIRMED]** Planは既存PostToolUse Hook(`post_edit_
+   quality_gate.sh`)を単純に`EXISTS`とし、これを根拠に「Optional
+   Phase Validation Hookは機能重複するためNOT_NOW」と結論していたが、
+   実際にはこのHookのpytest行(line 26)は`tests/`(Root、既存
+   Screening Tool)のみを実行し、`Japanese_Equity_Lab/13_tests/`は
+   一度も実行しない。したがってこのPlanが提案するPIT Compliance
+   Test Suiteを含むLabの全Testは、`/phase-close`をUserが明示的に
+   呼ぶまで自動実行されない。
+3. **[MEDIUM-HIGH、CONFIRMED]** Repository Reality Check(§A)が、
+   `lib/fundamentals/normalize.py`・`lib/disclosures/normalize.py`
+   両方に今も存在する`anchor = market_public_at if market_public_at
+   is not None else retrieved_at`という既知のGuarded Gap(D0049
+   §5-1で記録済み、`AvailabilityBasis.UNKNOWN`既定除外で安全)を
+   見落としていた。D0049 §5-1をGrepし直さずPlanを書いたことが原因。
+4. **[MEDIUM]** 提案Test T8(Meta-test、「Bugの形をAssertするTestが
+   無いことを確認」)が、`test_fundamentals_evidence_pit.py`の既存
+   Test(上記3の既知Gapを固定する回帰Test)と単純Grepでは衝突する
+   ことを見落としていた。Allowlist設計を追記して解消。
+5. **[MEDIUM、CONFIRMED]** 提案Test T4(Evidence層でのFuture
+   Injection)が、既存`test_evidence_model.py::test_filter_usable_
+   at_excludes_future_evidence`と重複することを見落としていた。
+   MUST新規Testから除外(7件→7件、数値は変わらず内訳を訂正)。
+6. **[LOW、CONFIRMED]** 些細な引用誤り3件(EDINET ZIP Test件数
+   「18件」が実際は22件、Snapshot Overwrite Testの引用File名の
+   取り違え、`AppendOnlyViolationError`の定義File取り違え)。
+
+**このRoundでコードは一切変更していない**(訂正はすべて`PHASE4A5_1_
+PLAN.md`本文と本追記のみ)。訂正の結果、次Round最優先Stepとして
+`4A.5.1-0`(既存Hookのpytest行へLab `13_tests/`を追加する1行修正)を
+新たにOpen Question付きで追加した(「Hook作成」への該当性は次Round
+開始時にUser確認)。

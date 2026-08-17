@@ -22,11 +22,11 @@ Doc群を実際に読んだ結果)に基づく。存在しないComponentを存�
 | 1 | PIT/Look-ahead監査Skill+Subagent(`pit-audit`/`pit-auditor`) | `EXISTS` | `.claude/skills/pit-audit/SKILL.md`, `.claude/agents/pit-auditor.md` |
 | 2 | Adversarial Review Skill+Subagent(`adversarial-review`/`skeptic-reviewer`) | `EXISTS` | `.claude/skills/adversarial-review/SKILL.md`, `.claude/agents/skeptic-reviewer.md` |
 | 3 | Source Onboarding Skill+Subagent(`source-onboarding`/`data-source-researcher`) | `EXISTS` | `.claude/skills/source-onboarding/SKILL.md`, `.claude/agents/data-source-researcher.md` |
-| 4 | Phase Close Skill(`phase-close`、`disable-model-invocation: true`) | `EXISTS` | `.claude/skills/phase-close/SKILL.md` |
+| 4 | Phase Close Skillの自己起動抑止 | `PARTIAL`(訂正、下記参照) | **[2026-08-17訂正、pit-auditor Review]** 当初この行を`EXISTS`(`disable-model-invocation: true`)としていたが誤り。`.claude/skills/phase-close/SKILL.md`の現在のFrontmatterを実際に読んだ結果、`name`/`description`/`paths`のみで`disable-model-invocation`は存在しない(Repository全体をGrepしても0件)。**これは見落としではなくD0046 §0で意図的に削除された経緯がある**: `disable-model-invocation: true`はUser(`/phase-close`)からしか呼び出せなくなり、Main Claudeが正当にPhase Closeを求められた場合でもHard Errorで拒否されることが判明したため削除し、抑制意図をBody Text(行動規範)へ移した。したがって現状はAccess Control(Machine Enforcement)ではなくProse Guidance。ユーザー自身の指示(§4-3「Hooksに向かない意味論まで無理にHook化しない」)の精神とも一致するため、これを再度Frontmatterへ機械的に強制しようとする提案はしない(D0046 §0の判断を維持) |
 | 5 | Local Validation Skill(`local-validation`) | `EXISTS` | `.claude/skills/local-validation/SKILL.md` |
 | 6 | Reviewer Agentの構造的Read-only化(`tools: Read, Grep, Glob`のみ) | `EXISTS` | 3 Subagent frontmatterを直接確認(`Write`/`Edit`/`Bash`不在) |
 | 7 | Author/Reviewer分離のWorkflow文書化 | `EXISTS` | `CLAUDE_CODE_RESEARCH_WORKFLOW.md` |
-| 8 | Deterministic Hook: PostToolUse品質ゲート(ruff/mypy/pytest) | `EXISTS` | `.claude/settings.json`, `.claude/hooks/post_edit_quality_gate.sh` |
+| 8 | Deterministic Hook: PostToolUse品質ゲート(ruff/mypy/pytest) | `PARTIAL`(訂正、下記参照) | **[2026-08-17訂正、pit-auditor Review]** `.claude/hooks/post_edit_quality_gate.sh`を実際に読んだ結果、mypy(line 23)は`Japanese_Equity_Lab/lib`を含むが、**pytest(line 26)は`tests/`(Root、既存Screening Tool)のみを実行しており`Japanese_Equity_Lab/13_tests/`は一度も実行しない**。したがってLabのPIT Test(このPlanが新設を提案する`test_pit_principles.py`含む)は、`/phase-close`を明示的にUserが呼び出さない限り自動実行されない。当初この行を単純`EXISTS`とし、セクションI(Hook Plan)で「Optional Phase Validation Hookは既存PostToolUse Hookと機能重複するためNOT_NOW」と結論づけていたが、**この重複判定はLab独自のpytestについては誤りだった**(Root `tests/`については重複するが、Lab `13_tests/`については重複しない)。セクションI/Oを本訂正に合わせて更新した |
 | 9 | Hook候補(Secret Guard/Protected Path Warning/Phase Validation) | `PARTIAL`(提案のみ、未導入) | `HOOKS_PROPOSAL.md` |
 | 10 | Raw Snapshot Immutability(Append-only、Tamper検出) | `EXISTS` | `lib/snapshot.py`(`AppendOnlyViolationError`/`SnapshotTamperedError`実装済み) |
 | 11 | Secret Leakage Guard(Snapshot保存時) | `EXISTS`(Snapshot保存経路のみ) | `lib/snapshot.py::_assert_no_secret_like_keys` |
@@ -35,13 +35,14 @@ Doc群を実際に読んだ結果)に基づく。存在しないComponentを存�
 | 14 | PIT Compliance Test(Principle-derived、Cross-cutting) | `PARTIAL` | `13_tests/test_point_in_time.py`・`test_available_at_vs_retrieved_at.py`・`test_pit_as_of_adjustment.py`・`test_fundamentals_pit_real_dates.py`・`test_fundamentals_evidence_pit.py`・`test_disclosures_evidence_pit.py`はいずれも個別Module実装に付随したTestであり、Module横断でPrinciple単体から導出された単一Suiteは無い |
 | 15 | UNKNOWN Basis既定除外(`RevisionHistory.as_of`) | `EXISTS` | `lib/evidence/model.py::RevisionHistory.as_of`(`include_unknown_availability=False`既定) |
 | 16 | Entity Registry as-of解決(Current-State Leakage対策) | `EXISTS` | `lib/sources/entity_registry.py::EntityRegistry.resolve(as_of=...)`、`13_tests/test_entity_registry.py`で回帰確認済み |
-| 17 | Artifact Difference Workflow(Raw vs Canonical Hash) | `EXISTS`(EDINET限定) | `lib/disclosures/providers/edinet_zip.py::compute_canonical_zip_content_hash`、D0046追記2、`13_tests/test_edinet_zip_canonicalize.py`(18件) |
+| 17 | Artifact Difference Workflow(Raw vs Canonical Hash) | `EXISTS`(EDINET限定) | `lib/disclosures/providers/edinet_zip.py::compute_canonical_zip_content_hash`、D0046追記2、`13_tests/test_edinet_zip_canonicalize.py`(**22件、`grep -c "^def test_"`で再確認、当初「18件」は誤記載。[2026-08-17訂正、pit-auditor Review]**) |
+| 26 | `_provider_available_at_and_basis()`のAnchor自体(D0049 §5-1既知Gap) | `PARTIAL`(既知・Guard済み、当初の本表で見落とし) | **[2026-08-17追加、pit-auditor Review]** `lib/fundamentals/normalize.py:353`と`lib/disclosures/normalize.py:193`はいずれも`anchor = market_public_at if market_public_at is not None else retrieved_at`という、D0049/D0050で修正した`evidence.py`側と同型のPatternを**今も持つ**(`normalize.py`は今回D0049/D0050いずれでも変更対象外だった)。ただし`availability_basis=UNKNOWN`が既定で付与され`RevisionHistory.as_of()`が既定でUNKNOWNを除外するため、既定Pathでは安全(D0049 §5-1に既記録のFollow-up Gap)。`include_unknown_availability=True`を明示指定した場合のみ顕在化することを固定する回帰Test`test_include_unknown_availability_true_reproduces_market_public_at_anchor_as_documented_gap`(`13_tests/test_fundamentals_evidence_pit.py:220`)が既に存在する。**このRepository Reality Checkの初版(このPlanのA表)はD0049 §5-1を`grep`で再確認せず、この既知Gapを見落としていた** — pit-auditor Reviewで指摘され判明した |
 | 18 | Forward Snapshot観測の反復実施Procedure | `MISSING`(材料はEXISTS) | D0046追記2は1回限りの手動観測。`RawSnapshotStore`自体は反復保存を構造的にサポートするが、反復観測のProcedureとしては未文書化 |
 | 19 | Lightweight System Health(Lab向け) | `MISSING` | `scripts/`配下(Lab)にHealth相当のScriptは無い。`scripts/schema_health_check.py`はRoot直下でありScreening Tool(`core/`)専用、Protected範囲、流用不可 |
 | 20 | Context Architecture(Always/On-demand分離) | `PARTIAL`(暗黙に実践済み、未分類・未文書化) | `CLAUDE.md`は意図的に短く(常時Ruleのみ)、詳細は`.claude/skills/`・`CLAUDE_CODE_RESEARCH_WORKFLOW.md`へ分離済み(既にLayer0/Layer1相当の分離が存在する)。`DECISIONS.md`(268KB)は常に全文読まずGrep/Offset読みで運用されている(本Session含め実践済み)が、これを`ALWAYS`/`ON_DEMAND`/`TASK_ONLY`/`EVIDENCE_ONLY`として明示分類したDocumentは無い |
 | 21 | Rule ID体系(`PIT-001`等) | `MISSING` | Repository全体をGrepし0件 |
 | 22 | Golden Prompt Parity Audit(旧Prompt→Skill Rule対応表) | `MISSING` | D0044はSkill実装内容の要約のみで、要件単位の対応表(旧Prompt Requirement → Skill Rule / Source-specific Rule / Intentionally Removed)は存在しない |
-| 23 | Agent Governance機械的Enforcement | `PARTIAL` | Tool Allowlist・`disable-model-invocation`は実装済み(D0044実装時に手動で1回確認)。**しかしこれを継続的に守るRegression Testは無い**(Frontmatterが将来誤って書き換えられても検知するTestが無い) |
+| 23 | Agent Governance機械的Enforcement | `PARTIAL` | Reviewer Agentの`tools` Allowlistは実装済み(D0044実装時に手動で1回確認、Frontmatterが将来誤って書き換えられても検知するRegression Testは無い)。**`phase-close`の`disable-model-invocation`は[2026-08-17訂正]この表の#4で確定した通りそもそも現存しない(D0046 §0で意図的に削除、Body Text Guidanceへ移行済み)ため、Regression Test対象からも除外する** |
 | 24 | Main Claude Single Writer原則の機械的強制 | `MISSING`(現状はProse/Convention) | `CLAUDE.md`の文章のみで、Hook/Permission Configによる強制は無い |
 | 25 | 大量並列Agent運用の抑制方針 | `EXISTS`(方針としては既に一貫) | このSession含め全Phaseの実績が「少数の明確なRole」であり、大量並列Research Agentの実績は無い(Repository運用実態から確認) |
 
@@ -67,6 +68,11 @@ Architecture(Event Extractor/Indexer/Replay基盤/大規模Observability)は
 入れ替えた。理由は各Stepに付記する。
 
 ```
+4A.5.1-0  [2026-08-17追加、pit-auditor Review] 既存PostToolUse Hookの
+          pytest行(.claude/hooks/post_edit_quality_gate.sh)へ
+          `Japanese_Equity_Lab/13_tests/`を追加する1行修正
+          (「Hook作成」ではなく既存Hookの範囲修正 — 該当性は次Round冒頭で
+          User確認、セクションN参照)
 4A.5.1-1  PIT Compliance Test Suite(新規 13_tests/test_pit_principles.py)
 4A.5.1-2  Agent Governance Structural Tests(新規 13_tests/test_agent_governance.py)
 4A.5.1-3  Deterministic Hook: Protected Path Warning のみ実装
@@ -80,6 +86,13 @@ Architecture(Event Extractor/Indexer/Replay基盤/大規模Observability)は
 
 **ユーザーCandidate Orderからの変更点と理由**:
 
+- **[2026-08-17追加、pit-auditor Review] `4A.5.1-0`を最優先に追加**:
+  既存Hookが実はLabのpytest(`13_tests/`)を一度も実行していないことが
+  Review中に判明した。この1行修正なしでは、4A.5.1-1で新設するPIT
+  Compliance Test Suiteも含め、Labの全Testが`/phase-close`をUserが
+  明示的に呼ぶまで一度も自動実行されない状態が続く。このPlanの核心的な
+  Motivation(D0049/D0050の教訓をMachine-Enforced Guardrailへ変える)に
+  直結するため、他の全Stepより先に置く。
 - **Agent Governance(元#5)を#2へ前倒し**: 他の項目に一切依存せず、既存
   Frontmatter(#6/#23、EXISTS/PARTIAL)を検査するだけの独立Testであり、
   後回しにする理由が無い。かつD0044の手動確認(一度きり)をRegression化
@@ -124,20 +137,24 @@ Testのみをここへ集める(既に十分なCoverageがある項目はここ�
 | T1 | `test_visibility_separation_market_vs_provider_across_modules` | Setup: `market_public_at=15:00`, `provider_available_at=15:05`(basis=EXACT), `retrieved_at=15:06`, `decision_at=15:03`。Attack: A系統(`disclosures_as_of(..., MARKET_PUBLIC_AT)`)とB系統(`EvidenceRecord.is_usable_at`)を同一Fixtureへ両方適用。Expected: A系統は`published_at=15:00<=15:03`で可視、B系統は`available_at=15:05>15:03`で不可視、という**分岐そのもの**を確認(現状`test_tdnet_integration.py`はTDnet固有Fixtureで類似確認済みだが、Provider横断の汎用形としては無い)。Bug prevented: A/B系統混同(D0042の核心)。Existing dependency: `lib/disclosures/view.py`, `lib/evidence/model.py`。 | MUST |
 | T2 | `test_unknown_availability_boundary_15_03_vs_15_06_parametrized_across_fundamentals_and_disclosures` | D0049/D0050で実際に使った15:00/15:03/15:06のシナリオを、`disclosure_metric_to_evidence`と`disclosure_document_to_evidence`の**両方に対して同一Parametrizeで**適用し、2 Moduleが将来分岐しないことを保証する(2つの独立したBugが同型だったという実績を踏まえ、次に3つ目のModuleが増えても同じ保証が要求されるようにする)。Bug prevented: D0049型Bugの再発・第三Module目での再発。Existing dependency: `lib/fundamentals/evidence.py`, `lib/disclosures/evidence.py`。 | MUST |
 | T3 | `test_construction_time_ordering_gap_is_a_known_documented_gap` | **現状のGapをそのまま記録するTripwire**(修正ではない)。`SourceMetadata`/`SourceVersion`/`DisclosureDocument`を`published_at=15:00, available_at=14:00`(意味的に疑わしい順序)で構築し、**現状は例外を出さず構築が成功すること**を明示的にAssertする(`pytest.raises`ではなく、逆に「まだ раises しない」ことを記録)。このTestがある日突然Failし始めたら「誰かがConstructor Validationを追加した」ことを意味し、その変更がDECISIONS.mdへ記録されているかを確認するきっかけになる。Bug prevented: 無言のArchitecture Driftの検知漏れ。**ユーザーの4-1-C「Source semanticsによって成立し得る場合は勝手にinvalidと決めない」との整合上、これは今回Constructorレベルの拒否を追加する提案ではない**(セクションNのOpen Questionへ)。Existing dependency: `lib/sources/catalog.py`, `lib/evidence/model.py`, `lib/disclosures/model.py`。 | SHOULD |
-| T4 | `test_future_injection_rejected_via_filter_usable_at` | `lib.point_in_time`層(古いPrice PIT)では`test_future_available_at_is_rejected_even_if_retrieved_long_ago`が既にあるが、新しいEvidence層(`EvidenceRecord.is_usable_at`/`filter_usable_at`)に対する同種の直接Testが無い。未来`available_at`のEvidenceを`filter_usable_at`へ渡して除外されることを確認。Bug prevented: Evidence層でのFuture Injection。Existing dependency: `lib/evidence/model.py::filter_usable_at`。 | MUST |
+| T4 | (提案しない — 既存で十分。**[2026-08-17訂正、pit-auditor Review]**) | 当初「Evidence層に対する直接Testが無い」としてMUST新規Testを提案していたが誤り。`13_tests/test_evidence_model.py::test_filter_usable_at_excludes_future_evidence`(line 94)と`test_evidence_not_usable_before_available_at`(line 66)が、未来`available_at`のEvidenceを`filter_usable_at`/`is_usable_at`へ渡して除外されることを**既に**直接確認している。T1/T5と同様「既存で十分」へ再分類し、新規Test数からT4を除外する。 | N/A(既存確認のみ、訂正) |
 | T5 | (提案しない — 既存で十分) | Current-State Leakage(Entity Mapping)は`13_tests/test_entity_registry.py`(`test_resolve_returns_mapping_valid_at_as_of`等)で既に確認済み。重複を避けるため新規追加しない。 | N/A(既存確認のみ) |
-| T6 | (提案しない — 既存で十分) | Snapshot Overwrite保護は`AppendOnlyViolationError`のTest(`test_snapshot.py`、`test_raw_snapshot_append_only_rejects_overwrite`)で既に確認済み。 | N/A(既存確認のみ) |
+| T6 | (提案しない — 既存で十分。**[2026-08-17訂正、pit-auditor Review]**) | Snapshot Overwrite保護は`AppendOnlyViolationError`(定義は`lib/errors.py`、`lib/snapshot.py`が使用)のTestで既に確認済み。当初引用したTest名`test_raw_snapshot_append_only_rejects_overwrite`は`test_snapshot.py`ではなく`test_tdnet_integration.py`に実在する(Adapter経由の統合Test)。`test_snapshot.py`自体には同じ保護を確認する`test_duplicate_snapshot_id_is_rejected`がある。2つのTestが異なるLayer(Store単体 / Adapter統合)で同じ保護を確認しており、いずれも既存で十分という結論自体は変わらない。 | N/A(既存確認のみ) |
 | T7 | `test_unknown_basis_never_treated_as_falsy_or_substitutable` | `AvailabilityBasis.UNKNOWN`をPythonの`if not basis`や`basis or AvailabilityBasis.EXACT`のような暗黙変換パターンでコードが扱っていないことを、`RevisionHistory.as_of`の`include_unknown_availability`既定Falseの直接確認(既存Test Jに近いが、D0049固有ではなくPrinciple単体として独立させる)＋ `ValueAvailability.UNKNOWN`が`0`や`False`と等価に扱われる箇所が無いことをGrepベースで構造確認する形にする。Bug prevented: `UNKNOWN → False`/`UNKNOWN → 0`(ユーザーが繰り返しChecklistに挙げている典型Failure Mode)。Existing dependency: `lib/evidence/model.py`, `adversarial-review` Skillの既存Checklist項目と重複しない範囲でCode-levelに絞る。 | MUST |
-| T8 | `test_no_test_file_asserts_the_pre_fix_available_at_equals_market_public_at_pattern` | **メタTest**。`13_tests/`配下の全Test SourceをGrepし、`available_at == .*market_public_at`(またはFundamentals側`available_at == .*envelope\.market_public_at`)という、D0049/D0050の**Bugそのものの形**をAssertしているTestが無いことを構造確認する。D0050はこのPatternが`test_tdnet_integration.py`に実在したことで発覚した実績があるため、再発を機械的に検知できるようにする。Bug prevented: 「Tests are not Truth」の再発(このRoundの最大の教訓そのもの)。Existing dependency: なし(純粋にGrepベース)。 | MUST(最優先) |
+| T8 | `test_no_test_file_asserts_the_pre_fix_available_at_equals_market_public_at_pattern` | **メタTest**。`13_tests/`配下の全Test SourceをGrepし、`available_at == .*market_public_at`(またはFundamentals側`available_at == .*envelope\.market_public_at`)という、D0049/D0050の**Bugそのものの形**をAssertしているTestが無いことを構造確認する。D0050はこのPatternが`test_tdnet_integration.py`に実在したことで発覚した実績があるため、再発を機械的に検知できるようにする。**[2026-08-17訂正、pit-auditor Review]既にこのPatternに合致する既存Testが1件存在する**: `13_tests/test_fundamentals_evidence_pit.py:255`の`test_include_unknown_availability_true_reproduces_market_public_at_anchor_as_documented_gap`は`assert visible.available_at == market_public_at`を含むが、これはBugではなく**D0049 §5-1で意図的に固定した既知Gapの回帰Test**(行#26参照)であり、単純なGrep一致では偽陽性になる。したがって実装時はこのTest名を明示的なAllowlist/除外Patternとして持たせる設計にする(単純な「一致件数0」判定ではなく「Allowlist外での一致が0」という判定へ変更)。この設計変更を織り込んだ上でPriorityは維持する。Bug prevented: 「Tests are not Truth」の再発(このRoundの最大の教訓そのもの)。Existing dependency: なし(純粋にGrepベース、ただしAllowlist定義が必要)。 | MUST(最優先) |
 | T9 | `test_raw_hash_mismatch_never_treated_as_revision_generalized` | `edinet_zip.py`固有の`test_edinet_zip_module_never_constructs_document_relationship`をLab全体(Common Core含む)へ一般化し、「Raw Hash不一致だけでは`is_correction`/`DocumentRelationship`/`DuplicateRelationKind`を構築しない」という原則をSource非依存でGrep確認する。Bug prevented: 将来のSourceでD0046追記2と同型の誤判定が起きること。Existing dependency: `lib/disclosures/model.py`(`DuplicateRelationKind`)。 | SHOULD |
 | T10 | `test_availability_basis_fields_default_to_unknown_not_exact` | `dataclasses.fields()`でSchema内の`*_basis: AvailabilityBasis`型Fieldを列挙し、既定値が全て`AvailabilityBasis.UNKNOWN`であって`EXACT`ではないことを構造確認する(将来Fieldが追加された際、既定を安全側以外に設定してしまう回帰を防ぐ)。Bug prevented: 新規Schema Field追加時の既定値ミス。Existing dependency: `lib/evidence/model.py`, `lib/disclosures/model.py`。 | SHOULD |
 | T11 | `test_invalid_ordering_when_source_semantics_confirmed_valid_is_not_falsely_rejected` | T3の裏側。将来「available_atがpublished_atより早いことが構造的に正当なSource」(例: 埋め込み配信等、現状this Labには存在しない仮想例)が出てきた場合に備え、**このRoundではConstructor Levelでの拒否を実装しない**という決定自体をTestではなくOpen Questionとして残す(セクションN)。 | N/A(Test化せず、Open Questionへ) |
 
-**合計 実質新規Test数: 8件(T1, T2, T3, T4, T7, T8, T9, T10)** — ユーザー要求
-「最低10件程度」に対し、T5/T6/T11で「既存で十分/Test化しない」という判断も
-明示した上で8件を新規提案する。8件は「10件程度」よりやや少ないが、**水増しで
-無意味な重複Testを追加しない**という設計判断であり、この判断自体をこの
-セクションに明記する(T5/T6の「既存で十分」の判断根拠を隠さない)。
+**合計 実質新規Test数: 7件(T1, T2, T3, T7, T8, T9, T10)** — **[2026-08-17
+訂正、pit-auditor Review]** 当初「8件(T4含む)」としていたが、T4は既存
+`test_evidence_model.py`のCoverageと重複することが判明したため除外し7件へ
+訂正した。ユーザー要求「最低10件程度」に対し、T4/T5/T6/T11で「既存で十分/
+Test化しない」という判断も明示した上で7件を新規提案する。7件は「10件程度」
+より少ないが、**水増しで無意味な重複Testを追加しない**という設計判断で
+あり、この判断自体をこのセクションに明記する(T4/T5/T6の「既存で十分」の
+判断根拠を隠さない。**T4については当初その根拠確認自体が不十分だった
+ことをpit-auditor Reviewで指摘され、この訂正で正した**)。
 
 ---
 
@@ -256,17 +273,22 @@ D0044で実装済みの5 Skill(`pit-audit`/`adversarial-review`/`phase-close`/
 | 何を | 手段 | 現状 |
 |---|---|---|
 | Reviewer Agentは書き込み不可 | Tool Allowlist(`tools:`frontmatter) | `EXISTS`(machine enforcement) |
-| `phase-close`は自動起動しない | `disable-model-invocation: true` | `EXISTS`(machine enforcement) |
-| 上記2つが将来壊れていないこと | **新規** Structural Test | `MISSING` → 4A.5.1-2で追加 |
+| `phase-close`の自己起動抑制 | Body Text(行動規範) | **[2026-08-17訂正、pit-auditor Review]** `disable-model-invocation: true`は`EXISTS`ではない。D0046 §0で意図的に削除された経緯があり(User以外がPhase Closeを正当に必要とする場面でHard Errorになっていたため)、現在はFrontmatterによるAccess ControlではなくBody Text Guidance(行動規範)。ユーザー自身の§4-3方針(意味論的判定をHook化しない)とも整合するため、これを再度機械的に強制する提案はしない |
+| 上記1点(Reviewer Read-only)が将来壊れていないこと | **新規** Structural Test | `MISSING` → 4A.5.1-2で追加(`disable-model-invocation`の確認は上記の訂正によりTest対象から除外) |
 | Main Claude Single Writer | `CLAUDE.md`の文章 | Documentation-onlyのまま維持(Hookでの強制は§4-3ユーザー指示通り見送り、"全変更をHuman PR approval必須にもしない"との整合) |
-| Phase遷移の明示性(自己判断で次Phaseへ進まない) | `phase-close`Skillの`disable-model-invocation`+ Task Promptでの明示確認 | 維持(Hook化しない、意味論判定はDeterministic Hook向きではない) |
+| Phase遷移の明示性(自己判断で次Phaseへ進まない) | `phase-close`SkillのBody Text + Task Promptでの明示確認 | 維持(Hook化しない、意味論判定はDeterministic Hook向きではない) |
 
 **新規Structural Test設計(4A.5.1-2、コードはまだ書かない)**:
 `13_tests/test_agent_governance.py`案。`.claude/agents/*.md`と
 `.claude/skills/*/SKILL.md`のFrontmatterを`yaml.safe_load`でParseし、
 1. 3 Subagentいずれも`tools`に`Write`/`Edit`/`Bash`/`NotebookEdit`を
    含まないこと。
-2. `phase-close`の`disable-model-invocation`が`true`であること。
+2. **[2026-08-17訂正]** `phase-close`の`disable-model-invocation`確認は
+   削除(そもそも存在しない設計であることがD0046 §0で確定しているため、
+   このField自体を確認するTestは意味を持たない)。代わりに`phase-close`の
+   Body Textに「Userの明示的要求時のみ実行する」という趣旨の文言が
+   含まれることをGrepベースで緩く確認する案へ差し替える(意味論の
+   完全なTestはできないが、Body Text自体が消えていないことは検知できる)。
 3. Skill名・Agent名がそれぞれ重複していないこと(D0044の一度きり確認を
    永続Regression化)。
 4. 各SubagentのPreload Skill名(`skills:`)が実在するSkillディレクトリ名と
@@ -280,7 +302,24 @@ D0044で実装済みの5 Skill(`pit-audit`/`adversarial-review`/`phase-close`/
 |---|---|---|---|---|---|
 | Protected Path Warning | `PreToolUse`, matcher `Edit\|Write`, path pattern `^(core/\|app\.py\|tests/)` | 既存Screening Toolへの意図しない変更 | 低(将来Screening Tool自体の意図的改修時のみNoise。**Block ではなく Warning に留める**設計とし、必要な場合はUserが承認して続行できるようにする) | Warn(non-blocking推奨、`exit 0`+メッセージ出力。誤ってBlockして正当な作業を止めるリスクを避ける) | **Yes**(4A.5.1-3。このLabで最も頻繁に確認している事項であり、毎Round手動`git diff --stat`に依存している現状を構造的に補強する価値が高い) |
 | Secret Guard(commit時) | `PreToolUse`, matcher `Bash`, `git commit`/`git add`パターン | `.env`/APIキーらしき文字列のCommit | 中(誤検知でCommitが止まるリスク、`HOOKS_PROPOSAL.md`既記載の懸念のまま) | Block(`exit 2`) | **Not now**(既存`_assert_no_secret_like_keys`がRaw Snapshot経路を、`.gitignore`が`.env`をそれぞれ別レイヤーで守っており、二重投資の優先度は低い。SHOULDとして記録のみ) |
-| Optional Phase Validation | `PreToolUse`, matcher `Bash`, `git commit`パターン | Commit直前の再Quality Gate | 低 | Block | **Not now**(既存PostToolUse Hookが全Edit後に既にpytest/ruff/mypyを実行しており機能重複) |
+| Optional Phase Validation(Hook新設案) | `PreToolUse`, matcher `Bash`, `git commit`パターン | Commit直前の再Quality Gate | 低 | Block | **Not now**(下記の訂正・別提案を参照。新規Hookとしては引き続き見送るが、理由は変わった) |
+
+**[2026-08-17訂正、pit-auditor Review] 「既存PostToolUse Hookと機能重複」という
+上記の判定はLab独自のpytestについて誤りだった**: `.claude/hooks/post_edit_
+quality_gate.sh`のpytest行(line 26)は`tests/`(Root、既存Screening Tool)
+のみを実行し、`Japanese_Equity_Lab/13_tests/`は一度も実行しない
+(mypyはline 23で`Japanese_Equity_Lab/lib`を含むため、pytestとmypyで
+Scopeが食い違っている)。したがってこのPlanが提案する新規`test_pit_
+principles.py`を含むLabのPIT Testは、`/phase-close`をUserが明示的に呼ぶ
+までは一度も自動実行されない。
+
+これは「新しいHookを増やす」話ではなく**既存Hookの1行を直す**話であり、
+Cost/Complexityが最小で、かつこのPlan全体の価値(D0049/D0050の教訓を
+Machine-Enforced Guardrailへ変える)に直結する。次のセクションOへ
+`4A.5.1-0`(既存Hookのpytest ScopeへLab `13_tests/`を追加する1行修正)
+としてMUST最優先で追加する。ユーザー§0「Hook作成は行わない」は新規Hookの
+話であり、既存の1行修正がこの制約に該当するかは次Round開始時に確認する
+(Open Questionへ追加)。
 
 **Experimental Agent Hooksは使用しない**(ユーザー§4-2指示通り)。
 
@@ -428,13 +467,26 @@ Procedure文書化のみ計画し、実行はしない。
    → **次Round開始時にUserへ確認**(T3はTripwireとして記録するに留め、
    Constructor変更はしない)。
 
+2. **[2026-08-17追加、pit-auditor Review] `4A.5.1-0`(既存Hookのpytest行
+   へLab `13_tests/`を追加する1行修正)は、ユーザーが今回`§0`で禁止した
+   「Hook作成」に該当するか?**
+   文言上「作成」であり「既存Hookの1行修正」は別行為とも読めるが、
+   このPlanのRound自体が明示的に「コード実装・Hook作成を行わない」設計
+   固定Roundである以上、Main Claudeが自己判断で拡大解釈すべきではない。
+   → **次Round開始時にUserへ確認**。仮に今回のScope外と判定された場合、
+   `4A.5.1-0`はMUSTの先頭Stepとして次Round最初に実施する。
+
 ---
 
 ## O. Final Recommended Scope
 
 ### MUST(次Roundで必ず実施)
 
-1. PIT Compliance Test Suite: T1, T2, T4, T7, T8(セクションD)
+0. **[2026-08-17追加、pit-auditor Review]** 既存Hookのpytest行へ
+   `Japanese_Equity_Lab/13_tests/`を追加する1行修正(セクションI/N。
+   「Hook作成」への該当性はUser確認後に実施、最優先Step)
+1. PIT Compliance Test Suite: T1, T2, T7, T8(セクションD、**T4は既存
+   Coverageと重複するため2026-08-17訂正でMUSTから除外**)
 2. Agent Governance Structural Test(セクションH)
 
 ### SHOULD(次Round内で時間が許せば、少なくとも次々Roundまでに)
