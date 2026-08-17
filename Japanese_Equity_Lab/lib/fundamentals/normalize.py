@@ -329,11 +329,26 @@ def _provider_available_at_and_basis(
 ) -> tuple[datetime, AvailabilityBasis]:
     """provider_available_at(このProvider経由でいつ参照可能になったか)は、実際に
     観測したPolling Log等が無い限り確定できない(D0043)。「18:00頃速報」等の
-    Provider Update Policyの「頃」表現をExact Timestampへ変換しない。ここでは
-    構造上必須のavailable_at Fieldへ最も保守的なAnchor(market_public_at、無ければ
-    retrieved_at)を入れつつ、常に`availability_basis=UNKNOWN`とする。
-    `RevisionHistory.as_of()`は既定でUNKNOWN Basisを除外するため、この値が
-    Reproducible System Simulationへ「確認済みの事実」として誤って使われることはない。
+    Provider Update Policyの「頃」表現をExact Timestampへ変換しない。
+
+    **Docstring修正(D0049追記)**: `anchor`が`market_public_at`(存在する場合)を
+    優先する設計は、旧`lib.fundamentals.evidence`の`available_at`Fallback Bug
+    (D0049で修正)と同じ「market_public_atは保守的」という逆の論理に基づいて
+    いた — `market_public_at`は通常`provider_available_at`より**早く**、これを
+    `available_at`相当のFieldへ入れると実際より早く使えたと誤認しうる。ここでは
+    `availability_basis`を常に`AvailabilityBasis.UNKNOWN`とすることで、
+    `RevisionHistory.as_of()`が既定でこの値を除外し(D0040)、上記の誤認が
+    実際にReproducible System Simulationへ漏れることを防いでいる — **安全性は
+    `anchor`の値そのものが正しいからではなく、UNKNOWN Basisによる既定除外から
+    来ている**(旧Docstringの「market_public_atは保守的」という説明は誤り)。
+
+    呼び出し側が`include_unknown_availability=True`を明示した場合、この
+    `anchor`(`market_public_at`優先)がそのまま`available_at`として使われる
+    ため、`lib.fundamentals.evidence`で修正したのと同型のLeakageが再現しうる
+    (pit-auditor Finding、D0049 §5-1、Follow-up)。この`anchor`計算自体を
+    `retrieved_at`固定へ変更するかどうかは、`include_unknown_availability=True`
+    の既存呼び出し箇所への影響分析を要する設計判断であり、このDocstring修正
+    Roundでは変更しない(挙動不変、Docstringのみ修正)。
     """
     anchor = market_public_at if market_public_at is not None else retrieved_at
     return anchor, AvailabilityBasis.UNKNOWN

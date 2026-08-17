@@ -178,6 +178,83 @@ def test_envelope_construction_rejects_tz_naive_retrieved_at() -> None:
         )
 
 
+def test_envelope_construction_rejects_tz_naive_market_public_at() -> None:
+    """外部Review Finding F(Naive Datetime)への対応: retrieved_atだけでなく
+    market_public_atについても、tz-naive値がConstruction時にfail closedで
+    Rejectされることを明示的に確認する(model.py既存の`__post_init__`挙動、
+    このRoundで新規に追加した検証ではない)。"""
+    with pytest.raises(ValueError, match="market_public_at"):
+        DisclosureEnvelope(
+            envelope_id="ENV_NAIVE_MPA",
+            provider_code="72030",
+            internal_code="7203",
+            market_public_at=datetime(2026, 8, 17, 15, 0),  # tz無し
+            retrieved_at=datetime(2026, 8, 17, 15, 6, tzinfo=UTC),
+        )
+
+
+def test_normalize_pipeline_never_regenerates_retrieved_at_internally() -> None:
+    """外部Review Finding A(retrieved_at Semantics Ambiguity)への対応:
+    `parse_financial_summary_payload()`が`retrieved_at`を必須Keyword引数
+    として要求し、内部で`datetime.now()`等を呼び出して独自に生成する経路が
+    無いことを構造的に確認する。Offline Replay時、Snapshot保存時の元の
+    `retrieved_at`がそのままNormalizerへ渡され、Replay実行時刻へ暗黙に
+    上書きされないことの構造的保証(`RawFetchResult.retrieved_at`は
+    `RawSnapshotStore`のManifestへ保存され、再読込時もこの値がそのまま
+    使われる、既存`RawSnapshotStore`設計、D0042 Offline原則)。"""
+    import inspect
+
+    import lib.fundamentals.normalize as normalize_module
+
+    sig = inspect.signature(normalize_module.parse_financial_summary_payload)
+    assert sig.parameters["retrieved_at"].default is inspect.Parameter.empty  # 必須引数
+
+    source = normalize_module.__file__
+    assert source is not None
+    with open(source, encoding="utf-8") as f:
+        text = f.read()
+    assert "datetime.now(" not in text
+    assert "utcnow(" not in text
+
+
+def test_include_unknown_availability_true_reproduces_market_public_at_anchor_as_documented_gap() -> None:
+    """既知のFollow-up Gap(D0049 §5-1、`lib.fundamentals.normalize._provider_
+    available_at_and_basis`)を、Prose説明だけでなく実際のコード実行結果として
+    明示的に記録する回帰テスト。`include_unknown_availability=True`を明示した
+    呼び出し側では、`market_public_at`がそのまま`available_at`として使われる
+    ため、`lib.fundamentals.evidence`で修正したのと同型のLeakageが再現し
+    うることを確認する(このTest自体はGapの`Fix`ではなく、Gapの存在を
+    Regressionとして固定し、将来この挙動が変わった場合に検知できるように
+    するためのもの)。"""
+    from lib.evidence.model import RevisionHistory, SourceVersion
+
+    market_public_at = datetime(2026, 8, 17, 15, 0, tzinfo=UTC)
+    retrieved_at = datetime(2026, 8, 17, 15, 6, tzinfo=UTC)
+    from lib.fundamentals.normalize import _provider_available_at_and_basis
+
+    anchor, basis = _provider_available_at_and_basis(market_public_at, retrieved_at)
+    assert anchor == market_public_at  # 既知のGap: retrieved_atではなくmarket_public_atが使われる
+    assert basis.value == "UNKNOWN"
+
+    version = SourceVersion(
+        source_record_id="S1",
+        source_version_id="V1",
+        value="120",
+        available_at=anchor,
+        retrieved_at=retrieved_at,
+        availability_basis=basis,
+    )
+    history = RevisionHistory(series_id="SERIES1", versions=(version,))
+
+    decision_at_between = datetime(2026, 8, 17, 15, 3, tzinfo=UTC)
+    # 既定(include_unknown_availability=False相当のAPIが無い場合はUNKNOWN除外がDefault):
+    assert history.as_of(decision_at_between) is None  # 安全側Default: UNKNOWN Basisは除外される
+    # 明示的にUNKNOWN Basisを許容した場合のみ、既知のGapが顕在化する。
+    visible = history.as_of(decision_at_between, include_unknown_availability=True)
+    assert visible is not None
+    assert visible.available_at == market_public_at  # 既知のGap(§5-1)そのもの
+
+
 # --- E. Evidence Contentが解釈語(Bullish/Positive/Buy等)を一切含まないこと ---
 
 _FORBIDDEN_INTERPRETATION_WORDS = (

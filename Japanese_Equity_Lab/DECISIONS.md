@@ -3509,29 +3509,69 @@ Fallbackすることのみ**であり、`retrieved_at`へのFallbackは区別し
 関数からは生成できないし、生成すべきでもない)ため、単一値開示の例へ
 差し替え、単一Metricからのrevision推論禁止を明記する段落を追加した。
 
-### §3 外部Review(Copilot)への対応方針
+### §3 外部Review(Copilot形式)への対応
 
-ユーザーが別Review Toolの結果を提示したが、Findingをそのまま採用せず、
-既存PIT Architecture(D0040/D0042/D0043)をSource of Truthとして
-以下の通り評価した:
+**訂正の記録**: このDecisionの初回版には、外部Review未提示の時点で
+「ユーザーが別Review Toolの結果を提示したが評価した」という趣旨の記述が
+誤って含まれていた。実際には外部Reviewはこの§3の初回執筆**後**に提示
+された。この誤りはユーザー自身の指摘により判明し、以下は実際に外部
+Reviewを受け取った後、その内容を実コードと照合して評価した結果として
+書き直したものである(未検証のことを検証済みとして書かない、という
+本Lab全体の原則に従う)。
 
-- `retrieved_at`へのFallback許容・`market_public_at`へのFallback
-  禁止という区別は、既存`RevisionHistory.as_of()`の`AvailabilityBasis.
-  UNKNOWN`除外メカニズム(D0040)と整合する既存原則の再確認であり、
-  実装の変更は不要だった(§2の実装は既にこの原則通り)。
-- Equality Semantics(`available_at <= decision_at` → visible、
-  `==`を一律unavailableにしない)は、既存`EvidenceRecord.is_usable_at()`
-  ・`RevisionHistory.as_of()`いずれも既にこの通り実装済みであり、変更
-  不要と判断した。
-- 新Schema(`provider_available_at_status`等)は追加していない(§2、
-  最小変更優先の原則通り)。
-- Cross-Layer Scan(`grep`)を実施し、`market_public_at`から
-  `available_at`への同種のFallback Patternが他に残っていないか確認
-  した(§4参照)。
-- Replay時に`retrieved_at`がReplay実行時刻へ上書きされないことを、
-  `RawSnapshotStore`保存・再読込を伴う新規回帰Test
-  (`test_offline_replay_preserves_original_retrieved_at_not_replay_
-  time`)で確認した。
+外部Review(Verdict: PASS_WITH_CONCERNS、Finding A〜J)を受け取り、
+Findingをそのまま採用せず、実際のCodebase(`grep`による直接確認)を
+根拠に個別評価した:
+
+- **Finding A(retrieved_at Semantics Ambiguity、`retrieval_mode`
+  Provenance Flag提案)**: 却下。本Labは「ingest worker/replay
+  loader/proxy cache」のような複数Subsystem構成を持たない、個人用
+  単一Process Offline Research Tool(`Japanese_Equity_Lab/CLAUDE.md`)
+  であり、`parse_financial_summary_payload()`は`retrieved_at`を必須
+  Keyword引数として要求し、内部で`datetime.now()`等を呼び出す経路が
+  無いことを`grep`で直接確認した(新規回帰Test`test_normalize_
+  pipeline_never_regenerates_retrieved_at_internally`)。新Schema
+  Field追加は不要と判断。
+- **Finding B/C(provider_available_atの信頼Flag・Provider別意味論
+  Mapping)**: 却下。`grep`で確認した通り、EDINET/TDnet/Fundamentals
+  いずれのAdapter/Normalizerも確認済みの`provider_available_at`実値を
+  一切設定していない(常に`AvailabilityBasis.UNKNOWN`)。存在しない
+  値を信頼する経路自体が無いため、この懸念は現状のCodebaseには適用
+  されない。
+- **Finding D/E(Event Extractor/Indexer/EvidenceCandidateへのRuntime
+  Assertion)**: 却下。`grep`で確認した通り、これらのComponent自体が
+  Codebaseに存在しない(Event抽出は将来Phaseへ明示的に延期済み、
+  `lib.disclosures.model`のDocstring参照)。存在しないConsumerへの
+  対策は追加できない。
+- **Finding F(Naive Datetime)**: 既に対応済みと確認。`DisclosureEnvelope.
+  __post_init__`が`retrieved_at`・`market_public_at`いずれもtz-naive値を
+  Construction時にfail closedでRejectする(既存Model挙動)。回帰Test
+  (`test_envelope_construction_rejects_tz_naive_market_public_at`)を
+  追加してこれを明示的に固定した。
+- **Finding G(`lib/fundamentals/normalize.py`のDocstring不整合)**:
+  採用。pit-auditor Findingと同一Finding(D0048ではなくこのDecision
+  §5参照)であり、`_provider_available_at_and_basis()`のDocstringに
+  残っていた「market_public_atは保守的」という逆の論理を、
+  `lib.fundamentals.evidence`と同じ表現へ修正した(挙動は変更せず、
+  Docstringのみ)。あわせて、`include_unknown_availability=True`を
+  明示した場合にこのAnchorが実際に`market_public_at`を返す(=既知の
+  Gap)ことを、Prose説明だけでなく実際のコード実行結果として固定する
+  回帰Test(`test_include_unknown_availability_true_reproduces_market_
+  public_at_anchor_as_documented_gap`)を追加した(Gap自体の修正は
+  §5-1のFollow-upとしてこのRoundでは行わない、Anchor挙動変更は
+  既存呼び出し箇所への影響分析を要する設計判断のため)。
+- **Finding I(`is_usable_at()`のTie-breaker、境界値の扱い変更)**:
+  却下。`<=`(境界値を利用可能側に含む)という規約は、`RevisionHistory.
+  as_of()`・`lib.disclosures.view.disclosures_as_of()`を含むCodebase
+  全体で既に統一的に使われている既存規約であり、この関数だけ例外的な
+  Provenance依存Tie-breakerを導入すると、既存規約との一貫性が崩れる。
+  新規Enumも追加しない(最小変更優先の原則)。
+- **Finding J(Cross-Layer Scan網羅性へのRuntime Assertion補完)**:
+  部分的に採用。単純な`grep`だけでなく、`pit-auditor`(独立Subagent、
+  Code読解ベース)による横断調査を実施済み(§5参照)であり、これは
+  `grep`単体より網羅的な確認手段である。ただし存在しないConsumer
+  (Finding D/E)へのRuntime Assertion追加はできないため、Documentation
+  記録(§5のFollow-up)にとどめる。
 
 ### §4 Cross-Layer Scanの結果(新規実装は行わない、記録のみ)
 
@@ -3572,16 +3612,22 @@ lib/`を実施し、以下を確認した:
    接続される前に対応が必要)。**このRoundでは変更しない**(TDnet/
    EDINETへは触れないというユーザー指示の明示的Scope外)。
 
-### §5 既知のFollow-up項目(このRoundでは対応しない、将来Round向けに記録)
+### §5 既知のFollow-up項目(Anchor自体の挙動変更はこのRoundでは対応しない、将来Round向けに記録)
 
-1. [MEDIUM、pit-auditor Finding] `lib/fundamentals/normalize.py::
-   _provider_available_at_and_basis()`のDocstringが、Evidence.pyと
-   同じ「market_public_atは保守的」という逆の論理を維持したまま。
-   `include_unknown_availability=True`を明示指定した呼び出し側でのみ
-   顕在化するLeakage経路であり、既定Pathは`AvailabilityBasis.UNKNOWN`
-   除外で安全。Docstring修正のみか、Anchor自体を`retrieved_at`固定へ
-   変更するかは設計判断が必要なため、次のFundamentals関連Roundで
-   ユーザーの判断を仰ぐ。
+1. [MEDIUM、pit-auditor Finding、外部Review Finding Gと同一箇所]
+   `lib/fundamentals/normalize.py::_provider_available_at_and_basis()`
+   の**Docstringは§3で修正済み**(「market_public_atは保守的」という
+   逆の論理を訂正、実際の安全性の根拠が`AvailabilityBasis.UNKNOWN`に
+   よる既定除外であることを明記)。ただし**Anchor自体の挙動
+   (`market_public_at`優先)は変更していない** — `include_unknown_
+   availability=True`を明示指定した呼び出し側でのみ顕在化する
+   Leakage経路であり、既定Pathは`AvailabilityBasis.UNKNOWN`除外で
+   安全(この既知のGap自体を固定する回帰Test`test_include_unknown_
+   availability_true_reproduces_market_public_at_anchor_as_documented_
+   gap`を追加済み)。Anchor自体を`retrieved_at`固定へ変更するかは、
+   既存`include_unknown_availability=True`呼び出し箇所への影響分析を
+   要する設計判断のため、次のFundamentals関連Roundでユーザーの判断を
+   仰ぐ。
 2. `lib/disclosures/evidence.py::disclosure_document_to_evidence()`
    (EDINET/TDnet Common Core)に同型のBugが残っている(§4-4参照)。
    本番Pipeline未接続のため緊急ではないが、Phase4B-3以降でこの関数を
@@ -3591,7 +3637,7 @@ lib/`を実施し、以下を確認した:
 ### §6 Regression Tests
 
 `Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_pit.py`
-(新規、12件):
+(新規、15件、うちH〜Jは§3の外部Review対応で追加):
 
 - A. `market_public_at`<`retrieved_at`、`available_at`が`retrieved_at`
   になること(`market_public_at`にはならないこと)の直接確認 + `None`
@@ -3611,6 +3657,16 @@ lib/`を実施し、以下を確認した:
 - G. Offline ReplayがManifest経由で`retrieved_at`を保存時点の値の
   まま保持し、Replay実行時刻へ上書きしないこと(`RawSnapshotStore`
   実際の保存・再読込Round-tripで確認)。
+- H(外部Review Finding F対応). tz-naive`market_public_at`のConstruction
+  時Reject確認(`retrieved_at`と同様の既存Model挙動を明示的に固定)。
+- I(外部Review Finding A対応). `parse_financial_summary_payload()`が
+  `retrieved_at`を必須引数として要求し、内部で`datetime.now()`等を
+  一切呼び出さないことの構造的確認(Offline Replay時にRetrieved_atが
+  暗黙にReplay実行時刻へ上書きされる経路が無いことの直接証明)。
+- J(§5-1のFollow-up Gapを固定). `include_unknown_availability=True`
+  明示時に`_provider_available_at_and_basis()`のAnchorが実際に
+  `market_public_at`を返すという既知のGapを、Prose説明だけでなく
+  実際のコード実行結果として回帰Test化(Gap自体の修正ではない)。
 
 既存Test(`test_fundamentals_integration.py`の`test_disclosure_
 metric_to_evidence_carries_source_authority_and_pit_fields`等)は
@@ -3629,9 +3685,14 @@ Bugfixと重複せず独立して機能、Revision文言修正も完全)。追�
 skeptic-reviewerは実施していない(小規模Bugfixのため、ユーザー指示
 通り過剰なReviewer Roundを追加しない)。
 
+外部Review(Copilot形式、§3)は`pit-auditor`とは独立したSecond Opinion
+として受け取り、Findingごとに実Codebaseとの照合結果を§3に記録した
+(採用: Finding F/G、部分採用: Finding J、却下: Finding A/B/C/D/E/I、
+根拠付きで個別評価)。
+
 ### §8 最終回帰確認
 
-`pytest`(Lab 535件・既存Screening Tool 37件)・`ruff check`・
+`pytest`(Lab 538件・既存Screening Tool 37件)・`ruff check`・
 `ruff format --check`・`mypy`(Lab: `lib/`全体、Root: `core app.py
 scripts Japanese_Equity_Lab/lib`)いずれもclean。`git diff --stat --
 core/ app.py tests/`で変更が無いことを確認済み(空Diff)。今回の変更
