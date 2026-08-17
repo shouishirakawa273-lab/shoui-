@@ -102,6 +102,7 @@ phase-close
 | `phase-close` | `/phase-close`のみ(自動起動しない) | Phase終了時の標準Procedure |
 | `source-onboarding` | Claude自動 or `/source-onboarding` | 新規Data Source調査(`data-source-researcher`がPreload) |
 | `local-validation` | Claude自動 or `/local-validation` | ローカル実データ検証手順の生成 |
+| `source-integration` | Claude自動 or `/source-integration` | Data Source Adapter/Normalizer実装・レビュー時のRule ID付きChecklist(4A.5.1-4、Preload Subagentなし) |
 
 すべて`paths: Japanese_Equity_Lab/**`でScopeし、Lab配下のFileを扱っている
 ときのみ自動起動対象になる(Screening Toolの作業では自動起動しない。明示的な
