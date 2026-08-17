@@ -4,8 +4,9 @@ description: >-
   Standard end-of-Phase closing procedure for Japanese Equity Lab (scope
   check, regression, docs, PIT/adversarial review, status verdict).
   Invoke explicitly with /phase-close when a Phase's work is believed
-  done; Claude does not run this on its own.
-disable-model-invocation: true
+  done. Claude may also invoke this itself, but only when the user has
+  actually asked to close/complete a Phase in the current task — never
+  spontaneously or as a substitute for finishing implementation work.
 paths: Japanese_Equity_Lab/**
 ---
 
@@ -14,9 +15,17 @@ paths: Japanese_Equity_Lab/**
 This is a checklist you work through and report against — it is not a
 script that commits or pushes anything by itself.
 
+**Only invoke this when genuinely asked to close a Phase.** Whether
+triggered via `/phase-close` or invoked directly by Claude, this skill is
+for the moment a Phase's work is believed done and the user has asked
+(this turn, or as part of the Phase's own kickoff instructions) for it to
+be closed out. Do not run it speculatively mid-implementation, and do not
+treat running it as a way to make partial work look finished — if a step
+fails, report the failure; don't reach for `COMPLETE` by skipping steps.
+
 **This skill never commits or pushes by default.** Only stage, commit, or
-push if the task prompt that invoked `/phase-close` explicitly asked for
-it. Otherwise, stop after reporting the verdict and let the user decide.
+push if the task prompt that invoked this skill explicitly asked for it.
+Otherwise, stop after reporting the verdict and let the user decide.
 
 **This skill never advances to the next Phase on its own.** Reporting
 `COMPLETE` is a status report, not permission to start the next Phase —
