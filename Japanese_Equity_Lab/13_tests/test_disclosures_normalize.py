@@ -154,6 +154,90 @@ def test_provider_available_at_basis_is_always_unknown_no_real_observation_log()
 # --- Test 19/20: Attachment metadata保持・未知AttachmentKindのfail closed ---
 
 
+# --- skeptic-reviewer Finding(D0045追記): IsPrimaryが文字列で返る場合もPython
+# truthinessを使わず明示的literalのみ受理する ---
+
+
+def test_is_primary_string_true_false_parsed_correctly_not_via_python_truthiness() -> None:
+    payload = [
+        {
+            "DocId": "BOOL-TEST",
+            "Code": "72030",
+            "Title": "x",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024-01-01",
+            "PublicTime": "10:00",
+            "Attachments": [
+                {"AttachmentId": "A1", "AttachmentKind": "PDF", "IsPrimary": "true"},
+                {"AttachmentId": "A2", "AttachmentKind": "PDF", "IsPrimary": "false"},
+            ],
+        }
+    ]
+    documents = parse_disclosure_payload(payload, retrieved_at=_RETRIEVED_AT)
+    attachments = {a.attachment_id: a.is_primary for a in documents[0].attachments}
+    assert attachments["A1"] is True
+    assert attachments["A2"] is False  # bool("false")だとTrueになってしまう罠を回避できていること
+
+
+def test_is_primary_unknown_string_fails_closed_to_false(caplog: pytest.LogCaptureFixture) -> None:
+    payload = [
+        {
+            "DocId": "BOOL-UNKNOWN",
+            "Code": "72030",
+            "Title": "x",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024-01-01",
+            "PublicTime": "10:00",
+            "Attachments": [{"AttachmentId": "A1", "AttachmentKind": "PDF", "IsPrimary": "yes"}],
+        }
+    ]
+    with caplog.at_level("WARNING"):
+        documents = parse_disclosure_payload(payload, retrieved_at=_RETRIEVED_AT)
+    assert documents[0].attachments[0].is_primary is False
+    assert "未知のIsPrimary文字列値" in caplog.text
+
+
+# --- pit-auditor/skeptic-reviewer Finding(D0045追記): internal_document_idは
+# 1回のparse_disclosure_payload()呼び出し内でのみ一意が保証される(複数回の
+# 呼び出しをまたいだ一意性は保証しない、Docstring/Architecture Docへ明記済み) ---
+
+
+def test_internal_document_id_uniqueness_is_scoped_to_a_single_parse_call_not_guaranteed_across_calls() -> None:
+    """複数回`parse_disclosure_payload()`を呼び出すと、同じCode・同じ行Indexの
+    組み合わせであれば`internal_document_id`が衝突しうることを明示的に確認する
+    (仕様上の既知の制約であり、バグではない。Phase4B-2以降の蓄積Store設計では
+    `retrieved_at`/`source_snapshot_id`等で追加の一意性を確保すること)。"""
+    payload_day_1 = [
+        {
+            "DocId": "D1",
+            "Code": "72030",
+            "Title": "Day1",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024-01-01",
+            "PublicTime": "10:00",
+        }
+    ]
+    payload_day_2 = [
+        {
+            "DocId": "D2",
+            "Code": "72030",
+            "Title": "Day2",
+            "DocKind": "FIXTURE_OTHER",
+            "PublicDate": "2024-02-01",
+            "PublicTime": "10:00",
+        }
+    ]
+
+    docs_day_1 = parse_disclosure_payload(payload_day_1, retrieved_at=_RETRIEVED_AT)
+    docs_day_2 = parse_disclosure_payload(payload_day_2, retrieved_at=_RETRIEVED_AT)
+
+    # 同じCode・同じ行Index(いずれも0番目)のため、internal_document_idは衝突する。
+    assert docs_day_1[0].internal_document_id == docs_day_2[0].internal_document_id
+    # しかし別の文書であることはsource_document_id/titleで区別できる。
+    assert docs_day_1[0].source_document_id != docs_day_2[0].source_document_id
+    assert docs_day_1[0].title != docs_day_2[0].title
+
+
 def test_attachment_metadata_is_preserved() -> None:
     documents = parse_disclosure_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
     doc = next(d for d in documents if d.source_document_id == "FIX-D-001")

@@ -40,6 +40,10 @@ Rawからの変換方針は`lib.fundamentals.normalize`と同じ(D0043の教訓�
   Phase4A実装済みコードへの機能変更を避けるためこのModule内に独立して
   再実装している(意図的、共有Module抽出は将来の低リスクなFollow-upとして
   据え置く)。
+- `IsPrimary`のようなboolean的な値も、D0043で確認済みの実Wire Format
+  (`MatChgSub="false"`)と同じく文字列で返る可能性を想定し、
+  `_parse_is_primary()`で明示的literalのみ受理する(Python truthiness
+  `bool("false")==True`の罠を避ける、skeptic-reviewer Finding、D0045追記)。
 """
 
 from __future__ import annotations
@@ -113,6 +117,32 @@ def _parse_doc_kind(raw: object) -> DocumentKind:
     return kind
 
 
+_KNOWN_BOOLEAN_LITERALS: dict[str, bool] = {"true": True, "false": False}
+
+
+def _parse_is_primary(raw: object) -> bool:
+    """`IsPrimary`はネイティブJSON boolean(`true`/`false`)で返る場合と、
+    Wire上で文字列("true"/"false")として返る場合の両方を想定する
+    (D0043で確認済みの`MatChgSub="false"`と同じパターン、`lib.fundamentals.
+    normalize.parse_boolean_string()`と同じ設計をここでも適用する。
+    skeptic-reviewer Finding、D0045追記)。Python truthiness
+    (`bool("false")`が`True`になる罠)は使わず、確認できない値は保守的に
+    `False`へfail closedし、warningを残す。
+    """
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        parsed = _KNOWN_BOOLEAN_LITERALS.get(raw.strip().lower())
+        if parsed is not None:
+            return parsed
+        logger.warning("disclosures: 未知のIsPrimary文字列値 '%s' を検出しました。Falseへfail closedします", raw)
+        return False
+    if raw is None:
+        return False
+    logger.warning("disclosures: 未知の型のIsPrimary値 %r を検出しました。Falseへfail closedします", raw)
+    return False
+
+
 def _parse_attachment_kind(raw: object) -> AttachmentKind:
     if raw is None:
         return AttachmentKind.UNKNOWN
@@ -180,7 +210,7 @@ def _parse_attachments(
                 filename=_optional_str(row.get("Filename")),
                 source_locator=_optional_str(row.get("Locator")),
                 retrieved_at=retrieved_at,
-                is_primary=bool(row.get("IsPrimary", False)),
+                is_primary=_parse_is_primary(row.get("IsPrimary")),
             )
         )
     return attachments
@@ -285,6 +315,12 @@ def find_same_source_document_id_signals(documents: Sequence[DisclosureDocument]
     (それらはこの関数の入力に一切使われない、意図的な構造上の制約)。"""
     by_source_id: dict[str, list[str]] = {}
     for document in documents:
+        # 空文字列(""、"IDが無い"とは異なるRaw値として保持されている場合)も
+        # Noneと同様に除外する(意図的、truthiness任せではない): 複数文書が
+        # source_document_id=""を共有していても、それは「IDが確認できない」
+        # という共通点にすぎず、実際に同一文書である根拠にはならない。空文字列
+        # 同士をGroupingすると無関係な文書間に誤ったDuplicate Signalを生成して
+        # しまうため、Noneと同じく除外する(skeptic-reviewer Finding、D0045追記)。
         if document.source_document_id:
             by_source_id.setdefault(document.source_document_id, []).append(document.internal_document_id)
 

@@ -157,4 +157,5 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   への接続はまだ行っていない(Provider-neutralなFixtureのみ)。Document
   publication(公開されたという事実)とDocument content(本文の内容)を
   分離し、本文Semantic Extractionは将来Phaseへ明確に切り離した。詳細は
-  `DISCLOSURE_ARCHITECTURE.md`参照(Lab 359テスト)。
+  `DISCLOSURE_ARCHITECTURE.md`参照(Lab 365テスト、pit-auditor/
+  skeptic-reviewerによる初回Review完了)。

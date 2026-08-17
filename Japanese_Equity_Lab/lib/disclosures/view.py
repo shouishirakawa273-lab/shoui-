@@ -38,14 +38,30 @@ def disclosures_as_of(
     - `MARKET_PUBLIC_AT`(A系統): `market_public_at`が確認済み(`None`でない)かつ
       `market_public_at <= decision_at`の文書のみを含む。
     - `PROVIDER_AVAILABLE_AT`(B系統、既定): `provider_available_at`が確認済みかつ
-      `<= decision_at`かつ、既定では`market_public_at_basis`/`provider_
-      available_at_basis`が`UNKNOWN`の文書を除外する(呼び出し側が明示的に
-      `include_unknown_availability=True`とした場合のみ許容、Fundamentals
-      Phase4Aの`RevisionHistory.as_of()`と同じ安全側デフォルト)。
+      `<= decision_at`の文書のみを含む。
+
+    **`market_public_at_basis`/`provider_available_at_basis`が`UNKNOWN`の
+    文書は、A系統・B系統のどちらでも既定で除外する**(呼び出し側が明示的に
+    `include_unknown_availability=True`とした場合のみ許容、Fundamentals
+    Phase4Aの`RevisionHistory.as_of()`と同じ安全側デフォルト)。
+    現行の`lib.disclosures.normalize`は`market_public_at`が確認できた場合
+    常に`AvailabilityBasis.EXACT`を設定するためA系統でこの除外が実際に効く
+    ケースは無いが、`DisclosureDocument`を直接構築する呼び出し側(手動
+    構築・将来の別Normalizer等)が`market_public_at`を設定しつつ`basis`を
+    既定値(`UNKNOWN`)のまま残した場合にも安全側で除外する(skeptic-reviewer
+    Finding、D0045追記)。
 
     未来の文書(`decision_at`より後にしか利用可能でない文書)は結果に含まれない。
     単純な日付比較(`date()`同士の比較)は行わず、tz-aware `datetime`同士で
     比較する(同日でも時刻がdecision_atより後なら除外する、D0045)。
+
+    **注意(skeptic-reviewer Finding、D0045追記)**: 戻り値の集合には、同一
+    `source_document_id`を持つ複数の文書(例: 同じ開示の後続版・号外)が
+    互いに独立した項目としてそのまま含まれうる(このLabはRelationshipを
+    自動推測しないため)。件数を数える・集計する用途では、この集合を
+    そのままEvent数として扱わず、必要に応じて`lib.disclosures.normalize.
+    find_same_source_document_id_signals()`等で同一`source_document_id`の
+    グルーピングを別途考慮すること(Event Clusteringは将来Phase)。
     """
     if decision_at.tzinfo is None:
         raise ValueError("decision_at はtz-awareである必要があります")

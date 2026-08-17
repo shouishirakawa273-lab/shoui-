@@ -2232,8 +2232,55 @@ integration.py` 9件)。Lab全体は313件→359件。既存313件は無変更�
 
 ### Reviewer Findings(pit-auditor / skeptic-reviewer)
 
-Phase4A.5で新設したSubagentsを今回から実運用した(詳細は本コミットの
-完了報告「H」「I」参照)。
+Phase4A.5で新設したSubagentsを今回から実運用した(初回実運用)。両Agentとも
+`.claude/agents/`のRead-only Tool制限(`Write`/`Edit`/`Bash`を持たない)通り、
+コードを一切変更せずFindings ReportのみをMain Claudeへ返した。
+
+**pit-auditor**(4件、最高Severity MEDIUM):
+1. `internal_document_id`は1回の`parse_disclosure_payload()`呼び出し内でしか
+   一意性を保証しない(`DISCLOSURE_ARCHITECTURE.md`の記述を訂正)。
+2. 衝突修正自体を回帰確認するTestが無かった(追加)。
+3. `disclosure_document_to_evidence()`が`provider_available_at_basis
+   =UNKNOWN`という情報を失う(Docstring/Architecture Docへ注意書き追加、
+   Fundamentals Phase4Aと同型の既存制約であるため機能変更はせず)。
+4. `PublicDate`のParseが未Guardで、不正な1行が全体のParseを異常終了させうる
+   (`_parse_date_or_none()`を追加しfail closed化、Test追加)。
+
+**skeptic-reviewer**(6件、最高Severity HIGH、総合`PASS_WITH_CONCERNS`):
+1. [HIGH] `internal_document_id`一意性の主張(pit-auditor Finding 1と同じ
+   論点、より強く指摘)。対応済み(上記)。
+2. [HIGH] `_parse_attachments()`の`is_primary=bool(row.get("IsPrimary",
+   False))`が、D0043で確認済みのWire Format(`MatChgSub="false"`のような
+   文字列Boolean)に対してPython truthinessの罠(`bool("false")==True`)を
+   再導入していた。`_parse_is_primary()`(`lib.fundamentals.normalize.
+   parse_boolean_string()`と同じ設計)を新設し置き換えた。Test追加。
+3. [MEDIUM] `disclosures_as_of()`のDocstringが、A系統でも`market_public_at_
+   basis=UNKNOWN`除外が適用されることを明記していなかった(現行Normalizer
+   では到達しないが、手動構築されたDocumentでは到達しうる)。Docstring修正
+   + Test追加。
+4. [MEDIUM] 同一`source_document_id`を持つ複数文書(例: FIX-D-006の後続版)が
+   Set Filterの結果へ独立した項目としてそのまま含まれ、集計時の二重計上
+   リスクがある。`disclosures_as_of()`のDocstringへ注意書きを追加し、
+   `find_same_source_document_id_signals()`との併用を明記。
+5. [LOW] `find_same_source_document_id_signals()`の`if document.source_
+   document_id:`(truthiness)。調査の結果、これは意図的に正しい実装
+   (空文字列同士をGroupingすると無関係な文書間に誤ったDuplicate Signalを
+   生成してしまうため)と判断し、コード変更はせず、意図を説明するComment
+   のみ追加した。
+6. [LOW] `internal_document_id`修正の回帰Testが無い(pit-auditor Finding 2
+   と同じ論点)。対応済み(上記)。
+
+全Findingに対応後、新規6テスト追加(cross-call ID衝突の仕様確認1件、
+IsPrimary Boolean Parsing 2件、A系統UNKNOWN Basis除外1件、および前回の
+pit-auditor対応分2件)。Lab全体は359件→365件。再Reviewは実施していない
+(全Finding対応後の最終Regressionで機械的に確認、Severity上限MEDIUM/HIGHは
+いずれもDocumentation/Test/局所修正で解消可能な性質であり、再度の
+Subagent呼び出しは必要と判断しなかった)。
+
+**最終回帰確認**(全Finding対応後): `pytest`(Lab 365件・既存Screening
+Tool 37件)・`ruff check`・`ruff format --check`・`mypy`(75ファイル)
+いずれもclean。`git diff --stat -- core/ app.py tests/`で変更が無いことを
+再確認済み。
 
 ### このDecisionでやらないこと
 

@@ -138,6 +138,33 @@ def test_market_public_at_semantics_and_provider_available_at_semantics_differ()
     assert b_semantics_default == []
 
 
+# --- skeptic-reviewer Finding(D0045追記): A系統でもmarket_public_at_basis=UNKNOWN
+# の文書は除外される(現行Normalizerでは到達しないが、手動構築されたDocumentに
+# 対する安全側動作として明示的に確認する) ---
+
+
+def test_market_public_at_semantics_excludes_unknown_basis_even_when_timestamp_present() -> None:
+    doc = _doc(
+        "DOC_UNKNOWN_MARKET_BASIS",
+        market_public_at=datetime(2024, 5, 8, 14, 0, tzinfo=_JST),
+        market_public_at_basis=AvailabilityBasis.UNKNOWN,
+    )
+    result = disclosures_as_of(
+        [doc],
+        datetime(2024, 9, 1, tzinfo=UTC),
+        availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+    )
+    assert result == []
+
+    result_opt_in = disclosures_as_of(
+        [doc],
+        datetime(2024, 9, 1, tzinfo=UTC),
+        availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+        include_unknown_availability=True,
+    )
+    assert {d.internal_document_id for d in result_opt_in} == {"DOC_UNKNOWN_MARKET_BASIS"}
+
+
 # --- Test 27: Append-only(将来のDocument追加が過去のas_of Viewを変えない) ---
 
 
