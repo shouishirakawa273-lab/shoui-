@@ -396,9 +396,19 @@ VERIFICATION(ユーザーが別のWeb-access環境から確認したと申告し
   `EXTERNAL_OFFICIAL_SPEC_VERIFICATION`(ユーザーが別のWeb-access環境
   から確認したと申告した内容)に基づき`lib.disclosures.providers.
   tdnet.TdnetAdapter`・`lib.disclosures.providers.tdnet_normalize`を
-  実装した(`market_public_at`は`DiscDate`/`DiscTime`から`EXACT` Basis
-  で構築、`entity_id`は既存Code正規化を再利用、`document_kind`は
-  `DiscItems`公式Code List未確認のため引き続き`UNKNOWN`)。ただしこの
+  実装した(`market_public_at`は`DiscDate`/`DiscTime`から値自体は
+  構築するが、**[2026-08-17訂正、Phase4A.5.1最終pit-auditor Reviewで
+  判明]** Basisは`AvailabilityBasis.EXACT`ではなく常に`AvailabilityBasis.
+  UNKNOWN`のまま(この段落は当初「`EXACT` Basisで構築」と誤って記載して
+  いた。実装[`lib.disclosures.providers.tdnet_normalize._build_market_
+  public_at()`]は値を構築できた場合でも常に`UNKNOWN`を返す設計であり
+  [skeptic-reviewer Finding、D0048追記で対応済み]、この「既知の限界」節
+  だけがその訂正を反映し忘れていた。同じDocument内の「三層分離」節・
+  `DATA_SOURCE_ARCHITECTURE.md`・`TDNET_ARCHITECTURE.md`・`.claude/
+  skills/source-integration/SKILL.md`はいずれも正しく`UNKNOWN`と記載
+  しており、この節のみが取り残されていた)、`entity_id`は既存Code
+  正規化を再利用、`document_kind`は`DiscItems`公式Code List未確認の
+  ため引き続き`UNKNOWN`)。ただしこの
   申告はClaude自身の一次資料直接確認でも真のLocal Real Data Validation
   でもないため、Source Catalog上は`implementation_status=NOT_
   IMPLEMENTED`のまま維持する(`TDNET_SOURCE_ONBOARDING.md`
