@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/post_edit_quality_gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/protected_path_warning.sh"
           }
         ]
       }
