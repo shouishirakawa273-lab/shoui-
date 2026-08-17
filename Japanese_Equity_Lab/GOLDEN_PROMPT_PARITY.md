@@ -27,7 +27,7 @@ Parityの完全な代替ではないが、恣意的な省略でもない(このS
 | 2 | Actual/Forecast/Period/Scopeを混同しない(D0043) | `SOURCE_SPECIFIC_RULE` | Fundamentals固有のEnum設計(`ActualOrForecast`/`FiscalYearTarget`等)。Common Coreへは一般化せず |
 | 3 | 未確認のSource仕様を推測で埋めない、公式仕様が確認できなければUNKNOWN(D0043全体、`source-onboarding` Skillの既存原則) | `SKILL_RULE` | `SOURCE-001`(Source固有Field意味論を推測しない) |
 | 4 | Document != Event、本文Semantic Extractionはこの段階では行わない(D0045 Core Principle) | `SKILL_RULE` | `EVIDENCE-001` |
-| 5 | `DocumentRelationship`は明示的根拠がある場合のみ、時系列だけから推測しない(D0045) | `SKILL_RULE` | `RAW-002`(Raw Hash不一致からの推測禁止として一般化。時系列推測禁止という上位原則も同じRuleの一部として扱う) |
+| 5 | `DocumentRelationship`は明示的根拠がある場合のみ、時系列だけから推測しない(実装Docstring上の一次出典はD0043の`is_correction`原則、`DocumentRelationship`型自体の正式化はD0045) | `SKILL_RULE` | **[2026-08-17訂正、skeptic-reviewer Review]** 当初`RAW-002`(Raw Hash不一致からの推測禁止)の一部として扱っていたが誤り — `RAW-002`の実文言はHash比較のみを対象とし、時系列推測の禁止を明文で述べていなかった。別Rule`EVIDENCE-003`として分離した(下記「対応」参照) |
 | 6 | Append-only、過去Documentを新Documentで上書きしない(D0045) | `SKILL_RULE` | `RAW-001` |
 | 7 | `originating_source`と`delivery_provider`を分離する(D0042、D0045以降全Source共通) | `SKILL_RULE` | 現行v1のRule ID一覧には未採番。**Gap認定**(下記「見つかったGap」参照) |
 | 8 | EDINET: `disclosure2.edinet-fsa.go.jp`等、公式Doc/APIへこのSessionから疎通できない(D0046 §2/§24) | `INTENTIONALLY_REMOVED` | Session固有のNetwork Policy事実であり、Rule化する意味的内容を持たない(再現性のあるRuleではなく、単発のEnvironment Finding)。理由: `local-validation` Skillが既にこの種の状況への対応手順を持つため、重複した新Ruleは作らない |
@@ -45,16 +45,49 @@ Parityの完全な代替ではないが、恣意的な省略でもない(このS
 | 20 | UNKNOWN Basisは既定で除外、Fallback先にしない(D0040以降、複数Decisionで反復確認) | `SKILL_RULE` | `PIT-001` |
 | 21 | Evidence Contentに解釈語(bullish/buy等)を含めない(D0043/D0045共通) | `SKILL_RULE` | `EVIDENCE-002` |
 | 22 | Reviewer Agent(pit-auditor/skeptic-reviewer)はCodeを変更しない、Main Claudeのみ修正する(全Phase共通、`CLAUDE_CODE_RESEARCH_WORKFLOW.md`) | `SKILL_RULE`ではなく既存の`CLAUDE_CODE_RESEARCH_WORKFLOW.md`側で扱う | Source Integration固有ではなくAgent Governance全体のRuleのため、このSkillへ複製しない(4A.5.1-2のTest対象) |
+| 23 | Publishing Entity/Disclosure System(Venue)/Delivery Providerを3層で分離する。Delivery Providerが観測した状態をVenueの権威ある状態と同一視しない(D0047 §3、ユーザー追加指示Safety Corrections) | `SKILL_RULE` | **[2026-08-17追加、skeptic-reviewer Reviewで判明したGap]** 当初の22行版には**D0047からの行が1件も無かった**(スコープに明記していたにもかかわらず)。`SOURCE-005`として追加(下記「対応」参照) |
 
 ## 見つかったGap(Auditの結果、隠さず記録)
+
+**このセクションは2段階で更新されている。** 1段階目はMain Claude自身の
+初版Auditで、2段階目は`skeptic-reviewer`によるAdversarial Reviewで追加
+発見されたもの。両方を隠さず記録する(発見の順序自体もAudit History)。
+
+### 1段階目(初版Audit、Main Claude自身が発見)
 
 **#7(`originating_source`/`delivery_provider`分離、D0042)がRule ID一覧に
 未採番だった。** これはSource統合において実際に繰り返し重要になっている
 原則(EDINET-via-J-QuantsとEDINET直接取得の区別等)であり、Golden Prompt
 Parity Auditの目的(要件の落ちを見つけること)が実際に機能した例として
-記録する。**対応**: `SKILL_RULE`として`SOURCE-004`(Originating Source
-とDelivery Providerは分離して記録する)をSource Integration Skill v1へ
-追加する(このRound内で追記、下記「対応」参照)。
+記録する。**対応**: `SOURCE-004`を追加(下記「対応」参照)。
+
+### 2段階目(skeptic-reviewer Adversarial Reviewで追加発見)
+
+`skeptic-reviewer`による本Documentへの独立Reviewの結果、**`PASS_WITH_
+CONCERNS`**(2 MEDIUM、1 LOW)を受けた。Main Claude自身が実Code/
+DECISIONS.mdを再確認した上で、以下の通り評価・対応した:
+
+1. **[MEDIUM、CONFIRMED]** Auditのスコープに明記していた**D0047が表に
+   1行も含まれていなかった**。D0047 §3の「Publishing Entity/Disclosure
+   System(Venue)/Delivery Provider 3層分離」は`DISCLOSURE_ARCHITECTURE.md`
+   /`TDNET_ARCHITECTURE.md`に既に一般原則として記録されている重要な
+   原則だったにもかかわらず、初版のGap分析(1段階目)で見落とされていた
+   ——「要件の落ちを見つけること」自体を目的とするAuditが、まさにその
+   種の落ちを1件見逃していたことになる。**対応**: `SOURCE-005`を追加
+   (上記表 #23、下記「対応」参照)。
+2. **[MEDIUM、CONFIRMED]** #5(`DocumentRelationship`時系列推測禁止)を
+   `RAW-002`の一部として扱っていたが、`RAW-002`の実際の文言はRaw Hash
+   比較のみを対象とし、時系列推測の禁止を明文で述べていなかった。
+   Auditの主張とSkill本文の実際の記述が一致しておらず、これは「Machine
+   Enforcementではなく口頭伝承のRule」というPhase4A.5.1が解消しようと
+   している問題そのものをこのAudit自身が小規模に再現していたことになる。
+   **対応**: `EVIDENCE-003`として分離(上記表 #5訂正、下記「対応」参照)。
+3. **[LOW、CONFIRMED]** #5の出典を「D0045」とのみ記載していたが、実装
+   Docstring自身は「Phase4Aの`is_correction`原則と同じ、D0043参照」と
+   一次出典をD0043としている。D0045は`DocumentRelationship`型自体を
+   正式化したDecisionであり、出典として誤りではないが、一次原則の
+   出典としてはD0043を先に挙げるべきだった。**対応**: 上記表 #5の出典
+   記載を訂正済み。
 
 ## Adversarial Test Scenarios(ユーザー指定の3例)
 
@@ -91,21 +124,24 @@ Parity Auditの目的(要件の落ちを見つけること)が実際に機能し
 Skillへ正しく反映されているだけでなく、Test Suiteでも実際に守られている
 ことを確認できた。
 
-## 対応: SOURCE-004の追加
+## 対応: SOURCE-004 / SOURCE-005 / EVIDENCE-003の追加
 
-上記Gapを踏まえ、`Source Integration Skill v1`
-(`.claude/skills/source-integration/SKILL.md`)へ以下を追加する:
+上記2段階のGapを踏まえ、`Source Integration Skill v1`
+(`.claude/skills/source-integration/SKILL.md`)へ以下を追加した(実際に
+追記済み、このDocumentはPlanではなく実施記録):
 
-```
-### SOURCE-004: Originating SourceとDelivery Providerは分離して記録する
+- **`SOURCE-004`**: Originating SourceとDelivery Providerは分離して
+  記録する(D0042)。
+- **`SOURCE-005`**: Publishing Entity/Disclosure System(Venue)/
+  Delivery Providerは3層で分離する(D0047 §3)。
+- **`EVIDENCE-003`**: Document Relationshipは時系列だけから推測しない
+  (D0043の`is_correction`原則が一次出典、D0045で型として正式化)。
 
-情報の原典(originating_source)と、それをこのLabへ届けたProvider
-(delivery_provider)は別概念であり分離する。同じ原典を複数Provider経由で
-取得した場合の比較や、Provider障害・遅延・変換による差異の追跡に使う。
-```
+## Reviewer Review(実施済み)
 
-## Reviewer Review
-
-`skeptic-reviewer`によるReviewをこのAudit完成後に実施する(下記
-Completion Report参照)。Reviewer FindingはEvidence再確認の上で
-採否を判定し、自動採用しない。
+`skeptic-reviewer`によるReviewを実施した。結果: `PASS_WITH_CONCERNS`
+(2 MEDIUM、1 LOW)。全FindingをMain Claude自身が実Code/DECISIONS.mdへ
+当たって検証し、3件ともCONFIRMEDと判定、上記「見つかったGap」2段階目・
+「対応」節へ反映した(詳細は上記)。再Reviewは実施していない(全Finding
+が局所的なRule追加・訂正で完結し、Auditの基本設計・Test検証手法自体には
+変更が無いため、D0046追記2と同じ判断基準)。

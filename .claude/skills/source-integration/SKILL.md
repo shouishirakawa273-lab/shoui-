@@ -153,6 +153,31 @@ Metricからは新旧比較を導出できない)。
 - **回帰Test**: `13_tests/test_fundamentals_evidence_pit.py`の
   interpretive-language absence Test。
 
+### EVIDENCE-003: Document Relationshipは時系列だけから推測しない
+
+`DocumentRelationship`(Correction/Restates/Replaces等)は、Providerが
+明示するか公式Metadataで確認できる場合のみ構築する。「後から出た文書
+だから前を訂正した」という**時系列(公開順序)だけからの推測**は禁止する。
+
+**[2026-08-17追加、Golden Prompt Parity Audit(4A.5.1-5)のskeptic-reviewer
+Reviewで判明したGap]**: 当初この原則をRAW-002(Raw Hash不一致からの推測
+禁止)の一部として扱っていたが、RAW-002の実際の文言はHash比較のみを対象
+としており、時系列推測の禁止を明文で述べていなかった(`GOLDEN_PROMPT_
+PARITY.md`のAudit時点の主張と、Skill本文の実際の記述が一致していなかった
+という指摘)。両者は関連するが別の推論経路(Hash比較 vs 公開順序)である
+ため、別Ruleとして明文化する。
+
+- **実装**: `lib/disclosures/model.py`「Actual Observed vs Confirmed
+  Relationship」節。「時系列だけからの推測は禁止する(Phase4Aの
+  `is_correction`原則と同じ、D0043参照)」。D0045で`DocumentRelationship`
+  型自体が導入され、この原則がCommon Coreの構造として正式化された。
+- **回帰Test**: 構造Test(`DocumentRelationship`をSource固有Adapter/
+  Normalizerが構築しないこと)はRAW-002と同じTestで間接的に確認される
+  (`test_edinet_zip_canonicalize.py`/`test_pit_principles.py`)。時系列
+  推測固有のシナリオ(同一Entityの複数開示が時間順に並んでいるだけで
+  Relationshipを作らないこと)を直接検証するTestは現状無く、次Round
+  以降の追加候補として記録する(このRoundでは新規Test追加はScope外)。
+
 ## SOURCE-*(Source-specific)
 
 ### SOURCE-001: Source固有Field意味論を推測しない
@@ -202,6 +227,39 @@ Provider経由で取得した場合の比較や、Provider障害・遅延・変�
 - **[2026-08-17追加、Golden Prompt Parity Audit(4A.5.1-5)で判明した
   Gap]**: v1初版のRule ID一覧に本来含めるべきだったが未採番だった。
   `GOLDEN_PROMPT_PARITY.md`参照。
+
+### SOURCE-005: Publishing Entity / Disclosure System(Venue) / Delivery Providerは3層で分離する
+
+D0042のOrigin/Delivery 2層分離は、「制度・Venue自体」と「配信経路」が
+同一Provider内で完結する場合(EDINETを直接叩く場合等)は十分だが、
+Delivery ProviderがVenueを直接叩かない構成(TDnet、Delivery Provider=
+J-Quants API)では3層に分ける必要がある: **`publishing_entity`**
+(実際に開示を行った上場会社)/**`disclosure_system`**(制度・Venue自体、
+TDnet)/**`delivery_provider`**(このLabへ実際にDataを届ける経路、
+J-Quants API)。**Delivery Providerが観測した状態(例: J-Quantsが返す
+`DiscStatus`)を、Disclosure System(Venue)上の現在の権威ある状態と
+同一視してはならない。**
+
+**[2026-08-17追加、Golden Prompt Parity Audit(4A.5.1-5)のskeptic-reviewer
+Reviewで判明したGap]**: v1初版のRequirement-by-Requirement Mapping
+(`GOLDEN_PROMPT_PARITY.md`)は、Auditのスコープ内に明記していたD0047を
+実際には1行も表に含めておらず、この3層分離原則がRule ID一覧から
+完全に漏れていた。「新Ruleを見つけること」自体がこのAudit実施の目的
+だったにもかかわらず、この重要な原則が見落とされていたこと自体を
+隠さず記録する。
+
+- **実際のIncident**: TDnet統合(D0047 §3、ユーザー追加指示のSafety
+  Corrections)。EDINETのように`disclosure_system`と`delivery_provider`
+  が同一主体(FSA)である場合はこの2つのみがcollapseして2層のまま
+  でよいが、`publishing_entity`は常に別軸として残る。
+- **実装**: `DISCLOSURE_ARCHITECTURE.md`「発行体 / Disclosure System
+  (Venue) / Delivery Provider の三層分離」節、`TDNET_ARCHITECTURE.md`。
+  この一般原則はTDnetという単一の動機事例のみに基づくため、別Sourceでの
+  検証を待って一般性を再確認する必要がある(D0047自身がこの限定を明記
+  済み)。
+- **回帰Test**: 現状無し(Schema自体はまだ`publishing_entity`という
+  専用Fieldを持たない設計判断が続いているため、Test化はConcrete Field
+  実装後に検討する)。
 
 ## Source-specific Rulesとの境界
 
