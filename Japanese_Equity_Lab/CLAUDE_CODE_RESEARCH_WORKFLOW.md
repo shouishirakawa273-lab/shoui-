@@ -57,8 +57,16 @@ phase-close           <- Userが明示的に呼び出す。Tests/Status判定
 ```
 
 PIT関連でない小さな変更(Docのみの更新等)では`pit-auditor`/
-`skeptic-reviewer`をスキップしてよい。`phase-close`は常にUserが明示的に
-起動する(Skill自体が`disable-model-invocation: true`)。
+`skeptic-reviewer`をスキップしてよい。**[2026-08-17訂正]** `phase-close`
+は「常にUserが明示的に起動する」という記述は、実際には現状と異なる
+(D0046 §0で`disable-model-invocation: true`は意図的に削除済み、User以外の
+正当なPhase Close呼び出しをHard Errorにしていたため)。現在は
+Frontmatterによる強制ではなく、Skillの`description`本文が「Userが
+実際にPhase Close/Completeを求めた時のみ呼び出す、自発的には呼び出さない」
+というGuidanceを明示している(Access ControlではなくBehavioral
+Guidance、`13_tests/test_agent_governance.py::test_phase_close_
+description_still_documents_explicit_invocation_discipline`で
+Description文言自体は継続確認する)。
 
 ## Workflow: 新しいData Sourceの追加(Phase4B以降)
 
@@ -109,6 +117,36 @@ phase-close
 
 いずれも`Write`/`Edit`/`Bash`を持たない(`tools`はAllowlistなので、
 明示していないToolは一切使えない)。
+
+## Context Architecture(4A.5.1-3、2026-08-17追加)
+
+このLabは既に暗黙のうちにContextを階層化して運用している(このFile自体が
+Phase4A.5でCLAUDE.mdから「詳細なWorkflowはこちらへ」と分離された経緯が
+その一例)。ここではその暗黙の実践を、4段階のClassificationとして明文化
+する。**新しいTooling・新しいContext管理Systemを作るものではない**
+(ユーザー2026-08-17実装Round指示: 「新しい巨大Systemは作らない」)。
+
+| Classification | 意味 | 実例 |
+| --- | --- | --- |
+| `ALWAYS` | 常に必要な最小原則。全Sessionの冒頭で読まれる | ルート`CLAUDE.md`(コーディング規約)・`Japanese_Equity_Lab/CLAUDE.md`(研究原則、PIT/UNKNOWN/Reviewer分離等の短いRuleのみ) |
+| `ON_DEMAND` | Taskの種類に応じて必要な時だけ読む | `.claude/skills/*/SKILL.md`(5件)・このFile自体・`RESEARCH_RULES.md`・`*_ARCHITECTURE.md`・`DECISIONS.md`の該当Section(`grep -n "^## D00"`で特定してから該当箇所のみ`offset`/`limit`指定Read、全文Readしない) |
+| `TASK_ONLY` | 今回のRoundにだけ必要、Round終了後は破棄してよい | 各Round冒頭のUser Task Prompt(Goal/Scope/Files/Acceptance Criteria/禁止事項) |
+| `EVIDENCE_ONLY` | 必要な部分だけ取得、全件を読み込まない | `01_data/raw/`配下のRaw Snapshot・`13_tests/fixtures/`・Provider生Response |
+
+**重要な運用原則(既に実践中、これを明文化するだけ)**:
+
+1. **`DECISIONS.md`(268KB超)を毎回丸ごとContextへ入れる設計にしない。**
+   必要なSectionだけをGrep/Offset指定で読む、という現在のPracticeを
+   維持する。このFile自体を要約・圧縮してSizeを削減するプロジェクトは
+   行わない(要約によるRule消失を防ぐ、下記2項)。
+2. **Semantic Compressionによる重要Rule消失を防ぐ。** 具体的な禁止事項
+   (`market_public_atへFallbackしない`等)・UNKNOWN Semantics・
+   Timestamp Semantics・Fail-closed Behavior・既知の制約は、要約時に
+   「PITに気をつける」のような抽象語へ潰さない。
+3. **`ALWAYS`層は増やさない。** 新しい原則が生まれた場合、まず
+   `ON_DEMAND`層(Skill/Architecture Doc)へ置けないか検討し、それでも
+   全Session常時必要と判断される場合のみ`ALWAYS`(CLAUDE.md)へ追記する
+   (`ALWAYS`層が肥大化すると本来のOn-demand設計の意味が薄れるため)。
 
 ## このPhaseで導入していないもの
 
