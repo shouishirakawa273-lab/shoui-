@@ -108,11 +108,12 @@ provider_identifier, as_of)`はPIT対応(社名変更・コード変更で有効
 | 項目 | 内容 |
 | --- | --- |
 | Role | 決算短信・業績予想修正・配当・自社株買い・M&A・その他適時開示 |
-| Authority | PRIMARY_OFFICIAL(取引所経由の開示) |
-| PIT semantics | 開示時刻(15:00以降は翌営業日扱い等の制度)がavailable_atの`AvailabilityBasis.INFERRED`源になりうる(未検証) |
-| Current Implementation Status | NOT_IMPLEMENTED |
-| Cost/Plan dependency | 無料部分と有料Add-onがある(未確認)。有料契約はPhase3Dでは行わない |
-| Known limitations | 公式API仕様未確認 |
+| Authority | PRIMARY_OFFICIAL(取引所経由の開示。ただしJ-Quants経由の観測が現在の権威あるTDnet Venue状態と同一とは仮定しない、`TDNET_ARCHITECTURE.md` §1参照) |
+| Origin vs Delivery | 三層分離: `publishing_entity`(上場会社)/`disclosure_system`(TDnet、Venue)/`delivery_provider`(J-Quants API)。D0042のOrigin/Delivery分離をさらに1段細分化したもの(Phase4B-3、D0047、`TDNET_ARCHITECTURE.md` §1) |
+| PIT semantics | 開示時刻(15:00以降は翌営業日扱い等の制度)がavailable_atの`AvailabilityBasis.INFERRED`源になりうる(未検証)。`DiscDate`/`DiscTime`が`market_public_at`として使えるかも未確認(Phase4B-3、`TDNET_SOURCE_ONBOARDING.md` §7)。今日取得したBulk/List Dataから過去の`provider_available_at`を復元することは禁止(Historical Market Time vs Historical Provider Time、`TDNET_ARCHITECTURE.md` §3) |
+| Current Implementation Status | NOT_IMPLEMENTED。Retrieval Cursor Provenanceの State Model骨格のみ実装済み(`lib.disclosures.providers.tdnet_cursor.TdnetRetrievalCursorState`、Adapter未接続、Phase4B-3) |
+| Cost/Plan dependency | UNKNOWN(SEARCH-SNIPPET-DERIVED (UNVERIFIED): J-Quants Lightプラン以上へのAdd-on、月額11,000円[税込]という情報があるが一次資料未確認。Current Userがこのアドオンを契約済みとは仮定しない) |
+| Known limitations | Phase4B-3のSource Onboarding調査(`TDNET_SOURCE_ONBOARDING.md`)は、本セッションから`jpx-jquants.com`・`jpx.gitbook.io`いずれへも接続できず(egressポリシーによりブロック、`curl`で独立に確認済み)、`data-source-researcher`の調査結果も`WebSearch`合成Snippetのみに基づく未確認結果に留まった。特にタスク上最重要の2項目 — (1) `DiscStatus`/`RevNo`の訂正・削除意味論(現在の実装挙動として、Title訂正が反映されない・削除済み開示も返り続ける・`DiscStatus`は常にnull・`RevNo`は常に1、という報告があるがいずれも未確認)、(2) `DiscDate`/`DiscTime`のPIT意味論 — いずれも裏付けゼロ。さらに検索結果が「J-Quants API」(個人向け、対象)と「J-Quants Pro」(法人向け、無関係な別契約)を混同していた可能性があり、候補Endpoint名(`/v2/td/list`等)自体の製品帰属も未確認。この複合的な不確実性を踏まえ、`lib/disclosures/providers/tdnet.py`(Adapter/Normalizer)はこのPhaseでは一切実装していない(EDINET初回Roundより一段保守的な判断)。詳細は`TDNET_SOURCE_ONBOARDING.md`・`TDNET_ARCHITECTURE.md`・`DECISIONS.md` D0047参照 |
 
 ### 4. Company IR
 

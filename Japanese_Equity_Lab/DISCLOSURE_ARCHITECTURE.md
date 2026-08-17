@@ -288,13 +288,37 @@ Offline-by-construction設計、D0042)。統合Testで、Snapshot保存 →
 - News統合(`lib.evidence.news`との接続)
 - Hypothesis生成・Skeptic Agent・BUY/SELL判断
 
-## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記)
+## 発行体 / Disclosure System(Venue) / Delivery Provider の三層分離(Phase4B-3、D0047で追記、一般原則)
+
+D0042のOrigin/Delivery分離(`originating_source`/`delivery_provider`)は、
+「開示を行った主体」と「配信経路」が同一Provider内で完結する場合
+(EDINETを直接叩く場合等)は2層で十分だったが、TDnet(Phase4B-3、
+`TDNET_ARCHITECTURE.md` §1)で以下のように3層へ細分化する必要が生じた:
+
+1. **`publishing_entity`**: 実際に開示を行った主体(上場会社)。
+2. **`disclosure_system`**: 制度・Venue自体(TDnet)。
+3. **`delivery_provider`**: このLabへ実際にDataを届ける経路(J-Quants API)。
+
+**Delivery Providerが観測した状態(例: J-Quantsが返す`DiscStatus`)を、
+Disclosure System(Venue)上の現在の権威ある状態と同一視してはならない。**
+Providerの実装挙動とVenueの実態が乖離しうることは、確認が取れるまで
+常に想定する。この3層分離は、Delivery ProviderがVenueを直接叩かない
+構成を持つ任意のSource(TDnetに限らない)に適用しうる一般原則として、
+ここへ明示的に記録する。EDINETのように発行体自身の提出先が同時に
+Delivery Provider(FSA=EDINET API提供者)でもある場合は、引き続き2層
+(`originating_source=delivery_provider`)のままで良い。
+
+## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記)
 
 - Provider-neutralなFixture Schemaのみで検証済み。実TDnet/Company IRの
-  Field名・DocKind値は未確認(TDnetはPhase4B-3以降)。EDINETは
+  Field名・DocKind値は未確認。EDINETは
   Phase4B-2でLocal Real Data Validation完了(D0046、`DATA_SOURCE_
   ARCHITECTURE.md`のEDINET行参照)、ただし`document_kind`Mapping・
-  `entity_id`解決・PIT Field反映はいずれも未実装のまま。
+  `entity_id`解決・PIT Field反映はいずれも未実装のまま。TDnetは
+  Phase4B-3のSource Onboarding調査が公式資料アクセスを一切得られず
+  (`TDNET_SOURCE_ONBOARDING.md`)、Adapter/Normalizerコード自体を
+  実装していない(Catalog登録・Cursor Provenance骨格・設計原則文書
+  [`TDNET_ARCHITECTURE.md`]のみ、D0047)。
 - `DisclosureDocument.internal_document_id`の生成方式(`f"DOC_{internal_
   code}_{index}"`、Raw行のIndex依存)は、`lib.fundamentals.normalize`の
   `envelope_id`生成(`f"ENV_{internal_code}_{disc_no or index}"`)と同様、

@@ -2958,3 +2958,154 @@ UNCHANGED`等のDerived Event生成・`DuplicateRelationKind`のEnum拡張・
 `DocumentRelationship`の自動生成・Buy/Sell判断・Strategy変更・
 Backtest条件変更・Screening Tool変更・TDnet(Phase4B-3)には着手して
 いない。
+
+## D0047 — Phase4B-3: J-Quants TDnet Disclosure Integration(Onboarding調査が二重にブロック、Adapter/Normalizerは未実装のまま停止)
+
+### §1 Source Onboarding調査: EDINET初回Round(D0046)よりさらに深刻なブロック
+
+`data-source-researcher` Subagentによる、J-Quants API V2のTDnet/適時開示
+情報Add-onに関する公式仕様調査を実施した。**結果はEDINET初回Roundより
+一段severe**:
+
+- 本セッションから`jpx-jquants.com`・`jpx.gitbook.io`のいずれへも一切
+  接続できず(`WebFetch`は`EGRESS_BLOCKED`)、得られた情報はすべて
+  `WebSearch`の合成Snippetのみに基づく`SEARCH-SNIPPET-DERIVED
+  (UNVERIFIED)`だった。
+- **Main Claude自身によるcurlでの独立検証**(Subagent報告を鵜呑みに
+  しない、D0046と同じ方針): `curl https://jpx-jquants.com/...`および
+  `curl https://jpx.gitbook.io/...`はいずれも`CONNECT tunnel failed,
+  response 403`。EDINET(FSA)と同種のEgressブロックが、J-Quants
+  ドキュメント側にも及んでいることを確認。
+- タスク上**最重要の2項目**がいずれも裏付けゼロだった:
+  1. `DiscStatus`/`RevNo`の訂正・削除意味論(「Title訂正が反映され
+     ない」「削除された開示も返り続ける」「`DiscStatus`は常にnull」
+     「`RevNo`は常に1」という報告があるが、いずれも一次資料での
+     確認が取れていない)。
+  2. `DiscDate`/`DiscTime`が`market_public_at`として使える意味論を
+     持つかどうか。
+- **新たに判明したリスク**: WebSearch結果が「J-Quants API」(個人向け、
+  今回の対象)と「J-Quants Pro」(法人向け、無関係な別契約・別Document
+  Tree)を混同していた可能性がある。これにより、候補として得られた
+  Endpoint名(`/v2/td/list`・`/v2/td/files`・`/v2/td/bulk`)自体が
+  どちらの製品に属するかすら確定できない。`data-source-researcher`の
+  検索Queryが調査対象のField/Endpoint名自体を含んでいたため、返って
+  きた「確認」がQuery自体のEchoに過ぎない可能性がある(確認バイアス
+  リスクとして明示的に記録)。
+
+詳細は`Japanese_Equity_Lab/TDNET_SOURCE_ONBOARDING.md`に、EDINET版と
+同じConfirmed-by-Official-Spec/Confirmed-by-Local-Observation/Unknown
+の区分で記録した(Confirmedに昇格した項目は実質ゼロ、Bottom Lineで
+「この報告書をTDnet Adapter/Normalizer実装の根拠として使用すべきで
+ない」と明記)。
+
+### §2 実装スコープの決定: EDINET初回Roundよりさらに保守的
+
+上記の複合的な不確実性(公式資料アクセス不可 + 最重要2項目の裏付け
+ゼロ + 製品帰属不明)を踏まえ、`data-source-researcher`自身の明示的な
+推奨に従い、**Phase4B-3では`lib/disclosures/providers/tdnet.py`
+(Adapter/Normalizer)を一切実装しない**ことを決定した。
+
+これはEDINET初回Round(D0046)の判断よりさらに保守的である。EDINET
+初回RoundではField名の裏付けは弱いながらも複数の断片的な情報源が
+存在し、Raw HTTP Fetch専用の`EdinetAdapter`(Field Mappingを一切
+行わない)を実装できた。今回のTDnetでは、それを上回る不確実性
+(タスク上最重要項目の裏付けがゼロ、かつEndpoint名の製品帰属自体が
+不確実)に直面したため、Raw Fetch用のコードさえ書かないという判断を
+下した。**未確認のProvider仕様を推測で埋めない**という本Lab全体の
+原則(ルートCLAUDE.md・Japanese_Equity_Lab/CLAUDE.md共通)を、EDINET
+より厳格な状況へ厳格に適用した結果であり、Phase4B-3の進め方を
+機械的にEDINETの前例通りに反復したわけではない。
+
+このPhaseで実装したのは以下の3点のみ:
+
+1. `lib.disclosures.catalog.build_tdnet_dataset_descriptor()`:
+   `implementation_status=NOT_IMPLEMENTED`・`pit_available=False`で
+   Source Catalogへ登録。`known_limitations`に上記の未確認項目を
+   具体名で記録(`DiscStatus`/`DiscDate`/`DiscTime`等)。
+2. `lib.disclosures.providers.tdnet_cursor.TdnetRetrievalCursorState`:
+   将来Adapterを実装する際に「CursorをDocument Timestampと混同
+   しない」設計を先に固定するための、純粋なArchitecture骨格(実
+   Endpoint呼び出しは一切行わない)。`DisclosureDocument`/
+   `AvailabilityBasis`のいずれもImportしないことを構造Testで確認。
+3. `TDNET_ARCHITECTURE.md`: 実装前に固定しておくべき設計原則の文書化
+   (下記§3参照、Field名の推測は一切含まない)。
+
+### §3 ユーザー追加指示(Safety Corrections)の統合
+
+Phase4B-3本体の指示の途中で、以下8点の追加Safety Correctionsが提示され、
+すべて`TDNET_ARCHITECTURE.md`へ反映した:
+
+- **三層分離**: `publishing_entity`(発行体)/`disclosure_system`
+  (TDnet、Venue)/`delivery_provider`(J-Quants API)。D0042の
+  Origin/Delivery分離をさらに1段細分化したもの。J-Quantsが観測した
+  状態を、TDnet Venue上の現在の権威ある状態と同一視することを明示的に
+  禁止(`DISCLOSURE_ARCHITECTURE.md`へも一般原則として追記、EDINETの
+  ように発行体自身が同時にDelivery Providerでもある場合は引き続き2層
+  のままで良いことも明記)。
+- **Provider宣言Schema vs 現在の実装挙動**: `DiscStatus`/`RevNo`等に
+  ついて、公式仕様が定義する値の範囲(Schema)と、実際に観測される
+  Runtime挙動(Current Implementation Behavior)を別々に文書化する
+  方針。将来Normalizer実装時は`provider_schema_version`/
+  `normalizer_version`/`observed_behavior_documented_at`で
+  Schema Evolutionを追跡し、Providerの実装が将来変わっても過去の
+  正規化済みRecordをSilentに遡及的再解釈しない。
+- **Historical Market Time vs Historical Provider Time**の再確認
+  (D0043/D0045からの継続): 今日取得したBulk/List Dataから過去の
+  `provider_available_at`を復元することを禁止。
+- **CursorはRetrieval Stateのまま**: Timestampのいずれでもなく、
+  Decodeできたとしてもそこから可用性Timestampを推測しない。
+  `pagination_key`とも別概念として扱う。
+- **Ephemeral File URL Safety**: `/td/files`・`/td/bulk`のDownload
+  URLを`canonical_source_locator`/`permanent_attachment_url`として
+  長期保存しない。長期Provenanceの中心はURLではなくdiscNo相当識別子・
+  Role・Provider名・`retrieved_at`・Raw Hash・Snapshot Referenceとする。
+  Offline ReplayはURL無しで成立する設計を継続する(D0042 Offline原則)。
+- **Document Classification != Event Interpretation**の再確認
+  (Phase4B-1の「Document != Event != Claim」原則の継続): `DiscItems`
+  からRevision方向・Catalog極性・BUY/SELLをこのPhaseでは一切生成
+  しない。
+- **Real Validation Completion基準**(10項目チェックリスト、
+  `TDNET_ARCHITECTURE.md` §7): 将来Add-onが利用可能と確認できた
+  場合のみ適用する、`COMPLETE`への昇格条件。
+- Reviewer(`pit-auditor`/`skeptic-reviewer`)の追加Focus項目
+  (三層混同・Provider挙動の遡及的再解釈・Cursorの誤用・Ephemeral
+  URLの永続化・Event方向の早期生成等)を、次回Reviewer Pass実施時の
+  観点として記録(実装コード自体が存在しないため、今回のReviewer
+  Passでは「未実装であることの妥当性」の確認が中心になる)。
+
+### §4 Source Catalog / Cost・Plan Dependency
+
+`cost_or_plan_dependency`は「J-Quants LightプランへのAdd-on、月額
+11,000円[税込]」というSearch-Snippet由来の未確認情報として記録した
+上で、**Current Userがこのアドオンを契約済みとは仮定しない**ことを
+明記した(ユーザー指示§26「Do NOT Require Purchase」: Phase4B-3を
+進めるためにユーザーへ契約を要求しない)。Add-on契約の要否・金額の
+確定は今回のDecisionの対象外。
+
+### 最終回帰確認
+
+`pytest`(Lab 462件・既存Screening Tool 37件)・`ruff check`・`mypy`
+(TDnet関連2ファイル)いずれもclean。`git status`/`git diff --stat --
+core/ app.py tests/`で変更が無いことを再確認済み(空Diff)。
+
+### Completion Status
+
+`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`。以下の両方が確認
+できるまで`COMPLETE`へは昇格しない:
+
+1. J-Quants TDnet Add-onへの契約状況(未確認、契約を前提にしない)。
+2. `TDNET_SOURCE_ONBOARDING.md`の最重要2項目(訂正/削除/`DiscStatus`/
+   `RevNo`意味論、`DiscDate`/`DiscTime`のPIT意味論)の公式資料による
+   確認、および製品帰属(J-Quants API vs J-Quants Pro)の確定。
+
+`TDNET_LOCAL_VALIDATION_GUIDE.md`にユーザーのローカル環境から上記を
+確認するための手順(仕様書の直接確認を最優先、Add-on契約済みの場合の
+み最小限のRaw Probeを実行)を用意した。
+
+### このDecisionでやらないこと
+
+`lib/disclosures/providers/tdnet.py`(Adapter/Normalizer)の実装・
+Field Mapping・DocumentKind/DiscItems Mapping・Entity Registry統合・
+Forward Collection Scheduler・Company IR(Phase4B-4)・本文の意味解析・
+Event抽出・Buy/Sell判断・Strategy/Backtest変更・Screening Tool変更
+には着手していない。

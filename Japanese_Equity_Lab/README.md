@@ -178,3 +178,25 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   発見**: EDINETの過去日付のDocuments Listは日次更新され後から書き換わる
   ため、現在の取得は過去時点のPIT Snapshotの代替にならない
   (`DISCLOSURE_ARCHITECTURE.md`「Historical List Is Mutable」参照)。
+- **Phase4B-3**: J-Quants TDnet Disclosure統合(D0047)。Source Onboarding
+  調査(`TDNET_SOURCE_ONBOARDING.md`)がEDINET初回Roundよりさらに深刻な
+  Blockに直面した — 本セッションから`jpx-jquants.com`・`jpx.gitbook.io`
+  いずれへも接続できず(独立にcurlで確認済み)、`data-source-researcher`の
+  調査も`WebSearch`合成Snippetのみに基づく未確認結果に留まり、タスク上
+  最重要の2項目(`DiscStatus`/`RevNo`の訂正・削除意味論、`DiscDate`/
+  `DiscTime`のPIT意味論)いずれも裏付けゼロだった。加えて「J-Quants API」
+  (個人向け)と「J-Quants Pro」(法人向け、無関係な別契約)の製品混同の
+  懸念も新たに判明した。この複合的な不確実性を踏まえ、`data-source-
+  researcher`自身の明示的な推奨に従い、`lib/disclosures/providers/
+  tdnet.py`(Adapter/Normalizer)は一切実装せず、Source Catalog登録
+  (`implementation_status=NOT_IMPLEMENTED`)・Retrieval Cursor Provenance
+  のState Model骨格のみ(`lib.disclosures.providers.tdnet_cursor.
+  TdnetRetrievalCursorState`、DisclosureDocumentとは分離、Adapter未接続)・
+  設計原則文書(`TDNET_ARCHITECTURE.md`: 三層分離/Provider宣言Schema vs
+  現在の実装挙動/Historical Market Time vs Historical Provider Time/
+  Cursor Must Remain Retrieval State/Ephemeral File URL Safety/Document
+  Classification != Event Interpretation)にとどめた(EDINET初回Roundより
+  一段保守的な判断)。Status = **CODE_COMPLETE_AWAITING_ADDON_LOCAL_
+  VALIDATION**(J-Quants TDnet Add-on契約状況・公式仕様確認いずれも本
+  セッションからは検証不可、ローカル環境からのValidation手順は
+  `TDNET_LOCAL_VALIDATION_GUIDE.md`参照)。
