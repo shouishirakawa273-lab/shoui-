@@ -149,6 +149,20 @@ def test_entity_id_falls_back_to_none_for_unnormalizable_code() -> None:
     assert meta.provider_code == "72031"  # Raw値は保持される
 
 
+def test_entity_id_fails_closed_to_none_for_non_numeric_code() -> None:
+    """pit-auditor Finding(D0048追記): `normalize_provider_code_to_internal()`
+    自体は数字以外のCodeをそのまま変更せず返す設計(合成Fixture用のRaw Label
+    を想定、`lib.data_sources.ticker_codes`参照)だが、`_parse_entity_id`は
+    これに委譲する前に明示的に数字のみであることを確認し、`entity_id`が
+    非4桁のRaw文字列のままFail Openしないことを確認する。"""
+    row = dict(_FULL_ROW)
+    row["Code"] = "ABCDE"
+    parsed = parse_tdnet_documents_list_payload(_payload([row]), retrieved_at=_RETRIEVED_AT)
+    document, meta = parsed[0]
+    assert document.entity_id is None
+    assert meta.provider_code == "ABCDE"  # Raw値は保持される
+
+
 def test_entity_id_none_when_code_missing() -> None:
     row = dict(_FULL_ROW)
     del row["Code"]
@@ -160,7 +174,14 @@ def test_entity_id_none_when_code_missing() -> None:
 # --- market_public_at(EXTERNAL_OFFICIAL_SPEC_VERIFICATION §7、PIT最重要) ---
 
 
-def test_market_public_at_built_from_disc_date_and_disc_time_with_exact_basis() -> None:
+def test_market_public_at_value_built_from_disc_date_and_disc_time_but_basis_stays_unknown() -> None:
+    """skeptic-reviewer Finding(D0048追記): `market_public_at`の値自体は
+    `DiscDate`+`DiscTime`から構築するが、この確認根拠(EXTERNAL_OFFICIAL_
+    SPEC_VERIFICATION)はClaude自身の直接確認でも真のLocal Real Data
+    Validationでもないため、Basisは`EXACT`ではなく`UNKNOWN`のまま維持する
+    (EDINETがより強い証拠を持ちながらも意味論的結びつき自体は`UNKNOWN`の
+    ままとした前例に倣う)。値が構築できてもBasisがUNKNOWNである限り、
+    `disclosures_as_of()`の既定安全側除外がそのまま適用される。"""
     parsed = parse_tdnet_documents_list_payload(_payload([_FULL_ROW]), retrieved_at=_RETRIEVED_AT)
     document, _ = parsed[0]
     assert document.market_public_at is not None
@@ -170,7 +191,7 @@ def test_market_public_at_built_from_disc_date_and_disc_time_with_exact_basis() 
     assert document.market_public_at.day == 17
     assert document.market_public_at.hour == 15
     assert document.market_public_at.minute == 0
-    assert document.market_public_at_basis == AvailabilityBasis.EXACT
+    assert document.market_public_at_basis == AvailabilityBasis.UNKNOWN
 
 
 def test_market_public_at_unknown_when_disc_time_missing() -> None:
@@ -338,3 +359,34 @@ def test_multiple_rows_with_different_disc_no_produce_independent_documents_no_a
     assert len(parsed) == 2
     ids = {doc.source_document_id for doc, _ in parsed}
     assert ids == {"20260817001", "20260817002"}
+
+
+def test_same_disc_no_across_separate_cursor_fetches_gets_different_internal_document_id() -> None:
+    """pit-auditor Finding(D0048追記): `internal_document_id`はPayload内の
+    位置(`index`)を含むため、同じ`disc_no`が別々の`/v2/td/list`呼び出し
+    (Cursorによる当日差分Pollingで、重複するWindowを持ちうる)で異なる
+    位置に出現すると、異なる`internal_document_id`が割り当てられる。
+    同一Disclosureの重複検知には`internal_document_id`ではなく
+    `source_document_id`(=`disc_no`)を使うべきであることを回帰確認する
+    (`lib.disclosures.normalize.find_same_source_document_id_signals()`
+    が対応するMechanism、将来Cursorベースの継続的Ingestion Pipeline
+    構築時に必須Stepとする)。"""
+    from lib.disclosures.normalize import find_same_source_document_id_signals
+
+    # 1回目のRetrieval: disc_no="X"がindex=0で出現。
+    first_call = parse_tdnet_documents_list_payload(_payload([_FULL_ROW]), retrieved_at=_RETRIEVED_AT)
+    # 2回目のRetrieval(Cursor Window重複を模す): disc_no="X"が別の行と共にindex=1で出現。
+    other_row = dict(_FULL_ROW)
+    other_row["DiscNo"] = "20260817999"
+    second_call = parse_tdnet_documents_list_payload(_payload([other_row, _FULL_ROW]), retrieved_at=_RETRIEVED_AT)
+
+    doc_from_first, _ = first_call[0]
+    doc_from_second = next(doc for doc, _ in second_call if doc.source_document_id == _FULL_ROW["DiscNo"])
+
+    # 同じdisc_noなのにinternal_document_idは異なる(既知の設計上の限界)。
+    assert doc_from_first.source_document_id == doc_from_second.source_document_id
+    assert doc_from_first.internal_document_id != doc_from_second.internal_document_id
+
+    # source_document_id基準の重複検知は正しくこれを同一Signalとして検出できる。
+    signals = find_same_source_document_id_signals([doc_from_first, doc_from_second])
+    assert len(signals) == 1

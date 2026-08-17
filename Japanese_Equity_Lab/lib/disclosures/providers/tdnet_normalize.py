@@ -47,9 +47,29 @@ document_relationship`が型名の非出現そのものを確認するため)。
 
 ユーザー申告: TDnet経由で情報が開示された時、同じ会社情報がTDnetの開示Time
 に適時開示情報閲覧サービス上で同時に公衆縦覧可能になる。したがって`DiscDate`
-+ `DiscTime`(Asia/Tokyo)を`market_public_at`(`AvailabilityBasis.EXACT`)
-として使用する。ただし`provider_available_at`はこのMappingでは確定できず、
-実際の観測ログが無い限り`AvailabilityBasis.UNKNOWN`のまま(Fallbackしない、
++ `DiscTime`(Asia/Tokyo)から`market_public_at`の値そのものは構築する。
+
+**ただし`market_public_at_basis`は`AvailabilityBasis.EXACT`ではなく
+`AvailabilityBasis.UNKNOWN`とする(skeptic-reviewer Finding、D0048追記で
+修正)。** 理由: この確認根拠(EXTERNAL_OFFICIAL_SPEC_VERIFICATION)は
+Claude自身がこのSession内で一次資料をFetchして確認したものではなく、
+ユーザーが別のWeb-access環境から確認したと申告した内容の又聞きに過ぎない。
+EDINETは実際に`api.edinet-fsa.go.jp`へHTTP疎通し`submitDateTime`Fieldの
+実在自体は確認済み(D0046、CONNECTEDまで昇格)という、これより強い証拠を
+持ちながらも、「`submitDateTime`が真にMarket Public Timeと一致するか」
+という意味論的な結びつき自体は未確認だったため`market_public_at`を
+`None`/`UNKNOWN`のまま維持した(`edinet_normalize.py`参照)。TDnetの
+`DiscDate`+`DiscTime`→`market_public_at`という意味論的結びつきの確認
+根拠は、EDINETのそれよりもさらに弱い(一次資料への直接Fetch自体が一度も
+行われていない)。したがって、値は構築しつつ`AvailabilityBasis.UNKNOWN`
+とすることで、`lib.disclosures.view.disclosures_as_of()`の既定の安全側
+除外(UNKNOWN Basisの文書は`include_unknown_availability=True`を明示しない
+限り除外される、既存の確認済み安全機構、D0045/D0046)がTDnetにもそのまま
+適用されるようにする。真のLocal Real Data Validationでこのmapping自体が
+確認された時点で、`AvailabilityBasis.EXACT`への昇格を検討すること。
+
+`provider_available_at`はこのMappingでは確定できず、実際の観測ログが
+無い限り`AvailabilityBasis.UNKNOWN`のまま(Fallbackしない、
 `lib.fundamentals.normalize._provider_available_at_and_basis`と同じ保守的
 方針)。
 
@@ -171,10 +191,19 @@ def _parse_date_or_none(raw: object) -> date | None:
 
 
 def _build_market_public_at(disc_date_raw: object, disc_time_raw: object) -> tuple[datetime | None, AvailabilityBasis]:
-    """`DiscDate`+`DiscTime`から`market_public_at`を構築する(EXTERNAL_OFFICIAL_
-    SPEC_VERIFICATION §7で確認済みのMapping)。`lib.fundamentals.normalize.
-    _build_market_public_at`と同じ設計(DiscTimeが無い/不明な場合、15:00等を
-    推測で補完しない)。"""
+    """`DiscDate`+`DiscTime`から`market_public_at`の値を構築する(EXTERNAL_
+    OFFICIAL_SPEC_VERIFICATION §7で申告されたMapping)。`lib.fundamentals.
+    normalize._build_market_public_at`と同じ設計(DiscTimeが無い/不明な場合、
+    15:00等を推測で補完しない)。
+
+    **Basisは値が構築できた場合でも常に`AvailabilityBasis.UNKNOWN`を返す**
+    (`AvailabilityBasis.EXACT`は使わない、モジュールDocstring「market_
+    public_at」節参照)。確認根拠が又聞き[EXTERNAL_OFFICIAL_SPEC_
+    VERIFICATION]であり、Claude自身の直接確認・真のLocal Real Data
+    Validationのいずれでもないため、`disclosures_as_of()`の既定安全側
+    除外(UNKNOWN Basisは`include_unknown_availability=True`を明示しない
+    限り除外)がそのまま適用されるようにする。
+    """
     if disc_date_raw is None or disc_time_raw is None:
         return None, AvailabilityBasis.UNKNOWN
     try:
@@ -185,14 +214,26 @@ def _build_market_public_at(disc_date_raw: object, disc_time_raw: object) -> tup
     except (ValueError, IndexError):
         logger.warning("tdnet: DiscDate/DiscTime ('%s'/'%s') からmarket_public_atを構築できません", disc_date_raw, disc_time_raw)
         return None, AvailabilityBasis.UNKNOWN
-    return dt, AvailabilityBasis.EXACT
+    return dt, AvailabilityBasis.UNKNOWN
 
 
 def _parse_entity_id(provider_code: str | None) -> str | None:
     """`Code`(4桁+末尾ゼロパディングの5桁化、EXTERNAL_OFFICIAL_SPEC_VERIFICATION
     §3で既存D0036パターンと一致すると確認済み)を内部Codeへ正規化する。正規化
-    できない場合(優先株等の可能性)は推測せず`None`へfail closedする。"""
+    できない場合(優先株等の可能性)は推測せず`None`へfail closedする。
+
+    **pit-auditor Finding対応**: `normalize_provider_code_to_internal()`は
+    数字以外の文字列(合成Fixture用のRaw Labelを想定した既存の設計、
+    `lib.data_sources.ticker_codes`Docstring参照)をそのまま変更せず返す
+    ため、この関数へ数字以外の値をそのまま渡すと`entity_id`が非4桁の
+    Raw文字列のまま設定されてしまう(Fail Closedの主張と矛盾する)。TDnetの
+    `Code`Fieldが数字のみであることは未確認(`TDNET_SOURCE_ONBOARDING.md`
+    参照)のため、ここで明示的に数字のみであることを確認してから委譲する。
+    """
     if provider_code is None:
+        return None
+    if not provider_code.isdigit():
+        logger.warning("tdnet: provider_code=%s が数字のみではないため、Noneへfail closedします", provider_code)
         return None
     try:
         return normalize_provider_code_to_internal(provider_code)
@@ -226,6 +267,18 @@ class TdnetDocumentMetadata:
 def _parse_row(
     row: Mapping[str, object], *, index: int, retrieved_at: datetime, raw_snapshot_ref: str | None
 ) -> tuple[DisclosureDocument, TdnetDocumentMetadata]:
+    """**pit-auditor Finding(D0048追記)**: `internal_document_id`は
+    `index`(この1回の`/v2/td/list`呼び出しのPayload内での位置)を含む
+    (EDINETの既存Pattern、`edinet_normalize.py`と同じ設計)。TDnetは
+    `cursor`による当日差分Pollingを想定しており、同じ`disc_no`が別々の
+    Retrieval呼び出しで異なる`index`を持って出現しうる(例: Cursor Window
+    が重複した場合)。この場合`internal_document_id`は呼び出しごとに
+    異なる値になるため、同一Disclosureの重複検知には`internal_document_id`
+    ではなく`source_document_id`(=`disc_no`)を使うこと(`lib.disclosures.
+    normalize.find_same_source_document_id_signals()`、既存D0045機構)。
+    将来Cursorベースの継続的Ingestion Pipelineを構築する際は、この
+    重複検知を必須Stepとして組み込むこと。
+    """
     disc_no = _optional_str(row.get("DiscNo"))
     internal_document_id = f"TDNET_{disc_no or 'UNKNOWN'}_{index}"
     title = _optional_str(row.get("Title")) or f"[TDnet DiscNo={disc_no or 'UNKNOWN'}: Title unavailable]"

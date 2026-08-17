@@ -197,9 +197,10 @@ Announcement(Case A)の取得元は引き続き未実装(DECISIONS.md D0031〜D0
   tdnet.TdnetAdapter`(`/v2/td/list`・`/v2/td/files`・`/v2/td/bulk`の
   Raw Fetch)・`lib.disclosures.providers.tdnet_normalize`
   (`DiscStatus`/`RevNo`のSchema宣言 vs 現在の実装挙動の分離維持、
-  `DiscDate`+`DiscTime`から`market_public_at`を`EXACT` Basisで構築、
-  `provider_available_at`は常に`UNKNOWN`、新DiscNoによる訂正
-  Relationshipの自動生成は禁止のまま)を実装した(Lab 521テスト)。
+  `DiscDate`+`DiscTime`から`market_public_at`の値を構築するがBasisは
+  `AvailabilityBasis.UNKNOWN`のまま維持[EDINETの前例に倣い又聞き根拠を
+  `EXACT`扱いしない]、`provider_available_at`は常に`UNKNOWN`、新DiscNoに
+  よる訂正Relationshipの自動生成は禁止のまま)を実装した(Lab 523テスト)。
   この申告はClaude自身がこのSession内で一次資料をFetchして確認した
   ものではなく、真のLocal Real Data Validationでもないため、Source
   Catalogの`implementation_status`は`NOT_IMPLEMENTED`のまま維持する。

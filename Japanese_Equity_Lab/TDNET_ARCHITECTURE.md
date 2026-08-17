@@ -35,15 +35,19 @@ TDnetを扱う際は、単純なOrigin/Delivery分離(D0042)をさらに3層へ�
    経路)。
 
 **TDnet Venue上で「現在」表示される状態と、J-Quants `/v2/td/list`が
-返すProvider Stateは同一と仮定しない。** `TDNET_SOURCE_ONBOARDING.md`が
-指摘した(未確認だが)以下のClaimは、この区別が必要になりうる典型例:
+返すProvider Stateは同一と仮定しない。** `TDNET_SOURCE_ONBOARDING.md`
+「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」セクション(D0048、ユーザーが
+別のWeb-access環境から確認したと申告した内容、Claude自身の直接確認・
+真のLocal Real Data Validationのいずれでもない)で申告された以下の
+挙動は、この区別が必要になりうる典型例:
 
 - TDnet公開閲覧サービス側では、Title訂正・削除State等が実際に画面上
   表示されうる。
 - J-Quants側の`/v2/td/list`は、Title訂正がReturnされるDataへ反映
   されない、削除された開示も返り続ける、`DiscStatus`は現在の実装では
-  常にnull、`RevNo`は常に1、といった挙動が報告されている(いずれも
-  未確認、`TDNET_SOURCE_ONBOARDING.md` §3/§8参照)。
+  常にnull、`RevNo`は常に1、といった挙動が申告されている(EXTERNAL_
+  OFFICIAL_SPEC_VERIFICATION、`TDNET_SOURCE_ONBOARDING.md`該当
+  セクション参照 — 真のLocal Real Data Validationでの独立確認は未実施)。
 
 したがって、**「J-Quantsのレコード」==「現在の権威あるTDnet Venue状態」**
 という主張は禁止する。「Providerからの観測」(J-Quants経由で何が返って
@@ -60,12 +64,15 @@ TDnetを扱う際は、単純なOrigin/Delivery分離(D0042)をさらに3層へ�
   null/revision/delete等の状態を表しうる、`RevNo`が1〜99を取りうる、
   という仕様上の定義)。
 - **Current implementation behavior**: 実際に観測される、現在時点での
-  Runtime挙動(例: 現在は常にnull・常に1、という報告、未確認)。
+  Runtime挙動(例: 現在は常にnull・常に1、EXTERNAL_OFFICIAL_SPEC_
+  VERIFICATIONとして申告済み、D0048。真のLocal Real Data Validation
+  での独立確認は未実施)。
 
-**現在の実装挙動をLifecycle判定に使用しない**(D0047時点でのTDnet
-Source Onboarding調査では、この挙動主張自体すら確認できていない —
-将来Local Validationで確認できたとしても、それは「現在の実装挙動」
-であって「Schemaが将来もそうあり続けることの保証」ではない)。
+**現在の実装挙動をLifecycle判定に使用しない**(D0048でこの挙動主張
+自体はユーザー申告として記録されたが、これはClaude自身の直接確認でも
+真のLocal Real Data Validationでもない — たとえ将来Local Validationで
+独立に確認できたとしても、それは「現在の実装挙動」であって「Schemaが
+将来もそうあり続けることの保証」ではない)。
 
 **Schema Evolution追跡**: 将来Providerの実装が変わった場合に、過去に
 既に正規化済みのRecordをSilentに遡及的に再解釈しない。最低限、以下の
@@ -89,8 +96,13 @@ Phase4A(D0043)・Phase4B-1(D0045)から継続する原則を、TDnetの文脈で
 再確認する:
 
 - **Market Information Study(A系統)**: `DiscDate`+`DiscTime`の
-  公式TDnet意味論が確認できれば(現時点では未確認、
-  `TDNET_SOURCE_ONBOARDING.md` §7)、`market_public_at`として使用可能。
+  公式TDnet意味論はEXTERNAL_OFFICIAL_SPEC_VERIFICATION(D0048、
+  `TDNET_SOURCE_ONBOARDING.md`「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」
+  §7)として申告され、`market_public_at`の値としては使用しているが、
+  この確認根拠が又聞きであるため`AvailabilityBasis`は`EXACT`ではなく
+  `UNKNOWN`のまま維持する(`tdnet_normalize.py`実装、`disclosures_
+  as_of()`の既定安全側除外がそのまま適用される)。真のLocal Real Data
+  Validationで独立に確認できた時点で`EXACT`への昇格を検討する。
 - **Reproducible System Simulation(B系統)**: 今日取得した5年分の
   Bulk/List Dataは、**当時実際にJ-Quants経由で観測できたSnapshotとは
   異なる**。現在のBulk Retrievalから過去の`provider_available_at`を
@@ -114,8 +126,9 @@ Cursorは以下のいずれでもない:
 あくまでIncremental/Differential Retrievalの進捗を表すState(「どこまで
 取得したか」)である。Cursor Payloadをたとえ何らかの方法でDecodeできた
 としても、その内部値からAvailability Timestampを推測することを禁止する。
-`pagination_key`(同一Queryの残りページ取得)とも別概念(未確認だが
-公式仕様上区別されると報告されている)。
+`pagination_key`(同一Queryの残りページ取得)とも別概念であり、両者は
+同時指定不可と申告されている(EXTERNAL_OFFICIAL_SPEC_VERIFICATION、
+D0048)。
 
 Cursor Stateを保持する場合は、`lib.disclosures.providers.tdnet_cursor.
 TdnetRetrievalCursorState`(実装済み、Adapter未接続)のように、
@@ -125,9 +138,11 @@ TdnetRetrievalCursorState`(実装済み、Adapter未接続)のように、
 
 ## 5. Ephemeral File URL Safety
 
-`/v2/td/files`・`/v2/td/bulk`が返すDownload URLは短時間で失効すると
-報告されている(未確認、具体的な失効時間[「15分」というClaim含む]も
-未確認、`TDNET_SOURCE_ONBOARDING.md` §11参照)。したがって、URLを:
+`/v2/td/files`・`/v2/td/bulk`が返すDownload URLは15分で失効すると
+申告されている(EXTERNAL_OFFICIAL_SPEC_VERIFICATION、D0048、
+`TDNET_SOURCE_ONBOARDING.md`「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」
+§5/§6参照 — Claude自身の直接確認・真のLocal Real Data Validationでの
+独立確認は未実施)。したがって、URLを:
 
 - `canonical_source_locator`
 - `permanent_attachment_url`

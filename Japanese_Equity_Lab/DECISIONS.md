@@ -3340,11 +3340,96 @@ VERIFICATION`/`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`としてProvenanceを
 (`tdnet.py`/`tdnet_normalize.py`/対応するTest群/Catalog更新/Docs更新)
 のReviewを依頼した。
 
-[このセクションはReviewer Pass完了後に追記する]
+**pit-auditor(4件、最高MEDIUM)**:
+
+1. [MEDIUM] `internal_document_id`がPayload内Index(`{DiscNo}_{index}`)を
+   含む(EDINETの既存Pattern踏襲)ため、同一`disc_no`が別々の`/v2/td/list`
+   呼び出し(Cursorによる当日差分Pollingで重複Windowを持ちうる)で異なる
+   Indexを持って出現すると、`internal_document_id`が呼び出しごとに
+   異なってしまう。**対応済み**(下記)。
+2. [LOW-MEDIUM] `_parse_entity_id`のDocstring「正規化できない場合は
+   Noneへfail closed」という主張が、数字以外のCode値については実際には
+   成り立っていなかった(`normalize_provider_code_to_internal()`は
+   数字以外の文字列をそのまま変更せず返す既存設計、合成Fixture用の
+   Raw Labelを想定したもの)。**対応済み**(下記)。
+3. [LOW] `TDNET_ARCHITECTURE.md` §1〜§6本文が、D0048で新たに`EXTERNAL_
+   OFFICIAL_SPEC_VERIFICATION`として記録された項目についても「未確認」
+   という古い表現のまま残っていた。**対応済み**(下記)。
+4. [LOW] Fail Closed Validation Testが、実際にNetwork呼び出し前に
+   検証が発生していることまでは構造的に確認していなかった
+   (Code読解では確認済みだが、Test自体がそれを保証していなかった)。
+   **対応済み**(下記)。
+
+**skeptic-reviewer(PASS_WITH_CONCERNS、3件)**:
+
+1. [MEDIUM/HIGH] `market_public_at`に`AvailabilityBasis.EXACT`を
+   割り当てるのは、確認根拠(EXTERNAL_OFFICIAL_SPEC_VERIFICATION、
+   ユーザーの又聞き)に対して確信度を過大表示している。EDINETは実際に
+   `api.edinet-fsa.go.jp`へHTTP疎通し`submitDateTime`Fieldの実在自体は
+   確認済み(D0046、CONNECTEDまで昇格)という、これより強い証拠を
+   持ちながらも、`submitDateTime`が真にMarket Public Timeと一致するか
+   という意味論的結びつき自体は未確認だったため`market_public_at`を
+   `UNKNOWN`のまま維持した(`edinet_normalize.py`)。TDnetの`DiscDate`+
+   `DiscTime`→`market_public_at`という意味論的結びつきの確認根拠は、
+   EDINETのそれよりもさらに弱い(一次資料への直接Fetch自体が一度も
+   行われていない)。**対応済み**(下記)。
+2. [MEDIUM] `TDNET_ARCHITECTURE.md`本文・`DISCLOSURE_ARCHITECTURE.md`
+   の三層分離節が、D0048の`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`確認
+   状況と矛盾する古い「未確認」表現を随所に残していた(pit-auditor
+   Finding 3と同一問題)。**対応済み**(下記)。
+3. [LOW] `TdnetDiscStatus.NEW`(raw null→この値)という命名が、現在の
+   実装挙動として毎回この値が付与される(常にnull)ことを踏まえると
+   「訂正されていないことの主張」であるかのように読める可能性がある。
+   ただしDocstringでの警告が3箇所で繰り返され、実際にこの値を消費する
+   コードが現時点で存在しない(`implementation_status=NOT_IMPLEMENTED`と
+   整合)ため、Reviewer自身がSeverityをLOWと判定し、将来この値を実際に
+   消費するLogicが追加される時点での対応を推奨した。**対応見送り**
+   (Reviewer自身の推奨通り、現時点では変更しない)。
+
+Verdict: `PASS_WITH_CONCERNS`。Provenance Labelingの丁寧さ(コード内の
+`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`明示、Main Claude推論とユーザー
+申告の分離、`implementation_status=NOT_IMPLEMENTED`の維持、D0048 §5/§6の
+Placeholder明示)は「拙速な巻き返し」ではないと評価された一方、`EXACT`
+Basisの割り当てとDocumentation不整合の2点は実際の修正が必要と判定された。
+
+**対応**:
+
+- `tdnet_normalize.py`の`_build_market_public_at()`を、値は構築しつつ
+  Basisは`AvailabilityBasis.EXACT`ではなく`AvailabilityBasis.UNKNOWN`を
+  返すよう変更した(EDINETの前例に倣う保守的判断)。`disclosures_as_of()`
+  の既定安全側除外がTDnetにもそのまま適用されるようになった。
+  `test_market_public_at_value_built_from_disc_date_and_disc_time_but_
+  basis_stays_unknown`・`test_normalized_document_flows_into_evidence_
+  and_market_information_study_view`(A系統既定では非表示、明示的
+  `include_unknown_availability=True`でのみ表示)を更新した。
+- `_parse_entity_id`へ、`normalize_provider_code_to_internal()`へ委譲
+  する前に明示的な数字Onlyチェックを追加し、非数字Codeを`None`へ
+  正しくfail closedするようにした。回帰Test追加。
+- `internal_document_id`のPayload内Index依存というリスクについて、
+  `_parse_row`Docstringへ明示的な警告(将来Cursorベース継続的Ingestion
+  Pipeline構築時に`find_same_source_document_id_signals()`を必須Stepと
+  すること)を追加し、この挙動を実際に再現するRegression Test
+  (`test_same_disc_no_across_separate_cursor_fetches_gets_different_
+  internal_document_id`)を追加した。
+- `TDNET_ARCHITECTURE.md` §1/§2/§3/§4/§5、`DISCLOSURE_ARCHITECTURE.md`
+  三層分離節の「未確認」表現を、D0048の`EXTERNAL_OFFICIAL_SPEC_
+  VERIFICATION`確認状況(Claude自身の直接確認・真のLocal Real Data
+  Validationのいずれでもないという限定付きで)と整合する表現へ更新した。
+- `test_tdnet_adapter.py`の4件のFail Closed Validation Testへ、
+  `session.calls == []`のAssertionを追加し、実際にNetwork呼び出し前に
+  検証が発生していることを構造的に保証した。
+
+再Reviewは実施していない(全FindingがBasis変更・Docstring追記・Test
+強化・Documentation表現修正で完結し、Adapter/NormalizerのCore設計
+[Raw Fetch責務分離、Provider-neutral Common Core、訂正Relationship
+非構築]自体には変更が無いため)。
 
 ### §6 最終回帰確認
 
-[このセクションは最終回帰確認完了後に追記する]
+`pytest`(Lab 523件・既存Screening Tool 37件)・`ruff check`・`ruff
+format --check`・`mypy`(62ファイル)いずれもclean。`git status`/`git
+diff --stat -- core/ app.py tests/`で変更が無いことを再確認済み(空
+Diff)。
 
 ### §7 Completion Status
 

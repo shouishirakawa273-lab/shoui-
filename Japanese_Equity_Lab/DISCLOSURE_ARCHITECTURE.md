@@ -318,12 +318,16 @@ D0046)、2層への収束が発行体識別の解決を意味するわけでは�
 という区別は「Venueと配信経路が同一か」という軸のみを表し、発行体解決
 の状態(常に別途確認が必要)とは独立している。
 
-なお、この一般原則は現時点でTDnet(未確認の候補的裏付けのみ)という
-単一の動機事例にのみ基づいており、実際にDelivery ProviderとVenueが
-乖離する具体的な確認済み事例はまだ無い(TDnetの`DiscStatus`/`RevNo`
-挙動自体が`TDNET_SOURCE_ONBOARDING.md` §3/§8の通り未確認のため)。
-将来、別のSourceでも同様の3層分離が必要になった時点で、この一般化の
-妥当性を再確認すること。
+なお、この一般原則は現時点でTDnetという単一の動機事例にのみ基づいて
+いる。D0048時点で、TDnetの`DiscStatus`/`RevNo`挙動(Title訂正が反映
+されない・削除済み開示も返り続ける等)はEXTERNAL_OFFICIAL_SPEC_
+VERIFICATION(ユーザーが別のWeb-access環境から確認したと申告した内容、
+`TDNET_SOURCE_ONBOARDING.md`「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」
+セクション参照)として記録されたが、これはClaude自身の直接確認でも
+真のLocal Real Data Validationでもなく、Delivery ProviderとVenueが
+実際に乖離する事例をこのLab自身が独立に確認した実績はまだ無い。将来、
+別のSourceでも同様の3層分離が必要になった時点で、この一般化の妥当性を
+再確認すること。
 
 ## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記・D0048で更新)
 

@@ -132,29 +132,39 @@ def test_tdnet_adapter_sends_x_api_key_header_only() -> None:
 
 
 def test_fetch_documents_list_raw_requires_date_or_code() -> None:
-    adapter = TdnetAdapter(api_key="k", session=_RecordingSession())  # type: ignore[arg-type]
+    session = _RecordingSession()
+    adapter = TdnetAdapter(api_key="k", session=session)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="target_dateまたはcode"):
         adapter.fetch_documents_list_raw()
+    # pit-auditor Finding(D0048追記): fail closedがネットワーク呼び出し前に
+    # 実際に発生していることを、Callが1件も記録されていないことで構造的に確認する。
+    assert session.calls == []
 
 
 def test_fetch_documents_list_raw_rejects_both_date_and_code() -> None:
-    adapter = TdnetAdapter(api_key="k", session=_RecordingSession())  # type: ignore[arg-type]
+    session = _RecordingSession()
+    adapter = TdnetAdapter(api_key="k", session=session)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="target_dateまたはcode"):
         adapter.fetch_documents_list_raw(target_date=date(2026, 8, 17), code="7203")
+    assert session.calls == []
 
 
 def test_fetch_documents_list_raw_rejects_cursor_and_pagination_key_together() -> None:
-    adapter = TdnetAdapter(api_key="k", session=_RecordingSession())  # type: ignore[arg-type]
+    session = _RecordingSession()
+    adapter = TdnetAdapter(api_key="k", session=session)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="cursorとpagination_key"):
         adapter.fetch_documents_list_raw(target_date=date(2026, 8, 17), cursor="c1", pagination_key="p1")
+    assert session.calls == []
 
 
 def test_fetch_documents_list_raw_rejects_date_with_from_to() -> None:
     """target_date指定時にfrom/toを組み合わせる挙動は未確認のため許可しない
     (code指定時のみfrom/toの期間クエリが使える、EXTERNAL_OFFICIAL_SPEC_VERIFICATION §3)。"""
-    adapter = TdnetAdapter(api_key="k", session=_RecordingSession())  # type: ignore[arg-type]
+    session = _RecordingSession()
+    adapter = TdnetAdapter(api_key="k", session=session)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="from_date/to_date"):
         adapter.fetch_documents_list_raw(target_date=date(2026, 8, 17), from_date=date(2026, 1, 1))
+    assert session.calls == []
 
 
 def test_fetch_documents_list_raw_with_date_sends_date_param_only() -> None:

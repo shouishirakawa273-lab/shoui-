@@ -123,7 +123,16 @@ def test_normalized_document_flows_into_evidence_and_market_information_study_vi
     (`disclosure_document_to_evidence`)・As-of View(`disclosures_as_of`、
     A系統=Market Information Study)へそのまま流し込めることを確認する
     (D0045のCommon Coreが、実TDnet Dataに対しても変更なく機能することの
-    回帰確認)。"""
+    回帰確認)。
+
+    `market_public_at`の値自体は`DiscDate`+`DiscTime`から構築されるが、
+    Basisは`AvailabilityBasis.UNKNOWN`のまま(skeptic-reviewer Finding、
+    D0048追記 — 確認根拠がEXTERNAL_OFFICIAL_SPEC_VERIFICATIONという又聞き
+    であり、Claude自身の直接確認・真のLocal Real Data Validationのいずれ
+    でもないため)。したがってA系統でも既定では`disclosures_as_of()`の
+    安全側除外が効き、明示的な`include_unknown_availability=True`なしには
+    見えないことを確認する。
+    """
     from datetime import UTC, datetime
 
     adapter = TdnetAdapter(api_key="k", session=_RecordingSession(_SUCCESS_BODY))  # type: ignore[arg-type]
@@ -134,11 +143,21 @@ def test_normalized_document_flows_into_evidence_and_market_information_study_vi
     evidence = disclosure_document_to_evidence(document, source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL)
     assert evidence.source.available_at == document.market_public_at
 
-    # A系統(Market Information Study): market_public_atが確認済み(EXACT)なので
-    # decision_atがそれ以降であれば見える。
     decision_at = datetime(2026, 8, 17, 16, 0, tzinfo=UTC)
-    visible = disclosures_as_of([document], decision_at, availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT)
-    assert document in visible
+
+    # A系統(Market Information Study)、既定(include_unknown_availability=False):
+    # market_public_atは値を持つがBasis=UNKNOWNなので既定では見えない。
+    visible_default = disclosures_as_of([document], decision_at, availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT)
+    assert document not in visible_default
+
+    # A系統、明示的にUNKNOWN Basisを許容した場合のみ見える。
+    visible_explicit = disclosures_as_of(
+        [document],
+        decision_at,
+        availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+        include_unknown_availability=True,
+    )
+    assert document in visible_explicit
 
     # B系統(既定、Provider Available At): provider_available_atは常にUNKNOWNの
     # ままなので、既定では見えない(include_unknown_availability=Falseが既定)。
