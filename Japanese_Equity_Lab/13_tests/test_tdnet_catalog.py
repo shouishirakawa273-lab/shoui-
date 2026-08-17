@@ -62,6 +62,18 @@ def test_tdnet_known_limitations_records_the_two_most_important_unconfirmed_item
 def test_tdnet_notes_do_not_claim_any_adapter_code_exists() -> None:
     """このPhaseで`lib/disclosures/providers/tdnet.py`(Adapter/Normalizer)を
     実装していないことをNotesが正確に反映していることを確認する
-    (実装が水増しされていないことの回帰確認)。"""
+    (実装が水増しされていないことの回帰確認)。
+
+    Notes文字列中の「未実装」という部分文字列の存在確認だけでは、Notesの
+    他の箇所が誤って実装済みであるかのように書き換えられてもTestが検知
+    できない(Tautologyに近いというskeptic-reviewer Finding)。実際に
+    `lib/disclosures/providers/tdnet.py`がFilesystem上に存在しないことを
+    直接確認することで、Notesの文言ではなく実態そのものを検証する。
+    """
+    from pathlib import Path
+
     descriptor = build_tdnet_dataset_descriptor()
     assert "未実装" in descriptor.notes
+
+    providers_dir = Path(__file__).resolve().parent.parent / "lib" / "disclosures" / "providers"
+    assert not (providers_dir / "tdnet.py").exists()

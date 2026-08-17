@@ -100,6 +100,14 @@ git pull origin claude/investment-strategy-pipeline-jyfby5
 3. **`DiscDate`/`DiscTime`(またはそれに相当するField)の説明文**: これが
    「開示が行われた日時」なのか、「このLabがProviderから取得した日時」
    なのか、その他の意味なのか、公式な定義文をそのまま引用してほしい。
+4. **認証方式**: リクエストヘッダの形式(例: `x-api-key: <key>`のような
+   ヘッダ名か、`Authorization: Bearer <key>`のような形式か)。既存の
+   J-Quants V2 Core API(`lib/data_sources/jquants.py`)は`x-api-key`
+   ヘッダを使うことが確認済みだが、TDnet Add-onが同じ認証方式を再利用
+   するかは**未確認**(推測にすぎない) — 仕様書に明記されていれば、
+   それをそのまま引用してほしい。この項目を確認せずに手順Eを実行すると、
+   ヘッダ形式の誤りによる401/403を「Add-on未契約」と誤解する可能性が
+   ある(手順F参照)。
 
 **この手順はRaw Probeより先に行うこと** — 実際にAPIを叩く前に、仕様書の
 定義文そのものを確認できれば、それだけで`TDNET_SOURCE_ONBOARDING.md`の

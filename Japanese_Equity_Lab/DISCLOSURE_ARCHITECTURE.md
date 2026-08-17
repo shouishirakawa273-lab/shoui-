@@ -291,7 +291,7 @@ Offline-by-construction設計、D0042)。統合Testで、Snapshot保存 →
 ## 発行体 / Disclosure System(Venue) / Delivery Provider の三層分離(Phase4B-3、D0047で追記、一般原則)
 
 D0042のOrigin/Delivery分離(`originating_source`/`delivery_provider`)は、
-「開示を行った主体」と「配信経路」が同一Provider内で完結する場合
+「制度・Venue自体」と「配信経路」が同一Provider内で完結する場合
 (EDINETを直接叩く場合等)は2層で十分だったが、TDnet(Phase4B-3、
 `TDNET_ARCHITECTURE.md` §1)で以下のように3層へ細分化する必要が生じた:
 
@@ -304,9 +304,26 @@ Disclosure System(Venue)上の現在の権威ある状態と同一視しては�
 Providerの実装挙動とVenueの実態が乖離しうることは、確認が取れるまで
 常に想定する。この3層分離は、Delivery ProviderがVenueを直接叩かない
 構成を持つ任意のSource(TDnetに限らない)に適用しうる一般原則として、
-ここへ明示的に記録する。EDINETのように発行体自身の提出先が同時に
-Delivery Provider(FSA=EDINET API提供者)でもある場合は、引き続き2層
-(`originating_source=delivery_provider`)のままで良い。
+ここへ明示的に記録する。EDINETのように制度・Venue自体(FSAが運営する
+EDINET)と配信経路(EDINET API、同じくFSA提供)が同一主体である場合は、
+`disclosure_system`と`delivery_provider`のみが collapse して引き続き
+2層(`originating_source=delivery_provider="EDINET"`)のままで良い。
+
+**注意**: この2層への収束は`disclosure_system`と`delivery_provider`
+の間でのみ起こるものであり、`publishing_entity`(実際に開示した上場
+会社そのもの)は常に別軸のまま残る。EDINETについても、`entity_id`
+(発行体識別子)は現時点で未解決(`UNKNOWN`)のままであり
+(`DATA_SOURCE_ARCHITECTURE.md`のEDINET行「Entity mapping」参照、
+D0046)、2層への収束が発行体識別の解決を意味するわけではない。3層/2層
+という区別は「Venueと配信経路が同一か」という軸のみを表し、発行体解決
+の状態(常に別途確認が必要)とは独立している。
+
+なお、この一般原則は現時点でTDnet(未確認の候補的裏付けのみ)という
+単一の動機事例にのみ基づいており、実際にDelivery ProviderとVenueが
+乖離する具体的な確認済み事例はまだ無い(TDnetの`DiscStatus`/`RevNo`
+挙動自体が`TDNET_SOURCE_ONBOARDING.md` §3/§8の通り未確認のため)。
+将来、別のSourceでも同様の3層分離が必要になった時点で、この一般化の
+妥当性を再確認すること。
 
 ## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記)
 

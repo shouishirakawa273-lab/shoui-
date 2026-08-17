@@ -42,7 +42,15 @@ class TdnetRetrievalCursorState:
 
     `query_date`: どの日付を対象にCursorベースのDifferential Retrievalを
     行ったか(TDnet Add-onは当日分のみCursor対応と報告されている、未確認、
-    `TDNET_SOURCE_ONBOARDING.md` §2)。
+    `TDNET_SOURCE_ONBOARDING.md` §2)。**これもTimestampではない** —
+    「このRetrieval試行が対象にした日付」という自分自身のQuery Parameter
+    の記録に過ぎず、その日にCursor経由で返ってきた各Documentの実際の
+    `market_public_at`(開示日時)と自動的に一致する保証は無い。将来
+    Adapterを実装する際、`query_date`を「その日Retrievalされた
+    Documentは全てその日に開示された」という代替Timestampとして
+    Downstreamへ伝播させてはならない(`DiscDate`/`DiscTime`の意味論が
+    確認できるまで、Document側のPIT Fieldは別途`AvailabilityBasis.
+    UNKNOWN`のまま扱う)。
     `cursor_value`: 今回のRetrieval後に得られたCursor値(次回はこれを渡して
     差分取得する想定)。`None`は「Cursorが返らなかった/対象外だった」ことを
     表す。

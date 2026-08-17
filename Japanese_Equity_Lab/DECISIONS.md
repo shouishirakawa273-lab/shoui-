@@ -3039,9 +3039,15 @@ Phase4B-3本体の指示の途中で、以下8点の追加Safety Correctionsが�
   (TDnet、Venue)/`delivery_provider`(J-Quants API)。D0042の
   Origin/Delivery分離をさらに1段細分化したもの。J-Quantsが観測した
   状態を、TDnet Venue上の現在の権威ある状態と同一視することを明示的に
-  禁止(`DISCLOSURE_ARCHITECTURE.md`へも一般原則として追記、EDINETの
-  ように発行体自身が同時にDelivery Providerでもある場合は引き続き2層
-  のままで良いことも明記)。
+  禁止(`DISCLOSURE_ARCHITECTURE.md`へも一般原則として追記)。EDINETの
+  ように`disclosure_system`(Venue)と`delivery_provider`(配信経路)が
+  同一主体(FSA)である場合は、この2つのみがcollapseして引き続き2層
+  (`originating_source=delivery_provider="EDINET"`)のままで良い —
+  ただし`publishing_entity`(上場会社自身、`entity_id`)は常に別軸の
+  ままであり(EDINETでも`entity_id`は未解決のまま、D0046)、2層への
+  収束は発行体識別の解決を意味しない。この一般原則は現時点でTDnetという
+  単一の未確認事例のみに基づくため、別Sourceでの検証を待って一般性を
+  再確認する必要がある(pit-auditor Finding対応、下記§5参照)。
 - **Provider宣言Schema vs 現在の実装挙動**: `DiscStatus`/`RevNo`等に
   ついて、公式仕様が定義する値の範囲(Schema)と、実際に観測される
   Runtime挙動(Current Implementation Behavior)を別々に文書化する
@@ -3081,6 +3087,93 @@ Phase4B-3本体の指示の途中で、以下8点の追加Safety Correctionsが�
 明記した(ユーザー指示§26「Do NOT Require Purchase」: Phase4B-3を
 進めるためにユーザーへ契約を要求しない)。Add-on契約の要否・金額の
 確定は今回のDecisionの対象外。
+
+### §5 Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+`pit-auditor`・`skeptic-reviewer`(いずれもRead-only、コード自体は
+変更しない)へ、Catalog登録・Cursor Provenance骨格・新規/更新済み
+Documentation一式(実装コードが存在しないため、「未実装であることの
+妥当性」自体の確認が中心)のReviewを依頼した。
+
+**pit-auditor(5件、最高でMEDIUM/HIGH)**:
+
+1. [MEDIUM] `test_tdnet_cursor_module_never_imports_disclosure_document_
+   or_availability_basis`の禁止Import検知が単純な部分文字列一致であり、
+   `from lib.disclosures import model`のような別の書き方や
+   `importlib.import_module()`経由の動的Importを見逃す(現時点で実際の
+   違反は無いが、Test自体の堅牢性が不足)。**対応済み**(下記)。
+2. [MEDIUM/HIGH] `DISCLOSURE_ARCHITECTURE.md`/このDecision(§3)の
+   三層分離説明が、「発行体自身が同時にDelivery Providerでもある」と
+   いう誤った表現でEDINETの2層収束を説明しており、`publishing_entity`
+   (発行体)と`disclosure_system`/`delivery_provider`を概念的に
+   混同していた(EDINETの`entity_id`は実際には未解決[D0046]のまま
+   であり、2層への収束は発行体解決を意味しない)。**対応済み**
+   (`DISCLOSURE_ARCHITECTURE.md`該当箇所・本Decision §3いずれも
+   修正、下記参照)。
+3. [MEDIUM] `TdnetRetrievalCursorState.query_date`が、`cursor_value`/
+   `previous_cursor`と同水準の「Timestampとして誤用しない」明示的
+   警告を欠いていた(`date`型を持つ唯一のFieldであり、将来
+   「その日Retrievalされた全Documentの`market_public_at`の代替」
+   として誤用される具体的リスクがある)。**対応済み**(下記)。
+4. [LOW/MEDIUM] `pit_available=False`/`NOT_IMPLEMENTED`は`SourceCatalog.
+   find()`のFilter条件として一切使われておらず(Test以外での参照は
+   ゼロ)、Metadata止まりで構造的な強制力が無い。ただしこれはEDINET
+   Descriptorにも共通する既存の設計上のGapであり、D0047固有の新規
+   問題ではないため今回は変更しない(将来、`SourceCatalog`利用側の
+   Orchestrationコードが実装される時点で別途対応)。
+5. [LOW] `AvailabilityBasis.INFERRED`の「15:00以降翌営業日扱い」という
+   例示(`DATA_SOURCE_ARCHITECTURE.md`のTDnet行)は、`lib/evidence/
+   model.py`の既存Docstringに既にある一般的な例示であり本Decisionで
+   新規に主張したものではないが、`TDNET_SOURCE_ONBOARDING.md` §7の
+   `DiscDate`/`DiscTime`裏付けがゼロであることと併記が薄いと誤解を
+   招きうる。将来Adapter実装時に、この15:00 Ruleを未確認のまま
+   `INFERRED` Basisへ暗黙に採用しないことを確認する(このRoundでは
+   コード変更なし、既に`(未検証)`と明記済みのため追加対応は見送り)。
+
+**skeptic-reviewer(PASS_WITH_CONCERNS、4件)**:
+
+1. [MEDIUM] `TDNET_LOCAL_VALIDATION_GUIDE.md` §Eの最小Raw Probeが、
+   `Authorization: Bearer`ヘッダを未確認のまま既定値として使用して
+   おり、既に確認済みのJ-Quants V2 Core APIの実際の認証方式
+   (`x-api-key`ヘッダ、`lib/data_sources/jquants.py`)と異なっていた。
+   これにより、ヘッダ形式の誤りによる401/403を「Add-on未契約」と
+   誤解する具体的なリスクがあった。**対応済み**(下記)。
+2. [LOW] `test_tdnet_notes_do_not_claim_any_adapter_code_exists`が
+   `descriptor.notes`内の文字列存在確認のみ(Tautologicalに近い)で、
+   実際に`tdnet.py`が存在しないことを構造的に確認していなかった。
+   **対応済み**(下記)。
+3. [LOW] 三層分離を「一般原則」と呼ぶ根拠が、実質的にTDnet(未確認)
+   というN=1の事例のみに基づいていた。**対応済み**(上記pit-auditor
+   Finding 2の修正と合わせて、この限界を明記する一文を追加)。
+4. [LOW] `test_tdnet_authority_class_is_primary_official_but_not_used_
+   as_truth_score`がDescriptor自身のHardcoded値を再主張するに留まる
+   構造的限界を持つ(EDINET側の同種Testにも共通する既存の限界であり、
+   D0047固有の新規劣化ではないため変更しない)。
+
+**対応**:
+
+- `test_tdnet_cursor.py`の禁止Import検知Testを`ast`ベースの解析
+  (`ImportFrom`/`Import`ノードを`module`・`names[].name`両方について
+  検査)へ書き換え、`from lib.disclosures import model`のような分割
+  記法も検知できるようにした。
+- `tdnet_cursor.py`の`query_date`Field Docstringへ、`market_public_at`
+  の代替として下流へ伝播させてはならないという明示的な警告を追加した。
+- `DISCLOSURE_ARCHITECTURE.md`・本Decision §3の三層分離説明を、
+  「`disclosure_system`と`delivery_provider`のみがCollapseする」
+  という正確な表現へ修正し、`publishing_entity`/`entity_id`が常に
+  別軸のまま残ること、この一般原則が現時点でTDnetというN=1の未確認
+  事例のみに基づくことを明記した。
+- `TDNET_LOCAL_VALIDATION_GUIDE.md` §Cへ認証方式確認項目を追加し、
+  §Eの認証ヘッダ推測(既存確認済みの`x-api-key`パターンとの関係)を
+  明示するコメントを追加した。
+- `test_tdnet_catalog.py`の`test_tdnet_notes_do_not_claim_any_
+  adapter_code_exists`を、`Path`で実際に`lib/disclosures/providers/
+  tdnet.py`が存在しないことを直接確認する構造的Testへ強化した(文字列
+  存在確認のみのTautologyから脱却)。
+
+再Reviewは実施していない(全FindingがDocumentation表現修正・Test
+堅牢性強化・Docstring追記で完結し、実装コード自体が存在しないため
+Architecture上の新規リスクは無いと判断)。
 
 ### 最終回帰確認
 
