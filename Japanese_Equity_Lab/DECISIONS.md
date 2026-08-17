@@ -2871,11 +2871,85 @@ Content Hashも異なる。意味的同一性判定は将来Phase)。
 
 ### Reviewer Findings(pit-auditor / skeptic-reviewer)
 
-(実施結果はこのDecisionの追記、または完了報告に記載する。)
+両Subagentを、ユーザー指定の重点項目(同一docID再取得によるSnapshot
+上書き・後続Retrievalによる過去Evidence書き換え・Raw Hashの訂正判定
+流用/Canonicalizationによる実変更の隠蔽/安全でないZIP展開/Outer Hash
+不一致=訂正という思い込み/都合の良いSynthetic Fixture)に沿って実運用
+した。
+
+**pit-auditor**: `PIT AUDIT: 2 FINDINGS`(最高Severity LOW)。指定3項目
+(同一docID再取得によるSnapshot上書き、後続Retrievalによる過去Evidence
+書き換え、Raw Hashの訂正判定流用)すべて実害無しと確認、加えて
+`compute_canonical_zip_content_hash()`のOrder非依存性・Content感応性・
+各Safety Check(Path Traversal/Symlink/暗号化/重複Filename/Malformed)が
+Tautologicalでない実Fixtureで演習されていることも確認。
+[LOW]1件: 「`DocumentRelationship`/`DuplicateRelationKind`を一切構築
+しない」ことの構造Testが`edinet_zip.py`のみを対象としており、実際に
+`raw_retrieval_hash`を所有する`edinet.py`自身・`edinet_normalize.py`は
+対象外だった(Grepによる独立確認では現状漏れは無し)。**対応済み**
+(下記)。[LOW]1件: 構造Testが文字列一致であり厳密なAST解析ではない
+(現実的なEvasionリスクは低いとpit-auditor自身も評価、対応不要と判断)。
+
+**skeptic-reviewer**: `PASS_WITH_CONCERNS`。[MEDIUM]3件、[LOW]1件、
+[PASS]複数:
+1. [MEDIUM] `_is_unsafe_member_name()`のPath Traversal対策がPOSIX形式
+   (先頭`/`・`..`セグメント)のみを検知し、Windows Drive Letter絶対Path
+   (`C:\...`)を検知できていなかった(Diskへ展開しない設計のため現在の
+   実害は無いが、Docstring/DECISIONS.mdの「絶対Pathを拒否」という主張と
+   実装が一致していなかった)。**対応済み**(下記)。
+2. [MEDIUM] 展開後サイズの上限(Zip Bomb対策)が存在せず、「Safety」
+   節の記述が完全な脅威網羅であるかのように読める一方、実際には
+   メモリ枯渇への対策が欠けていた。**対応済み**(下記)。
+3. [MEDIUM/LOW] `DISCLOSURE_ARCHITECTURE.md`の「それは単にRetrieval
+   ごとのContainer側の差異である可能性が高く」という一文が、1件の
+   観測から一般的な確率を主張しており、ユーザー自身の「原因を断定
+   しない」という指示の精神からわずかに逸脱していた。**対応済み**
+   (下記)。
+4. [MEDIUM/LOW] 18件のTestはすべてSynthetic Fixture(`zipfile`モジュール
+   で1から構築)であり、実際の観測されたOLD/NEW ZIP bytesに対して
+   `compute_canonical_zip_content_hash()`を実行した結果(実Canonical
+   Hash値)は記録されていない(実Bytes自体は§16の方針により保存して
+   いないため、当然そのものは再現できない)。**対応**: 今回のRound
+   ではコード変更・数値の捏造はせず、次回ユーザーが再度Local
+   ValidationでEDINET Document Downloadを行う機会があれば、`compute_
+   canonical_zip_content_hash()`を実際のBytesに対して実行し、結果の
+   Hex Digestを(Byte列自体は保存せず)記録することを今後のFollow-up
+   として明示する(このDecisionへの新規追記、コード変更は伴わない)。
+5. [LOW] Serialization Scheme(`\x00`区切り)自体のCollision耐性は
+   Reviewer自身が独立に追跡し、実際にはCollisionが起こりえないことを
+   確認(Filename中の`\x00`はSafety Checkで既に拒否されているため)。
+   ただし改行文字(`\n`/`\r`)はFilenameとして許容されたままだった
+   (Collisionには寄与しないが、Hygiene上望ましくない)。**対応済み**
+   (下記、Path Traversal対策と合わせて拒否)。
+6. [PASS] Directory Entry除外・Member順序非依存・圧縮方式非依存・
+   `core`/`app.py`/`tests/`無変更・`DuplicateRelationKind`無変更、
+   いずれも確認。
+
+**対応**:
+- `_is_unsafe_member_name()`へWindows Drive Letter絶対Path検知
+  (正規表現`^[A-Za-z]:[/\\]`)を追加。
+- 改行文字(`\n`/`\r`)を含むFilenameもfail closedへ追加。
+- 展開後サイズの上限(Member単体200MB・累計500MB、公式仕様上の上限は
+  未確認のため安全側の暫定値と明記)を追加し、`zf.read()`を呼ぶ前に
+  宣言サイズを検査してZip Bombをfail closedする設計にした。
+- `DISCLOSURE_ARCHITECTURE.md`の該当箇所を、1件の観測から一般的確率を
+  主張しない表現へ修正(「Canonical Hashを使うべき」という規範自体は
+  論理的必然として維持しつつ、原因についての推測を含めない)。
+- 新規Test6件追加: Windows Drive Letter絶対Path・改行含みFilename・
+  裸の`..`Filenameのfail closed確認、Member単体/累計サイズ上限超過の
+  fail closed確認、上限内であれば正常処理される確認、`edinet.py`/
+  `edinet_normalize.py`を対象とした`DocumentRelationship`/
+  `DuplicateRelationKind`非構築の構造確認(pit-auditor Finding対応)。
+
+再Reviewは実施していない(全Findingが局所的なSafety Check追加・Test
+追加・Documentation表現修正で完結し、Canonicalizationの基本設計
+(Sort-by-filename・Content-hash直列化)自体には変更が無いため)。
 
 ### 最終回帰確認
 
-(全Finding対応後、完了報告に記載する。)
+(全Finding対応後): `pytest`(Lab 452件・既存Screening Tool 37件)・
+`ruff check`・`ruff format --check`・`mypy`(79ファイル)いずれもclean。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを再確認済み。
 
 ### このDecisionでやらないこと
 

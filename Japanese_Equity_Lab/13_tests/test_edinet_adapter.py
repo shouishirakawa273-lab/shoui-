@@ -356,3 +356,22 @@ def test_edinet_adapter_module_does_not_import_disclosures_normalize_or_view() -
     forbidden_modules = ("lib.disclosures.normalize", "lib.disclosures.view", "lib.disclosures.model")
     assert not any(module in line for line in import_lines for module in forbidden_modules)
     assert "DisclosureDocument(" not in text
+
+
+def test_edinet_adapter_and_normalizer_never_construct_document_relationship_from_hash() -> None:
+    """pit-auditor Finding(D0046追記2): 既存の同種Testは`edinet_zip.py`のみを
+    対象としており、`raw_retrieval_hash`を実際に所有する`edinet.py`自身と
+    `edinet_normalize.py`が対象外だった。両ModuleについてもDocstringの
+    警告(「raw_retrieval_hashの不一致だけでDocument訂正・改版と判定
+    しない」)がコードでも守られていることを、`DocumentRelationship`/
+    `DuplicateRelationKind`を一切Importしないという形で構造的に確認する。"""
+    import lib.disclosures.providers.edinet as edinet_module
+    import lib.disclosures.providers.edinet_normalize as edinet_normalize_module
+
+    for module in (edinet_module, edinet_normalize_module):
+        source = module.__file__
+        assert source is not None
+        with open(source, encoding="utf-8") as f:
+            text = f.read()
+        assert "DocumentRelationship" not in text
+        assert "DuplicateRelationKind" not in text

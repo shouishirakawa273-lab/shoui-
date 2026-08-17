@@ -28,9 +28,13 @@ Derived Metadataであり、Rawの代替ではない。
 Canonical Content Hashも異なる。意味的同一性判定は将来Phase)。
 
 **Safety**(§7の要件): ZIP展開先へのDisk書き出しをしない、Path Traversal
-対策(絶対Path・`..`セグメントを拒否)、Symlink等の特殊Entryをfail closed、
-重複Filenameをfail closed、Malformed ZIPをfail closed、暗号化ZIPを
-fail closed。
+対策(POSIX形式の絶対Path・`..`セグメント・Windows Drive Letter絶対Path
+[例: ``C:`` で始まる絶対Path]を拒否 — skeptic-reviewer Finding、
+D0046追記2で追加)、
+Symlink等の特殊Entryをfail closed、重複Filenameをfail closed、
+Malformed ZIPをfail closed、暗号化ZIPをfail closed、展開後サイズが
+異常に大きいMember/累計サイズをfail closed(Zip Bomb対策、skeptic-
+reviewer Finding、D0046追記2で追加)。
 """
 
 from __future__ import annotations
@@ -38,16 +42,31 @@ from __future__ import annotations
 import hashlib
 import io
 import logging
+import re
 import stat
 import zipfile
 from pathlib import PurePosixPath
 
 logger = logging.getLogger(__name__)
 
+# skeptic-reviewer Finding(D0046追記2): EDINETは信頼できる政府APIだが、
+# 展開後サイズに上限を設けないと、悪意/事故による高圧縮率Member(Zip Bomb)で
+# メモリを枯渇させうる。実際に観測されたEDINET ZIP(type=1)は16,397 bytes
+# 程度であり、これらの値は安全側に十分な余裕を持たせた暫定上限(公式な仕様
+# 上のサイズ上限は未確認)。
+_MAX_MEMBER_UNCOMPRESSED_BYTES = 200 * 1024 * 1024  # 1 Memberあたり200MB
+_MAX_TOTAL_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # ZIP全体で500MB
+
+# Windows Drive Letter絶対Path(例: "C:\foo"、"C:/foo")を検知する
+# (skeptic-reviewer Finding: POSIX形式のPath Traversal対策だけでは
+# 検知できなかった、D0046追記2で追加)。
+_DRIVE_LETTER_ABSOLUTE_PATH_RE = re.compile(r"^[A-Za-z]:[/\\]")
+
 
 class ZipCanonicalizationError(Exception):
-    """Malformed/Unsupported ZIP(暗号化・Symlink・Path Traversal・重複Filename等)
-    によりCanonical Content Hashを計算できない場合に送出する。"""
+    """Malformed/Unsupported ZIP(暗号化・Symlink・Path Traversal・重複Filename・
+    展開後サイズ超過等)によりCanonical Content Hashを計算できない場合に
+    送出する。"""
 
 
 def _is_unsafe_member_name(name: str) -> bool:
@@ -55,7 +74,9 @@ def _is_unsafe_member_name(name: str) -> bool:
         return True
     if name.startswith("/") or name.startswith("\\"):
         return True
-    if "\x00" in name:
+    if "\x00" in name or "\n" in name or "\r" in name:
+        return True
+    if _DRIVE_LETTER_ABSOLUTE_PATH_RE.match(name):
         return True
     parts = PurePosixPath(name.replace("\\", "/")).parts
     return ".." in parts
@@ -81,7 +102,9 @@ def compute_canonical_zip_content_hash(raw_zip_bytes: bytes) -> str:
 
     以下はいずれも`ZipCanonicalizationError`としてfail closedする(解析を
     諦め、原因を推測しない): Malformed ZIP、暗号化Entry、Symlink等の
-    特殊Entry、Path Traversalを含むFilename、重複Filename。
+    特殊Entry、Path Traversalを含むFilename(POSIX形式・Windows Drive
+    Letter形式いずれも)、重複Filename、展開後サイズがMember単体/累計の
+    上限を超えるEntry(Zip Bomb対策)。
     """
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw_zip_bytes))
@@ -95,6 +118,7 @@ def compute_canonical_zip_content_hash(raw_zip_bytes: bytes) -> str:
 
     seen_names: set[str] = set()
     canonical_entries: list[tuple[str, int, str]] = []
+    total_uncompressed_bytes = 0
 
     for info in infos:
         name = info.filename
@@ -113,6 +137,14 @@ def compute_canonical_zip_content_hash(raw_zip_bytes: bytes) -> str:
             # Directory Entry自体はContentを持たないためCanonical Hashの対象外
             # (Directory自体の有無で内容同一性は変わらないと判断する)。
             continue
+
+        if info.file_size > _MAX_MEMBER_UNCOMPRESSED_BYTES:
+            raise ZipCanonicalizationError(f"member exceeds max uncompressed size ({info.file_size} bytes): {name!r}")
+        total_uncompressed_bytes += info.file_size
+        if total_uncompressed_bytes > _MAX_TOTAL_UNCOMPRESSED_BYTES:
+            raise ZipCanonicalizationError(
+                f"total uncompressed size exceeds limit ({total_uncompressed_bytes} bytes) at member {name!r}"
+            )
 
         try:
             content = zf.read(info)

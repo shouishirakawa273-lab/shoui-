@@ -246,9 +246,14 @@ Duplicateの判定基準にしてはならない**。EDINETでは
 Canonical Content Hashを提供する。
 
 `raw_retrieval_hash`(Raw Artifact Identity)の不一致だけをもって
-「Documentが訂正・改版された」と自動推論することも禁止する — それは
-単にRetrievalごとのContainer側の差異である可能性が高く、実際の内容
-比較には必ずCanonical Content Hashを使う。
+「Documentが訂正・改版された」と自動推論することも禁止する。少なくとも
+1回、原因を断定できない形でContainer側のみの差異(内容は完全一致、
+Timestampのみ相違)が実際に観測されている(2026-08-17)。したがって、
+Outer Hashが不一致であるという事実だけでは、それがContainer側だけの
+差異なのか実際のDocument内容変化なのかを判別できない — 判別が必要な
+場合は必ずCanonical Content Hashを使う、というのが論理的な帰結である
+(skeptic-reviewer Finding: 「Retrievalごとの差異である可能性が高い」と
+いう一般的な確率を1件の観測から主張しない、D0046追記2)。
 
 **既存Common Core(`lib.disclosures.model.DuplicateRelationKind`)は
 このPhaseでは変更しない**(最小変更を優先する判断、`DECISIONS.md` D0046

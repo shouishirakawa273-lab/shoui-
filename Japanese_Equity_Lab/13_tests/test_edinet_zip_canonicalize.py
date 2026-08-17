@@ -9,6 +9,7 @@ Regression Testを含む。外部呼び出しは一切行わない。
 from __future__ import annotations
 
 import io
+import struct
 import zipfile
 
 import pytest
@@ -127,6 +128,33 @@ def test_absolute_path_filename_fails_closed() -> None:
         compute_canonical_zip_content_hash(buf.getvalue())
 
 
+def test_windows_drive_letter_absolute_path_fails_closed() -> None:
+    """skeptic-reviewer Finding(D0046追記2): POSIX形式のPath Traversal対策
+    (`..`セグメント・先頭`/`)だけでは`C:\\Windows\\...`のようなWindows
+    Drive Letter絶対Pathを検知できていなかった。"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("C:\\Windows\\System32\\config", b"malicious")
+    with pytest.raises(ZipCanonicalizationError, match="unsafe member filename"):
+        compute_canonical_zip_content_hash(buf.getvalue())
+
+
+def test_bare_dot_dot_filename_fails_closed() -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("..", b"malicious")
+    with pytest.raises(ZipCanonicalizationError, match="unsafe member filename"):
+        compute_canonical_zip_content_hash(buf.getvalue())
+
+
+def test_filename_containing_newline_fails_closed() -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("weird\nname.txt", b"content")
+    with pytest.raises(ZipCanonicalizationError, match="unsafe member filename"):
+        compute_canonical_zip_content_hash(buf.getvalue())
+
+
 def test_symlink_entry_fails_closed() -> None:
     import stat
 
@@ -160,6 +188,38 @@ def test_encrypted_entry_fails_closed() -> None:
     raw = _mark_general_purpose_flag_bit0(buf.getvalue())
     with pytest.raises(ZipCanonicalizationError, match="encrypted"):
         compute_canonical_zip_content_hash(raw)
+
+
+def _patch_declared_uncompressed_size(raw: bytes, declared_size: int) -> bytes:
+    """skeptic-reviewer Finding(D0046追記2、Zip Bomb対策): 実際のデータは
+    小さいまま、Central Directory Header上の「展開後サイズ」宣言値だけを
+    書き換える(古典的なZip Bombの模倣 — 実際に巨大なデータをTestで確保・
+    展開する必要はない。本モジュールは`zf.read()`を呼ぶ前に宣言値を検査して
+    fail closedするため、この宣言値だけで検知できることを確認する)。"""
+    data = bytearray(raw)
+    idx = data.find(b"PK\x01\x02")
+    struct.pack_into("<I", data, idx + 24, declared_size)
+    return bytes(data)
+
+
+def test_member_declared_uncompressed_size_exceeding_cap_fails_closed() -> None:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("small.txt", b"hello")
+    raw = _patch_declared_uncompressed_size(buf.getvalue(), 300 * 1024 * 1024)  # > 200MB上限
+    with pytest.raises(ZipCanonicalizationError, match="exceeds max uncompressed size"):
+        compute_canonical_zip_content_hash(raw)
+
+
+def test_member_within_size_cap_still_succeeds() -> None:
+    """上限Check自体が誤って正常なEntryまで拒否しないことを確認する
+    (上限未満の宣言値は通常通り処理される)。"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("small.txt", b"hello")
+    raw = _patch_declared_uncompressed_size(buf.getvalue(), 1024)  # 上限内
+    # 例外を送出しないことのみ確認(Hash値自体は他Testで既に確認済み)。
+    compute_canonical_zip_content_hash(raw)
 
 
 def test_directory_entries_do_not_affect_canonical_hash() -> None:
