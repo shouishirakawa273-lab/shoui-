@@ -3456,3 +3456,195 @@ Entity Registry本格統合(現状は既存Code正規化の再利用のみ)・Fo
 Collection Scheduler・Company IR(Phase4B-4)・本文の意味解析・Event
 抽出・Revision Direction判定・Buy/Sell判断・Strategy/Backtest変更・
 Screening Tool変更には着手していない。
+
+## D0049 — Phase4A Fundamentals: Evidence PIT Bugfix(`available_at`のmarket_public_atへのFallback禁止)
+
+Phase4B-3(TDnet、D0047/D0048)とは独立した、既存Phase4A Fundamentalsの
+Evidence生成に対する小規模な単独Bugfix。TDnet/EDINET/Company IRのいずれ
+にも触れていない(`git diff --stat`で確認、下記§最終回帰確認参照)。
+Phase4B-3のStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は
+このBugfixによって変更しない。
+
+### §1 Root Cause
+
+`lib.fundamentals.evidence.disclosure_metric_to_evidence()`の旧実装は
+`available_at = envelope.market_public_at or envelope.retrieved_at`
+としていた。`market_public_at`(市場公表時刻、A系統)は通常
+`provider_available_at`(Provider経由で実際に参照可能になった時刻、
+B系統)より**早い**。この早い時刻を`EvidenceRecord.is_usable_at()`が
+直接参照する`available_at`(`self.source.available_at <= decision_at`)
+へ代入すると、実際にはまだ研究所側で取得可能でなかった時点を「利用
+可能だった」と誤認する(Future Leakage)。
+
+例: `market_public_at=15:00`、実際のProvider配信=15:05、
+`retrieved_at=15:06`の場合、旧実装は`available_at=15:00`となり、
+`decision_at=15:03`時点でEvidenceが誤って「利用可能」と判定されうる。
+
+### §2 Fix
+
+`DisclosureEnvelope`/`FundamentalMetric`/`SourceMetadata`のいずれも
+確認済みの`provider_available_at`を保持するFieldを持たない(現行Schema
+の制約、新規Field追加は行わない、最小変更優先)。したがって
+`source.available_at`には常に`envelope.retrieved_at`
+(Observed Factとしての下限)を使う。`market_public_at`は
+`source.published_at`(A系統)としてのみ設定し、`available_at`へは
+Fallbackしない。
+
+`retrieved_at`をFallbackとして使うこと自体はB系統PITでも許容される
+(「少なくともこの時刻には研究所が実際に取得していた」という
+Observed Factであり、Providerの真のAvailabilityを早く見積もる方向
+ではなく、通常は遅く評価する保守的なBoundになるため)。**禁止するのは
+`provider_available_at`がUNKNOWNの場合に`market_public_at`へ
+Fallbackすることのみ**であり、`retrieved_at`へのFallbackは区別して
+扱う。
+
+旧Docstringの「market_public_atはprovider_available_at以前なので
+保守的であり、available_atを過大評価しない」という説明は論理が逆
+だった(過小評価ではなく、実際より早く使えたと誤認する方向の過大
+評価だった)。この説明を修正した。
+
+併せて、Module Docstringの例示(「会社がFY営業利益予想を100→120へ
+変更した」)が、単一の`FundamentalMetric`のみを受け取るこの関数の
+実際の挙動と矛盾していた(旧Value/新Valueの比較を含む文言は、この
+関数からは生成できないし、生成すべきでもない)ため、単一値開示の例へ
+差し替え、単一Metricからのrevision推論禁止を明記する段落を追加した。
+
+### §3 外部Review(Copilot)への対応方針
+
+ユーザーが別Review Toolの結果を提示したが、Findingをそのまま採用せず、
+既存PIT Architecture(D0040/D0042/D0043)をSource of Truthとして
+以下の通り評価した:
+
+- `retrieved_at`へのFallback許容・`market_public_at`へのFallback
+  禁止という区別は、既存`RevisionHistory.as_of()`の`AvailabilityBasis.
+  UNKNOWN`除外メカニズム(D0040)と整合する既存原則の再確認であり、
+  実装の変更は不要だった(§2の実装は既にこの原則通り)。
+- Equality Semantics(`available_at <= decision_at` → visible、
+  `==`を一律unavailableにしない)は、既存`EvidenceRecord.is_usable_at()`
+  ・`RevisionHistory.as_of()`いずれも既にこの通り実装済みであり、変更
+  不要と判断した。
+- 新Schema(`provider_available_at_status`等)は追加していない(§2、
+  最小変更優先の原則通り)。
+- Cross-Layer Scan(`grep`)を実施し、`market_public_at`から
+  `available_at`への同種のFallback Patternが他に残っていないか確認
+  した(§4参照)。
+- Replay時に`retrieved_at`がReplay実行時刻へ上書きされないことを、
+  `RawSnapshotStore`保存・再読込を伴う新規回帰Test
+  (`test_offline_replay_preserves_original_retrieved_at_not_replay_
+  time`)で確認した。
+
+### §4 Cross-Layer Scanの結果(新規実装は行わない、記録のみ)
+
+`grep -rn "market_public_at or\|available_at.*=.*market_public_at"
+lib/`を実施し、以下を確認した:
+
+1. `lib/fundamentals/evidence.py`(このRoundで修正済み)。
+2. `lib/fundamentals/normalize.py::_provider_available_at_and_basis()`
+   (`build_revision_histories()`から呼ばれる)は、`anchor =
+   market_public_at if market_public_at is not None else
+   retrieved_at`という、一見同種のPatternを持つ。ただし常に
+   `availability_basis=UNKNOWN`を返すため、既定(`include_unknown_
+   availability=False`)では`RevisionHistory.as_of()`が除外し、
+   安全側で機能する(`test_fundamentals_view.py`/`test_fundamentals_
+   pit_real_dates.py`で回帰確認済み)。ただし呼び出し側が明示的に
+   `include_unknown_availability=True`を指定した場合は、
+   `market_public_at`がそのまま`available_at`として使われ、
+   Evidence.pyで修正したのと同じ形のLeakageが再現しうる
+   (pit-auditor Finding、下記§5参照)。**このRoundでは変更しない**
+   (Fundamental Evidence issueのみが対象、最小変更優先、既に
+   `AvailabilityBasis.UNKNOWN`による安全側デフォルトで守られている
+   ため緊急性は低いと判断)。Docstringの「market_public_atが最も
+   保守的なAnchor」という説明も、Evidence.py同様に論理が逆であり、
+   将来修正が必要(§5)。
+3. `lib/disclosures/normalize.py::_provider_available_at_and_basis()`
+   (EDINET/TDnet Common Core版)も同型のPatternを持つが、これはPhase
+   4B-3の管轄でありこのRoundの対象外(D0045/D0046で既に安全側
+   Defaultとして設計済み、`disclosures_as_of()`が同じ除外Mechanismを
+   持つ)。
+4. `lib/disclosures/evidence.py::disclosure_document_to_evidence()`
+   (`available_at: datetime = document.market_public_at or document.
+   retrieved_at`、56行目)は、このRoundで修正した`lib.fundamentals.
+   evidence`と**文字通り同一のBug**を持つ。Docstring自体が過去の
+   pit-auditor Finding(D0045追記)によりこのリスクを既に自覚し、
+   呼び出し側に`disclosures_as_of()`を経由するよう警告している。
+   現在このEvidence生成関数は本番Pipelineへ未接続(Test以外の呼び出し
+   元が無い)ため、実害は潜在的なもの(EDINET/TDnet Phase進展時に本番
+   接続される前に対応が必要)。**このRoundでは変更しない**(TDnet/
+   EDINETへは触れないというユーザー指示の明示的Scope外)。
+
+### §5 既知のFollow-up項目(このRoundでは対応しない、将来Round向けに記録)
+
+1. [MEDIUM、pit-auditor Finding] `lib/fundamentals/normalize.py::
+   _provider_available_at_and_basis()`のDocstringが、Evidence.pyと
+   同じ「market_public_atは保守的」という逆の論理を維持したまま。
+   `include_unknown_availability=True`を明示指定した呼び出し側でのみ
+   顕在化するLeakage経路であり、既定Pathは`AvailabilityBasis.UNKNOWN`
+   除外で安全。Docstring修正のみか、Anchor自体を`retrieved_at`固定へ
+   変更するかは設計判断が必要なため、次のFundamentals関連Roundで
+   ユーザーの判断を仰ぐ。
+2. `lib/disclosures/evidence.py::disclosure_document_to_evidence()`
+   (EDINET/TDnet Common Core)に同型のBugが残っている(§4-4参照)。
+   本番Pipeline未接続のため緊急ではないが、Phase4B-3以降でこの関数を
+   実際に接続する前に、このRoundと同じ修正(`available_at =
+   document.retrieved_at`固定)を適用する必要がある。
+
+### §6 Regression Tests
+
+`Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_pit.py`
+(新規、12件):
+
+- A. `market_public_at`<`retrieved_at`、`available_at`が`retrieved_at`
+  になること(`market_public_at`にはならないこと)の直接確認 + `None`
+  ケースを含むParametrize Sweep。
+- B. `market_public_at`がNoneの場合でも`available_at`が常に
+  `retrieved_at`であること。
+- C. `decision_at`が`market_public_at`と`retrieved_at`の間(15:03)では
+  `is_usable_at()`が`False`、`retrieved_at`と一致(15:06)では`True`、
+  `market_public_at`より前(14:59)では`False`であることの直接確認
+  (Bug Reportの数値例をそのまま再現)。
+- D. tz-aware維持(`available_at`/`published_at`)、tz-naive
+  `retrieved_at`のConstruction時Reject確認。
+- E. Evidence Contentが解釈語(bullish/buy/sell/好調/割安/強気等)を
+  一切含まないこと。
+- F. 単一Metricから「100→120」等のRevision文を生成しないこと、
+  関数SignatureがMetricを1つしか受け取らないことの構造的確認。
+- G. Offline ReplayがManifest経由で`retrieved_at`を保存時点の値の
+  まま保持し、Replay実行時刻へ上書きしないこと(`RawSnapshotStore`
+  実際の保存・再読込Round-tripで確認)。
+
+既存Test(`test_fundamentals_integration.py`の`test_disclosure_
+metric_to_evidence_carries_source_authority_and_pit_fields`等)は
+`available_at is not None`のみを確認しておりmarket_public_atとの
+関係性に依存していなかったため、無変更のまま成功する。
+
+### §7 Reviewer Pass
+
+`pit-auditor`(Read-only)を実施。Finding: `lib/fundamentals/evidence.py`
+の修正自体は「完全かつ正確」と判定(Residual Fallback経路なし、
+Schema制約の主張は実際のModel定義と整合、新規Testは意味のある
+回帰確認[旧実装であれば失敗する]、`fundamentals_as_of()`はこの
+Bugfixと重複せず独立して機能、Revision文言修正も完全)。追加で
+§4-2/§5-1の`lib/fundamentals/normalize.py`側Finding(MEDIUM)を
+独立に発見・報告した(このDecision §4-2/§5-1へ反映済み)。
+skeptic-reviewerは実施していない(小規模Bugfixのため、ユーザー指示
+通り過剰なReviewer Roundを追加しない)。
+
+### §8 最終回帰確認
+
+`pytest`(Lab 535件・既存Screening Tool 37件)・`ruff check`・
+`ruff format --check`・`mypy`(Lab: `lib/`全体、Root: `core app.py
+scripts Japanese_Equity_Lab/lib`)いずれもclean。`git diff --stat --
+core/ app.py tests/`で変更が無いことを確認済み(空Diff)。今回の変更
+File一覧に`tdnet*`/`edinet*`ファイルが含まれないことを確認済み
+(TDnet/EDINETへ触れていないことの直接確認)。
+
+### このDecisionでやらないこと
+
+`lib/fundamentals/normalize.py`の`_provider_available_at_and_basis()`
+修正(§5-1、Follow-up)・`lib/disclosures/evidence.py`の同型Bug修正
+(§5-2、Follow-up、TDnet/EDINET Scope外)・新しいEvent Candidate
+Lifecycle・TDnet Revision Handling・Correction Engine・新しいReplay
+Architecture・Global PIT Compliance Suite・新しいAvailability Enum/
+Schema・Phase4B-4(Company IR)・Phase4A.5.1には着手していない。
+Phase4B-3のStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は
+変更していない。
