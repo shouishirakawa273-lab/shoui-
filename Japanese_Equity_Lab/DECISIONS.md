@@ -3709,3 +3709,209 @@ Architecture・Global PIT Compliance Suite・新しいAvailability Enum/
 Schema・Phase4B-4(Company IR)・Phase4A.5.1には着手していない。
 Phase4B-3のStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は
 変更していない。
+
+## D0050 — Disclosure Common Core: `lib/disclosures/evidence.py`のPIT Bugfix(D0049 Follow-up Findingの確定)
+
+D0049(§4-4/§5-2)で「`lib/disclosures/evidence.py::disclosure_document_to_
+evidence()`にFundamentals Evidence(D0049で修正済み)と同型のBugが残って
+いる可能性がある」とpit-auditor Findingを記録しつつ、TDnet/EDINET Scope
+外として当時は修正しなかった。このDecisionはその確認結果を確定し、
+実際にBugだったため最小修正した記録である。
+
+### §1 判定: C. ACTUAL_BUG(Guardなし)
+
+`lib/disclosures/evidence.py`の実装(修正前)を直接確認した:
+
+```python
+available_at: datetime = document.market_public_at or document.retrieved_at
+```
+
+これはD0049で修正した`lib.fundamentals.evidence.disclosure_metric_to_
+evidence()`の旧実装と文字通り同一のPatternだった。
+
+**既存Guardの有無**: `SourceMetadata`(`lib.sources.catalog`)には
+`availability_basis`相当のFieldが無く、`EvidenceRecord.is_usable_at()`
+(`self.source.available_at <= decision_at`)はBasis情報を一切参照せず
+`available_at`だけで判定する。旧Docstring自身が「実際のDecision/
+Backtestで使う場合は、必ず先に`disclosures_as_of()`でPIT Filterした
+上でEvidenceへ変換すること」と注意喚起していたが、これは**呼び出し側の
+規約(Prose上の注意)であり、構造的なGuardではない**。この関数を直接
+呼び出せば(実際に`test_tdnet_integration.py`の既存Testが直接呼び出して
+いた)、`disclosures_as_of()`によるFilterを経由せずBugがそのまま顕在化
+する。したがって`B. SAFE_BY_EXISTING_GUARD`ではなく`C. ACTUAL_BUG`と
+確定する。
+
+### §2 15:00/15:06の時刻例での確認結果
+
+修正前のコードで市場公表時刻market_public_at=15:00、
+provider_available_at=UNKNOWN、retrieved_at=15:06のDocumentから
+`disclosure_document_to_evidence()`を呼び出すと:
+
+- `evidence.source.published_at == 15:00`(修正前後で変化なし、正しい)
+- `evidence.source.available_at == 15:00`(**Bug**、`market_public_at`と
+  同じ値になっていた)
+- `decision_at=15:03`で`evidence.is_usable_at(15:03)`が`True`を返して
+  いた(**Future Leakage**、実際には15:06まで取得していない)
+
+修正後:
+
+- `evidence.source.published_at == 15:00`(変化なし)
+- `evidence.source.available_at == 15:06`(`retrieved_at`、`market_
+  public_at`とは異なる値)
+- `decision_at=15:03`で`evidence.is_usable_at(15:03)`が`False`を返す
+  (正しい、`test_evidence_is_not_usable_at_decision_at_between_
+  market_public_at_and_retrieved_at`で確認)
+- `decision_at=15:06`で`True`を返す(正しい)
+
+### §3 Fix(最小修正)
+
+`DisclosureDocument`は`market_public_at`/`market_public_at_basis`とは
+別に`provider_available_at`/`provider_available_at_basis`をField
+として持つ(Fundamentalsの`DisclosureEnvelope`には無いField、
+`lib.disclosures.model.DisclosureDocument`Docstring参照)。この点で
+Fundamentals[D0049]とはSchema上の前提が異なるため、修正内容も単純な
+`retrieved_at`固定ではなく、以下の優先順位とした:
+
+1. `provider_available_at`が確認済み(`provider_available_at_basis
+   != AvailabilityBasis.UNKNOWN`)であればそれを使う。
+2. 確認できなければ`document.retrieved_at`(Observed Factとしての
+   下限)を使う。
+
+**`market_public_at`へは決してFallbackしない**(D0049と同じ原則)。
+現在(D0050時点)EDINET/TDnetいずれのNormalizerも`provider_available_at`
+を確認済み値として設定しない(常に`UNKNOWN`Basis)ため、実際には常に
+(2)の経路が使われる — ただし将来Providerが確認済み値を提供するように
+なった場合にも自動的に活用できる設計であり、新規Schema Field追加は
+行っていない(既存Fieldを正しく使うようにしただけ)。
+
+旧Docstringの「market_public_atは保守的だからavailable_atを過大評価
+しない」という説明も、D0049と同じ理由で逆だったため修正した。
+
+### §4 Cross-Layer影響確認: EDINET/TDnet
+
+`lib/disclosures/evidence.py`はProvider-neutralなCommon Coreであり、
+EDINET/TDnetいずれの正規化済み`DisclosureDocument`もこの関数を経由し
+うる。ユーザー指示通り、**EDINET Adapter/Normalizer・TDnet Adapter/
+Normalizer自体はSource固有のBugが見つからなかったため変更していない**
+(`lib/disclosures/providers/edinet.py`・`edinet_normalize.py`・
+`tdnet.py`・`tdnet_normalize.py`はいずれも無変更、`git status`で
+確認済み)。
+
+- **EDINET**: `edinet_normalize.py`は`market_public_at`/`provider_
+  available_at`いずれも常に`None`/`UNKNOWN`のまま構築する(D0046の
+  既存方針、意味論未確認のため)。したがって修正後もEDINET由来の
+  Evidenceは常に`retrieved_at`を使う(旧実装でも結果的に`retrieved_at`
+  だった — `market_public_at`が常に`None`だったため`or`句が`retrieved_
+  at`側に落ちていた。**EDINETについては旧実装でも実害顕在化はしていな
+  かった**、`test_edinet_style_document_uses_retrieved_at_since_
+  provider_available_at_stays_unknown`で回帰確認)。
+- **TDnet**: `tdnet_normalize.py`は`market_public_at`の値自体は
+  `DiscDate`+`DiscTime`から構築する(D0048、`AvailabilityBasis.UNKNOWN`
+  付き)が、`provider_available_at`は常に`None`/`UNKNOWN`のまま。
+  **TDnetについては旧実装で実際にBugが顕在化していた**
+  (`market_public_at`が値を持つため、`available_at`が誤って15:00相当の
+  値になっていた)。既存`test_tdnet_integration.py::test_normalized_
+  document_flows_into_evidence_and_market_information_study_view`が
+  この誤った挙動(`available_at == market_public_at`)をそのまま
+  Assertしていたため、修正済みの正しい挙動(`available_at ==
+  retrieved_at`)へ更新した。
+
+### §5 以前のpit-auditor Finding(D0049)についての確定
+
+D0049 §4-4/§5-2でpit-auditorが「本番Pipeline未接続のため実害は潜在的」
+と評価していたが、これは**部分的に不正確だった**ことが今回判明した:
+`disclosure_document_to_evidence()`自体は本番Backtest Pipelineへは
+確かに未接続だが、**既存Test Suite自身(`test_tdnet_integration.py`)が
+Bugのある挙動をそのままAssertしており、Bugが「発生しうる」のではなく
+「Test上ですでに発生・肯定されていた」**。この区別(未接続だから安全、
+と、Testが誤った挙動を固定してしまっている、は別問題)は当時のFinding
+記録では明示されていなかった。今回、実コードとTestを直接確認したことで
+初めて判明したため、ここに追記する(以前の判断の不正確さもAudit
+Historyとして記録する、というLabの方針に従う)。
+
+### §6 Regression Tests
+
+既存Testで今回の挙動がすでに証明されていたわけではない
+(`test_tdnet_integration.py`は逆に旧Bugのある挙動をAssertしていた、
+§4参照)。したがって次のTestを追加・修正した:
+
+**新規**: `Japanese_Equity_Lab/13_tests/test_disclosures_evidence_pit.py`
+(10件):
+
+- A系統(`provider_available_at`未確認、Root Causeの直接再現):
+  `test_available_at_uses_retrieved_at_not_market_public_at_when_
+  provider_available_at_unknown`(15:00/15:06の数値例そのもの)、
+  `test_available_at_never_falls_back_to_market_public_at_when_
+  market_public_at_is_none`、`test_available_at_always_equals_
+  retrieved_at_when_provider_available_at_unknown`(3ケース
+  Parametrize)。
+- B系統(`provider_available_at`確認済みの優先): `test_available_at_
+  uses_confirmed_provider_available_at_when_basis_is_not_unknown`
+  (`basis=EXACT`なら`provider_available_at`を使う、Fundamentalsには
+  無いCommon Core固有の分岐)、`test_available_at_ignores_provider_
+  available_at_when_basis_is_unknown_even_if_value_present`(値が
+  あってもBasisがUNKNOWNなら信頼しない)。
+- C系統(`is_usable_at()`境界、ユーザー指定の時刻例そのもの):
+  `test_evidence_is_not_usable_at_decision_at_between_market_public_
+  at_and_retrieved_at` — `decision_at=15:03`で`False`、`15:06`で
+  `True`、`14:59`で`False`を直接確認。
+- D系統(EDINET/TDnet別の実際の出力形を模した確認): `test_edinet_
+  style_document_uses_retrieved_at_since_provider_available_at_
+  stays_unknown`、`test_tdnet_style_document_uses_retrieved_at_not_
+  market_public_at_despite_exact_value`。
+
+**修正**: `Japanese_Equity_Lab/13_tests/test_tdnet_integration.py`の
+`test_normalized_document_flows_into_evidence_and_market_information_
+study_view` — 旧Assert(`evidence.source.available_at == document.
+market_public_at`、旧Bugのある挙動をそのまま固定していた)を、修正後
+の正しい挙動(`available_at == document.retrieved_at`かつ`!=
+document.market_public_at`)へ更新。**この修正が意味のある回帰確認で
+あることを、旧実装に対してこのAssertが実際にFailすることを先に確認
+した上で**(修正前Codeに対し新Assertを当てて`AssertionError`を実際に
+観測)、修正後Codeに対して通ることを確認する手順を踏んだ(Tautological
+Testではないことの直接証拠)。
+
+`test_disclosures_integration.py`・`test_edinet_catalog.py`は
+`available_at is not None`等の弱いAssertのみで`market_public_at`との
+関係性に依存していなかったため無変更のまま成功する。
+
+Reviewer Pass(pit-auditor/skeptic-reviewer)は、今回のTaskがD0049の
+pit-auditor Findingを直接コードで確認・確定させる作業であり、ユーザー
+指示(今回のMessage §1-§8)にもReviewer再実施の要求が無かったため実施
+していない(Scope外の追加Reviewer Roundを増やさない、という判断。
+やらなかったことの記録として明示する)。
+
+### §7 最終回帰確認
+
+`pytest`(Lab 548件・既存Screening Tool 37件、いずれもPASS)・
+`ruff check`・`ruff format --check`・`mypy`(Lab: `lib/`全体62 source
+files、Root: `core app.py scripts Japanese_Equity_Lab/lib`82 source
+files)いずれもclean。`git diff --stat -- core/ app.py tests/`は空Diff
+(既存Screening Toolに触れていないことを再確認)。`git status --short`
+で今回変更・新規File一覧が次の3件のみであることを確認済み:
+
+```
+ M Japanese_Equity_Lab/13_tests/test_tdnet_integration.py
+ M Japanese_Equity_Lab/lib/disclosures/evidence.py
+?? Japanese_Equity_Lab/13_tests/test_disclosures_evidence_pit.py
+```
+
+`tdnet.py`・`tdnet_normalize.py`・`edinet.py`・`edinet_normalize.py`
+（Adapter/Normalizer本体）はいずれも含まれておらず、ユーザーの明示的
+Scope制約(EDINET/TDnet Adapter自体は変更しない)を満たしている。
+
+### §8 Completion Status
+
+`CODE_COMPLETE`。D0049 §4-4/§5-2のFollow-up Finding(`lib/disclosures/
+evidence.py`の同型Bug疑い)は`C. ACTUAL_BUG`と確定・修正済み。Phase4B-3
+のStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は変更して
+いない。
+
+### このDecisionでやらないこと
+
+新規Schema Field追加(`provider_available_at`相当のFieldはFundamentals
+側にも今回追加していない、D0049のFollow-up Gapのまま)・新しいEvent
+Engine・Indexer・Replay Architecture・TDnet Adapter/Normalizer再設計・
+EDINET Adapter/Normalizer再設計・`lib/disclosures/providers/`配下の
+いずれのFileへの変更・大規模なCommon Core変更・Phase4A.5.1・
+Phase4B-4(Company IR)には着手していない。

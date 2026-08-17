@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from lib.disclosures.model import DisclosureDocument
-from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType
+from lib.evidence.model import AvailabilityBasis, DataLayer, EvidenceRecord, EvidenceType
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
 
@@ -27,33 +27,53 @@ def disclosure_document_to_evidence(
     `PRIMARY_OFFICIAL`、企業IRは`COMPANY_PRIMARY`が想定されるが、実Source未接続の
     Phase4B-1ではこのModule自身が決め打ちしない、D0045)。
 
-    `source.available_at`には`document.market_public_at`(無ければ
-    `document.retrieved_at`)を使う。これはFundamentals Phase4Aの
-    `disclosure_metric_to_evidence()`と同じ保守的な選択である
-    (`market_public_at`は`provider_available_at`以前であるため、
-    `available_at`を過大評価しない)。
+    **PIT Bugfix(D0050で修正、旧実装の問題点)**: 旧実装は`source.
+    available_at = document.market_public_at or document.retrieved_at`と
+    していた。これは`lib.fundamentals.evidence.disclosure_metric_to_
+    evidence()`が持っていたのと同型のBug(D0049で修正済み)であり、
+    Common Core側では未修正のまま残っていた。`market_public_at`(市場
+    公表時刻、A系統)は通常`provider_available_at`(Provider経由で実際に
+    参照可能になった時刻、B系統)より**早い**。この早い時刻を
+    `EvidenceRecord.is_usable_at()`が直接参照する`available_at`
+    (`self.source.available_at <= decision_at`)へ代入すると、実際には
+    まだ研究所側で取得可能でなかった時点を「利用可能だった」と誤認する
+    (Future Leakage)。旧Docstringの「market_public_atは保守的だから
+    available_atを過大評価しない」という説明は論理が逆だった(D0049の
+    Fundamentals側修正と同じ誤り)。
 
-    **重要な注意(pit-auditor Finding、D0045追記)**: `SourceMetadata`には
-    `availability_basis`相当のFieldが無いため、`document.provider_
-    available_at_basis=UNKNOWN`という情報はこのEvidenceRecordへ変換した
-    時点で失われる。`disclosures_as_of()`はUNKNOWN Basisの文書を既定で
-    除外する安全側設計だが、この`EvidenceRecord`を`lib.evidence.retrieval`
-    の汎用PIT Filter(`filter_usable_at()`、既定でB系統=`available_at`
-    基準)へ直接渡すと、そのSafety Netを経由せず`available_at`(=
-    `market_public_at`)だけで「利用可能」と判定されてしまう。したがって
-    実際のDecision/Backtestで使う場合は、必ず先に`disclosures_as_of()`で
-    PIT Filterした上でEvidenceへ変換すること(この関数の戻り値を汎用
-    Retrieval経路へそのまま流し込まない)。この制約はFundamentals
-    Phase4Aの`disclosure_metric_to_evidence()`にも同様に存在する
-    (このPhaseでは既存コードへの機能変更を行わないため、Docstring上の
-    注意喚起のみ追加している)。
+    `DisclosureDocument`は`market_public_at`/`market_public_at_basis`
+    とは別に`provider_available_at`/`provider_available_at_basis`を
+    Field として持つ(Fundamentalsの`DisclosureEnvelope`には無い
+    Field、`lib.disclosures.model.DisclosureDocument`Docstring参照)。
+    したがって`source.available_at`は次の優先順位で決定する: (1)
+    `provider_available_at`が確認済み(`provider_available_at_basis
+    != AvailabilityBasis.UNKNOWN`)であればそれを使う、(2)確認できな
+    ければ`document.retrieved_at`(Observed Factとしての下限)を使う。
+    **`market_public_at`へは決してFallbackしない**。現在(D0050時点)
+    EDINET/TDnetいずれのNormalizerも`provider_available_at`を確認済み
+    値として設定しないため(常に`UNKNOWN`Basis)、実際には常に(2)の
+    経路が使われるが、将来Providerが`provider_available_at`を確認済み
+    で提供するようになった場合にも、このFieldを自動的に活用できる設計
+    にしている(`market_public_at`FallbackをやめるMinimal Changeであり、
+    新規Schema Field追加は行っていない)。
+
+    **重要な注意(pit-auditor Finding、D0045追記。D0050で解消済み)**:
+    `SourceMetadata`には`availability_basis`相当のFieldが無いため、
+    上記の優先順位判定はこの関数内で行い、結果のみを`SourceMetadata.
+    available_at`へ渡す。これにより、この関数の戻り値をそのまま
+    `lib.evidence.retrieval`の汎用PIT Filter(`filter_usable_at()`)へ
+    渡しても、`market_public_at`起因のFuture Leakageは発生しない
+    (`disclosures_as_of()`による事前Filterへの依存が無くなった)。
     """
+    if document.provider_available_at is not None and document.provider_available_at_basis != AvailabilityBasis.UNKNOWN:
+        available_at: datetime = document.provider_available_at
+    else:
+        available_at = document.retrieved_at
     entity_label = document.entity_id or document.internal_document_id
     content = (
         f"{entity_label}: 「{document.title}」({document.document_kind.value})を公開"
         f"(source_document_id={document.source_document_id})"
     )
-    available_at: datetime = document.market_public_at or document.retrieved_at
     source = SourceMetadata(
         source_id=document.internal_document_id,
         source_type="DISCLOSURE_DOCUMENT",

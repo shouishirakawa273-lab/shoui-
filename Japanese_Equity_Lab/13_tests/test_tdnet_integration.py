@@ -132,6 +132,13 @@ def test_normalized_document_flows_into_evidence_and_market_information_study_vi
     でもないため)。したがってA系統でも既定では`disclosures_as_of()`の
     安全側除外が効き、明示的な`include_unknown_availability=True`なしには
     見えないことを確認する。
+
+    `disclosure_document_to_evidence()`の`source.available_at`は
+    `document.provider_available_at`が確認済み(Basis != UNKNOWN)の
+    場合のみそれを使い、確認できなければ`document.retrieved_at`を使う
+    (D0050で修正、`market_public_at`へは決してFallbackしない)。TDnetの
+    `provider_available_at`は常に`UNKNOWN`のため、ここでは常に
+    `retrieved_at`が使われることを確認する。
     """
     from datetime import UTC, datetime
 
@@ -141,7 +148,8 @@ def test_normalized_document_flows_into_evidence_and_market_information_study_vi
     document, _meta = parsed[0]
 
     evidence = disclosure_document_to_evidence(document, source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL)
-    assert evidence.source.available_at == document.market_public_at
+    assert evidence.source.available_at == document.retrieved_at
+    assert evidence.source.available_at != document.market_public_at
 
     decision_at = datetime(2026, 8, 17, 16, 0, tzinfo=UTC)
 
