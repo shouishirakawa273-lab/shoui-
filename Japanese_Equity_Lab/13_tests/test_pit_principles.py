@@ -257,9 +257,20 @@ def test_pit_p05_future_evidence_not_usable_before_its_available_at(name: str, b
     Principleを検証しているが、このTestは実際のFundamentals/Disclosures
     構築経路(`disclosure_metric_to_evidence`/`disclosure_document_to_
     evidence`)を通した場合にも同じ保証が成り立つことを確認する(合成
-    Recordだけでなく実Pipeline経由でも同じ、という点で重複ではない)。"""
+    Recordだけでなく実Pipeline経由でも同じ、という点で重複ではない)。
+
+    **[2026-08-17訂正、pit-auditor Review]** `market_public_at=None`のみで
+    確認すると、旧Bug(`market_public_at or retrieved_at`)でも
+    `None or retrieved_at == retrieved_at`となり、修正前後で結果が同じに
+    なってしまい、このTest単体ではD0049/D0050型Bugの再発を検知できない
+    (PIT-P01/P02が別途Non-Noneで検知するため実害は無いが、このTest自身は
+    非Diagnosticだった)。`market_public_at`を明示的に(過去の)Non-None値
+    へ変更し、このTest単体でもFallback Bugを検知できるようにした。"""
     far_future_retrieved_at = datetime(2030, 1, 1, tzinfo=UTC)
-    evidence = builder(market_public_at=None, retrieved_at=far_future_retrieved_at)  # type: ignore[operator]
+    # market_public_atをretrieved_atより過去の実値にする: 旧Bugが再発した
+    # 場合、available_atがmarket_public_at(過去)になり、以下のAssertが
+    # Failするようになる(このTest単体でのDiagnosticityを確保)。
+    evidence = builder(market_public_at=RETRIEVED_AT, retrieved_at=far_future_retrieved_at)  # type: ignore[operator]
 
     assert evidence.is_usable_at(RETRIEVED_AT) is False, name  # 現在時点ではまだ利用不可
     assert evidence.is_usable_at(far_future_retrieved_at) is True, name  # その時点以降は利用可能
@@ -434,13 +445,21 @@ def test_defense_in_depth_provider_normalizer_files_never_construct_document_rel
 def test_defense_in_depth_availability_basis_fields_default_to_unknown_not_exact() -> None:
     """Schema内の`*_basis: AvailabilityBasis`型Fieldの既定値が、全て
     `AvailabilityBasis.UNKNOWN`であって`EXACT`ではないことを構造確認する
-    (将来Field追加時に既定を安全側以外へ設定してしまう回帰を防ぐ)。"""
+    (将来Field追加時に既定を安全側以外へ設定してしまう回帰を防ぐ)。
+
+    **[2026-08-17訂正、pit-auditor Review]** 当初`SourceVersion`/
+    `DisclosureDocument`の2クラスのみを確認しており、docstringの「全て」
+    という主張と実装が一致していなかった。`lib.fundamentals.model.
+    DisclosureEnvelope.market_public_at_basis`(`lib/fundamentals/
+    model.py:106`)も同じ型のFieldを持つため対象へ追加した(`grep -rn
+    "_basis:\\s*AvailabilityBasis" lib/`で全3箇所を再確認済み)。"""
     import dataclasses
 
     from lib.disclosures.model import DisclosureDocument as _DD
     from lib.evidence.model import SourceVersion as _SV
+    from lib.fundamentals.model import DisclosureEnvelope as _DE
 
-    for cls in (_SV, _DD):
+    for cls in (_SV, _DD, _DE):
         for f in dataclasses.fields(cls):
             if f.name.endswith("_basis") and f.type in ("AvailabilityBasis", AvailabilityBasis):
                 assert f.default == AvailabilityBasis.UNKNOWN, f"{cls.__name__}.{f.name} の既定値がUNKNOWNではありません"

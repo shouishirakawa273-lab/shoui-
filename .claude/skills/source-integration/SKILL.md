@@ -187,6 +187,22 @@ entity_registry.EntityRegistry`)。将来のForward Snapshot観測(継続的な
   Decisionへ混入させない)。
 - **回帰Test**: `13_tests/test_pit_principles.py::test_pit_p07_*`。
 
+### SOURCE-004: Originating SourceとDelivery Providerは分離して記録する
+
+情報の原典(`originating_source`)と、それをこのLabへ届けたProvider
+(`delivery_provider`)は別概念であり分離する(D0042)。同じ原典を複数
+Provider経由で取得した場合の比較や、Provider障害・遅延・変換による差異の
+追跡に使う。
+
+- **実際のIncident**: EDINET由来の情報をJ-Quants経由で取得した場合と
+  直接EDINET APIから取得した場合を区別する必要が生じた(D0042、複数
+  Source統合時に繰り返し重要になった原則)。
+- **実装**: `SourceMetadata.originating_source`/`delivery_provider`
+  (`lib/sources/catalog.py`)。
+- **[2026-08-17追加、Golden Prompt Parity Audit(4A.5.1-5)で判明した
+  Gap]**: v1初版のRule ID一覧に本来含めるべきだったが未採番だった。
+  `GOLDEN_PROMPT_PARITY.md`参照。
+
 ## Source-specific Rulesとの境界
 
 上記はSource非依存のCommon Core Ruleである。各Providerの`*_normalize.py`
