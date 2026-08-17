@@ -116,23 +116,33 @@ def build_edinet_dataset_descriptor() -> DatasetDescriptor:
 
 def build_tdnet_dataset_descriptor() -> DatasetDescriptor:
     """TDnet(東証適時開示情報伝達システム)、J-Quants API V2 TDnet/適時開示情報
-    アドオン経由のCatalog登録情報(Phase4B-3、D0047)。
+    アドオン経由のCatalog登録情報(Phase4B-3、D0047/D0048)。
 
-    `implementation_status=NOT_IMPLEMENTED`: `data-source-researcher`による
-    Source Onboarding調査(`TDNET_SOURCE_ONBOARDING.md`)は、EDINET初回調査
-    (Phase4B-2)よりもさらに深刻なBlockに直面した — 本セッションから
-    `jpx-jquants.com`・`jpx.gitbook.io`いずれへも接続できず(`curl`で
-    独立に確認済み)、得られた情報はすべて`WebSearch`合成Snippetのみに
-    基づく`SEARCH-SNIPPET-DERIVED (UNVERIFIED)`であり、タスク上最重要の
-    2項目(訂正/削除/`DiscStatus`/`RevNo`意味論、`DiscDate`/`DiscTime`の
-    PIT意味論)いずれも裏付けとなるSourceがゼロだった。加えて、検索結果が
-    「J-Quants API」(個人向け、対象)と「J-Quants Pro」(法人向け、無関係な
-    別契約)という2つの異なる製品を混同していた可能性があり、Endpoint名
-    自体の製品帰属すら確認できていない。この複合的な不確実性を踏まえ、
-    `data-source-researcher`自身の明示的な推奨に従い、このPhaseでは
-    `lib/disclosures/providers/tdnet.py`(Adapter/Normalizer)を一切実装
-    しない — Raw Fetch用のコードさえ、Endpoint/Field名の製品帰属が未確認の
-    まま書くべきではないと判断した(EDINET初回Roundより一段保守的な判断)。
+    **経緯**: `data-source-researcher`によるSource Onboarding調査
+    (`TDNET_SOURCE_ONBOARDING.md`)は、EDINET初回調査(Phase4B-2)よりも
+    さらに深刻なBlockに直面した — 本セッションから`jpx-jquants.com`・
+    `jpx.gitbook.io`いずれへも接続できず(`curl`で独立に確認済み)、
+    タスク上最重要の2項目(訂正/削除/`DiscStatus`/`RevNo`意味論、
+    `DiscDate`/`DiscTime`のPIT意味論)いずれも裏付けとなるSourceがゼロ
+    だったため、D0047時点では`lib/disclosures/providers/tdnet.py`
+    (Adapter/Normalizer)を一切実装しなかった。
+
+    **その後(D0048)**: ユーザーが別のWeb-access環境から2026-08-17時点の
+    公式ページを直接確認したと申告し(Provenance Tag`EXTERNAL_OFFICIAL_
+    SPEC_VERIFICATION`、`TDNET_SOURCE_ONBOARDING.md`の同名セクション
+    参照)、その内容を根拠に`lib.disclosures.providers.tdnet.
+    TdnetAdapter`(Raw Fetch)・`lib.disclosures.providers.tdnet_normalize`
+    (Normalize、`DisclosureDocument`への変換を含む)を実装した。
+
+    `implementation_status=NOT_IMPLEMENTED`のまま維持する理由: この申告は
+    Claude自身がこのSession内で一次資料をFetchして確認したものではなく、
+    真の意味でのLocal Real Data Validation(実際にAdd-on契約済みのAPI Keyで
+    `/v2/td/list`等を呼び出し、Response実物を観測すること)でもない
+    (`EdinetAdapter`がEDINET初回Roundで辿った「まずコードを書き、後日
+    ユーザーのローカル環境から実際に呼び出して`CONNECTED`へ昇格させる」
+    という手順の、まだ前半段階に相当する)。`TDNET_LOCAL_VALIDATION_
+    GUIDE.md`のValidationが完了するまで`NOT_IMPLEMENTED`/`pit_available
+    =False`のままとする。
 
     `originating_source="TDnet"`・`delivery_provider="J-Quants"`(D0042の
     Origin/Delivery分離を踏襲、上場会社[発行体]・TDnet[開示制度/Venue]・
@@ -144,35 +154,47 @@ def build_tdnet_dataset_descriptor() -> DatasetDescriptor:
         capability=DataCapability.DISCLOSURE,
         authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
         implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
-        update_frequency="UNKNOWN(公式資料未確認)",
+        update_frequency="UNKNOWN(EXTERNAL_OFFICIAL_SPEC_VERIFICATIONでも更新頻度自体は申告されていない)",
         pit_available=False,
         applicable_codes=None,
         applicable_countries=("JP",),
         cost_or_plan_dependency=(
-            "UNKNOWN(SEARCH-SNIPPET-DERIVED (UNVERIFIED): J-Quants Lightプラン"
-            "以上へのアドオン、月額11,000円[税込]という情報があるが一次資料未確認。"
-            "Current Userがこのアドオンを契約済みとは仮定しない)"
+            "月額11,000円(税込)、Lightプラン以上へのAdd-on(EXTERNAL_OFFICIAL_"
+            "SPEC_VERIFICATION、ユーザー申告)。Current Userがこのアドオンを"
+            "契約済みとは仮定しない(この申告自体もClaude自身が一次資料を"
+            "Fetchして確認したものではない)。"
         ),
         known_limitations=(
-            "公式J-Quants/JPX資料(jpx-jquants.com・jpx.gitbook.io)への接続が"
-            "本セッションから一貫してブロックされており(EGRESS_BLOCKED、独立に"
-            "curlでも確認)、data-source-researcherの調査もWebSearch合成Snippet"
-            "のみに基づく未確認結果に留まった。特に: (1) 訂正/削除/DiscStatus/"
-            "RevNoの実際の挙動(タスク上最重要項目)は裏付けゼロ。(2) DiscDate/"
-            "DiscTimeがmarket_public_atとして使えるかのPIT意味論も裏付けゼロ。"
-            "(3) 検索結果が「J-Quants API」(個人向け)と「J-Quants Pro」(法人向け、"
-            "無関係な別契約)を混同していた可能性があり、/v2/td/list等のEndpoint名"
-            "自体がどちらの製品に属するか未確認。(4) DiscItems公式Code List・"
-            "Docsのg/s/x短縮Code・Cursor/pagination_key意味論・15分URL失効・"
-            "Rate Limit(アドオン固有100/分の主張)・Add-on未契約時のError挙動、"
-            "いずれも未確認。詳細はTDNET_SOURCE_ONBOARDING.md・DECISIONS.md "
-            "D0047参照。これらが確認され、DisclosureDocumentへの正規化"
-            "(field mapping)が実装されるまで、pit_available=Falseを維持する。"
+            "D0047時点: 公式J-Quants/JPX資料への接続が本セッションから一貫して"
+            "ブロックされていた(EGRESS_BLOCKED)。D0048でユーザーが別のWeb-"
+            "access環境からの直接確認を申告し(EXTERNAL_OFFICIAL_SPEC_"
+            "VERIFICATION)、DiscStatus/RevNoのSchema宣言意味論と現在の実装"
+            "挙動(常にnull/常に1)の区別、DiscDate/DiscTimeのmarket_public_at"
+            "Mapping、Cursor/pagination_key相互排他性、/v2/td/files・/v2/td/"
+            "bulkのURL15分失効等を実装へ反映した。ただし: (1) この申告は"
+            "Claude自身が一次資料を直接Fetchして確認したものではなく、真の"
+            "Local Real Data Validation(実際のAdd-on契約済みAPI Keyでの"
+            "呼び出し)でもない。(2) BASE_URL(api.jquants.com/v2の共有)・"
+            "Response Envelope形状({'data': [...]}形式)はMain Claudeによる"
+            "推論であり、ユーザー申告そのものではない。(3) DiscItems公式Code"
+            "Listの内容・Docsのg/s/x短縮Code以外の詳細意味論は依然未確認。"
+            "(4) provider_available_atはmarket_public_atが確認できても常に"
+            "UNKNOWN(実観測ログが無い限りFallbackしない)。(5) Add-on未契約時"
+            "のError挙動・EDINET同様のHTTP-200-masks-error patternの有無は"
+            "未確認。詳細はTDNET_SOURCE_ONBOARDING.md・DECISIONS.md D0047/"
+            "D0048参照。これらが実際のAdd-on呼び出しで確認されるまで、"
+            "implementation_status=NOT_IMPLEMENTED・pit_available=Falseを"
+            "維持する。"
         ),
         notes=(
-            "コード未実装(Phase4B-3、D0047)。Retrieval Cursor Provenanceの"
-            "State Model骨格のみ用意(lib.disclosures.providers.tdnet_cursor、"
-            "DisclosureDocumentとは分離、Adapter接続前の純粋なArchitecture)。"
+            "Raw Fetch: lib.disclosures.providers.tdnet.TdnetAdapter。"
+            "Normalize: lib.disclosures.providers.tdnet_normalize"
+            "(TDnet固有FieldはTdnetDocumentMetadataへ保持、Provider-neutral"
+            "なCommon Core DisclosureDocumentへは持ち込まない)。"
+            "Retrieval Cursor Provenanceの State Model骨格は"
+            "lib.disclosures.providers.tdnet_cursor(DisclosureDocumentとは"
+            "分離)。いずれもEXTERNAL_OFFICIAL_SPEC_VERIFICATION(D0048)に"
+            "基づく実装であり、真のLocal Real Data Validationは未完了。"
             "originating_source='TDnet'、delivery_provider='J-Quants'。"
         ),
     )

@@ -5,6 +5,179 @@ Main Claudeによる直接の追記なし(subagentの調査結果をそのまま
 Read-only調査。Connector/Adapterコードは一切書いていない。APIキーの要求・
 取り扱いも行っていない。
 
+**下記§0〜Bottom lineは、本セッション(Blocked状態)で作成された当初の
+調査結果であり、そのまま履歴として保持する。その後、別のRoundで
+`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`(下記新設セクション参照)が追加され、
+実装のGround Truthとして使用されているのはそちらである。** 以下の
+`§0`〜`Bottom line`部分の「未確認」という記述は、あくまで**このセッション
+自身が到達できなかった**ことを表しており、後述のExternal Verificationに
+よって多くの項目が別の経路で確認されたことと矛盾しない(両者は別物として
+併記する)。
+
+---
+
+## EXTERNAL_OFFICIAL_SPEC_VERIFICATION(2026-08-17、別Round追記)
+
+**Provenance(重要、必ず最初に読むこと)**: 以下の内容は、本セッション
+(Claude Code、このRepository/Session自身)が`jpx-jquants.com`・
+`jpx.gitbook.io`・`www.jpx.co.jp`へ直接接続して確認したものでは**ない**。
+ユーザーが、別のWeb-access環境(本セッションとは異なる、Egress制限の無い
+環境)から2026-08-17時点のJ-Quants/JPX公式ページを直接確認したとして、
+その結果をこのSessionへ報告した内容をそのまま記録したものである。
+
+- Provenance Tag: `USER_SUPPLIED_OFFICIAL_VERIFICATION` /
+  `EXTERNAL_OFFICIAL_SPEC_VERIFICATION`(ユーザー指示により、この2つの
+  タグを同義として扱う)。
+- **`data-source-researcher`(`WebSearch`/`WebFetch`)がこのSession内で
+  独自に到達・確認したものではない。** 上記§0の`SEARCH-SNIPPET-DERIVED
+  (UNVERIFIED)`という確度クラスとは異なる、別の確度クラスとして扱う:
+  「ユーザーが実際に一次資料ページを閲覧して確認したと申告した内容」
+  であり、「Claude自身が一次資料を直接Fetchして確認した」(EDINETの
+  `EdinetAdapter`がユーザーのローカル環境からの実際の疎通で確認したのと
+  同種の確度)とも異なる。この報告内容自体をClaude/このSessionが独立に
+  検証する手段は無い(本セッションからは引き続き該当Hostへ接続できない)。
+- checked_at: 2026-08-17(ユーザー申告)。
+
+### 確認済み(ユーザー申告)Source URL一覧
+
+- J-Quants API Reference:
+  - `https://jpx-jquants.com/en/spec/td-list`
+  - `https://jpx-jquants.com/en/spec/td-files`
+  - `https://jpx-jquants.com/en/spec/td-bulk`
+  - `https://jpx-jquants.com/en/spec/rate-limits`
+- JPX TDnet overview: `https://www.jpx.co.jp/equities/listing/disclosure/tdnet/index.html`
+- JPX 2026-05-18 J-Quants TDnet Add-on release:
+  `https://www.jpx.co.jp/corporate/news/news-releases/6020/20260518-01.html`
+
+### 1. Product Identity
+
+対象は「J-Quants API」(個人向け)の「TDnet/Company Disclosure Timely
+Disclosure Add-on」であり、**J-Quants Proではない**(§0で指摘した製品
+混同リスクが、ユーザー申告によりこの方向で解消された)。
+
+JPX公式発表(ユーザー申告): 2026-05-18提供開始、Light plan以上、月額
+11,000円(税込)、個人投資家向け、過去5年、API、CSV bulk download。
+
+### 2. `GET /v2/td/list`(ユーザー申告)
+
+- 認証: `x-api-key`(既存`JQuantsAdapter`と同一Header、`jquants.py`の
+  既存Auth/Session Patternを再利用できる)。
+- TimelyDisclosure add-on必須。
+- Historical availability: 過去5年。
+- 公式Response Field(ユーザー申告): `DiscNo`/`Code`/`Name`/`DiscDate`/
+  `DiscTime`/`Title`/`DiscStatus`/`RevNo`/`DiscItems`/`Docs`/`cursor`/
+  `pagination_key`。
+- **現在の実装挙動(ユーザー申告、Provider-declared Schemaとは別軸)**:
+  - Title訂正はReturnされるAPI Dataに反映**されない**。
+  - 開示File自体が訂正された場合、新しい`DiscNo`が発行され、**新規
+    Recordとして扱われる**(既存`DiscNo`が更新されるわけではない)。
+  - 削除された開示も返り続ける。
+  - `DiscStatus`は現在常にnull。
+  - `RevNo`は現在常に1。
+- **Provider宣言Schema意味論(ユーザー申告、Current Implementation
+  Behaviorとは別軸、`TDNET_ARCHITECTURE.md` §2の設計をそのまま適用)**:
+  - `DiscStatus`: null=新規、`revision`=訂正、`delete`=削除。
+  - `RevNo`: 1〜99。
+  - **Current Implementation BehaviorとSchema-Declared Semanticsは
+    区別したまま保持し続けること**(ユーザー自身の指示、以下Normalizer
+    実装で厳密に踏襲する)。
+
+### 3. Query Semantics(ユーザー申告)
+
+- `date`または`code`のいずれかが必須。
+- `code`指定: 過去5年。
+- `code` + `from` + `to`: 期間クエリ。
+- 4桁Code: ProviderがTrailing `0`を付与する(既存`lib.data_sources.
+  ticker_codes.normalize_provider_code_to_internal()`の5桁+末尾ゼロ
+  パディング規約[D0036、`Code`の実データ確認]とパターンが一致 — 直接
+  再利用可能、重複した正規化ロジックを新設しない)。Raw Provider Codeを
+  破壊しないこと(既存原則をそのまま踏襲)。
+- `discItems`によるFilterが存在する(具体的なCode List・意味論は未申告
+  — このAdapterでは`discItems`をOpaqueなRaw Query Parameterとしてのみ
+  扱い、値の意味論をこのSessionが解釈・Mapping Tableへ組み込むことは
+  しない)。
+
+### 4. Cursor / Pagination(ユーザー申告)
+
+- `cursor`: 当日Dataに対するReal-time差分取得用のRetrieval State。
+- `pagination_key`: Pagination State(既存`JQuantsAdapter._get_all_
+  pages`と同じ意味論)。
+- **両者は同時指定不可**(`TdnetRetrievalCursorState`の設計[Phase4B-3
+  第1Round]がこの制約を前提に構築されていたこととも整合)。
+- `cursor`を以下のいずれとしても解釈しないこと(ユーザー明示の指示、
+  `TDNET_ARCHITECTURE.md` §4の既存原則をそのまま踏襲):
+  - `market_public_at`
+  - `provider_available_at`
+  - Disclosure Timestamp
+
+### 5. `GET /v2/td/files`(ユーザー申告)
+
+- 認証: `x-api-key`。
+- `discNo`必須。
+- `docs`任意: `g`=Full PDF、`s`=Summary PDF、`x`=XBRL(§0/§10で未確認
+  だった短縮Codeが、この経路で確認された)。
+- Response Field: `discNo`・`files.pdf`・`files.summaryPdf`・
+  `files.xbrl`。
+- 署名付きDownload URLは**15分で失効**(§0/§11で確認できなかった具体的
+  数字が、この経路で確認された)。**したがってEphemeral URLを恒久的な
+  Canonical Locatorとしてはならない**(`TDNET_ARCHITECTURE.md` §5の
+  既存原則をそのまま踏襲、以下の実装でも厳密に遵守する)。
+
+### 6. `GET /v2/td/bulk`(ユーザー申告)
+
+- 認証: `x-api-key`。
+- Response: `lastUpdated`・`url`。
+- CSV: gzip圧縮。
+- Coverage: 過去5年。
+- URL: 15分で失効。
+- CSV Field: `DiscNo`/`Code`/`Name`/`DiscDate`/`DiscTime`/`Title`/
+  `DiscStatus`/`RevNo`/`DiscItems`/`Docs`。
+- CSV差異: `DiscItems`・`Docs`はPipe(`|`)区切り(JSON表現[List経由]とは
+  異なるEncoding)。
+- **`lastUpdated` != Disclosure Time**(このField自体をPIT用Timestampと
+  して扱わないこと、ユーザー明示の指示)。
+
+### 7. TDnet Market Public Time(ユーザー申告、PIT上最重要)
+
+JPX公式TDnet Documentation(ユーザー申告)は、TDnet経由で情報が開示
+された時、同じ会社情報がTDnetの開示Timeに、適時開示情報閲覧サービス上で
+同時に公衆縦覧可能になることを確認しているという。公衆縦覧という措置は、
+その情報がそこへ掲載された時点で完了する。
+
+**したがって、Mapping意味論をこのDocumentへ明示した上で**、
+`DiscDate` + `DiscTime`(Asia/Tokyo)を`market_public_at`として
+Market Information Study(A系統)に使用できる(下記`tdnet_normalize.py`
+で`AvailabilityBasis.EXACT`として実装)。
+
+**ただし**: `market_public_at` != J-Quants `provider_available_at`。
+過去のJ-Quants Provider Availability(このLabが当時実際にJ-Quants経由で
+取得可能だった時刻)は、実際に観測されない限り`UNKNOWN`のままとする —
+Fallbackは行わない(`TDNET_ARCHITECTURE.md` §3「Historical Market Time
+vs Historical Provider Time」の既存原則をそのまま踏襲)。
+
+### 8. Rate Limit(ユーザー申告)
+
+TDnet/Company Disclosure Add-on APIは100リクエスト/分(通常Plan Rate
+Limitとは独立)。429はBack offする。
+
+### 9. Provenance再確認(重要、繰り返し明記する)
+
+上記1〜8は、いずれも本Repository/Sessionが自ら`jpx-jquants.com`等へ
+接続して確認したものではない。`TDNET_SOURCE_ONBOARDING.md`の§0〜Bottom
+lineに記録されたBlocked状態(egress遮断)は、本セッション自身に関する
+限り現在も有効なままである。実装コード(`lib/disclosures/providers/
+tdnet.py`・`tdnet_normalize.py`)は、このセクション(ユーザー申告の
+External Official Verification)を根拠に構築するが、Field名・Endpoint
+名・挙動の記述箇所にはすべて`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`
+(または同義の`USER_SUPPLIED_OFFICIAL_VERIFICATION`)という出典Tagを
+明示し、Claude自身がFetchして確認した(EDINETの`EdinetAdapter`のように
+ユーザーのローカル環境からの実際のHTTP疎通で確認された)ものとは区別
+して記録する。**真の意味でのLocal Real Data Validation(実際にAdd-on
+契約済みのAPI Keyで`/v2/td/list`等を呼び出し、Response実物を観測する
+こと)はまだ行われていない** — それが行われるまで、Phase4B-3全体の
+Completion Statusは`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`の
+ままとする。
+
 ---
 
 ## 0. Environment / Access Finding(まず読むこと)
@@ -375,22 +548,30 @@ FieldもまだTDnetの仮定Field Mappingから値を埋めるべきではない
 - `AttachmentKind`/`AttachmentAvailability` → §10の未解決な`Docs` Code
   Mappingによりブロックされている。
 
-## Bottom line
+## Bottom line(当初調査時点、履歴として保持)
 
-この報告書をTDnet Adapter/Normalizer実装の根拠として使用すべきではない。
-実質的なClaimはすべて、ブロックされたHostからの`WebSearch`合成Snippetに
-遡り、その一部は自分のQueryの言い回しのEchoである可能性があり、タスクの
-最優先項目(訂正/削除/`DiscStatus`/`RevNo`意味論)と第2優先項目
+この報告書(§0〜ここまで)を**単独で**TDnet Adapter/Normalizer実装の
+根拠として使用すべきではない、という当初の結論はそのまま履歴として
+残す。実質的なClaimはすべて、ブロックされたHostからの`WebSearch`合成
+Snippetに遡り、その一部は自分のQueryの言い回しのEchoである可能性があり、
+タスクの最優先項目(訂正/削除/`DiscStatus`/`RevNo`意味論)と第2優先項目
 (`DiscDate`/`DiscTime`のPIT上の意味)のいずれも、**ゼロ**件の裏付け
-Sourceしか得られなかった。推奨される次のステップはEDINETの前例と
-全く同じ: `jpx-jquants.com`/`jpx.gitbook.io`へ直接到達できる環境から
-Local Validationを行い、実際のSpec Pageを読み、訂正/削除Claimを信頼する
-前に — `EDINET_LOCAL_VALIDATION_GUIDE.md`がD0046を生んだLocal Real Data
-Validationを主導したのと同じように — 実際に訂正または取下げられたTDnet
-開示を実際のAPI経由で観測すること。それまでは、`DATA_SOURCE_
-ARCHITECTURE.md`のTDnet行は`implementation_status = NOT_IMPLEMENTED`の
-ままとし、Phase4B-3は`lib/disclosures/providers/tdnet.py`の実装へは
-進まない。
+Sourceしか得られなかった。
+
+**その後(別Round、2026-08-17)**、上記「EXTERNAL_OFFICIAL_SPEC_
+VERIFICATION」セクションが追加され、ユーザーが別のWeb-access環境から
+これらの項目(最優先2項目を含む)を確認したと申告した。この申告内容を
+根拠に、Phase4B-3は`lib/disclosures/providers/tdnet.py`(Adapter)・
+`tdnet_normalize.py`(Normalizer)の実装を再開した(D0048参照)。ただし、
+この申告はClaude自身による一次資料の直接確認ではなく(本セッション自身は
+依然`jpx-jquants.com`等へ接続できない、Provenance Tag`EXTERNAL_
+OFFICIAL_SPEC_VERIFICATION`参照)、真の意味でのLocal Real Data
+Validation(実際にAdd-on契約済みのAPI Keyで`/v2/td/list`等を呼び出し、
+Response実物を観測すること)でもない。したがってPhase4B-3全体の
+Completion Statusは、実装が完了した後も`CODE_COMPLETE_AWAITING_ADDON_
+LOCAL_VALIDATION`のまま維持する。`TDNET_LOCAL_VALIDATION_GUIDE.md`に
+記載の手順(ユーザーのローカル環境からの実際のAdd-on呼び出し)が完了
+するまで、`COMPLETE`へは昇格しない。
 
 **このAgentがコンテキストとして読んだ既存リポジトリファイル(編集なし):**
 - `/home/user/shoui-/Japanese_Equity_Lab/DATA_SOURCE_ARCHITECTURE.md`

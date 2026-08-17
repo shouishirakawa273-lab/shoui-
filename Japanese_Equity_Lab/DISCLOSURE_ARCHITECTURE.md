@@ -325,17 +325,26 @@ D0046)、2層への収束が発行体識別の解決を意味するわけでは�
 将来、別のSourceでも同様の3層分離が必要になった時点で、この一般化の
 妥当性を再確認すること。
 
-## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記)
+## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記・D0048で更新)
 
-- Provider-neutralなFixture Schemaのみで検証済み。実TDnet/Company IRの
+- Provider-neutralなFixture Schemaのみで検証済み。Company IRの
   Field名・DocKind値は未確認。EDINETは
   Phase4B-2でLocal Real Data Validation完了(D0046、`DATA_SOURCE_
   ARCHITECTURE.md`のEDINET行参照)、ただし`document_kind`Mapping・
   `entity_id`解決・PIT Field反映はいずれも未実装のまま。TDnetは
-  Phase4B-3のSource Onboarding調査が公式資料アクセスを一切得られず
-  (`TDNET_SOURCE_ONBOARDING.md`)、Adapter/Normalizerコード自体を
-  実装していない(Catalog登録・Cursor Provenance骨格・設計原則文書
-  [`TDNET_ARCHITECTURE.md`]のみ、D0047)。
+  D0047時点ではSource Onboarding調査が公式資料アクセスを一切得られず
+  Adapter/Normalizerコード自体を実装していなかったが、D0048で
+  `EXTERNAL_OFFICIAL_SPEC_VERIFICATION`(ユーザーが別のWeb-access環境
+  から確認したと申告した内容)に基づき`lib.disclosures.providers.
+  tdnet.TdnetAdapter`・`lib.disclosures.providers.tdnet_normalize`を
+  実装した(`market_public_at`は`DiscDate`/`DiscTime`から`EXACT` Basis
+  で構築、`entity_id`は既存Code正規化を再利用、`document_kind`は
+  `DiscItems`公式Code List未確認のため引き続き`UNKNOWN`)。ただしこの
+  申告はClaude自身の一次資料直接確認でも真のLocal Real Data Validation
+  でもないため、Source Catalog上は`implementation_status=NOT_
+  IMPLEMENTED`のまま維持する(`TDNET_SOURCE_ONBOARDING.md`
+  「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」・`DECISIONS.md` D0047/D0048
+  参照)。
 - `DisclosureDocument.internal_document_id`の生成方式(`f"DOC_{internal_
   code}_{index}"`、Raw行のIndex依存)は、`lib.fundamentals.normalize`の
   `envelope_id`生成(`f"ENV_{internal_code}_{disc_no or index}"`)と同様、

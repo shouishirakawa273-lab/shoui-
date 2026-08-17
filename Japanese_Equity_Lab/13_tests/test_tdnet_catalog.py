@@ -1,13 +1,19 @@
-"""Phase4B-3(D0047): TDnetのSource Catalog登録(`build_tdnet_dataset_descriptor`)のテスト。
+"""Phase4B-3(D0047/D0048): TDnetのSource Catalog登録(`build_tdnet_dataset_descriptor`)のテスト。
 
-このPhaseではAdapter/Normalizerを一切実装していない(TDNET_SOURCE_
-ONBOARDING.md参照、公式資料への接続がブロックされ、タスク上最重要の
-訂正/削除/PIT意味論いずれも裏付けが得られなかったため)。Testは
-Catalog登録の正しさ(NOT_IMPLEMENTED・pit_available=False)と、既存
-Dataset(EDINET/Disclosure Common Core)との共存のみを対象とする。
+D0047時点ではAdapter/Normalizerを一切実装していなかったが、D0048で
+`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`(ユーザーが別のWeb-access環境から
+確認したと申告した内容)を根拠に`lib.disclosures.providers.tdnet.
+TdnetAdapter`・`lib.disclosures.providers.tdnet_normalize`を実装した。
+ただしこれはClaude自身がこのSession内で一次資料をFetchして確認したもの
+ではなく、真のLocal Real Data Validationでもないため、`implementation_
+status`は引き続き`NOT_IMPLEMENTED`・`pit_available=False`のまま維持する
+(EDINETが辿った「まずコードを書き、後日ローカル環境の実呼び出しで
+`CONNECTED`へ昇格させる」という手順の前半段階に相当)。
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from lib.disclosures.catalog import (
     build_disclosure_common_core_dataset_descriptor,
@@ -59,21 +65,35 @@ def test_tdnet_known_limitations_records_the_two_most_important_unconfirmed_item
     assert "D0047" in descriptor.known_limitations
 
 
-def test_tdnet_notes_do_not_claim_any_adapter_code_exists() -> None:
-    """このPhaseで`lib/disclosures/providers/tdnet.py`(Adapter/Normalizer)を
-    実装していないことをNotesが正確に反映していることを確認する
-    (実装が水増しされていないことの回帰確認)。
-
-    Notes文字列中の「未実装」という部分文字列の存在確認だけでは、Notesの
-    他の箇所が誤って実装済みであるかのように書き換えられてもTestが検知
-    できない(Tautologyに近いというskeptic-reviewer Finding)。実際に
-    `lib/disclosures/providers/tdnet.py`がFilesystem上に存在しないことを
-    直接確認することで、Notesの文言ではなく実態そのものを検証する。
-    """
-    from pathlib import Path
-
+def test_tdnet_known_limitations_records_external_verification_provenance_caveat() -> None:
+    """D0048で追加された内容: 実装がEXTERNAL_OFFICIAL_SPEC_VERIFICATION
+    (ユーザー申告)に基づくものであり、Claude自身の直接確認でも真のLocal
+    Real Data Validationでもないことが明示されていることを確認する。"""
     descriptor = build_tdnet_dataset_descriptor()
-    assert "未実装" in descriptor.notes
+    assert "EXTERNAL_OFFICIAL_SPEC_VERIFICATION" in descriptor.known_limitations
+    assert "D0048" in descriptor.known_limitations
+
+
+def test_tdnet_notes_reference_adapter_and_normalizer_modules_that_actually_exist() -> None:
+    """D0048でAdapter/Normalizerを実装した後は、Notesがその実在するModuleを
+    正確に指していることを実態(Filesystem)と突き合わせて確認する
+    (EDINET D0046の「実装が水増しされていないか」というskeptic-reviewer
+    Findingの精神を、逆方向[過小申告になっていないか]でも適用する)。"""
+    descriptor = build_tdnet_dataset_descriptor()
+    assert "TdnetAdapter" in descriptor.notes
+    assert "tdnet_normalize" in descriptor.notes
 
     providers_dir = Path(__file__).resolve().parent.parent / "lib" / "disclosures" / "providers"
-    assert not (providers_dir / "tdnet.py").exists()
+    assert (providers_dir / "tdnet.py").exists()
+    assert (providers_dir / "tdnet_normalize.py").exists()
+
+
+def test_tdnet_notes_do_not_claim_real_local_validation_completed() -> None:
+    """Adapter/Normalizerコードが存在するようになった後も、これがEXTERNAL_
+    OFFICIAL_SPEC_VERIFICATIONに基づく実装であり、真のLocal Real Data
+    Validation(実際のAdd-on契約済みAPI Keyでの呼び出し)ではないことを
+    Notesが正確に反映していることを確認する(実装済み度の過大申告防止)。
+    """
+    descriptor = build_tdnet_dataset_descriptor()
+    assert "EXTERNAL_OFFICIAL_SPEC_VERIFICATION" in descriptor.notes
+    assert descriptor.implementation_status == ImplementationStatus.NOT_IMPLEMENTED

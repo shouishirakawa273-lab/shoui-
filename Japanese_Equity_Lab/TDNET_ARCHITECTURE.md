@@ -1,15 +1,25 @@
-# TDnet Architecture(Phase4B-3、D0047)
+# TDnet Architecture(Phase4B-3、D0047/D0048)
 
-**現状(2026-08-17時点)**: `lib/disclosures/providers/tdnet.py`
-(Adapter/Normalizer)は未実装。本Documentは、`TDNET_SOURCE_ONBOARDING.md`
-のBlocked状態を踏まえ、将来実装する際に守るべき設計原則のみを先に記録する
-(Field名を推測してコード化することはしない)。Cursor Retrieval State骨格
-(`lib.disclosures.providers.tdnet_cursor.TdnetRetrievalCursorState`)のみ
-先行して実装済み(Adapterへは未接続)。
+**現状(2026-08-17時点、D0048追記)**: `lib/disclosures/providers/tdnet.py`
+(Adapter)・`lib/disclosures/providers/tdnet_normalize.py`(Normalizer)は
+実装済み。ただしこれは`TDNET_SOURCE_ONBOARDING.md`「EXTERNAL_OFFICIAL_
+SPEC_VERIFICATION」セクション(ユーザーが別のWeb-access環境から確認したと
+申告した内容、Provenance Tag`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`)を
+根拠とした実装であり、Claude自身がこのSession内で一次資料をFetchして
+確認したものではなく、真の意味でのLocal Real Data Validation(実際に
+Add-on契約済みのAPI Keyで呼び出し、Response実物を観測すること)でもない。
+それが完了するまでSource Catalog上の`implementation_status`は
+`NOT_IMPLEMENTED`のまま、Phase4B-3全体は`CODE_COMPLETE_AWAITING_ADDON_
+LOCAL_VALIDATION`のままとする(D0048)。Cursor Retrieval State骨格
+(`lib.disclosures.providers.tdnet_cursor.TdnetRetrievalCursorState`)は
+D0047時点で先行実装済みだったものをそのまま利用する(Adapterとの接続方法は
+`lib.disclosures.providers.tdnet_normalize.extract_retrieval_cursor_fields`
+経由、`DisclosureDocument`とは引き続き完全に分離)。
 
 `DISCLOSURE_ARCHITECTURE.md`(Phase4B-1のCommon Core原則)・
 `EDINET_SOURCE_ONBOARDING.md`/EDINET関連Decision(Phase4B-2、D0046)の
-教訓をすべて継承する。以下はTDnet固有の追加原則。
+教訓をすべて継承する。以下はTDnet固有の追加原則(D0047策定、D0048で
+実装へ反映済み)。
 
 ---
 
@@ -166,10 +176,16 @@ Interpretation(何が起きたと解釈すべきか)。** Phase4B-1のCore Princ
 
 ## 7. Real Validation Completion基準(将来、Add-on利用可能時)
 
+**現状(D0048)**: `TdnetAdapter`(Raw Fetch)・`tdnet_normalize`
+(Normalize)は実装済みだが、いずれも`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`
+(ユーザー申告)に基づくものであり、以下のいずれもまだ満たしていない。
+
 TDnet Add-onが実際に利用可能であることが確認できた場合、Phase4B-3を
 `COMPLETE`とするには最低限、以下がすべて必要:
 
-1. 実際の`/v2/td/list`呼び出し成功
+1. 実際の`/v2/td/list`呼び出し成功(Claude自身ではなく、ユーザーの
+   ローカル環境から実際のAdd-on契約済みAPI Keyで — `TDNET_LOCAL_
+   VALIDATION_GUIDE.md`参照)
 2. 実際の`/v2/td/files`呼び出し成功
 3. 実際に1件のFile Downloadに成功
 4. Content-Type観測
@@ -185,5 +201,11 @@ TDnet Add-onが実際に利用可能であることが確認できた場合、Ph
 `EdinetDownloadType`でtype=2〜5をSPEC_CLAIM_ONLYとして扱った前例と同じ
 設計判断)。
 
+**BASE_URL(`https://api.jquants.com/v2`共有)・Response Envelope形状
+(`{"data": [...], "cursor": ..., "pagination_key": ...}`)もMain Claudeに
+よる推論であり、Local Real Data Validationで最優先に確認すべき項目に
+含める**(`TDNET_LOCAL_VALIDATION_GUIDE.md`参照、ユーザー申告そのもの
+ではないため)。
+
 Add-onが利用可能と確認できない場合は、`CODE_COMPLETE_AWAITING_ADDON_
-LOCAL_VALIDATION`として正常に停止する(D0047参照)。
+LOCAL_VALIDATION`として正常に停止する(D0047/D0048参照)。

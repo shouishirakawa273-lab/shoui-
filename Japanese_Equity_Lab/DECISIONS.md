@@ -3202,3 +3202,172 @@ Field Mapping・DocumentKind/DiscItems Mapping・Entity Registry統合・
 Forward Collection Scheduler・Company IR(Phase4B-4)・本文の意味解析・
 Event抽出・Buy/Sell判断・Strategy/Backtest変更・Screening Tool変更
 には着手していない。
+
+## D0048 — Phase4B-3再開: EXTERNAL_OFFICIAL_SPEC_VERIFICATIONに基づくTDnet Adapter/Normalizer実装
+
+### §1 経緯: D0047のBlockedを解消したユーザー申告
+
+D0047で記録した通り、Phase4B-3のSource Onboarding調査(`TDNET_SOURCE_
+ONBOARDING.md`)は本セッションから`jpx-jquants.com`・`jpx.gitbook.io`
+いずれへも接続できず、タスク上最重要の2項目(`DiscStatus`/`RevNo`の
+訂正・削除意味論、`DiscDate`/`DiscTime`のPIT意味論)いずれも裏付け
+ゼロのまま、`lib/disclosures/providers/tdnet.py`を実装せずCatalog登録
+(`NOT_IMPLEMENTED`)・Cursor Provenance骨格・設計原則文書のみで停止した。
+
+その後、ユーザーから以下の申告があった: 「本セッションではjpx-jquants.
+comへの接続が403でSource Onboardingを完了できなかったが、別のWeb-access
+環境から2026-08-17時点のJ-Quants/JPX公式ページを直接確認した」として、
+D0047で未確認だった項目の多くについて具体的な内容(Field名・Endpoint
+仕様・現在の実装挙動)が提示された。
+
+**Provenance(最重要)**: ユーザー自身がこの申告を、Claude自身がWebで
+確認した事実として記録せず、明示的に`USER_SUPPLIED_OFFICIAL_
+VERIFICATION`/`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`としてProvenanceを
+明示するよう指示した。この指示は本Lab全体の原則(「未確認のSource仕様を
+推測で埋めない」「実際の外部Field名・意味論を推測・仮定しない」)と
+完全に整合するため、そのまま厳格に適用した:
+
+- 申告内容はすべて`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`
+  (`USER_SUPPLIED_OFFICIAL_VERIFICATION`と同義)としてProvenance Tag
+  付けし、コード(`tdnet.py`/`tdnet_normalize.py`)・Docstring・
+  `TDNET_SOURCE_ONBOARDING.md`・本Decisionのすべてに明記した。
+- **Claude自身がこのSession内で一次資料をFetchして確認したものでは
+  ない**ことを、既存のEDINET/J-Quants Core APIの確度分類(実データで
+  疎通確認済み)とは明確に区別して記録した。
+- **真の意味でのLocal Real Data Validation**(実際にAdd-on契約済みの
+  API Keyで`/v2/td/list`等を呼び出し、Response実物を観測すること)は
+  まだ行われていない。この申告を実装の根拠として採用しても、それだけで
+  Phase4B-3を`COMPLETE`とはしない(下記§7参照)。
+
+### §2 ユーザー申告の内容(要約、詳細は`TDNET_SOURCE_ONBOARDING.md`
+「EXTERNAL_OFFICIAL_SPEC_VERIFICATION」セクション参照)
+
+1. **Product Identity**: 対象は「J-Quants API」(個人向け)の「TDnet/
+   Company Disclosure Timely Disclosure Add-on」であり、J-Quants Pro
+   ではない(D0047で指摘した製品混同リスクがこの方向で解消)。JPX
+   2026-05-18提供開始、Lightプラン以上、月額11,000円(税込)。
+2. **`GET /v2/td/list`**: `x-api-key`認証。Response Field: `DiscNo`/
+   `Code`/`Name`/`DiscDate`/`DiscTime`/`Title`/`DiscStatus`/`RevNo`/
+   `DiscItems`/`Docs`/`cursor`/`pagination_key`。現在の実装挙動として
+   Title訂正が反映されない・削除済み開示も返り続ける・`DiscStatus`は
+   常にnull・`RevNo`は常に1(タスク上最重要項目)。Provider宣言Schema
+   意味論としては`DiscStatus`(null=新規/`revision`=訂正/`delete`=
+   削除)・`RevNo`(1〜99)が別途定義されており、**現在の実装挙動と
+   Schema宣言意味論を混同しないこと**が明示された。開示File自体が
+   訂正された場合は新しい`DiscNo`が発行され独立した新規Recordとして
+   扱われる(既存`DiscNo`が更新されるわけではない)。
+3. **Query Semantics**: `date`または`code`必須。`code`+`from`+`to`で
+   期間クエリ。4桁Codeへの末尾ゼロパディング(既存D0036パターンと一致)。
+4. **Cursor/Pagination**: `cursor`(当日差分)と`pagination_key`
+   (Pagination)は同時指定不可。`cursor`をTimestampとして解釈しない。
+5. **`GET /v2/td/files`**: `discNo`必須、`docs`(`g`/`s`/`x`)任意。
+   Download URLは15分で失効。
+6. **`GET /v2/td/bulk`**: `lastUpdated`/`url`を返す、gzip CSV、過去5年、
+   URL15分失効、`lastUpdated`はDisclosure Timeではない。
+7. **TDnet Market Public Time(PIT上最重要)**: TDnet開示Timeと適時開示
+   情報閲覧サービスでの公衆縦覧可能時刻が同時であることをJPX公式TDnet
+   Documentationが確認しているという申告に基づき、`DiscDate`+
+   `DiscTime`(Asia/Tokyo)を`market_public_at`(`AvailabilityBasis.
+   EXACT`)として使用できるとした。ただし`market_public_at` !=
+   `provider_available_at`であることは明示的に維持され、Fallbackは
+   引き続き禁止。
+8. **Rate Limit**: 100リクエスト/分(通常Plan Rate Limitとは独立)。
+
+### §3 実装スコープ
+
+上記を根拠に、以下を新規実装した:
+
+- `lib.disclosures.providers.tdnet.TdnetAdapter`: `fetch_documents_
+  list_raw()`(`/v2/td/list`、date/code XOR必須・cursor/pagination_key
+  同時指定禁止をコードレベルでfail closed検証)・`fetch_files_raw()`
+  (`/v2/td/files`)・`fetch_bulk_raw()`(`/v2/td/bulk`、Metadata取得の
+  みでFile本体はDownloadしない)。`x-api-key`(`JQUANTS_API_KEY`を再利用)。
+  429時は`Retry-After`Headerを尊重してBack off(最大3回)、それ以外の
+  HTTPエラーはTransport層(`raise_for_status()`)のみに依拠する
+  (EDINETのようなHTTP-200-masks-error Patternの有無はTDnet Add-onに
+  ついて未確認のため、確認されていないError Envelope形状を推測で
+  コード化しない、`TdnetApiError`のDocstring参照)。
+- `lib.disclosures.providers.tdnet_normalize`: `parse_tdnet_documents_
+  list_payload()`(`DisclosureDocument`+`TdnetDocumentMetadata`ペアへ
+  変換)。`TdnetDiscStatus`(Schema宣言値のみをParse、現在の実装挙動
+  [常にnull]をLifecycle判定へ使わない)・`RevNo`(単なるRaw値保持、
+  Revision回数のEvidenceとして解釈しない)・`entity_id`(既存
+  `normalize_provider_code_to_internal`を再利用、失敗時は推測せず
+  `None`へfail closed)・`market_public_at`(`DiscDate`+`DiscTime`から
+  `EXACT` Basis、`lib.fundamentals.normalize._build_market_public_at`
+  と同じ設計)・`provider_available_at`(常に`UNKNOWN`、Fallbackしない)・
+  `document_kind`(`DiscItems`公式Code List未確認のため常に`UNKNOWN`)・
+  `DiscItems`/`Docs`(Opaque Raw値として保持、意味論を一切解釈しない)。
+  `extract_retrieval_cursor_fields()`で`cursor`/`pagination_key`を
+  `DisclosureDocument`とは完全に分離したまま取り出せるようにした
+  (`TdnetRetrievalCursorState`との接続点、D0047の設計をそのまま利用)。
+- **最重要の禁止事項(タスク上明示)**: 新しい`DiscNo`が過去の`DiscNo`を
+  訂正した、という関係性Record(`DocumentRelationship`)を一切自動生成
+  しない。この型名自体を`tdnet.py`/`tdnet_normalize.py`のいずれにも
+  一切記述せず(EDINETの既存Discipline、D0046を踏襲)、構造的Testで
+  非出現を確認する。
+- `lib.disclosures.catalog.build_tdnet_dataset_descriptor()`:
+  `implementation_status=NOT_IMPLEMENTED`のまま維持(下記§7参照)。
+  `cost_or_plan_dependency`・`known_limitations`・`notes`を今回の
+  実装状況を反映して更新。
+- Attachment実体化は行わない(`DisclosureDocument.attachments`は常に
+  `()`)。`/v2/td/files`/`/v2/td/bulk`が返す15分失効のDownload URLが
+  Common Coreの永続的Fieldへ紛れ込む経路が存在しないことを、`docs_raw`
+  (`TdnetDocumentMetadata`側のOpaque Raw値)への隔離と回帰Testで確認
+  した(`TDNET_ARCHITECTURE.md` §5「Ephemeral URL Safety」)。
+
+### §4 BASE_URL・Envelope形状についての推論(Main Claudeによる補完、明示)
+
+ユーザー申告は`GET /v2/td/list`等のPath形式のみで、完全なHost名や
+実際のJSON構造例までは示さなかった。以下2点はMain Claudeによる妥当な
+補完であり、EXTERNAL_OFFICIAL_SPEC_VERIFICATIONの直接申告そのものでは
+ないことを明示する:
+
+1. **BASE_URL**: TDnet Add-onが「J-Quants API」(個人向け、既存
+   `JQuantsAdapter`と同一製品)の機能であることが確認されたため、
+   既存の確認済みHost(`https://api.jquants.com/v2`、D0039)を共有
+   すると推論した。
+2. **Response Envelope形状**: `{"data": [...], "cursor": ...,
+   "pagination_key": ...}`という形状は、既存`JQuantsAdapter._get_all_
+   pages`が前提とする既存製品共通のEnvelope規約からの類推である。
+
+いずれも`TDNET_LOCAL_VALIDATION_GUIDE.md`・`TDNET_ARCHITECTURE.md` §7
+へLocal Real Data Validationで最優先に確認すべき項目として明記した。
+
+### §5 Reviewer Findings(pit-auditor / skeptic-reviewer)
+
+`pit-auditor`・`skeptic-reviewer`(いずれもRead-only)へ、新規実装
+(`tdnet.py`/`tdnet_normalize.py`/対応するTest群/Catalog更新/Docs更新)
+のReviewを依頼した。
+
+[このセクションはReviewer Pass完了後に追記する]
+
+### §6 最終回帰確認
+
+[このセクションは最終回帰確認完了後に追記する]
+
+### §7 Completion Status
+
+`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`(D0047から変更なし)。
+Adapter/Normalizerコードは実装されたが、以下の両方が確認できるまで
+`COMPLETE`へは昇格しない:
+
+1. J-Quants TDnet Add-onへの実際の契約状況(未確認、契約を前提にしない)。
+2. `TDNET_LOCAL_VALIDATION_GUIDE.md`に基づく真のLocal Real Data
+   Validation(ユーザーのローカル環境から実際にAdd-on契約済みのAPI Keyで
+   `/v2/td/list`等を呼び出し、Response実物を観測すること)。BASE_URL・
+   Envelope形状の推論(§4)・`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`
+   申告内容そのものの検証を含む。
+
+`build_tdnet_dataset_descriptor()`の`implementation_status`は
+`NOT_IMPLEMENTED`のまま(`CONNECTED`への昇格はLocal Real Data
+Validation完了後)。
+
+### このDecisionでやらないこと
+
+`DiscItems`公式Code Listの取得・`document_kind`Mapping・`Docs`の
+g/s/x以外の詳細意味論・Attachment実体化(File本体のDownload)・
+Entity Registry本格統合(現状は既存Code正規化の再利用のみ)・Forward
+Collection Scheduler・Company IR(Phase4B-4)・本文の意味解析・Event
+抽出・Revision Direction判定・Buy/Sell判断・Strategy/Backtest変更・
+Screening Tool変更には着手していない。
