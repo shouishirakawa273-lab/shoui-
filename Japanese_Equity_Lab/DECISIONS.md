@@ -4070,3 +4070,121 @@ PLAN.md`本文と本追記のみ)。訂正の結果、次Round最優先Stepと�
 `4A.5.1-0`(既存Hookのpytest行へLab `13_tests/`を追加する1行修正)を
 新たにOpen Question付きで追加した(「Hook作成」への該当性は次Round
 開始時にUser確認)。
+
+## D0052 — Phase4A.5.1: Research Engineering Hardening 実装(D0051設計の実装)
+
+D0051(設計固定)を基礎に、ユーザーがExternal Copilot Red Teamの
+Findingを評価した最終判断(§1不採用5件・§2採用5件)を適用して実装した。
+**コード実装・Test追加・Hook追加を含む(D0051は設計のみ、このRoundが
+初めてコードを変更した)。**
+
+### 不採用としたExternal Reviewer Finding(ユーザー指示§1、そのまま適用)
+
+`retrieval_mode`/`retrieval_provenance`新Schema、Event Extractor/
+Indexer Runtime Assertion、`EvidenceCandidate` Provisional Lifecycle、
+Per-source Provider Timestamp Mapping新設、`is_usable_at`のEquality
+Tie-breaker追加 — いずれも「現在のRepositoryに存在しないComponentを
+新設してReviewer Findingを満たす」ことに該当するため実装しなかった
+(CURRENT REPOSITORY REALITY > EXTERNAL REVIEWER CLAIMの原則)。
+
+### 実装した Component(4A.5.1-0〜9、各Step 1 Commit)
+
+- **4A.5.1-0**: `.claude/hooks/post_edit_quality_gate.sh`のpytest行が
+  Root `tests/`のみを実行し`Japanese_Equity_Lab/13_tests/`を一度も
+  実行していなかったCoverage Bugを1行修正(`bash 473e7f1`)。Existing
+  Guardrail Coverage Bugfixとして扱い、Hook Architecture自体は
+  再設計していない。
+- **4A.5.1-1**: `13_tests/test_pit_principles.py`(新規、16件)。
+  PIT-P01〜P07をArchitecture Principleから直接導出(実装Behaviorの
+  コピーではない)。Fundamentals/Disclosures 2 Moduleを横断する
+  Builder Registry構造により、将来3つ目のEvidence Moduleが増えても
+  同じParametrizeが自動適用される設計(`bash d937b9c`)。
+- **4A.5.1-2**: `13_tests/test_agent_governance.py`(新規、15件)。
+  D0044の一度きり手動確認をPermanent Regression化。Model Behavior
+  Testではなく`tools:`FrontmatterのDeterministic Propertyのみを検証
+  (`bash bb15682`)。
+- **4A.5.1-3**: `CLAUDE_CODE_RESEARCH_WORKFLOW.md`へContext
+  Architecture分類表(ALWAYS/ON_DEMAND/TASK_ONLY/EVIDENCE_ONLY)を追記
+  (`bash aaa0a38`)。
+- **4A.5.1-4**: `.claude/skills/source-integration/SKILL.md`(新規)。
+  PIT-001〜004・RAW-001〜003・EVIDENCE-001〜003・SOURCE-001〜005
+  (最終、後述2件のGap対応込み)。全RuleがEDINET/TDnet実統合Incidentを
+  出典として明記(`bash f968dad`)。
+- **4A.5.1-5**: `GOLDEN_PROMPT_PARITY.md`(新規)。原Prompt逐語Textが
+  このSession Contextに存在しないため`DECISIONS.md`を権威ある代替
+  出典として使用する限定を明記した上で、22行(後に23行)の
+  Requirement-by-Requirement Mapping実施(`bash 001dfd7`)。
+- **4A.5.1-6**: `.claude/hooks/protected_path_warning.sh`(新規、
+  Non-blocking)。`core/`/`app.py`/`tests/`編集時にWarning(`bash
+  f1bb2e0`)。
+- **4A.5.1-7/8**: `EDINET_LOCAL_VALIDATION_GUIDE.md` §J(Forward
+  Snapshot PoC Procedure、実行はまだしない)・`DISCLOSURE_
+  ARCHITECTURE.md`(Artifact Difference Workflow、EDINET原則の一般化と
+  TDnetへの非適用理由)(`bash c4043ac`)。
+- **4A.5.1-9**: `scripts/lab_source_health.py`(新規、Read-only診断
+  Script)。既存`SourceCatalog`/`RawSnapshotStore`Manifestのみを読む、
+  新規DB/Daemon/Server無し(`bash 775b2e0`)。
+
+### Reviewer Pass(3回実施、全FindingをEvidence再確認の上で採否判定)
+
+1. **pit-auditor(4A.5.1-1/2完了後、Checkpoint A)**: `3 FINDINGS`
+   (最高MEDIUM)。全件CONFIRMED: (a)`*_basis`既定値確認TestがDocstring
+   の「全て」主張に反し`DisclosureEnvelope`を含んでいなかった、(b)
+   PIT-P05が`market_public_at=None`のみで検証しておりFallback Bug
+   再発を検知できない構造だった、(c)Defense-in-depth Allowlist
+   Heuristicの限界(Fail Closed方向のため実害無しと判断)。(a)(b)を
+   修正(`bash 001dfd7`)。
+2. **skeptic-reviewer(4A.5.1-4/5完了後、Checkpoint B)**: `PASS_WITH_
+   CONCERNS`(2 MEDIUM、1 LOW)。全件CONFIRMED: (a)Auditスコープに
+   明記していたD0047からの行が1件も無く、Publishing Entity/
+   Disclosure System/Delivery Provider 3層分離(D0047 §3)が完全に
+   漏れていた、(b)`RAW-002`の実文言がRaw Hash比較のみを対象とし
+   時系列推測禁止を明文化していなかった、(c)出典のD0045/D0043の
+   優先順位。`SOURCE-005`(3層分離)・`EVIDENCE-003`(時系列推測禁止の
+   分離)を追加、出典を訂正(`bash e5a84be`)。
+3. **pit-auditor(Phase Close前、最終Sweep)**: `1 FINDING`(MEDIUM)。
+   CONFIRMED: `DISCLOSURE_ARCHITECTURE.md`「既知の限界」節が、TDnetの
+   `market_public_at_basis`を`EXACT`と誤記載したまま(D0048追記の
+   skeptic-reviewer Finding対応で実際には`UNKNOWN`へ修正済みだった
+   にもかかわらず、この1節だけ未反映)。修正済み(`bash c67508c`)。
+   このRoundで発生した新規Bugではなく、D0048時点からの既存Doc Drift
+   をこのRoundのReview Scopeが偶然発見したもの。
+
+**Audit Historyとしての記録**: 3回のReviewer Passいずれも複数の
+CONFIRMED Findingを返し、その都度実Code/DECISIONS.mdへ当たって
+検証した上で修正した。特にCheckpoint Bの発見(D0047からの行が0件)は、
+「要件の落ちを見つけること」自体がこのGolden Prompt Parity Auditの
+目的であったにもかかわらず、初版がまさにその種の落ちを1件出していた
+ことを意味し、隠さず記録する。
+
+### 最終回帰確認
+
+`pytest`(Lab 588件・既存Screening Tool 37件、合計625件)・`ruff
+check`・`ruff format --check`・`mypy`(83 source files)いずれもclean。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認済み
+(全11 commit、`40ca140`から`c67508c`まで)。
+
+### Completion Status
+
+`COMPLETE`。Phase4A.5.1のCompletion Gate(ユーザー指示§11、11項目)を
+満たしたと判断する: (1)Quality GateがLab 13_testsを実際にcover、
+(2)Principle-based PIT Compliance Tests green、(3)Agent Governance
+Structural Tests green、(4)Context Architecture明文化、(5)Source
+Integration Skill v1完成、(6)Golden Prompt Parity Requirement Mapping
+完成、(7)Reviewer Passで発見されたSemantic Loss(Gap)はすべて修正済み、
+(8)必要なReviewer Pass(pit-auditor×2、skeptic-reviewer×1)完了、
+(9)Artifact Difference Workflow明文化、(10)Forward Snapshot PoC
+Procedure明文化、(11)Full Regression clean。Phase Complete必須外の
+項目(Live EDINET Snapshot長期収集・TDnet Add-on Validation・Heavy
+Hooks・新Provenance Schema・Event Engine・Indexer・Replay
+Architecture)にはいずれも着手していない。
+
+### このDecisionでやらないこと
+
+Phase4B-4(Company IR)には着手していない。TDnetのStatus
+(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は変更していない。
+Golden Prompt Parity Auditの23行はDECISIONS.mdを代替出典として使った
+限定版であり、真の逐語Prompt Parity監査ではない(このScope限定は
+`GOLDEN_PROMPT_PARITY.md`冒頭に明記済み)。`SOURCE-005`
+(3層分離)・`EVIDENCE-003`(時系列推測禁止)いずれも専用回帰Testは
+まだ無く、次Round以降の追加候補として記録するに留めた。
