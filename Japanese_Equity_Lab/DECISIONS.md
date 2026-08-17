@@ -3915,3 +3915,109 @@ Engine・Indexer・Replay Architecture・TDnet Adapter/Normalizer再設計・
 EDINET Adapter/Normalizer再設計・`lib/disclosures/providers/`配下の
 いずれのFileへの変更・大規模なCommon Core変更・Phase4A.5.1・
 Phase4B-4(Company IR)には着手していない。
+
+## D0051 — Phase4A.5.1: Research Engineering Hardening 設計固定(実装は次Round)
+
+**このDecisionはDesign/Scope/Implementation Orderの確定のみを記録する。
+コード実装・Schema変更・Hook作成・Skill変更・Agent変更・Test追加・Phase
+Status変更は一切行っていない。** 詳細な設計は新規
+`Japanese_Equity_Lab/PHASE4A5_1_PLAN.md`(全文)を参照、ここではDECISIONS.md
+の慣例に従い要約のみ記録する(268KBの本File自体をこれ以上肥大化させない
+ため、詳細をDECision本文へ複製しない)。
+
+### 背景
+
+D0049(Fundamentals Evidence PIT Bugfix)・D0050(Disclosure Common Core
+PIT Bugfix)で、`market_public_at`への`available_at`Fallbackという**同型の
+Bugが2つの独立したModuleに存在していた**こと、および既存Testがその誤った
+挙動をそのままAssertしていた(`ALL TESTS PASS != SEMANTICALLY CORRECT`)
+ことが判明した。この教訓を「思想・Documentation・Reviewerの記憶」から
+「機械的に検知可能なGuardrail」へ進める設計をUserから要求された。
+
+### Repository Reality Check(実施済み、`PHASE4A5_1_PLAN.md` §A)
+
+実際に`lib/`・`13_tests/`・`.claude/skills/`・`.claude/agents/`・
+`.claude/settings.json`・DECISIONS.md該当箇所(D0042/D0044/D0046追記2)を
+読んだ結果、最も重要な新発見は次の点である:
+
+**Construction-time Ordering Invariantの不在**: `lib/point_in_time.py::
+PointInTimeRecord`(旧Price PIT層)は`available_at < published_at`を
+Constructor(`__post_init__`)でRejectしているが、`lib/sources/catalog.py::
+SourceMetadata`・`lib/evidence/model.py::SourceVersion`・
+`lib/disclosures/model.py::DisclosureDocument`(Evidence層、D0049/D0050の
+Bugが実際に存在した層)はいずれもtz-aware確認のみでこの順序を一切検査して
+いない。**D0049/D0050のBugが2箇所で独立に発生し得た構造的根本原因は
+ここにある。** ただし`available_at >= published_at`が全Sourceで常に真である
+と断定してよいかはUser確認が必要な事項として残した(Open Question、下記)。
+
+その他、Reviewer Agentの構造的Read-only化・Raw Snapshot Immutability・
+UNKNOWN Basis既定除外・Entity Registry as-of解決・EDINET Raw/Canonical
+Hash設計は、いずれも既に十分実装済み(`EXISTS`)であることを確認した。
+PIT Compliance Test・Agent Governance Regression Test・Context分類・
+Rule ID体系・Golden Prompt Parity Audit・Lab向けSystem Healthは`MISSING`
+または`PARTIAL`であることを確認した(詳細は`PHASE4A5_1_PLAN.md` §A表)。
+
+### Implementation Order(確定、次Round以降で実施)
+
+ユーザー提示のCandidate Orderを、依存関係(Agent Governance/Hookは
+独立で低Cost、Skill化はContext分類の後が安全、Forward Snapshot PoCは
+User側の長期実行が必要で最後)に基づき一部並べ替えた:
+
+```
+4A.5.1-1  PIT Compliance Test Suite(新規 13_tests/test_pit_principles.py)
+4A.5.1-2  Agent Governance Structural Tests
+4A.5.1-3  Deterministic Hook: Protected Path Warning のみ
+4A.5.1-4  Context Architecture 分類表
+4A.5.1-5  Artifact Difference Workflow 一般化Doc
+4A.5.1-6  Lightweight System Health 読み取り専用Script
+4A.5.1-7  Golden Prompt Parity Audit
+4A.5.1-8  Source Integration Skill v1
+4A.5.1-9  Forward Snapshot PoC Procedure Doc(EDINET、実行はUser側)
+```
+
+### PIT Compliance Test Design(設計のみ、8件、`PHASE4A5_1_PLAN.md` §D)
+
+既存Module別Testの重複を避け、Principle単体から導出されたTestのみを
+新設`test_pit_principles.py`へ集める。最重要2件: `test_no_test_file_
+asserts_the_pre_fix_available_at_equals_market_public_at_pattern`
+(D0049/D0050のBugそのものの形を将来のTestが再びAssertしないことをGrep
+ベースで機械的に保証するMeta-test)、および`test_unknown_availability_
+boundary_15_03_vs_15_06_parametrized_across_fundamentals_and_disclosures`
+(Fundamentals/Disclosures 2Moduleが将来分岐しないことを同一Parametrizeで
+保証)。Current-State Leakage(Entity Registry)・Snapshot Overwriteは
+既存Testで十分と判断し、重複追加しなかった(この判断根拠もPlanへ明記)。
+
+### Hook Plan
+
+Protected Path Warning(`core/`/`app.py`/`tests/`への編集を検知し
+Warning、Blockはしない)のみを`Do Now`候補とした。Secret Guard(Commit時)
+は既存`_assert_no_secret_like_keys`と`.gitignore`で主要経路は既にCover
+されているため`SHOULD`止まり、Optional Phase Validationは既存PostToolUse
+品質ゲートと機能重複するため`NOT_NOW`とした。
+
+### Artifact Difference Workflow / Forward Snapshot
+
+EDINETのRaw/Canonical Hash設計(D0046追記2)は既に実装済みで追加不要。
+**TDnetは現状Document本体(PDF)を一切Fetchしていないことを実際に
+確認した**(`tdnet_normalize.py`の`Docs`Fieldは`docs_raw`としてOpaque値の
+まま保持するのみ)ため、一般化の対象コードが今は存在しない
+(`NOT_NEEDED`、検討対象自体が無い)。Forward Snapshot PoCはProcedure
+文書化のみこのPhaseの候補とし、実行はTDnet Add-on Local Validation後に
+User側ローカル環境で行う。
+
+### Open Question(User確認が必要)
+
+`available_at >= published_at`をConstructor Levelで将来Rejectする設計へ
+変更すべきか。Repositoryには「常に真であるべき」との明文原則は無く、
+ユーザー自身が「Source semanticsによって成立し得る場合は勝手にinvalidと
+決めない」と指示しているため、Main Claudeが独断で決めず次Round開始時に
+確認する。このRoundではTripwire Test(現状Rejectしていないことを明示的に
+記録するTest)として設計するに留め、Constructor自体は変更しない。
+
+### このDecisionでやらないこと
+
+コード実装・Schema変更・`.claude/settings.json`変更・`.claude/skills/`
+変更・`.claude/agents/`変更・Test追加・Event Engine・Indexer・Replay
+Architecture・大規模Observability Infrastructure・Phase4B-4(Company
+IR)・TDnet Local Validationのいずれにも着手していない。Phase4B-3の
+Status(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は変更していない。
