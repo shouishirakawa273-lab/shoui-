@@ -98,7 +98,15 @@ class EdinetAdapter:
 
     def _request(self, endpoint: str, recorded_params: dict[str, str], *, error_label: str) -> requests.Response:
         """認証情報を含めたHTTPリクエストを実行するが、`recorded_params`
-        (Snapshotへそのまま記録される側)には認証情報を一切含めない。"""
+        (Snapshotへそのまま記録される側)には認証情報を一切含めない。
+
+        pit-auditor Finding(D0046追記): ``raise ... from None`` だけでは
+        `__suppress_context__`が立つのみで、捕捉した例外オブジェクト自体
+        (query_param認証方式ではAPIキーを含むURLを保持しうる)は新しい例外の
+        `__context__`から依然参照可能なままになる。これを避けるため、`raise`文を
+        `except`節の外側(例外ハンドリングが終わった後)に置き、`__context__`が
+        自動設定されない形にする。
+        """
         api_key = self._require_configured()
         outgoing_params = dict(recorded_params)
         headers: dict[str, str] = {}
@@ -108,21 +116,31 @@ class EdinetAdapter:
             headers[_HEADER_AUTH_KEY_NAME] = api_key
 
         self._throttle()
+        failure_type_name: str | None = None
+        resp: requests.Response | None = None
         try:
             resp = self._session.get(f"{BASE_URL}{endpoint}", params=outgoing_params, headers=headers, timeout=30)
             self._last_request_at = time.monotonic()
             resp.raise_for_status()
         except requests.RequestException as exc:
-            # query_param認証方式の場合、requestsのRequestExceptionはリクエストURL
-            # (APIキーを含む)を保持しうる。呼び出し元へ伝播するメッセージは種類名の
-            # みとし、原例外はchainしない(exc自体をログにも出力しない)。
-            raise DataSourceError(f"{error_label}の取得に失敗しました({type(exc).__name__})") from None
+            failure_type_name = type(exc).__name__
+        if failure_type_name is not None:
+            # except節の外側でraiseするため、捕捉した例外オブジェクト(query_param
+            # 認証方式の場合APIキーを含むURLを保持しうる)への参照は新しい例外の
+            # __context__へ残らない。
+            raise DataSourceError(f"{error_label}の取得に失敗しました({failure_type_name})")
+        assert resp is not None
         return resp
 
-    def fetch_documents_list_raw(self, target_date: date, *, list_type: int = 2) -> RawFetchResult:
+    def fetch_documents_list_raw(self, target_date: date, *, list_type: int) -> RawFetchResult:
         """``GET /documents.json``: 指定日のDocuments Listを未加工のまま取得する。
 
         `date`/`type`という候補パラメータ名は未確認(EDINET_SOURCE_ONBOARDING.md §8)。
+        `list_type`に既定値を持たせないのは`fetch_document_raw`の`download_type`と
+        同じ理由 — `type=2`(メタデータ+リスト)という値も単一の未検証スニペットのみに
+        基づく候補であり、`download_type`の値が情報源間で矛盾していたのと確度の面で
+        本質的に変わらないため(pit-auditor/skeptic-reviewer共通Finding、D0046追記:
+        「同じ未確認度合いのパラメータの一方だけ既定値を持たせるのは一貫しない」)。
         1回の呼び出しにつき1日のみ(日付範囲・銘柄コードによるクエリが可能かは未確認、
         そのため本メソッドにcodes/date-range引数は持たせていない)。
         """

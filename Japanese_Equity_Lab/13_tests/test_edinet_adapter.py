@@ -73,7 +73,7 @@ def test_edinet_adapter_unconfigured_raises_data_source_error(monkeypatch: pytes
     adapter = EdinetAdapter(api_key=None)
     assert adapter.configured is False
     with pytest.raises(DataSourceError, match="EDINET_API_KEY"):
-        adapter.fetch_documents_list_raw(date(2024, 5, 8))
+        adapter.fetch_documents_list_raw(date(2024, 5, 8), list_type=2)
     with pytest.raises(DataSourceError, match="EDINET_API_KEY"):
         adapter.fetch_document_raw("S100XXXX", download_type=1)
 
@@ -111,9 +111,18 @@ def test_edinet_adapter_header_auth_style_puts_key_in_headers_only() -> None:
     assert result.request_parameters == {"date": "2024-05-08", "type": "2"}
 
 
-def test_edinet_adapter_default_auth_style_is_query_param() -> None:
-    adapter = EdinetAdapter(api_key="k")
-    assert adapter._auth_style == "query_param"  # noqa: SLF001
+def test_edinet_adapter_default_auth_style_actually_sends_query_param_request() -> None:
+    """`auth_style`未指定時、実際に送信されるHTTPリクエストがquery_param形式に
+    なることを、private属性ではなく観測可能な挙動(session.calls)で確認する
+    (pit-auditor Finding: private属性への直接assertは`_request()`が既定値を
+    無視するBugを検知できない、D0046追記)。"""
+    session = _RecordingSession()
+    adapter = EdinetAdapter(api_key="secret-key-abc", session=session)  # type: ignore[arg-type]  # auth_style未指定
+    adapter.fetch_documents_list_raw(date(2024, 5, 8), list_type=2)
+
+    call = session.calls[0]
+    assert call["params"]["Subscription-Key"] == "secret-key-abc"
+    assert call["headers"] == {}
 
 
 # --- Documents List Raw Fetch ---
@@ -143,10 +152,21 @@ def test_fetch_documents_list_raw_does_not_accept_code_or_date_range_arguments()
     assert "end_date" not in sig.parameters
 
 
+def test_fetch_documents_list_raw_requires_explicit_list_type() -> None:
+    """`list_type`にも既定値を持たせない。`type=2`は単一の未検証スニペットのみに
+    基づく候補であり、`download_type`が情報源間で矛盾していたのと確度の面で
+    本質的に変わらない — 一方だけ暗黙の既定値を持たせるのは一貫しない
+    (pit-auditor/skeptic-reviewer共通Finding、D0046追記)。"""
+    import inspect
+
+    sig = inspect.signature(EdinetAdapter.fetch_documents_list_raw)
+    assert sig.parameters["list_type"].default is inspect.Parameter.empty
+
+
 def test_fetch_documents_list_raw_non_json_response_raises_data_source_error() -> None:
     adapter = EdinetAdapter(api_key="k", session=_NonJsonSession())  # type: ignore[arg-type]
     with pytest.raises(DataSourceError, match="JSON"):
-        adapter.fetch_documents_list_raw(date(2024, 5, 8))
+        adapter.fetch_documents_list_raw(date(2024, 5, 8), list_type=2)
 
 
 # --- Document Download Raw Fetch(スモークテスト用) ---
@@ -187,9 +207,14 @@ def test_edinet_adapter_connection_failure_does_not_leak_api_key_in_exception() 
     secret_key = "super-secret-edinet-key-xyz"
     adapter = EdinetAdapter(api_key=secret_key, session=_FailingSession())  # type: ignore[arg-type]
     with pytest.raises(DataSourceError) as excinfo:
-        adapter.fetch_documents_list_raw(date(2024, 5, 8))
+        adapter.fetch_documents_list_raw(date(2024, 5, 8), list_type=2)
     assert secret_key not in str(excinfo.value)
     assert excinfo.value.__cause__ is None  # 原例外をchainしない(URLにキーを含みうるため)
+    # pit-auditor Finding(D0046追記): `from None`は__suppress_context__を立てる
+    # だけで、except節内でraiseした場合は__context__自体に元の例外オブジェクトが
+    # 残りうる(URLにAPIキーを含みうる)。__context__自体もNoneであることまで確認する
+    # (`_request()`をexcept節の外側でraiseする実装に修正済み)。
+    assert excinfo.value.__context__ is None
 
 
 # --- Normalizer/Entity解決を一切呼ばないことの構造的確認 ---

@@ -2408,7 +2408,100 @@ Normalizerの実データ確認」ではなく「そもそもの仕様確認とF
 
 ### Reviewer Findings(pit-auditor / skeptic-reviewer)
 
-(実施結果はこのDecisionの追記、または完了報告に記載する。)
+Phase4A.5/Phase4B-1に続き、両Subagentを今回も実運用した(§22の
+Author/Reviewer分離Workflowを継続)。両Agentとも`.claude/agents/`の
+Read-only Tool制限通り、コードを一切変更せずFindings Reportのみを
+Main Claudeへ返した。
+
+**pit-auditor**(5件、最高Severity MEDIUM):
+1. [MEDIUM] `fetch_documents_list_raw`の`list_type=2`が暗黙の既定値を
+   持ち、同じ確度で未確認な`fetch_document_raw`の`download_type`
+   (既定値なし)と一貫しない。対応済み(下記)。
+2. [MEDIUM] `pit_available=False`/`NOT_IMPLEMENTED`は`SourceCatalog`の
+   どのコードからも読まれておらず、Runtime上の強制力を持たない
+   Documentation専用のFlagである(Catalog全体に既存する設計上の制約で
+   あり、本Phaseで新規導入した問題ではない)。今回のEDINETがPIT安全に
+   見える実際の保護は、このFlagの値そのものではなく「EDINETデータから
+   `DisclosureDocument`/`EvidenceRecord`を一切構築していない」という
+   実装の不在によって成立している。既知の制約として明示的に受け入れ、
+   Test(`test_edinet_pit_available_false_is_documentation_only_not_
+   a_runtime_gate`)で回帰確認できるようにした。
+3. [LOW] `raise ... from None`は`__suppress_context__`を立てるのみで、
+   捕捉した例外オブジェクト(query_param認証方式ではAPIキーを含む
+   URLを保持しうる)が新しい例外の`__context__`から依然参照可能なままに
+   なる。`raise`文を`except`節の外側へ移動する形に修正し、
+   `__context__`自体が`None`になることまでTestで確認するよう強化した。
+4. [LOW] `test_edinet_known_limitations_references_onboarding_report`
+   が文字列存在のみを確認する弱いTestだった。実際に未確認と判定された
+   具体的項目名(`EGRESS_BLOCKED`/`submitDateTime`/`secCode`)を含む
+   ことまで確認するよう強化した。
+5. [LOW] `test_edinet_adapter_default_auth_style_is_query_param`が
+   private属性(`_auth_style`)への直接assertで、`_request()`が既定値を
+   無視するBugを検知できなかった。実際のHTTPリクエスト内容(`session.
+   calls`)を確認する形へ書き換えた。
+
+**skeptic-reviewer**(4件、最高Severity MEDIUM、総合`PASS_WITH_CONCERNS`):
+1. [MEDIUM] `EDINET_SOURCE_ONBOARDING.md`のBottom Lineは
+   「現時点の情報を**EDINETアダプタ**/Normalizerを書く根拠として使用
+   すべきではない」と明記していた(「Normalizer」だけでなく「アダプタ」
+   とも明記)。それにもかかわらず`EdinetAdapter`というAdapterを実装した
+   ことは、この推奨を額面通りには守っていない。**この点を直接認める**:
+   本Decisionが実際に踏んだ線引きは「Field-level Semanticsを持つ
+   Adapter/Normalizer(=Providerの意味論を推測で埋める必要があるもの)を
+   書かない」であり、「Raw HTTP Fetch(=Providerの意味論に一切依存せず、
+   確認された既存Infrastructure(`RawSnapshotStore`)へそのまま渡すだけの
+   コード)まで一律禁止する」ことまでは意図していなかった、という
+   Main Claude側の解釈である。`data-source-researcher`自身の報告文は
+   「アダプタ」を無限定に使っており、この解釈を明示的に是認したもの
+   ではない。実際に生じている実害(未確認Field意味論が`DisclosureDocument`
+   /PIT/Entity Registryへ混入すること)がStructural Test(`test_edinet_
+   adapter_module_does_not_import_disclosures_normalize_or_view`)で
+   構造的に防がれていることは事実だが、これは「推奨の文言を狭く解釈した
+   ことの正当化」であって「推奨と矛盾しないことの証明」ではない、という
+   Reviewerの指摘を正しいものとして記録する。今後、同種の状況
+   (Onboarding Reportが「Adapterを書くな」と明確に述べた場合)では、
+   Raw Fetchのみであっても実装に進む前に、この線引きの是非をユーザーへ
+   明示的に確認することを今後の運用上の注意点とする(本Phaseでは
+   実装後に気づいたため、事後にこの形で記録するに留める)。
+2. [MEDIUM] pit-auditor Finding 1と同一の指摘(`list_type`の暗黙の既定値
+   が`download_type`との一貫性を欠く)。両Reviewerが独立に同じ問題を
+   検出したことは、この不整合が実際に目につきやすいものであったことの
+   傍証と捉え、優先して対応した(下記)。
+3. [LOW] `EDINET_API_KEY`がリポジトリルートの`.env.example`に追加されて
+   いなかった(既存の`JQUANTS_API_KEY`等と並べる既存Discoverabilityの
+   慣行から外れていた)。対応済み(下記)。
+4. [LOW] Reviewer自身がRead-only Tool制限のため`git diff`を実行できず、
+   `core`/`app.py`/`tests/`無変更の主張を`Grep`による代替確認に留めた、
+   というReviewer側の制約の記録(Main Claude側でのFinding対応は不要、
+   Main Claude自身が別途`git diff --stat`で確認済み)。
+
+**対応**:
+- `list_type`の既定値を削除(`download_type`と同じく必須Keyword-only
+  引数化)。全呼び出し箇所(Test・`EDINET_LOCAL_VALIDATION_GUIDE.md`)を
+  明示的な`list_type=2`指定に更新。新規Test
+  (`test_fetch_documents_list_raw_requires_explicit_list_type`)追加。
+- `_request()`の例外送出を`except`節の外側へ移動し、`__context__`が
+  実際に`None`になることを確認するTestへ強化。
+- `.env.example`へ`EDINET_API_KEY`エントリを追加(値取得元は
+  `EDINET_SOURCE_ONBOARDING.md`/`EDINET_LOCAL_VALIDATION_GUIDE.md`参照
+  で未確認である旨を明記)。
+- 弱いTest2件(`known_limitations`文字列存在チェック、private属性への
+  直接assert)を強化。
+- `pit_available`がDocumentation専用でRuntime強制力を持たないことを
+  明示するTestを新規追加。
+- skeptic-reviewer Finding 1(「アダプタを書くな」推奨の文言と実装の
+  乖離)は、コード変更ではなくこのDecisionへの明示的な記録という形で
+  対応した(上記)。
+
+再Reviewは実施していない(全Findingが局所的なTest強化・既定値削除・
+例外Chain修正・Documentation追記で解消可能な性質であり、Severity上限
+MEDIUMはいずれもField-level Semanticsの混入(このPhaseが最も警戒すべき
+リスク)には至っていないため)。
+
+**最終回帰確認**(全Finding対応後): `pytest`(Lab 384件・既存Screening
+Tool 37件)・`ruff check`・`ruff format --check`・`mypy`(77ファイル)
+いずれもclean。`git diff --stat -- core/ app.py tests/`で変更が無いことを
+再確認済み。
 
 ### このDecisionでやらないこと
 
