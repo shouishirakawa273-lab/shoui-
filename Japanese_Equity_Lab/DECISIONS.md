@@ -5073,6 +5073,84 @@ UTC表現とJST表現で渡しても判定結果が一致すること(`GLOBAL-00
   実際のWiring(Application起動時の一元登録)がまだ無い(既存の慣行の
   まま)。
 
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `4 FINDINGS(highest severity: HIGH)`。4件とも実際に
+   コードを読み・再現Scriptを実行して独立に再確認した上で対応した。
+   - **[HIGH、採用・修正]** `market_timezone`は非空Checkのみで、実際に
+     IANA Timezone Databaseで解決可能かも、DSTを正しく反映するZoneかも
+     検証していなかった。`ZoneInfo("EST")`が実際にJuly/Januaryとも
+     固定UTC-5を返す(このRoundが排除しようとした`lib.market_calendar`
+     固定Offsetと同じ誤りを再現する)ことを直接実行して確認した。
+     `GlobalMarketRecord.__post_init__`へ、`ZoneInfo(...)`で解決可能か
+     つ`"UTC"`またはArea/Location形式(`"/"`を含む)であることを要求する
+     Validationを追加し(`bash ec35014`)、Pinning Test(`test_fixed_
+     offset_legacy_timezone_alias_rejected`)を追加した。
+   - **[HIGH、独立に再確認の上でCommon Core既存挙動と判定、Pinning Test
+     のみ追加]** `global_market_record_to_evidence()`経由で`lib.
+     evidence.retrieval.filter_usable_at()`(既に稼働中のCross-Capability
+     Evidence取得経路)へ渡した場合のPIT判定は`record.retrieved_at`のみを
+     基準にし、`global_market_as_of()`が使うDST-aware Session Close
+     Resolverを一切参照しない、という指摘を実際にCode(`evidence.py`の
+     `available_at=record.retrieved_at`、`lib/evidence/model.py`の
+     `is_usable_at`)を読んで再現Testで確認した。ただし同じ構造の
+     `retrieved_at`基準Fallback(PIT-003/PIT-004原則そのもの)は
+     `lib/positioning/evidence.py`(既にCONNECTEDなAdapterを持つ)・
+     `lib/macro/evidence.py`にも同一に存在すると確認したため、これは
+     このRoundが持ち込んだGlobal Market固有のBugではなく、Evidence
+     Layer全体に共通するCommon Core既存Patternと判断した。Common Core
+     (`lib/evidence/`)自体の変更、または3 Capability全てへの変更は
+     このRoundのScope外(Global Market固有の具体的Evidenceのみに基づく
+     Architecture拡張をしない、というユーザー指示に反する)と判断し、
+     Common Core自体は変更せず、乖離を`test_global_market_as_of_and_
+     evidence_filter_usable_at_can_disagree_known_limitation`として
+     固定した(`bash ec35014`)。将来、Evidence Layer全体のPIT Gate設計を
+     Capability横断で見直す価値がある候補として`VALIDATION_BACKLOG.md`
+     へ記録する。
+   - **[MEDIUM、採用・修正]** `observation_time`(tz-aware)と`session_date`
+     +`market_timezone`の組み合わせが構造的に矛盾しうる(例:
+     `observation_time`をmarket_timezone基準のLocal日付へ変換すると
+     `session_date`と異なる暦日になる)という指摘を実際に構築・確認した
+     (UTC 2026-08-19 05:00はNY Localでは8/19 01:00になり、
+     `session_date=8/18`とは矛盾する)。`__post_init__`へCross-field
+     Validationを追加し(`bash ec35014`)、Pinning Testを追加した。
+   - 4件目の指摘(`RevisionHistory.as_of()`のTie-break、同一`available_at`
+     ケース)はMacro D0055で既に確認済み・Pinning済みのCommon Core既知
+     挙動が本Moduleにも構造的に適用されることを再確認したもので、
+     Global Market固有の新規Findingではない、とpit-auditor自身が明記
+     している(LOW)。Global Market自身の`_us_close_resolver`Patternの
+     元では同一`session_date`のRecordがこのTie-breakへ実際に到達しうる
+     ことを示すPinning Testが無かった点のみをGapとして認め、追加は
+     見送った(GLOBAL-007の`series_id`未区別Pinning Testが実質的に同型の
+     Tie-break挙動を既にExerciseしているため、重複Testを追加する必要は
+     無いと判断)。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。1件のMEDIUM・2件のLOW、
+   いずれも独立に再確認した:
+   - **[MEDIUM、採用・修正]** 「series_id session_date Collapse Lessonを
+     先取り適用した」という主張は`session_date`軸についてのみ真であり、
+     `model.py`Docstring自身が挙げる他の軸(`index_return_type`/
+     `price_type`/`currency`)には同型のPinning Testが1件も無かった、
+     という指摘を、実際に全44 Testを読んで(`index_return_type`/
+     `price_type`/`currency`を同一`series_id`で構築するTestが存在しない
+     ことをgrepでも確認)採用した。`index_return_type`軸について
+     Pinning Test(`test_series_id_without_index_return_type_causes_
+     cross_type_collapse_known_limitation`)を追加し(`bash a5bffec`)、
+     `price_type`/`currency`軸は個別Test未追加のままKnown Limitationとして
+     Docstringに明記した。
+   - **[LOW、採用・修正]** `instrument_category`と`index_return_type`/
+     `price_type`の組み合わせが経済的に整合しているかの構造検証が無い、
+     という指摘を確認した。これは`series_id`一意性と同じ既存の責務分担
+     (呼び出し側/将来Normalizerの責務)であり偽の保証はしていないと
+     判断したが、明示していなかったため`model.py`Docstringへ追記した
+     (`bash a5bffec`)。
+   - **[LOW、対応せず、Known Limitationとして記録]** GLOBAL-010の従来
+     Testが「DocumentRelationship非Import」という構造Checkのみで、
+     「Raw値変更だけではRevisionと自動判定しない」という実質的な主張を
+     直接検証していなかった、という指摘を確認し、実質的な検証を行う
+     新Test(`test_global010_raw_value_change_for_same_series_and_
+     session_does_not_set_is_correction`)を追加した上で、従来の構造
+     Testも(別の有効な確認事項として)維持した(`bash a5bffec`)。
+
 ### このDecisionでやらないこと
 
 Market Regime判定・Investment Signal・BUY/SELL判断・Cross-Asset Signal・
