@@ -165,6 +165,21 @@ def test_ir006_same_domain_redirect_recorded_without_warning(caplog: pytest.LogC
     assert result.payload["requested_domain"] == result.payload["final_domain"]
 
 
+# --- Defense in depth: skeptic-reviewer Finding(Phase4B-4) ---
+
+
+def test_compliance_check_result_rejects_allowed_without_terms_or_robots_checked() -> None:
+    """`terms_checked`/`robots_checked`がFalseのまま`automated_retrieval=
+    ALLOWED`だけを主張する内部矛盾を、Dataclass自身が拒否することを確認
+    する(skeptic-reviewerが指摘した、4 Fieldどうしの自己矛盾Guardが
+    無かったGapへの修正。robots.txt/利用規約の自動解析Engineを新設した
+    わけではない)。"""
+    with pytest.raises(ValueError, match="terms_checked/robots_checked"):
+        _allowed_compliance(terms_checked=False)
+    with pytest.raises(ValueError, match="terms_checked/robots_checked"):
+        _allowed_compliance(robots_checked=False)
+
+
 # --- IR-012: Timezone(Compliance側) ---
 
 

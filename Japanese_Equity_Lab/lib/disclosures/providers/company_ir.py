@@ -109,6 +109,13 @@ class ComplianceCheckResult:
     def __post_init__(self) -> None:
         if self.checked_at.tzinfo is None:
             raise ValueError("checked_at はtz-awareである必要があります")
+        if self.automated_retrieval == ComplianceStatus.ALLOWED and not (self.terms_checked and self.robots_checked):
+            # 内部矛盾Guard(skeptic-reviewer Finding、Phase4B-4): terms_checked/
+            # robots_checkedがFalseのまま`automated_retrieval=ALLOWED`だけを
+            # 主張することを拒否する。robots.txt/利用規約を自動解析するEngine
+            # ではなく、既に呼び出し側が渡した4つのFieldどうしの単純な自己矛盾
+            # Checkに過ぎない(新しい判断能力を追加するものではない)。
+            raise ValueError("automated_retrieval=ALLOWEDにするにはterms_checked/robots_checkedの両方がTrueである必要があります")
 
 
 def assert_retrieval_allowed(compliance: ComplianceCheckResult) -> None:

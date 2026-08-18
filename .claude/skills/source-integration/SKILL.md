@@ -261,6 +261,60 @@ Reviewで判明したGap]**: v1初版のRequirement-by-Requirement Mapping
   専用Fieldを持たない設計判断が続いているため、Test化はConcrete Field
   実装後に検討する)。
 
+## COMPLY-*(Non-official Source Retrieval Safety)
+
+**[2026-08-18追加、Phase4B-4 Company IR Field Testのskeptic-reviewer
+Reviewで判明したGap]**: EDINET/TDnetは規制当局・取引所が運営する単一の
+公開制度APIであり、「取得してよいか」自体はほぼ自明だった。Company IR
+(個別上場企業のWebsite)のように、Source自体が「公式の制度API」ではない
+場合に必要になる制約は、v1初版のPIT-*/RAW-*/EVIDENCE-*/SOURCE-*
+いずれにも属していなかった(このGapはSkill自身ではなく、そのRoundの
+Task指示で個別に埋められた — Skillだけでは再現できなかった、という
+Field Test結果そのもの)。
+
+### COMPLY-001: 自動取得可否は呼び出し側が明示的に確認した結果を必須引数として渡す(自動判定Engineは作らない)
+
+「Webで公開されている」ことは「自動取得・保存・再配布してよい」ことを
+意味しない。robots.txt/利用規約をこのLab自身がNLP的に自動解析して
+判定するEngineは作らない(それ自体が新しい不確実な推測Engineになる)。
+代わりに、Compliance確認結果(利用規約確認済みか・robots.txt確認済みか・
+自動取得可否等)を表すStructを呼び出し側が明示的に構築し、Fetch関数の
+必須引数として渡す。値が無い/不明(UNCLEAR/NOT_CHECKED)な場合も、
+ALLOWEDと同じ扱いにしてはならない(すべてFail Closed)。
+
+- **実際のIncident**: Company IR統合(Phase4B-4)。`ComplianceCheckResult`
+  (`terms_checked`/`robots_checked`/`automated_retrieval`等)を`fetch_
+  document_raw()`の必須引数とし、`automated_retrieval != ALLOWED`なら
+  Network I/Oより前に`ComplianceError`でFail Closedした。
+- **回帰Test不足の反省**: Compliance確認結果を構成する複数Field
+  (「利用規約を確認した」「robots.txtを確認した」「自動取得可否」)が
+  互いに矛盾する組み合わせ(例: 利用規約もrobots.txtも未確認なのに
+  自動取得可否だけALLOWED)を初版は防いでいなかった。skeptic-reviewer
+  指摘により`ComplianceCheckResult.__post_init__`へ自己矛盾Guardを追加
+  した(`company_ir.py`)。次のNon-official Source統合でも、この種の
+  Field間矛盾を初版から想定すること。
+
+### COMPLY-002: 認証情報らしきURLは取得対象から除外する
+
+Signed URL・Basic認証埋め込みURL・Token/Key/Secret等の名前を持つQuery
+Parameterを含むURLを、「公開Document URL」として扱ってはならない。
+Fetch実行前(Compliance判定と同じタイミング)にURLをScanし、該当すれば
+拒否する。
+
+- **実際のIncident**: Company IR統合(Phase4B-4)。
+  `_assert_url_has_no_credential_like_query_params()`
+  (`company_ir.py`)。
+
+### COMPLY-003: 保存するHTTP Response Headerは明示的なAllowlistのみ
+
+`dict(response.headers)`のように全Headerをそのまま保存しない。Set-
+Cookie/Authorization等Secretを含みうるHeaderが混入する。Provenanceに
+必要なHeader名(Content-Type/Content-Length/ETag/Last-Modified等)を
+明示的にAllowlistし、それ以外は保存しない。
+
+- **実際のIncident**: Company IR統合(Phase4B-4)。`_recorded_headers()`
+  (`company_ir.py`、`_RECORDED_HEADER_NAMES`)。
+
 ## Source-specific Rulesとの境界
 
 上記はSource非依存のCommon Core Ruleである。各Providerの`*_normalize.py`
