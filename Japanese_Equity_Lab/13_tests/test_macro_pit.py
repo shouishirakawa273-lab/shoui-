@@ -321,6 +321,41 @@ def test_macro013_similar_metric_names_with_different_series_id_are_not_merged()
     assert histories[headline.series_id].versions != histories[core.series_id].versions
 
 
+# --- Defense in depth: pit-auditor Finding(Phase4D) ---
+
+
+def test_tie_on_identical_available_at_is_input_order_dependent_known_limitation() -> None:
+    """`RevisionHistory.as_of()`(`lib.evidence.model`、全Capability共通の
+    既存Primitive)は、複数Versionが同一`available_at`に並んだ場合
+    `max()`の仕様上「最初に出現した候補」を返す(Pythonの`max`は厳密に
+    大きい場合のみ置き換えるため)。Date-only granularityのSourceで
+    「1次速報」「2次速報」が偶然同一`available_at`に解決される場合、
+    どちらが返るかは`build_revision_histories()`へ渡すRecordの順序に
+    依存する——これは同じ入力なら同じ出力を返すという意味で
+    Deterministic(MACRO-014)ではあるが、どちらのVintageが「正しい」かを
+    Available Atだけからは判別できないという設計上の限界である
+    (pit-auditor Finding、Phase4D。`lib.evidence.model.RevisionHistory`
+    は4つのCapability[Fundamentals/Disclosures/Positioning/Macro]共通の
+    Primitiveであり、Tie-break仕様の変更は本Round単独では行わない、
+    Known Limitationとして記録するに留める、DECISIONS.md D0055参照)。
+    このTestは現在の挙動を明示的に固定するのみで、正しさを主張しない。
+    """
+    first_in_list = _record(record_id="R_A", value="103.0", market_public_at=RELEASE_AT)
+    second_in_list = _record(record_id="R_B", value="103.9", market_public_at=RELEASE_AT)  # 同一available_at
+
+    histories_a_first = build_revision_histories([first_in_list, second_in_list], resolve_available_at=_release_resolver)
+    histories_b_first = build_revision_histories([second_in_list, first_in_list], resolve_available_at=_release_resolver)
+
+    result_a_first = macro_as_of(histories_a_first, RELEASE_AT)[first_in_list.series_id]
+    result_b_first = macro_as_of(histories_b_first, RELEASE_AT)[first_in_list.series_id]
+
+    assert result_a_first is not None
+    assert result_b_first is not None
+    assert result_a_first.value == "103.0"  # Listの先頭(first_in_list)が勝つ
+    assert result_b_first.value == "103.9"  # Listの先頭(second_in_list)が勝つ
+    assert result_a_first.value != result_b_first.value  # 入力順序で結果が変わることを明示的に固定する
+
+
 # --- MACRO-014: Determinism ---
 
 
