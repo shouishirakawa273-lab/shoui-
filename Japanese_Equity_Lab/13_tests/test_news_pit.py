@@ -93,6 +93,21 @@ def test_news002_unknown_provider_availability_included_only_when_explicit() -> 
     assert article in result
 
 
+def test_news002_unknown_published_at_excluded_by_default_under_market_public_at_semantics() -> None:
+    """pit-auditor Finding(Phase4E-2、LOW): 既存Testは既定(PROVIDER_
+    AVAILABLE_AT系統)のみをExerciseしており、MARKET_PUBLIC_AT系統でも
+    同じUNKNOWN除外Guardが効くことを直接確認するTestが無かった。"""
+    published_at = datetime(2026, 8, 18, 9, 0, tzinfo=UTC)
+    article = _article(
+        internal_article_id="A1",
+        published_at=published_at,
+        published_at_basis=AvailabilityBasis.UNKNOWN,
+    )
+    far_future = datetime(2030, 1, 1, tzinfo=UTC)
+    result = news_as_of([article], far_future, availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT)
+    assert article not in result
+
+
 # --- NEWS-003: Retrieved At Safe Visibility ---
 
 
@@ -325,6 +340,21 @@ def test_news013_future_article_not_visible_to_past_as_of() -> None:
     )
     past_decision_at = datetime(2026, 8, 18, 10, 0, tzinfo=UTC)
     result = news_as_of([article], past_decision_at)
+    assert article not in result
+
+
+def test_news013_future_article_not_visible_under_market_public_at_semantics() -> None:
+    """pit-auditor Finding(Phase4E-2、LOW): Future Injection Guardが
+    MARKET_PUBLIC_AT系統でも同様に効くことを直接確認する(既存Testは
+    既定のPROVIDER_AVAILABLE_AT系統のみExerciseしていた)。"""
+    future_published_at = datetime(2030, 1, 1, tzinfo=UTC)
+    article = _article(
+        internal_article_id="A1",
+        published_at=future_published_at,
+        published_at_basis=AvailabilityBasis.EXACT,
+    )
+    past_decision_at = datetime(2026, 8, 18, 10, 0, tzinfo=UTC)
+    result = news_as_of([article], past_decision_at, availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT)
     assert article not in result
 
 
