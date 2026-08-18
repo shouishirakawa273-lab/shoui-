@@ -19,20 +19,32 @@ from lib.reproducibility import hash_json_safe
 
 
 def find_same_source_native_id_signals(articles: Sequence[NewsArticleRecord]) -> list[NewsDuplicateSignal]:
-    """同一`source_native_id`を持つ複数`NewsArticleRecord`をDuplicate候補として
-    検出する。**Headline/PublishedDate/Entityが同じというだけでは検出しない**
-    (それらはこの関数の入力に一切使われない、意図的な構造上の制約)。
+    """同一Source内で同一`source_native_id`を持つ複数`NewsArticleRecord`を
+    Duplicate候補として検出する。**Headline/PublishedDate/Entityが同じ
+    というだけでは検出しない**(それらはこの関数の入力に一切使われない、
+    意図的な構造上の制約)。
+
+    **`source_id`でScopeする(skeptic-reviewer Finding、Phase4E-2、
+    MEDIUM)**: `source_native_id`のみでGroupingすると、異なるSource
+    (例: JPX News ReleasesとFSA報道発表資料)がたまたま同じ`source_
+    native_id`文字列を使っていた場合、無関係な記事同士を誤ってDuplicate
+    Signalとして検出してしまう。4候補中`source_native_id`のGlobal一意性が
+    確認できたSourceは無い(PR TIMESの`{company_id}.{release_seq}`のみ
+    部分的に示唆、JPX/FSA/METIはいずれも未確認)。`NewsArticleRecord.
+    source_id`は`__post_init__`で非空を必須とする既存Fieldであり、追加
+    Cost無く安全側に倒せる。
     """
-    by_native_id: dict[str, list[str]] = {}
+    by_source_and_native_id: dict[tuple[str, str], list[str]] = {}
     for article in articles:
         # 空文字列もNoneと同様に除外する(disclosures.normalizeと同じ理由:
         # 「IDが確認できない」という共通点だけで無関係な記事間にDuplicate
         # Signalを誤生成しないため)。
         if article.source_native_id:
-            by_native_id.setdefault(article.source_native_id, []).append(article.internal_article_id)
+            key = (article.source_id, article.source_native_id)
+            by_source_and_native_id.setdefault(key, []).append(article.internal_article_id)
 
     signals: list[NewsDuplicateSignal] = []
-    for native_id, internal_ids in by_native_id.items():
+    for (source_id, native_id), internal_ids in by_source_and_native_id.items():
         if len(internal_ids) < 2:
             continue
         for article_a, article_b in itertools.combinations(sorted(internal_ids), 2):
@@ -41,7 +53,7 @@ def find_same_source_native_id_signals(articles: Sequence[NewsArticleRecord]) ->
                     article_a_id=article_a,
                     article_b_id=article_b,
                     relation_kind=NewsDuplicateRelationKind.SAME_SOURCE_NATIVE_ID,
-                    basis=f"source_native_id={native_id}",
+                    basis=f"source_id={source_id}, source_native_id={native_id}",
                 )
             )
     return signals

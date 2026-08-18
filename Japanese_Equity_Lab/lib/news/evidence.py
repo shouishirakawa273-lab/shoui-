@@ -7,6 +7,23 @@
 Negative/Bullish/Bearish)・Event分類(決算Beat/M&A等)はここでは一切生成
 しない(Phase4E-2要件§23/§24)。
 
+**`EvidenceType.FACT`固定についての注記(skeptic-reviewer Finding、
+Phase4E-2、MEDIUM)**: `lib.evidence.model`のEvidence Type定義は、FACT
+(例:「TDnetでの会社予想修正」)とCLAIM(例:「会社IRの『需要は堅調』という
+発言」、発言の存在自体はFACTだが内容の真偽は別)を明確に区別する。この
+関数がFACTとするのは**「この見出しの記事がこのSourceから公開された」
+という発行事実そのもの**であり(`lib.disclosures.evidence.disclosure_
+document_to_evidence()`が文書Titleに対して行うのと同じMeta-level FACT
+の扱い)、`headline`(見出し)そのものの内容——特にPR TIMES等
+`COMPANY_PRIMARY`(発行企業自身)Sourceの場合、見出しが企業の宣伝的な
+表現(例:「業績絶好調」)を含みうる——を検証済みの事実として主張して
+いるわけではない。現時点ではSourceが未実装のため、この区別は理論上の
+懸念に留まるが、将来PR TIMES等`COMPANY_PRIMARY` Sourceの実Adapterを
+実装しEvidenceを実際に消費する段階になった時点で、`headline`自体の
+内容が推測・宣伝的表現を含む場合の扱い(CLAIM相当への分離要否)を
+再検討する必要がある(Known Limitation、`JAPAN_NEWS_ARCHITECTURE.md`
+参照)。
+
 **D0057との境界(最重要、必読)**: この関数が返す`EvidenceRecord`は
 `lib.evidence.retrieval.filter_usable_at()`等のEvidence経路PIT判定に
 技術的には使用可能だが、**このRoundではBacktest/Decision Engineへ一切

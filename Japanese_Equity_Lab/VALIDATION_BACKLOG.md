@@ -38,6 +38,7 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 23 | PR TIMES 公開側Timestamp Field粒度確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 著者用UI側の10分刻みScheduling機能からの示唆のみで、公開Article/RSSが実際に露出するTimestamp Field仕様は未確認 | 同上 |
 | 24 | JPX News Releases / FSA報道発表資料 / METI News Release RSS仕様確認 | `NOT_IMPLEMENTED`(Adapter未着手) | いずれもRSS Feedの存在はSnippetで示唆されたが未読。pubDateの粒度・Timezone表現・Correction挙動未確認 | 同上 |
 | 25 | BOJ「What's New」RSSとMacro `boj_policy_rate`のCatalog統合方針 | 未着手(重複可能性のみ記録) | News/Macro双方のCatalogに同一Source候補が跨って現れうる——このRoundでは新規News Catalog登録を見送った | `JAPAN_NEWS_ARCHITECTURE.md`、DECISIONS.md D0058 |
+| 26 | `lib/news/`(Metadata Ingest層)→`lib.evidence.news.NewsEvent`(Event層、Phase3D)への変換Layer設計 | 未着手(境界維持のみ、Structural Testで固定済み) | skeptic-reviewer Finding(Phase4E-2): 2つの並行するNews表現を恒久的に維持する設計判断自体は妥当だが、統合Layerの設計はまだ着手していない。`test_news_modules_never_import_evidence_news_event_scaffold`で現状の分離は固定済み | `JAPAN_NEWS_ARCHITECTURE.md`、DECISIONS.md D0058、`lib/evidence/news.py`、`13_tests/test_news_pit.py` |
 
 ## 運用ルール
 

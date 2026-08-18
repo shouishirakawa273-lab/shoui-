@@ -25,6 +25,7 @@ def _article(
     *,
     internal_article_id: str,
     source_native_id: str | None = None,
+    source_id: str = "PRTIMES",
     headline: str = "テスト企業がテスト製品を発表",
     published_at: datetime | None = None,
     published_at_basis: AvailabilityBasis = AvailabilityBasis.UNKNOWN,
@@ -37,7 +38,7 @@ def _article(
     return NewsArticleRecord(
         internal_article_id=internal_article_id,
         source_native_id=source_native_id,
-        source_id="PRTIMES",
+        source_id=source_id,
         headline=headline,
         published_date=published_date,
         published_at=published_at,
@@ -240,6 +241,19 @@ def test_news008_same_source_native_id_is_flagged_as_duplicate_candidate() -> No
     assert signals[0].article_b_id == "A2"
 
 
+def test_news008_same_native_id_from_different_sources_is_not_flagged() -> None:
+    """skeptic-reviewer Finding(Phase4E-2、MEDIUM): `source_native_id`の
+    Global一意性は4候補中いずれも未確認(PR TIMESのみ部分的に示唆)。
+    異なるSource(例: JPXとFSA)がたまたま同じ`source_native_id`文字列を
+    使っていた場合、無関係な記事同士を誤ってDuplicateとして検出しては
+    ならない。`source_id`でScopeするFixにより、異なるSourceの記事は
+    同一`source_native_id`でも検出されないことを直接確認する。"""
+    article_a = _article(internal_article_id="A1", source_id="JPX", source_native_id="111")
+    article_b = _article(internal_article_id="A2", source_id="FSA", source_native_id="111")
+    signals = find_same_source_native_id_signals([article_a, article_b])
+    assert signals == []
+
+
 def test_news008_empty_source_native_id_not_grouped() -> None:
     article_a = _article(internal_article_id="A1", source_native_id="")
     article_b = _article(internal_article_id="A2", source_native_id="")
@@ -422,3 +436,35 @@ def test_news015_filter_usable_at_still_works_generically_but_is_not_called_by_t
     decision_at = article.retrieved_at + timedelta(minutes=1)
     usable = filter_usable_at([evidence], decision_at)
     assert len(usable) == 1  # filter_usable_at自体は正しく動く(Common Core)が、lib/news/はこれを呼ばない
+
+
+# --- Defense in depth: lib/news/はlib.evidence.news(Event層Scaffold)から独立している ---
+
+
+def test_news_modules_never_import_evidence_news_event_scaffold() -> None:
+    """skeptic-reviewer Finding(Phase4E-2、LOW-MEDIUM): `lib.evidence.news.
+    NewsEvent`(Phase3D由来、Event抽出後を前提とするScaffold)を再利用・
+    拡張しないという設計判断(`JAPAN_NEWS_ARCHITECTURE.md`参照)は、D0057
+    境界(`test_news015_*`)と同じ厳密さでStructural Testとして固定されて
+    いなかった。将来の変更でこの境界が意図せず崩れないよう、`lib/news/`
+    のいずれのModuleも`lib.evidence.news`を実際にImportしないことを
+    AST解析で確認する(D0057境界Testと同じ手法)。"""
+    import ast
+
+    import lib.news.evidence as evidence_module
+    import lib.news.model as model_module
+    import lib.news.normalize as normalize_module
+    import lib.news.view as view_module
+
+    for module in (model_module, normalize_module, view_module, evidence_module):
+        source = module.__file__
+        assert source is not None
+        text = open(source, encoding="utf-8").read()
+        tree = ast.parse(text)
+        imported_modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported_modules.add(node.module)
+        assert "lib.evidence.news" not in imported_modules
