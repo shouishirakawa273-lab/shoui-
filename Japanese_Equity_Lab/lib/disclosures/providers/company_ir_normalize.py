@@ -103,7 +103,7 @@ def build_company_ir_document(
     if not isinstance(compliance_raw, dict):
         raise ValueError("fetch_payloadにcompliance情報が含まれていません(CompanyIrAdapter経由の取得結果を渡してください)")
 
-    from lib.disclosures.providers.company_ir import ComplianceStatus
+    from lib.disclosures.providers.company_ir import ComplianceStatus, assert_retrieval_allowed
 
     compliance = ComplianceCheckResult(
         terms_checked=bool(compliance_raw["terms_checked"]),
@@ -116,6 +116,13 @@ def build_company_ir_document(
         checked_at=datetime.fromisoformat(str(compliance_raw["checked_at"])),
         notes=str(compliance_raw.get("notes", "")),
     )
+    # Defense in depth(pit-auditor Finding、Phase4B-4): fetch_payloadが
+    # 実際に`CompanyIrAdapter.fetch_document_raw()`を経由していれば
+    # ここでautomated_retrieval != ALLOWEDになることは無いはずだが、
+    # 手組みのfetch_payload dictを渡された場合に備えて正規化時にも
+    # 再度Fail Closedを確認する(RAW-001/SOURCE-001と同じ「構造的に
+    # 誤用不可能にする」設計方針をNormalizer側にも適用)。
+    assert_retrieval_allowed(compliance)
 
     redirect_chain_raw = fetch_payload.get("redirect_chain")
     redirect_chain = tuple(redirect_chain_raw) if isinstance(redirect_chain_raw, list) else ()

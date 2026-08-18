@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 import pytest
 from lib.disclosures.evidence import disclosure_document_to_evidence
 from lib.disclosures.model import DocumentKind
+from lib.disclosures.providers.company_ir import ComplianceError
 from lib.disclosures.providers.company_ir_normalize import build_company_ir_document
 from lib.evidence.model import AvailabilityBasis
 from lib.sources.catalog import SourceAuthorityClass
@@ -180,6 +181,21 @@ def test_ir012_retrieved_at_requires_tz_aware() -> None:
             title="お知らせ",
             retrieved_at=datetime(2026, 8, 18, 12, 0),  # naive
         )
+
+
+# --- Defense in depth: pit-auditor Finding(Phase4B-4) ---
+
+
+def test_normalize_reasserts_compliance_and_fails_closed_on_hand_crafted_payload() -> None:
+    """`CompanyIrAdapter.fetch_document_raw()`を経由しない、手組みの
+    fetch_payload dict(automated_retrieval != ALLOWED)を渡した場合でも、
+    `build_company_ir_document()`自身がFail Closedすることを確認する
+    (pit-auditorが指摘した、Normalizer側にCompliance再確認が無かった
+    Gapへの修正)。"""
+    payload = _base_payload()
+    payload["compliance"] = dict(payload["compliance"]) | {"automated_retrieval": "DISALLOWED"}
+    with pytest.raises(ComplianceError):
+        build_company_ir_document(payload, internal_document_id="DOC_1", title="お知らせ", retrieved_at=RETRIEVED_AT)
 
 
 # --- IR-014: Common Core Regression(新規Evidence変換関数を作らず既存を再利用) ---
