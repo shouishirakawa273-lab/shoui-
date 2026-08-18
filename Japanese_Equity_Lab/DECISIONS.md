@@ -4842,6 +4842,83 @@ Findingで「Catalog Descriptor群にTest Coverageが無かった」Gapが指摘
 - Forward Snapshot Collector(Vintage観測用)は未実装(Procedure/将来
   要件としてのみ`MACRO_ARCHITECTURE.md`に記録)。
 
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `1 FINDING(highest severity: LOW)`。指摘: `lib.
+   evidence.model.RevisionHistory.as_of()`の`max(candidates, key=...)`
+   Tie-breakは、複数Versionが同一`available_at`に並んだ場合Python
+   `max()`の仕様上「Listで最初に出現した候補」を返す(1次速報・2次速報が
+   Date-only Granularityにより偶然同一`available_at`へ解決される場合、
+   どちらが返るかはRecordの投入順序に依存する)。実際にコードを読み
+   `lib/evidence/model.py:222`の`max()`呼び出しを直接確認した上で、
+   Phase4C(Positioning)で発見された同種のTie-break Gapと同一のFinding
+   分類(全Capability共通のCommon Core Primitiveの既存挙動であり、この
+   Roundが持ち込んだ新規Bugではない)と判断し、Common Core自体の変更は
+   行わず、現在の挙動(投入順序依存)を明示的に固定するTestを追加した
+   (`test_tie_on_identical_available_at_is_input_order_dependent_known_
+   limitation`、`bash b72639a`)。あわせて、pit-auditor自身がBash Tool
+   不足のため確認できなかった「意図した範囲外のFile変更が無いこと」を
+   `git diff --stat`で別途直接確認した(意図した範囲外の変更は無し)。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。5件のFinding(MEDIUM x2、
+   LOW-MEDIUM x1、LOW x1、+Checked Clean多数)、いずれも独立に再確認した:
+   - **[MEDIUM、採用・修正]** `build_revision_histories()`は`series_id`
+     のみでGroupingし、`macro_as_of()`はGroup内で`available_at`最大の
+     1件のみを返す。したがって`series_id`が`reference_period`を含まない
+     場合、異なる期間(例: 6月分・7月分CPI)のRecordが同一Seriesへ
+     Collapseし、より新しい期間の値しか到達できなくなる、という指摘を
+     実際にCode(`normalize.py`の`series_id`単独Grouping、`lib.
+     evidence.model`の`as_of()`単一Version返却)を読んで再確認した。
+     Fundamentals(`series_id = "|".join([internal_code, metric_type,
+     fiscal_year_target, cur_per_type, scope, accounting_standard])`)
+     と同じ「series_id構築は呼び出し側/Normalizerの責務、Dataclass自体は
+     構造的に強制しない」という既存責務分担そのものは妥当と判断したが、
+     この責務をModel Docstringが明記していなかったため、`MacroRecord`
+     Docstringへ明記し、失敗Pattern(Collapse)と正しいPattern
+     (Period込みSeries ID)の両方を固定するTestを追加した
+     (`bash c7fc8f8`)。
+   - **[MEDIUM、採用・修正]** 同根の指摘として、`series_id`が
+     `seasonal_adjustment`/`metric_name`等の他の区別軸も一意に含まない
+     限り、異なるSeries(例: SAとNSA)が同一`series_id`のもとで Silent
+     Mergeされうる、という指摘も確認し、同じDocstring追記で対応した
+     (区別すべき軸を明示的に列挙)。
+   - **[LOW-MEDIUM、対応せず、設計判断として記録]**
+     `lib/macro/normalize.py`と`lib/positioning/normalize.py`の
+     `build_revision_histories()`が、`event_at`の参照Field名
+     (`reference_period_end` vs `observation_end`)以外ほぼ同一実装で
+     あり、「Field名の違いにより共通化するとかえって複雑になる」という
+     DECISIONS.md記載の理由が、実際の差分の小ささ(属性名1つ)に比べて
+     誇張されている、という指摘を確認した。指摘の正確性は認めつつ、
+     Positioning Round(4C)の同種Callback Patternについてもコード共有を
+     見送った経緯・External Copilot Review直後の「推測だけでArchitecture
+     を増やさない」というユーザー指示との整合を優先し、Cross-Capability
+     Protocol抽象化は依然として見送る判断を維持した(コード変更はせず、
+     このRound内の判断根拠として記録するに留める)。
+   - **[LOW、対応せず、Known Limitationとして記録]** MACRO-015の
+     禁止語Listが、現在のCode構造(`content`の大半がEnum/日付由来で
+     構造的に解釈語混入不可能)に対しては実質的に「常に通過するTest」に
+     なっており、唯一のLeakage経路である`metric_name`(自由記述)に
+     対しても、Listの語彙が狭い(例: 「上振れ」「下振れ」等の婉曲的
+     解釈語は含まない)、という指摘を確認した。Reviewer自身も「現時点で
+     実際にExploitされる経路は無い(Adapterが無くmetric_nameは全てTest
+     記述のため)」と評価しており、Forward-looking Guardとして許容できる
+     と判断し、コード変更はしなかった。将来Adapterが`metric_name`を
+     実Provider Textから構築するようになった時点で語彙拡充を再検討する。
+
+### Known Limitations(Reviewer Pass後、追加分)
+
+- `RevisionHistory.as_of()`のTie-break(同一`available_at`の複数Version)
+  は投入順序依存(全Capability共通のCommon Core既存挙動、Macro固有では
+  ない)。
+- `series_id`の一意性(Reference Period・Seasonal Adjustment等を含めた
+  構築)は`MacroRecord`が構造的に強制せず、呼び出し側/将来Adapterの責務
+  (Fundamentalsと同じ責務分担)。
+- `lib/macro/normalize.py`は`lib/positioning/normalize.py`とほぼ同型の
+  実装をコードとして共有していない(意図的、Cross-Capability抽象化を
+  見送った判断)。
+- MACRO-015の禁止語Listは現在のCode構造に対しては構造的に常時通過する
+  Testであり、将来`metric_name`が実Provider Textを含むようになった際に
+  語彙拡充が必要になる可能性がある。
+
 ### このDecisionでやらないこと
 
 Economic Forecast・Regime Detection・BUY/SELL判断・Expectations/
