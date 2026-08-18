@@ -34,6 +34,10 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 19 | FRED `DGS10`(US 10年国債利回り) | `NOT_IMPLEMENTED`(Adapter未着手) | 米財務省がおよそ15:30 ET時点の気配値から算出という記述が見つかったが未読。`home.treasury.gov`自身の値とのCross-Check未実施 | 同上 |
 | 20 | FRED `VIXCLS`(CBOE VIX) | `NOT_IMPLEMENTED`(Adapter未着手) | CBOEのRTH算出Window(9:30am-4:15pm ET)・原典CBOE/配信FREDの分離、いずれもCBOE自身の一次文書は未読 | 同上 |
 | 21 | Evidence経路(`retrieved_at`基準)とas_of経路(`resolve_available_at`基準、Session Close等のMarket Observation Completion Time推定)、どちらをBacktest System Bの正とするかの設計判断 | `ARCHITECTURE_GAP`と分類確定(D0057)。Semantic Contract Testで固定済み(`test_pit_gate_cross_capability_semantics.py`)、Code変更は未実施(意図的、原則Backlog維持の方針) | 両経路とも本番Pipelineに未接続のためCURRENT_DEFECTではない(D0057 Repository Reality Check)。Fundamentals/Disclosures/Positioning(CONNECTED)/Macro/Global Marketいずれにも共通するCommon Core既存Pattern。将来Backtest System B(Evidence経由でPIT判定する実際のPipeline)を配線する設計Roundで、2経路の統合方針(EvidenceRecordへのAvailabilityBasis相当Field追加要否を含む)をユーザーの判断で決定する必要がある | DECISIONS.md D0057、D0056(発端のpit-auditor Finding)、`lib/evidence/model.py`、`lib/evidence/retrieval.py`、`13_tests/test_pit_gate_cross_capability_semantics.py` |
+| 22 | PR TIMES 全文保存・再配布Terms確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 企業規約第6条相当(未読)が全文保存・再配布を制限している可能性。`prtimes.jp/main/html/kiyaku`のLocal Live確認が最優先候補 | `JAPAN_NEWS_ARCHITECTURE.md`、`lib/news/catalog.py`、DECISIONS.md D0058 |
+| 23 | PR TIMES 公開側Timestamp Field粒度確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 著者用UI側の10分刻みScheduling機能からの示唆のみで、公開Article/RSSが実際に露出するTimestamp Field仕様は未確認 | 同上 |
+| 24 | JPX News Releases / FSA報道発表資料 / METI News Release RSS仕様確認 | `NOT_IMPLEMENTED`(Adapter未着手) | いずれもRSS Feedの存在はSnippetで示唆されたが未読。pubDateの粒度・Timezone表現・Correction挙動未確認 | 同上 |
+| 25 | BOJ「What's New」RSSとMacro `boj_policy_rate`のCatalog統合方針 | 未着手(重複可能性のみ記録) | News/Macro双方のCatalogに同一Source候補が跨って現れうる——このRoundでは新規News Catalog登録を見送った | `JAPAN_NEWS_ARCHITECTURE.md`、DECISIONS.md D0058 |
 
 ## 運用ルール
 

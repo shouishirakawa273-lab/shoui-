@@ -5417,3 +5417,170 @@ Global Provider Adapter・FRED Integration・Macro Adapter・Phase4E-2
 (Japan News)・大規模Common Core再設計のいずれにも着手していない。
 2つの推定戦略のどちらを「正」とするかの設計判断も行っていない
 (将来Backtest System B設計Round向けにBacklogとして残す)。
+
+## D0058 — Phase4E-2: Japan News Data Foundation(設計、Adapter未実装)
+
+日本語Newsの記事Metadata(見出し・公開時刻・出所・Provenance)を
+PIT-safe/provenance-preserving/reproducibleな形でこのLabへ取り込むための
+Data Foundationを新設した。**Sentiment判定・Event抽出・Investment
+Conclusion・BUY/SELLは一切実装していない**(Observationまで、Phase4E-2
+要件§2/§3)。
+
+### D0057(Backlog #21)の扱い
+
+事前指示通り、D0057が確認したARCHITECTURE_GAP(as_of経路とEvidence経路の
+Availability推定戦略の相違)はこのRoundでは解決しない。Evidence Common
+Schema再設計・`availability_basis`相当Field追加・Backtest PIT Gate統一・
+EvidenceのBacktest接続のいずれも行っていない。`lib.news.evidence.news_
+article_to_evidence()`はEvidence Recordを生成できるが、`lib.evidence.
+retrieval.filter_usable_at()`等のBacktest経路へは一切接続していない
+(`test_news015_*`で構造的に固定)。Validation Backlog #21は維持したまま。
+
+### Repository Reality Check
+
+`lib.evidence.model`(`RevisionHistory`/`SourceVersion`/`AvailabilityBasis`
+/`AvailabilitySemantics`)・`lib.disclosures`(Document-shaped Set-Filter
+as_of Pattern)・`lib.sources.entity_registry.EntityRegistry`・`lib.sources.
+providers.NewsProvider`(Phase3D由来のProtocol、`fetch_news(start_at,
+end_at)`、既に存在し再利用可能)を先に確認した。
+
+**重要な発見**: Phase3D由来の`lib.evidence.news.NewsEvent`が既に存在した
+が、`event_type`必須Field・見出し類似度による自動Duplicate分類
+(`classify_news_relation()`)を持ち、Event抽出後を前提としたSchemaで
+あることが判明した。Phase4E-2要件(Event抽出禁止§24、Headline Similarity
+Is Not Duplicate§28)とは設計思想が異なるため、**再利用・拡張せず**
+(既存File・既存Test`test_evidence_news.py`いずれも無変更)、`lib/news/`
+をその手前の層(Metadata Ingest層)として新設した。詳細は
+`JAPAN_NEWS_ARCHITECTURE.md`「`lib.evidence.news.NewsEvent`との境界」節。
+
+### Source Candidate Research(data-source-researcher Agent、2026-08-18)
+
+PR TIMES・JPX News Releases・FSA・METI・BOJ「What's New」・Nikkei・
+Reuters Japan/Refinitiv・Bloomberg・Kyodo News/Jiji Press・@Press・
+共同通信PRワイヤー等を調査した。結果は全てSEARCH-SNIPPET-DERIVED
+(UNVERIFIED)——`prtimes.jp`/`developers.prtimes.com`/`www.jpx.co.jp`/
+`www.fsa.go.jp`/`jp.reuters.com`等へのWebFetchは全て失敗した
+(`EGRESS_BLOCKED`)。
+
+**PR TIMES**が最も構造的に有望な候補として推奨された(会社別/リリース別
+RSSの存在が複数独立Snippetで裏付けられ、`{company_id}.{release_seq}`
+という2部構成数値識別子Schemeも示唆)。ただし2つの重大なGapが未解決:
+(1) 全文保存・再配布Terms(企業規約第6条相当、未読)が制限的な可能性、
+(2) 公開Article/RSS自体が実際に露出するTimestamp Fieldの粒度(著者用UI
+側の10分刻みScheduling機能からの示唆のみで、公開側の実際のField仕様は
+未確認)。Nikkeiは公式RSSが確認できず(有料Paywallサイトへのscrapingが
+必要、このLabの「Structured Sourceを優先」原則に反する)。Bloomberg/
+Reuters/Refinitiv/QUICKはいずれもEnterprise契約が必要で、個人がローカル
+実行するという本Labの前提(ルートCLAUDE.md)にそぐわない。詳細は
+`JAPAN_NEWS_ARCHITECTURE.md`「Source候補」節・`VALIDATION_BACKLOG.md`
+参照。
+
+### Adapterは1件も実装しない(ユーザー要件§8に基づく正直なStatus)
+
+検索Snippetのみを根拠にAdapterを実装しない、というユーザー要件に従い、
+このRoundでは4候補(`prtimes_press_release`/`jpx_news_releases`/
+`fsa_press_release`/`meti_news_release`)全てを`implementation_status=
+NOT_IMPLEMENTED`のまま`lib/news/catalog.py`へ登録し、Validation Status=
+`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`を`known_limitations`へ
+明記した(Positioning Phase4C/Macro Phase4D/Global Market Phase4E-1と
+同じPattern踏襲)。BOJ「What's New」RSSはPhase4E-1の既存`boj_policy_rate`
+Catalog Entry(Macro Capability)との対象重複可能性があり、このRoundでは
+新規登録を見送った(Known Limitationとして記録)。
+
+### Common News Model(Document-shaped、Disclosuresの前例を踏襲)
+
+`lib/news/model.py`の`NewsArticleRecord`はDocument-shaped 1レコード
+(記事単位)。Positioning/Macro/Global MarketのSeries-shaped Long-form
+とは異なり、News記事はそれぞれ独立した意味を持ち複数記事が同時に
+「見えている」状態が正しいため、`lib/disclosures/model.py`の
+`DisclosureDocument`と同型のField構成(`published_at`/`published_at_
+basis`、`provider_available_at`/`provider_available_at_basis`、
+`retrieved_at`)を採用した(RevisionHistory/SourceVersionは使わない、
+Positioning/Macro/Global Marketとは異なる設計判断)。
+
+`lib/news/view.py`の`news_as_of()`は`lib.disclosures.view.disclosures_
+as_of()`と同じ「Set Filter」(Latest-winsではない)。`lib/news/evidence.py`
+の`news_article_to_evidence()`のavailable_at優先順位も`disclosure_
+document_to_evidence()`(D0050)と同一(provider_available_at確認済み優先、
+無ければretrieved_at、published_atへのFallback禁止)。
+
+### Article Identity、Duplicate Handling(Safe Tierのみ)
+
+`source_native_id`を優先Identity候補とし、`canonical_url`はIdentityに
+使わない(Phase4E-2要件§11)。`lib/news/normalize.py`は`find_same_source_
+native_id_signals()`(同一source_native_id)と`find_exact_raw_content_
+duplicate_groups()`(Raw Payload行全体Hash完全一致)のみを提供する——
+見出し類似度・URL類似度・時刻近接からの自動Duplicate判定(Potential
+Tier)は実装せず、`test_news007_no_headline_or_url_based_duplicate_
+function_exists_in_normalize`で構造的に固定した(既存`lib.evidence.
+news.classify_news_relation()`より厳格な基準、Phase4E-2要件§28)。
+
+### Compliance / Entity Mapping
+
+`ContentAvailability`(FULL_TEXT/HEADLINE_ONLY/METADATA_ONLY/REFERENCE_
+ONLY/UNKNOWN)Enumで、Source固有のTerms/Licenseによる全文保存可否の
+差異を「全文保存必須」という前提をCommon Coreへ埋め込まずに表現する
+(Phase4E-2要件§19/§34)。`entity_id`はSourceが構造化されたEntity識別子を
+提供した場合のみ設定し、見出しText Matchingでは設定しない(§21、既存
+`EntityRegistry`を再利用する設計、新規Entity Mapping機構は作らない)。
+
+### Tests(NEWS-001〜015、実装からのコピーではなくPhase4E-2要件から導出)
+
+`13_tests/test_news_model.py`(16件)・`test_news_pit.py`(25件)・
+`test_news_catalog.py`(8件)、合計49件を新規追加。実Network接続無し、
+合成Record Dataのみ使用。NEWS-016(Historical API Response Is Not
+Historical Snapshot)はAdapter自体が無く再現するExecution Pathが無い
+ため、Macro/Global Marketと同じくCode Testではなく`JAPAN_NEWS_
+ARCHITECTURE.md`のKnown Limitationとして文書化するに留めた。Positioning
+Phase4C/Macro Phase4D/Global Market Phase4E-1のskeptic-reviewer Finding
+(「Catalog Descriptor群にTest Coverageが無かった/後追いだった」)の教訓を
+活かし、このRoundは最初からCatalog Testを含めた。
+
+### Source Integration Skill v1 Field Test
+
+- **A. Skillだけで守れたRule**: PIT-001〜004(UNKNOWN非0/`published_at`
+  優先Fallback禁止/`retrieved_at`のSafe Lower Bound位置付け)・RAW-002
+  (Hash不一致からのRevision推測禁止)・SOURCE-001(Source固有Field意味論
+  を推測しない)・SOURCE-004(Originating Source/Delivery Provider分離、
+  PR TIMES=発行企業/PRTIMES delivery providerで直接適用)——いずれも
+  Skill単体で既存Capability群の経験を踏まえた設計をそのまま踏襲できた。
+- **B. News固有で追加確認が必要だったRule**: Document-shaped記事群への
+  Set Filter as_of適用の判断自体(Skillに明記は無いが、Disclosuresの
+  既存前例から導出可能だった)、`lib.evidence.news.NewsEvent`との境界
+  判断(Skill/既存Docに明記が無く、このRound自身の分析で導出)。
+- **C. News固有の事情 vs D. 一般的なSkill Gap**: 上記Bは**News固有の
+  事情**と判定した(Event層Scaffoldとの境界判断は、他Capabilityには
+  存在しない固有の状況——Positioning/Macro/Global Marketには対応する
+  「先に存在したEvent層Placeholder」が無かった)。
+- **E. Skill v1.1の必要性**: 無し(このRoundでは新規Rule追加を行わ
+  なかった)。
+- **F. Golden Prompt Parityへの影響**: 無し(このRoundはSkillを変更して
+  いない)。
+
+### Known Limitations
+
+- Adapterを1件も実装していない(4候補全て`NOT_IMPLEMENTED`、Validation
+  Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`)。
+- PR TIMES/JPX/FSA/METIいずれも公式仕様をこのSessionから直接確認できて
+  いない(`EGRESS_BLOCKED`)。
+- PR TIMESの全文保存・再配布Terms、公開側Timestamp Field粒度は未確認
+  (次の最優先検証項目)。
+- BOJ「What's New」RSSは既存Macro Catalog(`boj_policy_rate`)との対象
+  重複可能性があり、このRoundでは新規Catalog登録を見送った。
+- `updated_at`Fieldを実際に設定する経路(Source側Update/Correction通知
+  の検出方法)は未設計。
+- NEWS-016(Historical API Response Is Not Historical Snapshot)は
+  Code Testではなく文書上のKnown Limitationとして記録するに留めた
+  (Adapter未実装のため再現不能)。
+- `lib/news/catalog.py`の4 Descriptorは`SourceCatalog`への実際のWiring
+  (Application起動時の一元登録)がまだ無い(既存の慣行のまま)。
+
+### このDecisionでやらないこと
+
+Global News(4E-3)・Consensus/Expectations(4E-4)・News Sentiment・Event
+Extraction・Topic Model・Embeddings/Vector DB・LLM Summarization
+Pipeline・Continuous Crawler・Monitoring/Alerts・Backtest統合・Decision
+Engine統合・BUY/SELL・Regime判定のいずれにも着手していない。D0057
+(Validation Backlog #21)は解決していない(維持)。TDnet/Company IR/
+Positioning/Macro/Global Marketの既存Validation Backlogは同時に消化して
+いない。
