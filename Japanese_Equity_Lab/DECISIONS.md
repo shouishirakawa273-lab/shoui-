@@ -5640,3 +5640,133 @@ Engine統合・BUY/SELL・Regime判定のいずれにも着手していない。
 (Validation Backlog #21)は解決していない(維持)。TDnet/Company IR/
 Positioning/Macro/Global Marketの既存Validation Backlogは同時に消化して
 いない。
+
+---
+
+## D0059 — Phase4E-3: Global News Data Foundation(既存NewsArticleRecordの拡張、Adapter未実装)
+
+海外発News記事のMetadata(見出し・公開時刻・出所・多言語・配信経路・
+Provenance)をPIT-safe/multilingual-aware/timestamp-aware/provenance-
+preservingな形でこのLabへ取り込むための拡張を行った。**Sentiment判定・
+Event抽出・Impact Scoring・日本株へのMapping・Investment Conclusion・
+BUY/SELLは一切実装していない**(Observationまで、Phase4E-3要件§30/§31)。
+
+### 最重要の設計判断: 専用Modelを作らず、既存NewsArticleRecordを拡張
+
+ユーザー要件§3が明示的に指示した通り、まずPhase4E-2の`NewsArticleRecord`/
+既存原則を確認し、専用のGlobal News Modelを即座に作らなかった。
+Repository Reality Checkの結果、`language`は既にPhase4E-2からFirst-class
+Fieldであり、Global News固有要件(多言語Identity・Syndication・地理・
+Timezone Provenance)は全て既定`None`のOptional Field追加のみで表現
+可能と判断した。追加した9Field: `original_article_id`/`translated_from_
+article_id`/`language_variant`/`wire_origin`/`publisher`/`country`/
+`region`/`jurisdiction`/`source_declared_timezone`。
+
+**検証方法**: 拡張後、既存Japan News Test(`test_news_model.py`/`test_
+news_pit.py`、計53件)を無変更のまま再実行し、全て成功することを確認
+した(`bash 5930d12`)。詳細は`GLOBAL_NEWS_ARCHITECTURE.md`参照。
+
+### lib/news/normalize.py・view.py・evidence.pyはFunction本体を1行も変更していない
+
+ユーザー要件§27(既存`news_as_of()`がGlobal Newsに安全に再利用できるか
+確認し、必要な場合のみ最小限拡張する)に対し、`13_tests/test_global_
+news_pit.py`(GNEWS-001〜018、24件)を新設して既存Function群をGlobal
+Newsの実際のシナリオ(複数Timezoneを跨ぐPublished/Provider Availability・
+翻訳記事・Syndication・曖昧Timezone略称)で駆動し、既存Semanticsが
+そのまま正しく機能することを確認した。「拡張が要るかどうかを確認する」
+という要件を、確認Testを書くことで実行した(`bash e1725fd`)。
+
+### Multilingual Identity(§9〜11、最重要論点の一つ)
+
+同じ出来事についての英語/日本語/フランス語記事は必ずしも同じArticleでは
+ない、というユーザー要件の核心原則をArticle Identity判定から直接反映
+した: `source_id`+`source_native_id`(Safe Tier)のみでArticle Identity
+を判定し、`language`/`original_article_id`/`translated_from_article_id`/
+`language_variant`はArticle Identity判定に一切使わない
+(GNEWS-006で構造的に確認)。翻訳記事は自動的にDuplicateとしてFlagされ
+ない。これらのFieldはSourceが明示的に確認できた場合のみ設定し、翻訳
+Content類似度だけからの推測は行わない。
+
+### Syndication: Publisher / Wire Origin / Retrieval Sourceの3層分離(§12)
+
+Source Integration Skillの`SOURCE-005`(TDnet統合で確立した3層分離)を
+News Syndicationへ適用した: `wire_origin`(記事の原典Wire Service)・
+`publisher`(実際に掲載したWebsite/媒体)・`source_id`(既存Field、
+このLabの実際のRetrieval Source)を独立に記録する。ReutersとBloomberg
+がそれぞれ同じEventについて書いた記事はArticle自体が別物であり
+(GNEWS-007、Article Identity != Event Identity、§20)、同じ`wire_origin`
+でも`publisher`が異なれば自動的に同一Articleとはみなさない(GNEWS-008)。
+
+### Timezone Safety(§14、Global Newsで最も重要な論点)
+
+tz-aware datetimeのみを受け付ける既存原則(naive datetime拒否)を継続。
+EST/CST/IST等の曖昧なTimezone略称は一意のIANA Timezoneへ自動変換
+しない——D0056(Global Market)で確認した`ZoneInfo("EST")`固定UTC-5問題
+と同じ懸念が、今回のGlobal News Source候補調査(SEC RSS)でも実際に
+再確認された。新規`source_declared_timezone`Field(Sourceが記事に添えた
+Timezone文字列を**そのまま**保持する)を追加し、`lib/news/`のいずれの
+Function(`normalize`/`view`/`evidence`)からも読まれないことをAST走査で
+構造的に固定した(GNEWS-004、`test_gnews004_source_declared_timezone_
+is_never_read_by_normalize_view_or_evidence`)。曖昧な略称値もそのまま
+文字列として保持され、解析・変換されない(`test_gnews004_ambiguous_
+abbreviation_stored_as_is_without_iana_conversion`)。異なるTimezoneを
+跨ぐPublished/Provider Availability(US Eastern基準とCET基準)でも
+`news_as_of()`が正しくUTC比較で動作することをGNEWS-001/GNEWS-003で
+実際のReal `zoneinfo.ZoneInfo`を使って確認した。
+
+### D0057との境界、NewsEventとの境界(いずれも維持、解決しない)
+
+`news_article_to_evidence()`は既存Functionのまま適用可能だが、この
+Roundでも一切Backtest/Decision Engineへ接続しない(§28)。D0057
+(ARCHITECTURE_GAP、Validation Backlog #21)は未解決のまま維持し、
+Phase4E-2の`test_news015_*`に加えGNEWS-016(`test_gnews016_news_
+evidence_module_never_imports_retrieval_or_filter_usable_at`)で
+Global Newsの文脈でも同じ境界をAST走査で再確認した。`lib.evidence.
+news.NewsEvent`(Event層)との分離もPhase4E-2から無変更のまま維持し
+(`NewsArticleRecord`拡張後も`event_type`Fieldは追加していない)、
+既存Structural Test(`test_news_modules_never_import_evidence_news_
+event_scaffold`)は拡張後も無変更のまま成功する。
+
+### Source Candidate Landscape(data-source-researcher Agent、2026-08-18)
+
+Reuters/LSEG・Bloomberg・AP・AFP・SEC・Federal Reserve・US Treasury・
+ECB・Bank of England・英国政府(gov.uk)・EC Press Corner・PBOC・GDELT・
+NewsAPI.org・Google News RSS・LSE RNS・Nasdaqを調査した。全て`EGRESS_
+BLOCKED`のためSEARCH-SNIPPET-DERIVED(UNVERIFIED)に留まった。
+
+Wire Service勢(Reuters/LSEG・Bloomberg・AP・AFP)はEnterprise契約前提で
+あり個人ローカル実行という本Labの前提にそぐわないため除外。政府/中央
+銀行RSS群は概ね無料・認証不要だがPIT関連詳細が軒並み未確認——SEC RSSの
+"EST"年間固定Timezone Label疑義とUS TreasuryのRSS実Replay Bug(2021年)
+は、Government RSS全般に対する具体的なPIT Risk事例として特に重要と
+判断した。GDELT DOC 2.0は最もTimezone Documentationが明確な候補だが
+News全文ではなくEvent-level Metadataの配信である点を正直に記録した。
+NewsAPI.orgは全文再配布不可というTerms自体が明確だが全文保存前提の
+このLabの用途に合わないため除外。Google News RSSは非公式・無Document
+のため除外。詳細は`GLOBAL_NEWS_ARCHITECTURE.md`「Source Candidate
+Landscape」節参照。
+
+### Adapterは1件も実装しない(ユーザー要件§33に基づく正直なStatus)
+
+`gdelt_doc_2`(VERIFIED_SECONDARY)・`sec_press_release`
+(PRIMARY_OFFICIAL)の2件のみを`implementation_status=NOT_IMPLEMENTED`
+のまま`lib/news/catalog.py`へ登録し、Validation Status=`DESIGN_
+COMPLETE_AWAITING_SPEC_VERIFICATION`を`known_limitations`へ明記した
+(`bash 7f4a88d`)。
+
+### Tests(GNEWS-001〜018、実装からのコピーではなくユーザー要件から導出)
+
+`13_tests/test_global_news_pit.py`(24件)・`test_global_news_catalog.py`
+(10件)、合計34件を新規追加。実Network接続無し、合成Record Dataのみ
+使用(実際のTimezoneはReal `zoneinfo.ZoneInfo`を使うが、実Network越しの
+確認ではなく構文としてのTimezone Objectの使用)。
+
+### このDecisionでやらないこと
+
+Consensus/Expectations(4E-4)・NewsEvent Reconciliation・D0057(Validation
+Backlog #21)の解決・News Sentiment・Event Extraction・Topic Model・
+Embeddings/Vector DB・LLM Summarization Pipeline・Translation
+Pipeline・Continuous Crawler・Monitoring/Alerts・Backtest統合・Decision
+Engine統合・BUY/SELL・Regime判定のいずれにも着手していない。TDnet/
+Company IR/Positioning/Macro/Global Market/Japan Newsの既存Validation
+Backlogは同時に消化していない。

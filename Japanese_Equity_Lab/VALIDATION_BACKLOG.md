@@ -39,6 +39,9 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 24 | JPX News Releases / FSA報道発表資料 / METI News Release RSS仕様確認 | `NOT_IMPLEMENTED`(Adapter未着手) | いずれもRSS Feedの存在はSnippetで示唆されたが未読。pubDateの粒度・Timezone表現・Correction挙動未確認 | 同上 |
 | 25 | BOJ「What's New」RSSとMacro `boj_policy_rate`のCatalog統合方針 | 未着手(重複可能性のみ記録) | News/Macro双方のCatalogに同一Source候補が跨って現れうる——このRoundでは新規News Catalog登録を見送った | `JAPAN_NEWS_ARCHITECTURE.md`、DECISIONS.md D0058 |
 | 26 | `lib/news/`(Metadata Ingest層)→`lib.evidence.news.NewsEvent`(Event層、Phase3D)への変換Layer設計 | 未着手(境界維持のみ、Structural Testで固定済み) | skeptic-reviewer Finding(Phase4E-2): 2つの並行するNews表現を恒久的に維持する設計判断自体は妥当だが、統合Layerの設計はまだ着手していない。`test_news_modules_never_import_evidence_news_event_scaffold`で現状の分離は固定済み | `JAPAN_NEWS_ARCHITECTURE.md`、DECISIONS.md D0058、`lib/evidence/news.py`、`13_tests/test_news_pit.py` |
+| 27 | GDELT DOC 2.0 Timezone Documentation(UTC既定/DST関連)・License("Unrestricted use...without fee"主張)の一次文書確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 全情報がSEARCH-SNIPPET-DERIVED(UNVERIFIED)。News全文ではなくEvent-level Metadataの配信である点は確認済みだが、Timezone/License本文はこのSessionから未読(`EGRESS_BLOCKED`) | `GLOBAL_NEWS_ARCHITECTURE.md`、`lib/news/catalog.py`、DECISIONS.md D0059 |
+| 28 | SEC press release/litigation release RSS: Timezone表記("EST"年間固定Label疑義)・EDGAR Acceptance Datetime対Filing Dateの区別 | `NOT_IMPLEMENTED`(Adapter未着手) | 公式RSS Feedの存在はSnippetで示唆されたが未読。D0056で確認済みの`ZoneInfo("EST")`固定UTC-5問題と同型の懸念がSEC自身のDocumentationにも存在する可能性 | `GLOBAL_NEWS_ARCHITECTURE.md`、`lib/news/catalog.py`、DECISIONS.md D0059 |
+| 29 | Government RSS全般のPIT Risk実例(US Treasury 2021年RSS Replay Bug)の一般化・監視方針 | 未着手(参考事例として記録のみ) | US Treasury自体は候補として不採用だが、将来Government RSS Sourceを採用する際に同種のReplay/再配信Riskを検知する仕組みが必要になりうる | `GLOBAL_NEWS_ARCHITECTURE.md`、DECISIONS.md D0059 |
 
 ## 運用ルール
 
