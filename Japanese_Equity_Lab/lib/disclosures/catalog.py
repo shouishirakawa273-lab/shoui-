@@ -271,7 +271,13 @@ def build_company_ir_dataset_descriptor() -> DatasetDescriptor:
             "REQUIRES_INSPECTION`としてFail Closed、PDF/HTML向け"
             "Canonicalizer汎用Engineは意図的に作らない)。実際のCompany IR"
             "Websiteへの疎通確認状況は`COMPANY_IR_LOCAL_VALIDATION_"
-            "GUIDE.md`参照。"
+            "GUIDE.md`参照。Live Validation Round(2026-08-18)でこの"
+            "Sessionから任意の外部Host(実企業Domain・google.com含む)への"
+            "接続を試みた結果、組織のEgress Policyにより一貫してBlockされる"
+            "ことを確認した(EGRESS_BLOCKED、EDINET/TDnetの過去Roundと同じ"
+            "制約)。Live Fetch検証はUserのローカル環境で"
+            "`COMPANY_IR_LOCAL_VALIDATION_GUIDE.md`に従って実施する必要が"
+            "ある。"
         ),
         notes=(
             "Raw Fetch: lib.disclosures.providers.company_ir.CompanyIrAdapter。"

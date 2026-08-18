@@ -185,11 +185,31 @@ print('evidence.source.available_at:', evidence.source.available_at)
   ただし本Adapterは認証情報らしきQuery Parameterを含むURLを
   Compliance判定前にFail Closedで拒否するため、通常は発生しない)。
 
+## J. Local Live Validation Round(2026-08-18)でのEgress確認結果
+
+Userから改めてLocal Live Validation Roundの開始指示があった際、実際の
+Company IR URLへFetchを試みる前に、このSession自身のNetwork Egress
+可否を先に`curl`で確認した(D0046/D0047のEDINET/TDnetと同じ手順)。
+`https://www.google.com/`・Live Validation Candidateとして検討していた
+`https://global.toyota/en/robots.txt`のいずれも`CONNECT tunnel failed,
+response 403`(組織のEgress Policyによる拒否)であり、既知にAllowlist
+された`https://pypi.org/`は成功した。Agent Proxy自身の`/__agentproxy/
+status`も同じ`connect_rejected`Failureを記録しており、特定のCompany
+IR Siteの問題ではなくこのSession自体が任意の外部Host(Company IR
+Domain含む)へ技術的に到達できないことを確認した(`EGRESS_BLOCKED`)。
+Agent Proxy自身のTroubleshooting Docが「Policy拒否はRetry/回避策を
+試みず報告すること」と明記しているため、これ以上の接続試行(別経路での
+回避含む)は行っていない。したがって本節時点でもStep C以降(Live
+Fetch・Raw保存・Offline再実行)は一度も実行できていない。詳細は
+`DECISIONS.md`「D0053 追記」参照。
+
 ## Known Limitations(このRound時点)
 
 - 実在のCompany IR Websiteへ、このSession(Claude Cloud環境)からも
   Userのローカル環境からも、Live Fetchを一度も実施していない
-  (`implementation_status=SKELETON`のまま)。
+  (`implementation_status=SKELETON`のまま)。このSessionからのEgress
+  自体が組織Policyにより一貫してBlockされることを2026-08-18に`curl`で
+  直接確認済み(§J参照、EDINET/TDnetと同じ`EGRESS_BLOCKED`)。
 - Company IR専用の診断Script(Step F)は未作成。
 - Compliance確認(robots.txt/利用規約)は、このLab自身が自動解析する
   仕組みを持たない(意図的な設計判断)。したがって、どの企業が実際に

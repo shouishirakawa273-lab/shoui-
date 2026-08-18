@@ -4444,3 +4444,68 @@ Phase4B-4のCompletion Report後、次Phaseへ進むことなく完全に停止�
 TDnetのStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は
 変更していない。Company IRをEvent Engine/News Engine/Monitoring
 Engine/全企業Crawlerへ拡張する作業には一切着手していない。
+
+## D0053 追記 — Phase4B-4: Local Live Validation Round、このSessionからのEgress確認結果(EGRESS_BLOCKED)
+
+D0053完了後、ユーザーからLocal Live Validation Round開始の指示があり、
+実際にCompany IR URLへのLive Fetchを試みる前段階として、このSession
+自身のNetwork Egress可否を先に確認した(D0046/D0047のEDINET/TDnet
+Roundと同じ手順)。
+
+### 確認方法と結果
+
+`curl`で以下2件へ接続を試行した:
+
+1. `https://www.google.com/` → `CONNECT tunnel failed, response 403`
+2. `https://global.toyota/en/robots.txt`(Live Validation Candidateとして
+   検討していた実企業Domainの1つ、Toyota Global IR) → 同じく`CONNECT
+   tunnel failed, response 403`
+
+対照として、既知にAllowlistされているHost(`https://pypi.org/`)への
+接続は`HTTP_CODE:200`で成功した。Agent Proxy自身の`/__agentproxy/
+status`Endpointも`recentRelayFailures`として`connect_rejected`
+(`"gateway answered 403 to CONNECT (policy denial or upstream
+failure)"`、対象`www.google.com:443`)を記録しており、これは特定の
+Company IR Siteに固有の問題ではなく、このSession自体の組織Egress
+Policyが任意の外部Host(Company IR Domain含む)への接続を一貫して
+拒否していることを意味する。
+
+`/root/.ccr/README.md`(Agent Proxy自身のTroubleshooting Doc)は
+「403/407はOrganizationのEgress Policyによる拒否であり、retryや
+回避策を試みず、Blockされた事実を報告すること」と明記しているため、
+これ以上の接続試行(WebFetch等別経路での回避を含む)は行わなかった。
+
+### このRoundでの結論
+
+- **Compliance確認(robots.txt/利用規約)以前に、このSession自体が
+  Company IR Websiteへ技術的に到達できない**(D0046/D0047のEDINET/
+  TDnetと同種の`EGRESS_BLOCKED`)。したがってPre-Fetch Compliance
+  Report(§4)・Live Fetch(§5)・Offline Replay(§8)・PIT Proof
+  (§9)のいずれも実施していない(実施していないことを実施したかの
+  ように記録しない、Documentation Integrity原則)。
+- 実装Code(`company_ir.py`/`company_ir_normalize.py`)・Test・Skill
+  (`COMPLY-001〜003`)への変更は本Roundでは行っていない(Live Fetchが
+  一度も実行できていないため、Live Failureから見つかったRegression
+  Testも無い)。
+- `lib/disclosures/catalog.py`の`build_company_ir_dataset_descriptor()`
+  `known_limitations`へ、この確認結果を追記した。
+- pit-auditor/skeptic-reviewerはこのRoundでは実行していない(Code/
+  Architecture変更が無いため、Reviewer起動コストをかける対象が無い、
+  ユーザー指示§14の「小規模Validationで既存Architecture変更が無ければ
+  不要なReviewer大量起動はしない」に従う)。
+
+### Completion Classification(ユーザー指示§16準拠)
+
+A〜Dのいずれにも厳密には該当しない(A〜DはいずれもCompliance確認
+(robots.txt/利用規約)の可否を前提とした分類だが、本Roundの実際の
+制約はそれ以前のNetwork Egress自体である)。最も近い記述は
+**B相当だが理由が異なる**: `CODE_COMPLETE_AWAITING_LOCAL_LIVE_
+VALIDATION`のまま変更しない(Statusは変更不要、Company IR Catalogの
+`implementation_status=SKELETON`も変更しない)。TDnetのStatus
+(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は変更していない。
+
+### このDecisionでやらないこと
+
+Crawler化・Company IR Monitoring・PDF Semantic Extraction・Phase4Cへの
+着手はいずれも行っていない。TDnet Local Validationも同時に開始して
+いない。
