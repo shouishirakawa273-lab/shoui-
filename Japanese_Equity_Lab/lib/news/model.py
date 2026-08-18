@@ -61,6 +61,47 @@ Construction自体を拒否する、既存Patternと同じ)。
 §17)——Raw Snapshotの変化はRawSnapshotStoreのAppend-only保存とHash比較で
 検出できるが、それ自体を「Revisionが確認された」とは自動的に解釈しない
 (RAW-002原則と同じ)。
+
+## Phase4E-3(Global News)向け拡張(既存Modelを壊さない追加Optional Field)
+
+Phase4E-3(Global News Data Foundation)は、この`NewsArticleRecord`を
+**そのまま再利用**する(専用の新しいModelを作らない、Phase4E-3要件§3)。
+既存Field(Japan Newsが実際に使う`internal_article_id`/`source_native_id`
+/`source_id`/`headline`/`published_at`系/`retrieved_at`系/`content_
+availability`/`entity_id`等)の意味・Default値・Validationは一切変更
+していない——追加したのは全て既定`None`のOptional Fieldであり、Japan
+Newsの既存Test(`test_news_model.py`/`test_news_pit.py`)はいずれも
+無変更のまま成功する。
+
+- **Multilingual Identity**(Phase4E-3要件§9〜11): `language`(既存Field、
+  Phase4E-2から既にFirst-class)に加え、`original_article_id`(この記事が
+  翻訳である場合の原文記事ID)・`translated_from_article_id`(直接の翻訳元
+  記事ID)・`language_variant`(Sourceが明示するEdition/Variant、例:
+  "en-US")を追加した。**いずれもSourceが明示的に確認できた場合のみ設定**
+  し、Translation Similarity(内容が似ている)だけからこれらを推測しては
+  ならない(Translation != Same Article、Article Identityは
+  `source_id`+`source_native_id`のみで判定し、翻訳関係Fieldは判定に
+  一切使わない)。
+- **Syndication**(Phase4E-3要件§12、D0042/SOURCE-005の3層分離を踏襲):
+  `wire_origin`(記事の原典となるWire Service、例: "Reuters")・
+  `publisher`(実際に掲載したWebsite/媒体、例: 提携先地方紙)を追加した。
+  `source_id`(このLabが実際にどこから取得したか、Retrieval Source)とは
+  別概念であり、3つとも独立に記録する(SOURCE-005の`publishing_entity`/
+  `disclosure_system`/`delivery_provider`と同型の3層分離をNews向けに
+  適用したもの)。
+- **Geography/Jurisdiction**(Phase4E-3要件§22): `country`/`region`/
+  `jurisdiction`を追加した。**Article言語からCountryを推測しない**——
+  Sourceが構造化Metadataとして明示した場合のみ設定する。
+- **Timezone Provenance**(Phase4E-3要件§14): `source_declared_timezone`
+  を追加した。これはSourceが記事に添えたTimezone文字列を**そのまま**
+  保持する自由記述Field(例: 生の"EST"文字列)であり、`published_at`
+  そのもの(必ずtz-aware datetime、実際のUTC Offset確定済み)とは別概念
+  である。EST/CST/IST等の曖昧なTimezone略称は、それだけでは特定の
+  IANA Timezoneへ一意に対応しない(例: CSTはUS中部標準時・中国標準時・
+  キューバ標準時のいずれもありうる)——このFieldはSourceが実際に何を
+  言ったかの記録(Provenance)に留め、これを解析して`published_at`の
+  Timezoneを推測・補完する処理はこのModule・将来Adapterのいずれにも
+  実装しない。
 """
 
 from __future__ import annotations
@@ -140,6 +181,16 @@ class NewsArticleRecord:
     source_field: str | None = None
     normalizer_version: str
     provenance_id: str | None = None
+    # --- Phase4E-3(Global News)向け拡張、既定Noneで既存Semanticsは不変 ---
+    original_article_id: str | None = None
+    translated_from_article_id: str | None = None
+    language_variant: str | None = None
+    wire_origin: str | None = None
+    publisher: str | None = None
+    country: str | None = None
+    region: str | None = None
+    jurisdiction: str | None = None
+    source_declared_timezone: str | None = None
 
     def __post_init__(self) -> None:
         if not self.internal_article_id:
