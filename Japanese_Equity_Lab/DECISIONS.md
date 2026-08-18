@@ -4509,3 +4509,111 @@ VALIDATION`のまま変更しない(Statusは変更不要、Company IR Catalog�
 Crawler化・Company IR Monitoring・PDF Semantic Extraction・Phase4Cへの
 着手はいずれも行っていない。TDnet Local Validationも同時に開始して
 いない。
+
+## D0054 — Phase4C: Positioning / Supply-Demand Data Foundation(設計・実装)
+
+Positioning/需給Data(信用取引・空売り・投資部門別売買・株主構成等)を
+PIT-safe/source-aware/reproducibleな形でこのLabへ取り込むためのData
+Foundationを新設した。**Investment Signal(Short Squeeze Score等)・
+BUY/SELL判定は一切実装していない**(Data Foundationまで、Phase4C要件
+§1/§21)。
+
+### Repository Reality Check
+
+既存`lib.evidence.model`(`RevisionHistory`/`SourceVersion`/
+`AvailabilityBasis`/`AvailabilitySemantics`/`ValueAvailability`)・
+`lib.fundamentals`(Envelope+Metric分離・`build_revision_histories()`・
+`fundamentals_as_of()`パターン)・`lib.schemas.price_data`
+(`RawOHLCVBar`/`AdjustedOHLCVBar`、`session_close_at`によるAvailability
+規約、`apply_split_adjustments_as_of`等のCorporate Action PIT機構)・
+`lib.sources.entity_registry`(PIT-aware Identifier Mapping)を先に確認
+した。`lib.sources.catalog.DataCapability.POSITIONING`は既にPhase3D
+(D0040)時点で列挙型として存在していた(未使用のまま)。
+
+### Source Candidate Research(data-source-researcher Agent、2026-08-18)
+
+J-Quants V2の`weekly_margin_interest`(信用取引週末残高)・`short-ratio`
+(業種別空売り比率)・`short-sale-report`(個別銘柄空売り残高報告)・
+`trades_spec`(投資部門別売買状況)、およびJPX直接公開Websiteを調査した。
+結果は全てSEARCH-SNIPPET-DERIVED(UNVERIFIED)——このSession自身の
+Network Egressが組織Policyにより公式Document URLへ一貫してBlockされて
+おり(`EDINET_SOURCE_ONBOARDING.md`と同じ制約)、WebFetchは全て失敗した。
+Endpoint Path自体が矛盾する検索結果(`short-sale-report`)、Plan Tier
+情報が単一の未検証情報源のみ(`trades_spec`のLight Plan利用可能性)、
+Publication Lagが4候補いずれも不明、という状態だった。詳細は
+`POSITIONING_ARCHITECTURE.md`「Source候補」節・`VALIDATION_BACKLOG.md`
+参照。
+
+### 実装したSource #1のみ、Source #2は明示的に見送り
+
+Candidate Sourceを検証した結果、確信を持って実装できるのは
+**Price/Volume-derived Liquidity Metric**(既存J-Quants Price Bar
+Connection、Adapter/Field名の新規推測不要)のみと判断した。J-Quants
+Positioning Endpoint群はField名・Wire Schema・Publication Lag・Endpoint
+Pathのいずれも未確認であり、この状態で実装するとFundamentals(Phase4A)
+で実際に発生したField名推測ミスと同種のRiskを繰り返す(Phase4Cユーザー
+要件§5「推測禁止」・§28「Specが確認できないFieldはUNKNOWN」に反する)。
+ユーザー自身の完了基準(§42-3)が「可能なら2系統目も統合、ただし
+Qualityを犠牲にしない」と明示的に許容していたため、Source #2は
+`NOT_IMPLEMENTED`のCatalog登録(4件、`lib/positioning/catalog.py`)と
+`VALIDATION_BACKLOG.md`への記録のみに留めた。
+
+### Common Positioning Model(新規Versioning機構は作らない)
+
+`lib/positioning/model.py`の`PositioningRecord`はLong-form 1レコード
+(entity × metric × period × source)。PIT/Revision管理は`lib.evidence.
+model.RevisionHistory`/`SourceVersion`をそのまま再利用し、Positioning
+専用の新しいVersioning Primitiveは作らなかった(Fundamentalsと同一の
+Primitive)。`lib/positioning/normalize.py`の`build_revision_histories()`
+はSource非依存であり、Source固有のAvailability Semanticsは呼び出し側が
+`resolve_available_at`Callbackとして渡す設計(normalize.py自身はどの
+Sourceの`available_at`計算方法も知らない、将来Source追加時にnormalize.py
+を変更する必要が無いようにするため)。
+
+`metric_type`(例: `TURNOVER_VALUE`、`VOLUME_MOVING_AVERAGE_20D`)は
+Source固有のまま保持し、共通Scoreへ潰さない(ユーザー要件§31)。
+
+### Source #1: Price/Volume-derived Liquidity(`lib/positioning/derived/price_derived.py`)
+
+`TURNOVER_VALUE`(売買代金、close×volume、未調整`RawOHLCVBar`から単日
+算出)と`VOLUME_MOVING_AVERAGE_ND`(トレーリングN日平均出来高、株式分割
+調整済み`AdjustedOHLCVBar`から算出、`window`/`minimum_periods`を明示
+Parameter化、既定は満window必須)を実装した。Availability(いつ利用可能に
+なったか)は`session_close_at(observation_end)`を`AvailabilityBasis.
+INFERRED`として使う——これは新しい規約ではなく、既存`lib.schemas.
+price_data.provider_event_available_at()`(AdjFactor Corporate Action
+Eventの利用可能時刻)や`BacktestEngine`が既に`PointInTimeRecord.
+available_at`として採用している確立済みの規約をそのまま再利用したもの。
+`market_public_at`は常に`None`/`UNKNOWN`(価格取引そのものに個別の
+公表時刻という概念が無いため、確認できないTimestampを推測で埋めない)。
+
+### Evidence Layer(Common Core、新規Primitiveなし)
+
+`lib/positioning/evidence.py`の`positioning_record_to_evidence()`は
+`lib.fundamentals.evidence.disclosure_metric_to_evidence()`と同じ
+D0049/D0050 PIT Bugfix方針を踏襲する: `source.available_at`には常に
+`record.retrieved_at`(Observed Factとしての下限)を使い、
+`market_public_at`へのFallbackは行わない。`EvidenceRecord`/
+`SourceMetadata`(`lib.evidence.model`)を変更なしで再利用した(Company
+IR・Fundamentalsに続き、Provider非依存Common Core設計の3件目の実証)。
+
+### Tests(POS-001〜012、実装からのコピーではなくPhase4C要件から導出)
+
+`13_tests/test_positioning_model.py`(7件)・`test_positioning_price_
+derived.py`(13件)・`test_positioning_pit.py`(13件)、合計33件を新規
+追加。実Network接続無し、合成Bar Dataのみ使用。
+
+### Documentation
+
+`POSITIONING_ARCHITECTURE.md`(新規)・`VALIDATION_BACKLOG.md`(新規、
+既存TDnet/Company IR/EDINET Backlog項目 + 新規Positioning候補4件 +
+Source #1自身のLocal Real Data Validation未実施を一覧化、重複管理を
+避けるため各項目のAuthoritative Docへのリンクのみ保持)。
+
+### このDecisionでやらないこと
+
+J-Quants Positioning Endpoint(信用取引・空売り・投資部門別売買)の
+Adapter実装、JPX直接Sourceの実装、いずれも着手していない
+(`NOT_IMPLEMENTED`のまま)。Investment Signal化(Short Squeeze Score
+等)・Expectations Engine・Portfolio Sizingには一切着手していない。
+Continuous Monitoring/Scheduler/Alertは実装していない。
