@@ -5575,6 +5575,62 @@ Phase4C/Macro Phase4D/Global Market Phase4E-1のskeptic-reviewer Finding
 - `lib/news/catalog.py`の4 Descriptorは`SourceCatalog`への実際のWiring
   (Application起動時の一元登録)がまだ無い(既存の慣行のまま)。
 
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `2 FINDINGS(highest severity: LOW)`。2件とも独立に
+   再確認の上で対応した。
+   - **[LOW、採用・修正]** `news_as_of()`のFuture Injection/UNKNOWN除外
+     Guardが、既定(PROVIDER_AVAILABLE_AT系統)のTestでしかExerciseされて
+     おらず、MARKET_PUBLIC_AT系統でも同じGuardが直接Testで確認されて
+     いなかった、という指摘を実際に`test_news_pit.py`全体を読んで確認
+     した(Code自体は両系統で同じ3つのGuardを共有する対称的構造だが、
+     Test Coverageが非対称だった)。`test_news002_unknown_published_at_
+     excluded_by_default_under_market_public_at_semantics`・`test_
+     news013_future_article_not_visible_under_market_public_at_
+     semantics`を追加した(`bash 9229280`)。
+   - **[LOW、対応不要、情報提供のみ]** `updated_at`Fieldの設定経路未設計
+     という指摘は、既に`JAPAN_NEWS_ARCHITECTURE.md`/DECISIONS.md Known
+     Limitationsで正直に開示済みであり、実害を及ぼすExecution Pathも
+     現状無い(Adapter未実装)ことをpit-auditor自身が確認・追認した。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。2件のMEDIUM・1件の
+   LOW-MEDIUM・1件のLOWを独立に再確認した:
+   - **[MEDIUM、採用・修正]** `find_same_source_native_id_signals()`が
+     `source_native_id`のみでGroupingしており`source_id`でScopeして
+     いない、という指摘を実際にCodeを読んで確認した(4候補中`source_
+     native_id`のGlobal一意性が確認できたSourceは無い)。Grouping Keyを
+     `(source_id, source_native_id)`のTupleへ変更し(`source_id`は
+     `__post_init__`で非空必須の既存Field、追加Costゼロ)、異なるSource
+     間の誤検出が起きないことを直接検証する新規Test(`test_news008_
+     same_native_id_from_different_sources_is_not_flagged`)を追加した
+     (`bash 9bd5d51`)。
+   - **[MEDIUM、Documentationで対応]** `news_article_to_evidence()`が
+     常に`EvidenceType.FACT`を付与しており、`lib.evidence.model`自身の
+     Evidence Type定義(FACT vs CLAIM、発言の存在自体はFACTだが内容の
+     真偽は別)との緊張関係を検討していなかった、という指摘を確認した。
+     PR TIMES(`COMPANY_PRIMARY`)の見出しは発行企業自身の自由記述であり、
+     TDnetの定型的な文書Title(Disclosures Evidenceが同じくFACT扱いする
+     前例)とは性質が異なりうる。ただし現時点でこのEvidenceを実際に
+     消費するExecution Path・実Adapterのいずれも存在しないため
+     (`test_news015_*`確認済み)、Code変更(新しいClaim判定Logic導入)は
+     このRoundでは行わず、`evidence.py`のDocstringへ「FACTは『この見出し
+     の記事が公開された』というMeta-level事実であり、見出し内容自体の
+     真偽を主張しない」ことを明記し、将来PR TIMES等実Adapter実装時に
+     再検討すべきKnown Limitationとして記録した(`bash 9bd5d51`)。
+   - **[LOW-MEDIUM、採用・修正]** `lib.evidence.news.NewsEvent`との境界
+     判断(妥当な設計判断だが)が、D0057境界(Backlog #21 + Structural
+     Test)と同じ厳密さでTrackingされていなかった、という指摘を確認した。
+     `VALIDATION_BACKLOG.md`行26を追加し、D0057境界Testと同じAST解析
+     手法で`lib/news/`のいずれのModuleも`lib.evidence.news`をImportしな
+     いことを固定する`test_news_modules_never_import_evidence_news_
+     event_scaffold`を追加した(`bash 9bd5d51`)。
+   - **[LOW、対応せず、Known Limitationとして記録]** `NewsDuplicate
+     RelationKind.UNKNOWN`が実質的に到達不能なMemberである、という
+     指摘を確認したが、これは`lib.disclosures.model.DuplicateRelation
+     Kind`が既に持つ同型のPatternをそのまま踏襲したものであり、この
+     Round固有の新規Dead Codeではないと判断し、変更しなかった。
+
+Blocker/High Findingはいずれのpassでも無し。
+
 ### このDecisionでやらないこと
 
 Global News(4E-3)・Consensus/Expectations(4E-4)・News Sentiment・Event
