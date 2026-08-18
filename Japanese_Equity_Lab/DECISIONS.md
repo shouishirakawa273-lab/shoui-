@@ -5159,3 +5159,211 @@ Tradingのいずれにも着手していない。Japan News(4E-2)・Global News
 (4E-3)・Consensus/Expectations Inputs(4E-4)には進んでいない。TDnet/
 Company IR/Positioning/Macroの既存Validation Backlogは同時に消化して
 いない。
+
+## D0057 — Cross-Capability PIT Gate Consistency Review(調査のみ、Validation Backlog #21の解消)
+
+Phase4E-1(D0056)のpit-auditorが報告したValidation Backlog #21
+(「Global Marketの`as_of()`経路とEvidence経路のAvailability Semanticsに
+差がある」)のみを調査した。**Phase4E-2へは進んでいない。** 差があること
+自体をBugと決めつけず、既存Decision(D0042/D0049/D0050)を先に読んだ上で、
+実Code(6 Capability: Fundamentals/Disclosures/Positioning/Macro/Global
+Market + `lib/evidence/`共通層)のExecution Pathを直接追跡し、Classification
+(NO_BUG/SAFE_BUT_UNCLEAR/CURRENT_DEFECT/ARCHITECTURE_GAP)を決定した。
+
+### §1 既存Decisionの再確認(D0042/D0049/D0050)
+
+D0042が既に「Market Information Study(A系統、`market_public_at`)」と
+「Reproducible System Simulation(B系統、`provider_available_at`相当、
+このLabのPIT判定の既定基準)」を区別し、`SourceMetadata`のDocstringが
+`available_at`を「provider_available_at相当」と明記していることを確認した
+(`lib/sources/catalog.py:80`)。D0049/D0050は「`market_public_at`への
+Fallback禁止、`retrieved_at`はObserved Safe Availability Timestamp」を
+確立した。この2つのDecisionはいずれも「Evidence経路のavailable_atが
+どう計算されるべきか」を扱っており、「as_of経路の`resolve_available_at`
+がSession/Period完了時刻を推定する場合、それとEvidence経路がどう関係
+するか」は扱っていなかった——D0057はこの未検討だった接点を扱う。
+
+### §2 実Code確認(File/Function/Timestamp Semantics)
+
+| Capability | as_of経路のavailable_at生成 | Evidence経路のavailable_at生成 |
+|---|---|---|
+| Fundamentals | `lib/fundamentals/normalize.py::_provider_available_at_and_basis()` — `market_public_at`優先(Anchor)、Basis常にUNKNOWN(既定で`as_of()`除外) | `lib/fundamentals/evidence.py::disclosure_metric_to_evidence()` — 常に`envelope.retrieved_at`(D0049で確定) |
+| Disclosures | `lib/disclosures/normalize.py::_provider_available_at_and_basis()` — 同上Pattern、TDnetは`market_public_at`にEXACT Basisを持つため`disclosures_as_of()`既定(PROVIDER_AVAILABLE_AT系統)では逆に**常に除外**される(provider_available_atはUNKNOWNのまま) | `lib/disclosures/evidence.py::disclosure_document_to_evidence()` — `provider_available_at`確認済みなら優先、無ければ`document.retrieved_at`(D0050で確定) |
+| Positioning | `lib/positioning/derived/price_derived.py::resolve_available_at()` — `session_close_at(observation_end)`、Basis=INFERRED(既定で`as_of()`に含まれる) | `lib/positioning/evidence.py::positioning_record_to_evidence()` — 常に`record.retrieved_at` |
+| Macro | 呼び出し側が渡す`resolve_available_at`(このRound未実装Adapterのため実例なし) | `lib/macro/evidence.py::macro_record_to_evidence()` — 常に`record.retrieved_at` |
+| Global Market | 同上(未実装Adapter) | `lib/global_market/evidence.py::global_market_record_to_evidence()` — 常に`record.retrieved_at` |
+
+**Positioningのみが実際にConnectedなAdapter(J-Quants Price経由)を持つ**
+ため、これが最も具体的な確認対象になった。`lib/data_sources/jquants.py`
+は`retrieved_at=datetime.now(UTC)`(実際のHTTP Fetch時刻)を設定しており、
+これがSession Closeより前になることを構造的に禁止する仕組みは無い
+(例えば取引時間中にDaily Quotesを取得した場合、当日分の未確定行が
+含まれうる)。
+
+**共通層の構造的差異(重要)**: `lib.evidence.model.SourceVersion`
+(as_of経路)は`availability_basis`(EXACT/OBSERVED/INFERRED/UNKNOWN)を
+持ち、`RevisionHistory.as_of()`はUNKNOWNを既定除外する。一方
+`lib.sources.catalog.SourceMetadata`(Evidence経路)には`availability_
+basis`に相当するField自体が存在しない(`dataclasses.fields()`で直接
+確認、`test_evidence_record_source_metadata_has_no_availability_basis_
+field`)。したがってEvidence経路には「この値は推定である」ことを示す
+構造的な手段が無く、`retrieved_at`をそのまま確定値として扱う。
+
+**Repository Reality Check(重要な否定的事実)**: `positioning_record_to_
+evidence`/`disclosure_metric_to_evidence`/`disclosure_document_to_
+evidence`/`macro_record_to_evidence`/`global_market_record_to_evidence`
+のいずれも、また`lib.evidence.retrieval.retrieve_evidence()`/`filter_
+usable_at()`も、`scripts/`・`app.py`のいずれからも一切呼び出されていない
+(`grep`で確認済み)。`*_as_of()`系関数群も同様に本番未接続。つまり
+**このLabのEvidence/as_of層全体が、現時点では実際に配線された本番
+Pipeline(Backtest System B)を持たない、Library Codeのみの状態**である。
+
+### §3 Capability Matrix(Timestamp Semantics)
+
+| Capability | Observation timestamp | Published timestamp | Provider availability | Retrieved timestamp | Canonical available_at(as_of) | Evidence available_at | as_of visibility rule | AvailabilityBasis |
+|---|---|---|---|---|---|---|---|---|
+| Fundamentals | `FundamentalMetric`の`fiscal_year_target`等(期間概念、時刻ではない) | `envelope.market_public_at`(DiscDate/DiscTime由来、Basis=EXACT/UNKNOWN) | UNKNOWN(未観測) | `envelope.retrieved_at` | `market_public_at`優先Anchor、Basis常にUNKNOWN | `retrieved_at`固定 | `RevisionHistory.as_of()`、Latest-wins | as_of: UNKNOWN固定。Evidence: Field無し |
+| Disclosures | `DisclosureDocument`の開示対象期間 | `document.market_public_at`(TDnetはEXACT、EDINETはUNKNOWN) | `document.provider_available_at`(常にUNKNOWN、現行Normalizerでは未確認) | `document.retrieved_at` | 既定(PROVIDER_AVAILABLE_AT系統)は`provider_available_at`のみ参照、UNKNOWNのため常に除外 | `provider_available_at`確認済みなら優先、無ければ`retrieved_at` | `disclosures_as_of()`、Set Filter(Latest-winsではない) | as_of: `market_public_at_basis`/`provider_available_at_basis`。Evidence: Field無し |
+| Positioning | `observation_start`/`observation_end`(Bar日) | `record.market_public_at`(常に`None`、Price-derivedでは未使用) | UNKNOWN(未観測、Fieldは無くBasisのみ`resolve_available_at`が付与) | `record.retrieved_at`(実HTTP Fetch時刻) | `session_close_at(observation_end)`、Basis=INFERRED | `retrieved_at`固定 | `positioning_as_of()`、Latest-wins | as_of: INFERRED(既定で含む)。Evidence: Field無し |
+| Macro | `reference_period_start`/`end` | `record.market_public_at` | 未実装Adapterのため実例なし | `record.retrieved_at` | 呼び出し側実装依存(未実装) | `retrieved_at`固定 | `macro_as_of()`、Latest-wins | as_of: 呼び出し側依存。Evidence: Field無し |
+| Global Market | `session_date` | `record.market_public_at` | 未実装Adapterのため実例なし | `record.retrieved_at` | 呼び出し側実装依存(未実装、Phase4E-1では`_us_close_resolver`がTest内のみ存在) | `retrieved_at`固定 | `global_market_as_of()`、Latest-wins | as_of: 呼び出し側依存。Evidence: Field無し |
+
+### §4 System A / System B / 第三の概念(Market Observation Completion Time)
+
+D0042のSystem A(`market_public_at`、公表時刻)/System B
+(`provider_available_at`相当、`available_at`)の2分類は、Disclosure的
+Event(会社が特定時刻に開示する)を念頭に設計されていた。Positioning/
+Macro/Global Marketの`resolve_available_at`Pattern(`session_close_at`
+等)は、**どちらでもない第三の概念**を扱っている: ユーザーTask仕様§3の
+「Market Observation Completion Time」——市場という制度がその観測を
+確定させた時刻(東証の大引け等)——である。これは`market_public_at`
+(特定Entityが能動的に公表する行為)ではなく、`retrieved_at`(このLabが
+実際に取得した行為)でもない、市場構造由来の第三の時刻概念である。
+
+**`lib.schemas.price_data.provider_event_available_at()`のDocstring
+(既存、Phase3A由来)は、これを明示的にSystem Bの代理として扱う設計判断を
+既に記録していた**: 「このEventの存在がResearch Labにとって知り得るのは、
+その日のBarデータ自体が取得可能になる時刻(=市場のその日の大引け)と
+同じである」。すなわち、**Session Close推定はSystem Bの推定戦略の1つ
+として意図的に選ばれたものであり、System Aでも第四の概念でもない**。
+`AvailabilityBasis.INFERRED`(EXACTではない)というTagが、この推定の
+性質(確認されたProvider Timestampではなく、市場構造からの推論)を
+正確に表現している。
+
+**結論**: as_of経路(Session Close推定)とEvidence経路(`retrieved_at`
+Observed Fact)は、**同じTarget概念(System B)を指す、2つの独立した
+推定戦略**である。「本来同じ時計を表すべきか」(ユーザーTask仕様§2C)への
+回答は**Yes**——両方ともSystem Bの推定である。「異なるなら、意図された
+Layer separationか」(§2D)への回答は**部分的にYes**: 推定戦略が異なる
+こと自体は意図的な設計(EXACT Timestampが無い場合の代替手段として
+両方とも正当)だが、**2つの推定戦略が構造的に整合する(例:
+`retrieved_at >= available_at`が常に成り立つ)ことを保証する仕組みは
+存在しない**——これは意図されたLayer Separationではなく、単に「まだ
+検討されていなかった接点」である。
+
+### §5 Failure Example(実際にTestで再現)
+
+Positioning(実Adapter)で、`retrieved_at`がSession Closeの6時間前
+(例: 取引時間中のBatch取得、または将来Providerが未確定Intraday値を
+返すケース)である場合:
+
+- `positioning_as_of()`(as_of経路): Session Close前として正しく`None`
+  を返す。
+- `positioning_record_to_evidence()` → `filter_usable_at()`
+  (Evidence経路): `retrieved_at`のみを基準にするため、同じ`decision_at`
+  で誤って「利用可能」と判定する。
+
+逆に`retrieved_at`がSession Closeの後(=このLabの現行運用が実際に想定
+する通常の順序)であれば、Evidence経路はas_of経路より**常に保守的**
+(遅い、または同じ)になり、乖離しない(`test_evidence_path_agrees_
+with_as_of_path_when_retrieved_after_session_close`で確認)。
+
+### §6 Classification: D. ARCHITECTURE_GAP
+
+- **NO_BUGではない**: 両経路は「異なる意味」ではなく「同じTarget概念
+  (System B)への異なる推定戦略」であり、それらが構造的に整合する保証が
+  無いことは単なる仕様上の相違として片付けられない。
+- **CURRENT_DEFECTではない**: §2で確認した通り、Evidence経路・as_of
+  経路のいずれも、実際に本番`scripts/`・`app.py`から呼び出されている
+  Execution Pathが現在存在しない。両者を連結し実際にPIT判定へ使う
+  Consumerが無いため、「現在誤った投資判断・誤ったBacktest結果を生んで
+  いる」というCURRENT_DEFECTの要件(具体的Execution Path上のTrigger/
+  Impact)を満たさない。
+- **ARCHITECTURE_GAP**: 「現在Leakageはないが、将来統合時に意味論衝突が
+  起こる」に該当する。将来Backtest System B(Evidence経由でPIT判定する
+  実際のPipeline)を配線する際、または`retrieve_evidence()`を本番接続
+  する際に、この2経路のどちらを「正」とするかを明示的に決めないと、
+  同じ`GlobalMarketRecord`/`PositioningRecord`について矛盾した
+  Availability判定が起こりうる。
+- SAFE_BUT_UNCLEARではない(単なるDocumentation不足ではなく、実際に
+  Testで異なる結果を再現できる構造的な相違であるため、より強い
+  ARCHITECTURE_GAPに分類する)。
+
+### §7 このRoundでのCode変更方針: なし(Common Core非変更)
+
+分類がARCHITECTURE_GAPであるため、ユーザー指示§10「ARCHITECTURE_GAPなら
+原則Backlogへ」に従い、**`lib/`配下のいずれの本番Codeも変更しない**
+(`git status`で確認: 新規Test File 1件のみ)。特に以下は行っていない:
+
+- `EvidenceRecord`/`SourceMetadata`への`availability_basis`相当Field
+  追加(新Schema拡張、ユーザー指示§11で明示的に禁止)。
+- Evidence経路のavailable_at計算をas_of経路のResolverと連携させる変更。
+- 2経路のどちらかを「正」と決める設計判断(これは将来Backtest System B
+  設計時にユーザーの判断を仰ぐべき論点であり、このRoundの調査だけでは
+  決定しない)。
+
+### §8 Tests(Semantic Contractの固定、Timestampの一致を強制するTestではない)
+
+`13_tests/test_pit_gate_cross_capability_semantics.py`(新規、6件):
+
+1. `test_as_of_path_available_at_is_independent_of_retrieved_at` —
+   as_of経路がSession Closeのみに依存し`retrieved_at`を無視することの
+   構造確認(Positioning実Adapter)。
+2. `test_evidence_path_available_at_is_independent_of_session_close` —
+   Evidence経路が`retrieved_at`のみに依存しSession Closeを無視すること
+   の構造確認(Positioning実Adapter)。
+3. `test_evidence_path_leaks_earlier_than_as_of_path_when_retrieved_
+   before_session_close` — Failure Exampleの直接再現(§5)。
+4. `test_evidence_path_agrees_with_as_of_path_when_retrieved_after_
+   session_close` — Well-behaved Orderingでは乖離しないことの確認
+   (Failure Exampleとの対比)。
+5. `test_evidence_record_source_metadata_has_no_availability_basis_
+   field` — `SourceMetadata`に`availability_basis`相当Fieldが構造的に
+   存在しないことの確認(`dataclasses.fields()`直接検査)。
+6. `test_global_market_records_the_same_divergence_pattern_
+   independently` — Global Marketでも同型のPatternが再現することの
+   最小Sanity Check(D0056の既存Pinning Testと重複させず、Positioning/
+   Global Marketで同型であること自体の確認に限定)。
+
+### §9 Documentation変更
+
+`DECISIONS.md`(このEntry)のみ。`lib/`配下のDocstring変更は行っていない
+(§7参照、Common Core非変更方針のため)。
+
+### §10 Validation Backlog Disposition
+
+`VALIDATION_BACKLOG.md`行21(「Evidence Layer PIT Gate Capability横断
+レビュー」)を、D0057の調査完了を反映する形で更新した(削除はしない
+——ARCHITECTURE_GAPは「対応済み」ではなく引き続きBacklog項目として残す、
+ユーザー指示§10「原則Backlogへ」に従う。ただし内容を「未調査」から
+「調査完了・設計判断待ち」へ更新し、この結論[D0057]を指すよう改訂)。
+
+### §11 Reviewer Pass(pit-auditorのみ、ユーザー指示§13に従う)
+
+`pit-auditor`(Read-only)を実施。Finding: [記載待ち、実施後に追記]。
+
+### §12 最終回帰確認
+
+`pytest`(Lab)・`ruff check`・`ruff format --check`・`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean。
+`git diff --stat -- core/ app.py tests/`は空Diff。今回の変更File一覧は
+`13_tests/test_pit_gate_cross_capability_semantics.py`(新規)・
+`DECISIONS.md`・`VALIDATION_BACKLOG.md`のみ。
+
+### このDecisionでやらないこと
+
+`retrieval_mode`新Schema・Replay Architecture・Event Engine・Indexer・
+Global Provider Adapter・FRED Integration・Macro Adapter・Phase4E-2
+(Japan News)・大規模Common Core再設計のいずれにも着手していない。
+2つの推定戦略のどちらを「正」とするかの設計判断も行っていない
+(将来Backtest System B設計Round向けにBacklogとして残す)。
