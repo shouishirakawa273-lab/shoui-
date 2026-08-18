@@ -200,7 +200,94 @@ def build_tdnet_dataset_descriptor() -> DatasetDescriptor:
     )
 
 
+def build_company_ir_dataset_descriptor() -> DatasetDescriptor:
+    """Company IR(企業投資家向け広報サイト)、Manual/User-specified URL First
+    のCatalog登録情報(Phase4B-4)。
+
+    `implementation_status=SKELETON`: `lib.disclosures.providers.
+    company_ir.CompanyIrAdapter`/`company_ir_normalize`は実際のHTTP
+    Fetch・Compliance Gate・PIT Field分離を行う実コードとして存在するが、
+    実際のCompany IR Websiteへこのセッションから疎通できたかは
+    `COMPANY_IR_LOCAL_VALIDATION_GUIDE.md`参照(未確認の場合はこの
+    Descriptorをその旨反映した状態で維持する)。EDINET初回Roundと異なり
+    「単一の公式APIへの疎通確認」という単純な形では確認できない(Company
+    IRは個別企業ごとに異なるWebsiteであり、1社の挙動を全企業の仕様とは
+    しない、Source Integration Skill v1 SOURCE-001の精神)。
+
+    **Compliance First**: このAdapterはrobots.txt/利用規約の自動解析を
+    行わない。呼び出し側が`ComplianceCheckResult`を明示的に構築し、
+    `automated_retrieval=ALLOWED`の場合のみFetchが実行される(Fail
+    Closed、`assert_retrieval_allowed()`)。
+
+    `pit_available=False`固定: `provider_available_at`はこのSourceでは
+    構造的に一切設定されない(HTTP `Last-Modified`からのMapping経路自体が
+    存在しない設計)。`market_public_at`も呼び出し側が明示的な確認済み
+    Timestampを渡さない限り`UNKNOWN`のまま。
+
+    `originating_source=delivery_provider="COMPANY_IR"`(発行体自身の
+    Websiteを直接Fetchする設計のため、Publishing Entity/Disclosure
+    System/Delivery Providerの3層[Source Integration Skill v1
+    SOURCE-005]はDelivery Provider側で収束するが、`entity_id`[発行体
+    識別]は別軸のまま未解決[呼び出し側が確認済み値を渡した場合のみ設定]、
+    EDINETと同じ収束パターン)。
+
+    **Historical PIT Limitation**(最重要の既知の制約、Section 15):
+    現在Company IR Pageを取得しても、そのPDFが過去のある時刻から実際に
+    Website上で取得可能だったことを遡って証明できない。Current
+    Retrieval != Historical Website Snapshot。
+    """
+    return DatasetDescriptor(
+        dataset_id="company_ir_disclosures",
+        source_id="COMPANY_IR",
+        capability=DataCapability.DISCLOSURE,
+        authority_class=SourceAuthorityClass.COMPANY_PRIMARY,
+        implementation_status=ImplementationStatus.SKELETON,
+        update_frequency="Manual/User-specified URL(Event-driven/定期Crawlerではない、v1は都度手動指定)",
+        pit_available=False,
+        applicable_codes=None,
+        applicable_countries=("JP",),
+        cost_or_plan_dependency="無料(公開Web)。ただしCompliance確認(robots.txt/利用規約)が必須の前提条件",
+        known_limitations=(
+            "Manual/User-specified URL Firstのv1実装(全上場企業Crawler・"
+            "Search Engine Crawling・IR自動発見・Selenium等のBrowser自動巡回は"
+            "いずれも実装していない、意図的なScope外)。Compliance確認"
+            "(robots.txt/利用規約)はこのAdapter自身が自動解析するのではなく、"
+            "呼び出し側が`ComplianceCheckResult`として明示的に確認・記録した"
+            "結果を渡す設計(自動解析Engine自体を作らないという判断)。"
+            "automated_retrievalがALLOWEDでない場合はFail Closed"
+            "(ComplianceError)。document_kindの自動分類・本文Semantic"
+            "Extraction・Event/Bullish/BUY判定はいずれも行わない"
+            "(Document != Event != Evidence解釈)。market_public_atは呼び出し"
+            "側が明示的な確認済みTimestampを渡さない限りUNKNOWNのまま"
+            "(HTML/PDF本文からの自動抽出は行わない)。provider_available_at"
+            "はこのSourceでは構造的に一切設定されない(HTTP Last-Modified"
+            "ヘッダをOpaque値として保持するのみで、PIT Fieldへは変換しない"
+            "経路自体が存在しない)。entity_idは呼び出し側が確認済み値を"
+            "渡さない限りNone(会社名文字列やURL Domainからの推測はしない)。"
+            "Raw Hash不一致だけからRevision関係を自動構築しない"
+            "(DocumentRelationship/DuplicateRelationKindはこのModule/"
+            "Normalizerからは一切参照されない)。Format-agnostic"
+            "Canonicalizerは実装していない(Raw Hash不一致時は`RAW_CHANGE_"
+            "REQUIRES_INSPECTION`としてFail Closed、PDF/HTML向け"
+            "Canonicalizer汎用Engineは意図的に作らない)。実際のCompany IR"
+            "Websiteへの疎通確認状況は`COMPANY_IR_LOCAL_VALIDATION_"
+            "GUIDE.md`参照。"
+        ),
+        notes=(
+            "Raw Fetch: lib.disclosures.providers.company_ir.CompanyIrAdapter。"
+            "Normalize: lib.disclosures.providers.company_ir_normalize"
+            "(Company IR固有FieldはCompanyIrDocumentMetadataへ保持、"
+            "Provider-neutralなCommon Core DisclosureDocumentへは持ち込ま"
+            "ない)。既存disclosure_document_to_evidence()(Common Core、"
+            "Provider非依存)をそのまま再利用可能(Company IR専用のEvidence"
+            "変換関数は新設していない)。"
+            "originating_source=delivery_provider='COMPANY_IR'。"
+        ),
+    )
+
+
 __all__ = [
+    "build_company_ir_dataset_descriptor",
     "build_disclosure_common_core_dataset_descriptor",
     "build_edinet_dataset_descriptor",
     "build_tdnet_dataset_descriptor",
