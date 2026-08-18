@@ -1,4 +1,4 @@
-"""Japan News DatasetをPhase3D Data Catalogへ登録する(Phase4E-2)。
+"""Japan/Global News DatasetをPhase3D Data Catalogへ登録する(Phase4E-2/4E-3)。
 
 `ImplementationStatus`(実装状況)と、このModuleが`known_limitations`へ
 自由記述で記録するValidation Status(`DESIGN_COMPLETE_AWAITING_SPEC_
@@ -14,6 +14,18 @@ prtimes.com`/`www.jpx.co.jp`/`www.fsa.go.jp`/`jp.reuters.com`等)へ
 一貫してBlockされており(`EGRESS_BLOCKED`)、全ての情報がSEARCH-SNIPPET-
 DERIVED(UNVERIFIED)に留まった。検索Snippetのみを根拠にAdapterを実装
 しない(Phase4E-2要件§8)。
+
+## Phase4E-3(Global News)向け追加候補
+
+同じdata-source-researcher Agent(2026-08-18)によるGlobal News候補調査
+(Reuters/LSEG・Bloomberg・AP・AFP・SEC・Federal Reserve・US Treasury・
+ECB・Bank of England・GDELT・NewsAPI.org・Google News RSS等)も同様に
+`EGRESS_BLOCKED`であり、以下2件のみ「構造/Timestamp/Licenseのいずれかが
+比較的明確」として登録する(Phase4E-3要件§33、Wire Service勢は
+Enterprise契約前提でこのLabの個人ローカル実行という前提にそぐわないため
+除外、NewsAPI.orgは全文再配布不可というTerms自体は明確だが全文保存を
+前提とするこのLabの用途に合わないため除外、Google News RSSは非公式・
+無Documentのため除外)。
 """
 
 from __future__ import annotations
@@ -110,6 +122,91 @@ def build_fsa_press_release_dataset_descriptor() -> DatasetDescriptor:
             "RSS Feed(www.fsa.go.jp/kouhou/rss.html)・SESC向け別Feedの存在はSnippetで示唆されたが"
             "未読。Timestamp Field仕様・Correction/Update挙動いずれも未確認。VALIDATION_STATUS="
             "DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION(Adapter未実装)。"
+        ),
+        notes="Source Candidate Research: data-source-researcher Agent 2026-08-18、DECISIONS.md参照。",
+    )
+
+
+def build_gdelt_doc_dataset_descriptor() -> DatasetDescriptor:
+    """GDELT DOC 2.0 API/Bulk Export(世界の報道をMonitoringしEvent-level
+    Metadataを構造化するAcademic/Open Project)経由の候補(Phase4E-3)。
+
+    **未実装(NOT_IMPLEMENTED)**。data-source-researcher AgentがGlobal News
+    候補の中で最も構造/Timezone Documentationが明確と評価したが、GDELTが
+    配信するのは**News記事そのもの(全文)ではなく、記事から抽出された
+    Event-level Metadata**である(URL・出典・言語・トーン等)——本文保存を
+    前提にできない(`ContentAvailability.REFERENCE_ONLY`が上限)。UTC
+    default/明示的Timezone Documentationは複数独立Snippetで確認されたが、
+    このSession自身は未読(`EGRESS_BLOCKED`)。「Unrestricted use...without
+    fee」という利用許諾を主張するSnippetがあるが、License全文自体は未読の
+    ためUNKNOWN != ALLOWEDの原則により確定させない(Phase4E-3要件§24)。
+    GDELTは複数のNews Source(Reuters/AP等を含む)を横断的にMonitoringする
+    Secondary Aggregatorであり、Originating Source自体ではないため
+    `SourceAuthorityClass.VERIFIED_SECONDARY`とする。
+    """
+    return DatasetDescriptor(
+        dataset_id="gdelt_doc_2",
+        source_id="gdelt",
+        capability=DataCapability.NEWS,
+        authority_class=SourceAuthorityClass.VERIFIED_SECONDARY,
+        implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
+        update_frequency="15分毎更新と示唆(未確認)",
+        pit_available=False,
+        applicable_codes=None,
+        applicable_countries=(),
+        cost_or_plan_dependency="無料・認証不要と思われる(未確認)。",
+        known_limitations=(
+            "News記事の全文ではなくEvent-level Metadata(URL・出典・言語・トーン等)の配信であり、"
+            "本文保存を前提にできない(ContentAvailability=REFERENCE_ONLY止まりが安全側)。UTC既定/"
+            "DST関連の明示的Timezone DocumentationはSnippet上では複数独立に確認されたが本文自体は"
+            "未読。「Unrestricted use...without fee」という利用許諾の主張も同様に未読のため確定させ"
+            "ない(UNKNOWN != ALLOWED)。Reuters/AP等の一次記事を横断的にMonitoringするSecondary"
+            "Aggregatorであり、記事のOriginating Source自体の権威付けとは別軸。VALIDATION_STATUS="
+            "DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION(Adapter未実装、data-source-researcher推奨"
+            "順位1位)。"
+        ),
+        notes="Source Candidate Research: data-source-researcher Agent 2026-08-18、DECISIONS.md参照。",
+    )
+
+
+def build_sec_press_release_dataset_descriptor() -> DatasetDescriptor:
+    """SEC(米国証券取引委員会)報道発表資料/Litigation Release RSS経由の
+    候補(Phase4E-3)。
+
+    **未実装(NOT_IMPLEMENTED)**。無料・認証不要と示唆される公式RSS Feedの
+    存在はSnippetで確認されたが未読。data-source-researcher Agentが2つの
+    具体的なPIT関連Riskを指摘した: (1) SECのRSS自身のTimezone表記が
+    「EST」という年間を通じた固定Labelを使っているとの示唆があり(DST期間中
+    実際にはEDTのはずだが区別されていない)、abbreviation由来のTimezoneは
+    このLabの原則上IANA Timezoneへ自動変換しない(D0056で確認済みの
+    `ZoneInfo("EST")`固定UTC-5問題と同型、Phase4E-3要件§14)、(2) EDGAR
+    構造化開示のAcceptance Datetime(EDGAR受理時刻)とFiling Date(開示書類
+    自体の日付)は別概念であり、Press Release RSSのpubDateがどちらに相当
+    するかは未確認。
+    """
+    return DatasetDescriptor(
+        dataset_id="sec_press_release",
+        source_id="sec",
+        capability=DataCapability.NEWS,
+        authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
+        update_frequency="EVENT_DRIVEN(未確認)",
+        pit_available=False,
+        applicable_codes=None,
+        applicable_countries=("US",),
+        cost_or_plan_dependency="無料・認証不要と思われる(未確認)。",
+        known_limitations=(
+            "公式RSS Feed(press releases/litigation releases)の存在はSnippetで示唆されたが未読。"
+            "SEC自身のRSS DocumentationがTimezoneを「EST」という年間固定Labelで表記している可能性が"
+            "あり(DST期間中の実際のOffsetと不一致の恐れ)、この曖昧なAbbreviationはIANA Timezoneへ"
+            "自動変換しない(source_declared_timezoneとしてそのまま保持する方針、published_atは"
+            "確認できるまでUNKNOWNのまま)。EDGARのAcceptance Datetime(受理時刻)とFiling Date"
+            "(書類自体の日付)は別概念であり、Press Release RSSのpubDateがどちらに相当するか未確認。"
+            "VALIDATION_STATUS=DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION(Adapter未実装、"
+            "data-source-researcher推奨順位2位)。参考: 同じ調査でUS Treasuryの過去のRSS Feedに"
+            "2021年の実際のReplay Bug(古いItemが再配信されたIncident)が報告されていることが判明した"
+            "——Treasury自体は候補として採用していないが、Government RSS全般に対するPIT Riskの実例"
+            "としてValidation Backlogへ記録する。"
         ),
         notes="Source Candidate Research: data-source-researcher Agent 2026-08-18、DECISIONS.md参照。",
     )
