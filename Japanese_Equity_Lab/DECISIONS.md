@@ -4601,7 +4601,9 @@ IR・Fundamentalsに続き、Provider非依存Common Core設計の3件目の実�
 
 `13_tests/test_positioning_model.py`(7件)・`test_positioning_price_
 derived.py`(13件)・`test_positioning_pit.py`(13件)、合計33件を新規
-追加。実Network接続無し、合成Bar Dataのみ使用。
+追加。実Network接続無し、合成Bar Dataのみ使用。Reviewer Pass後、
+skeptic-reviewer指摘への対応として`test_positioning_catalog.py`
+(7件)を追加、最終合計40件(下記Reviewer Pass節参照)。
 
 ### Documentation
 
@@ -4617,3 +4619,74 @@ Adapter実装、JPX直接Sourceの実装、いずれも着手していない
 (`NOT_IMPLEMENTED`のまま)。Investment Signal化(Short Squeeze Score
 等)・Expectations Engine・Portfolio Sizingには一切着手していない。
 Continuous Monitoring/Scheduler/Alertは実装していない。
+
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `CLEAN`(Finding無し)。9項目全て(Publication Lag/
+   Period-end Leakage・Current-state Leakage・UNKNOWN Fallback・Revision
+   誤用・Entity Mapping・Frequency・Determinism・`AvailabilityBasis.
+   INFERRED`の妥当性・Regression Scope)を確認済みとして報告。Regression
+   確認については「Bash Toolが無くGit Diffを自身で実行できない」という
+   限定を自己申告していたため、`git diff --stat`で該当範囲外に変更が
+   無いことを別途直接確認した(Company IR/EDINET Roundと同じ手順)。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。7件のFinding(MEDIUM x2、
+   LOW-MEDIUM x1、LOW x4)、いずれも独立に再確認した:
+   - **[MEDIUM、採用・修正]** `lib/positioning/catalog.py`の5つの
+     Descriptor Builderに専用Testが1件も無かった(`lib.fundamentals.
+     catalog`/`lib.disclosures.catalog`には`SourceCatalog`統合Testが
+     存在する既存慣行から外れていた、CLAUDE.md「新機能・バグ修正には
+     必ずテストを追加する」にも反する)。実際にGrepで確認の上、
+     `13_tests/test_positioning_catalog.py`(新規7件)を追加した。
+   - **[MEDIUM、Decision記録として採用・コード変更はせず]**
+     `lib/positioning/normalize.py`の`AvailableAtResolver`Callback
+     抽象化(Source固有Availability計算を呼び出し側へ委譲する設計)は、
+     `lib.fundamentals.normalize.build_revision_histories()`(固定の
+     内部関数`_provider_available_at_and_basis()`を直接呼ぶのみ)の
+     単純な再利用ではなく、このRound自身が導入した新しい一般化である、
+     という指摘を確認した(実際に非Test呼び出し元は`price_derived.
+     resolve_available_at`の1つのみ)。ここに明記する: これは
+     Fundamentalsパターンの単純な再利用の主張ではなく、D0054が既に
+     Source #2以降(信用取引・空売り・投資部門別売買)それぞれが
+     Price-derived Metricとは全く異なるAvailability Semanticsを持ちうる
+     ことを見越した意図的な先行一般化である。抽象化自体はCallback 1個の
+     追加のみで新しいClass/Schemaを伴わないため、過剰設計とまでは判断
+     しなかった(コード変更は行わない)。
+   - **[LOW-MEDIUM、Known Limitationとして記録、コード変更はせず]**
+     `build_revision_histories()`を同一`series_id`+同一`observation_
+     end`のRecordに対して複数回(再処理等で)呼び出した場合、`resolve_
+     available_at()`が`observation_end`のみに依存し`retrieved_at`を
+     見ないため、`available_at`が同一Timestampになる複数`SourceVersion`
+     が生じうる。`RevisionHistory.as_of()`のTie-break(`max()`、Python
+     の実装上先勝ち)がList結合順序に依存してしまう、という指摘を確認
+     した。この問題は`RevisionHistory`自体(Fundamentalsも含め全Source
+     共通のPrimitive)に内在する既存の一般的挙動であり、Positioning固有の
+     新規Bugではない。このRoundでは実際の再取り込みPipeline/Scriptを
+     一切実装していない(Data Foundationのみ、Ingestion Glueは範囲外)
+     ため、この問題が実際に発現する呼び出し経路が現時点で存在しない。
+     Known Limitationとして記録するに留め、Ingestion Pipeline実装時に
+     再検討する。
+   - **[LOW、Known Limitationとして記録]** `build_volume_moving_
+     average_records()`が入力`bars`内の`session_date`重複を検証しない
+     (重複があれば移動平均へ二重計上されうる)。このLab内の他の価格Bar
+     消費関数も同様に「呼び出し元が既に重複排除済み」という前提に立って
+     おり(System Boundary以外での検証を追加しない、CLAUDE.md方針)、
+     Positioning固有の新規問題ではないと判断し、コード変更はせず前提を
+     明記するに留めた。
+   - **[LOW、対応不要と判断]** `evidence.py`の`retrieved_at`が
+     `session_close_at`より前である可能性を検証していない点、
+     `PRICE_DERIVED`と`jquants`という異なる`source_id`がCatalog上で
+     Source数の誤解を招きうる点、`VALIDATION_BACKLOG.md`が各行で
+     「阻害要因」欄に短い要約を含めている点——いずれもReviewer自身が
+     「既存の開示された設計判断」「Catalog UXの観察に留まる」「1行要約は
+     許容範囲」と評価しており、独立確認の上で対応不要と判断した。
+
+### 追加Known Limitations(Reviewer Pass後)
+
+- `build_revision_histories()`を同一Series+同一観測期間終了日に対して
+  複数回呼び出した場合のTie-break挙動(List結合順序依存)は未対応。
+  実際のIngestion Pipelineを実装する際に再検討が必要。
+- `build_volume_moving_average_records()`は入力Bar列の`session_date`
+  重複を検証しない(上流が重複排除済みという前提)。
+- `lib/positioning/catalog.py`の5 Descriptorは`SourceCatalog`への
+  実際のWiring(Application起動時の一元登録)がまだ無い(Fundamentals/
+  Disclosuresと同じく、既存の慣行のまま)。
