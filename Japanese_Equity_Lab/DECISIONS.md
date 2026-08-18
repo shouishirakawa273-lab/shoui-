@@ -4188,3 +4188,144 @@ Golden Prompt Parity Auditの23行はDECISIONS.mdを代替出典として使っ�
 `GOLDEN_PROMPT_PARITY.md`冒頭に明記済み)。`SOURCE-005`
 (3層分離)・`EVIDENCE-003`(時系列推測禁止)いずれも専用回帰Testは
 まだ無く、次Round以降の追加候補として記録するに留めた。
+
+## D0053 — Phase4B-4: Company IR Source Integration(Manual/User-specified URL First v1、Source Integration Skill v1のField Test)
+
+D0052で構築した`.claude/skills/source-integration/SKILL.md`(v1)を、
+旧来の巨大な設計Promptを再注入せずに使うことで、新しいSourceの統合でも
+Research Integrityが保たれるかを実地検証する「Field Test」として実施
+した。対象SourceはCompany IR(個別上場企業のIR Website)で、EDINET/TDnet
+(規制当局・取引所が運営する単一の公開API)とは性質が異なり、企業ごとに
+異なるWebsiteへの個別アクセスとなる。
+
+### v1の基本方針: Manual / User-specified URL First
+
+このRoundで実装したのは「URL入力 → Compliance確認 → 許可されていれば
+Download → Raw Artifact保存 → Metadata/Provenance記録 → 必要ならCommon
+Core接続」という単線Flowのみ。以下は明示的にこのRoundのScope外とし、
+実装していない(ユーザー指示の禁止事項一覧をそのまま適用): 全上場企業を
+対象にしたCrawler、検索エンジンCrawling、Google Scraping、Sitemap
+全域Crawling、IR自動発見Engine、Selenium等Browser自動操作、無制限再帰
+Crawling、robots.txt/利用規約Bypass、Cloudflare/CAPTCHA/ログイン壁
+Bypass、高度なPDF意味解析、LLMによるEvent/強気弱気/売買判断、自動改版
+検出、Company IR専用Event/News/Consensus/Portfolio Engine、監視Daemon・
+Scheduler、大規模並列Agent。
+
+### Source Identity(発行体・掲載Website・取得元・研究System)
+
+Claimant/Issuer(実際に開示を行う上場企業自身)、Publishing Website
+(そのIR Website)、Retrieval Source(実際にHTTP GETしたURL/Endpoint、
+CDN含む)、Research System(このLab自身)の4者を区別する設計とした。
+CDNやStorage経由のRedirectを企業自身と混同しない(下記Redirect
+Safety参照)。
+
+### Compliance First(Fail Closed、自動robots.txt/ToS解析Engineは作らない)
+
+「Webで公開されている」ことは「自動取得・保存・再配布してよい」ことを
+意味しない、という原則をArchitectureで強制するため、`ComplianceCheck
+Result`(`terms_checked`/`robots_checked`/`automated_retrieval`/
+`redistribution`/`retention`/`attribution_required`という各Status軸を
+`ALLOWED`/`DISALLOWED`/`UNCLEAR`/`NOT_CHECKED`で持つDataclass)を
+`fetch_document_raw()`の**必須引数**とした。あえて自動でrobots.txt/
+利用規約をParse・判定するEngineを作らなかった(ユーザーが「不注意に
+Common Coreへ追加しないよう警告」した設計判断そのもの)。`automated_
+retrieval`が`ALLOWED`以外(`UNCLEAR`/`DISALLOWED`/`NOT_CHECKED`)であれば
+`ComplianceError`を送出し、Network I/Oより前にFail Closedする
+(`lib/disclosures/providers/company_ir.py`の`assert_retrieval_allowed()`、
+IR-004/IR-005 Testで確認)。
+
+### Retrieval v1(HTTP GET単発、Header Allowlist、Credential-like Query検出)
+
+`CompanyIrAdapter.fetch_document_raw()`はHTTP GET 1回のみ実行する。
+`requested_url`/`final_url`/`redirect_chain`/`requested_at`/
+`retrieved_at`/`http_status`/`content_type`/`content_length_observed`/
+`ETag`/`Last-Modified`をRaw Payloadへ記録するが、Headerは全件保存せず
+Content-Type/Content-Length/ETag/Last-Modifiedのみを明示的にAllowlist
+する(`_recorded_headers()`)。Fetch前にURLをScanし、Basic-Auth形式や
+`token`/`key`/`secret`等Credential-likeなQuery Parameterを含むURLは
+Compliance判定と同じくFail Closedで拒否する(`_assert_url_has_no_
+credential_like_query_params()`、IR-013)。RawへSecret値そのものは
+一切書き込まれない。
+
+### Redirect Safety / Raw Artifact / Artifact Identity
+
+Redirect自体は禁止しないが、`requested_url`(要求したURL)と`final_url`
+(実際に到達したURL)、`requested_domain`/`final_domain`を常に分離して
+Provenanceとして保持する(IR-006)。Raw Artifactは既存`RawSnapshotStore`
+(Append-only)をそのまま再利用し、新規Storage機構は作らなかった
+(IR-002)。Raw Hash(`raw_retrieval_hash`)の不一致はDocument改版を意味
+しない(RAW-002をCompany IRでも遵守)。v1はFormat非依存のCanonicalizer
+を作らず、安全なCanonicalizationが存在しない場合は`RAW_CHANGE_REQUIRES_
+INSPECTION`とする方針を踏襲する(実際にCanonicalizerが必要になる
+Container形式のDownloadをこのRoundでは行っていないため、対象コード自体
+が無い)。
+
+### PIT Semantics(market_public_at/provider_available_at/retrieved_at分離)
+
+`build_company_ir_document()`は`provider_available_at`引数を**Signature
+に一切持たない**設計にした(誤用が構造的に不可能、PIT-002/PIT-003の
+「HTTP Last-Modifiedをprovider_available_atへ変換してはならない」を
+Docstringだけでなく型で強制する)。`market_public_at`は呼び出し側が
+明示的にEXACT Basisで確認済みTimestampを渡した場合のみ設定され、値が
+無いのに`market_public_at_basis`だけEXACTにする矛盾状態は`ValueError`
+でFail Closedする(IR-007)。HTTP Last-Modifiedは`CompanyIrDocument
+Metadata.http_last_modified_raw`へOpaqueなstrとしてのみ保持し、
+`datetime`へ変換しない(IR-008)。`retrieved_at`はSafe Lower Boundとして
+Evidence変換時の`available_at`Fallback先になる(D0049/D0050で確立した
+Common Core原則をそのまま再利用、新規Evidence変換関数は作らなかった、
+IR-009/IR-014)。
+
+### Historical PIT Limitation(明示的な限界)
+
+今回Fetchが成功しても、そのDocumentが過去のある時刻に実際にCompany IR
+Website上で取得可能だったことを遡って証明できない(Current Retrieval
+!= Historical Website Snapshot)。将来必要になった場合はForward Snapshot
+観測(D0051で設計したPoC)を使う設計とし、このRoundでは実装していない。
+
+### Document != Evidence != Event
+
+`document_kind`は常に`DocumentKind.UNKNOWN`に固定し、Title文字列から
+Event種別を自動分類しない(IR-010)。`disclosure_document_to_evidence()`
+(EDINET/TDnetと共通のCommon Core関数)をCompany IR専用の変更無しで再利用
+できることを実際に確認した(D0045のProvider非依存設計Goalの実証)。
+Evidence Contentにbullish/buy/好調等の解釈語が含まれないことをTestで
+直接確認済み(IR-010)。
+
+### Duplicate/Entity Mapping(保守的なFail Closed)
+
+重複判定はExact Raw Hash一致のみを安全な自動候補とし、Title/日付/
+Filenameの類似だけからの同一Document判定は行わない
+(`company_ir_normalize.py`が`DocumentRelationship`/`DuplicateRelation
+Kind`のいずれもImportしないことをIR-011で直接確認)。`entity_id`
+(発行体識別)は呼び出し側が明示的に確認済み値を渡さない限り常に`None`
+のまま(Ticker/CodeをCompany名文字列から推測しない、IR-014)。
+
+### Common Core Integration
+
+Company IR固有のSemantics(Compliance判定、Header Allowlist、Redirect
+Domain区別)はAdapter/Normalizer層(`company_ir.py`/`company_ir_
+normalize.py`)に閉じ込め、Common Core(`lib/disclosures/model.py`/
+`evidence.py`)へは一切追加しなかった。Catalog登録は`build_company_ir_
+dataset_descriptor()`(`implementation_status=SKELETON`、`pit_available=
+False`、Known Limitationsを明記)のみ追加。
+
+### Tests(IR-001〜IR-014、実装からのコピーではなくSkill v1 RuleからExpected値を導出)
+
+`13_tests/test_company_ir_adapter.py`(13件)・`13_tests/test_company_
+ir_normalize.py`(14件)、合計27件を新規追加。実Networkへの接続は一切
+行わず、FakeSession/FakeResponseのみ使用。
+
+### Live/Local Validation: このRoundではLive Fetchを一度も試みていない(意図的)
+
+EDINET/TDnetのRoundとは異なり、このRound自身はCompany IR Websiteへの
+`curl`等によるLive接続確認を一度も行っていない。理由: EDINET/TDnetは
+単一の公開制度APIであり確認対象は接続性のみだったが、Company IRは
+企業ごとに異なるWebsiteであり、robots.txt/利用規約を確認しないまま
+特定企業のURLへFetchすること自体がこのRound自身が課した`Compliance
+CheckResult`原則(未確認ならFail Closed)に反するため。したがって
+`COMPANY_IR_LOCAL_VALIDATION_GUIDE.md`はFixture-based Validationのみを
+実施し、実在URLへのLive Validationは、Userが個別に対象企業のrobots.txt/
+利用規約を確認した上でローカル環境で行うことを前提とする手順のみを
+提供した。`implementation_status=SKELETON`のまま(EDINETの`CONNECTED`・
+TDnetの`NOT_IMPLEMENTED`いずれとも異なる、実コードはあり疑似Sessionで
+Test済みだが実SiteへのLive到達は未実施という中間状態)。
