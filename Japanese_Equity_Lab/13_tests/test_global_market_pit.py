@@ -12,7 +12,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from lib.evidence.model import AvailabilityBasis, DataLayer, Frequency, ValueAvailability
+from lib.evidence.model import AvailabilityBasis, DataLayer, Frequency, ValueAvailability, filter_usable_at
 from lib.global_market.evidence import global_market_record_to_evidence
 from lib.global_market.model import GlobalMarketRecord, IndexReturnType, InstrumentCategory
 from lib.global_market.normalize import build_revision_histories
@@ -450,3 +450,40 @@ def test_series_id_without_index_return_type_causes_cross_type_collapse_known_li
     # 既知挙動)——ここではリスト内で先に渡したpriceが決定論的に勝つ。Total Return(11000.55)
     # へは`global_market_as_of()`経由で二度と到達できなくなる。
     assert result[same_series_id].value == "5000.12"
+
+
+# --- Defense in depth: as_of()経路とEvidence経路のPIT Gateが乖離しうる(pit-auditor Finding) ---
+
+
+def test_global_market_as_of_and_evidence_filter_usable_at_can_disagree_known_limitation() -> None:
+    """pit-auditor Finding(Phase4E-1、HIGH): `global_market_as_of()`は
+    `resolve_available_at`(DST-aware、実際のSession Close)を基準にPIT
+    判定するが、`global_market_record_to_evidence()`経由で`lib.evidence.
+    retrieval.retrieve_evidence()`/`filter_usable_at()`へ渡した場合の
+    PIT判定は`record.retrieved_at`のみを基準にする(D0049/D0050 PIT-003
+    原則)。`retrieved_at`が実際のSession Closeより前(例:未確定の
+    In-progress SessionをBatch取得した場合)だと、2つの経路が同一Recordに
+    ついて異なるUsability判定を返しうる。これはFundamentals/Positioning/
+    Macroにも共通するCommon Core既存挙動であり、このRoundが持ち込んだ
+    新規Bugではない(DECISIONS.md D0056参照)。Global Market固有のAdapter
+    実装が無いためこのRoundでは修正せず、既知の挙動としてPinning Testで
+    固定する。"""
+    session_close_at = datetime(2026, 8, 18, 16, 0, tzinfo=ZoneInfo("America/New_York"))
+    early_retrieved_at = session_close_at - timedelta(hours=2)  # Session Close前に取得(In-progress Batch想定)
+    record = _record(record_id="R1", retrieved_at=early_retrieved_at)
+    decision_at = session_close_at - timedelta(hours=1)  # まだSession Close前
+
+    histories = build_revision_histories([record], resolve_available_at=_us_close_resolver)
+    as_of_result = global_market_as_of(histories, decision_at)
+    assert as_of_result[record.series_id] is None  # Session Close前なので正しく利用不可
+
+    evidence = global_market_record_to_evidence(
+        record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="PROVIDER",
+        delivery_provider="PROVIDER",
+    )
+    usable_via_evidence = filter_usable_at([evidence], decision_at)
+    # retrieved_at(Session Close前)のみを基準にするEvidence経路は、同じdecision_atで
+    # 利用可能と判定してしまう——as_of()経路とは異なる結論になる(乖離の実証)。
+    assert len(usable_via_evidence) == 1

@@ -72,6 +72,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from lib.evidence.model import AvailabilityBasis, Frequency, ValueAvailability
 
@@ -177,3 +178,30 @@ class GlobalMarketRecord:
             raise ValueError("market_public_atが無いのにmarket_public_at_basisをUNKNOWN以外にはできません")
         if not self.market_timezone:
             raise ValueError("market_timezone は空にできません(推測せず明示的なIANA Timezone名を渡すこと)")
+        try:
+            ZoneInfo(self.market_timezone)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"market_timezone '{self.market_timezone}' はIANA Timezone Databaseで解決できません") from exc
+        if self.market_timezone != "UTC" and "/" not in self.market_timezone:
+            # pit-auditor Finding(Phase4E-1): "EST"/"HST"等はzoneinfoでは解決できてしまうが、
+            # 実体はDSTを一切考慮しない固定Offset(Legacy/backward-compatibility Alias)であり、
+            # このRoundが排除しようとしている`lib.market_calendar`固定Offsetと同じ誤りを
+            # 静かに再導入する。Area/Location形式("America/New_York"等)以外は"UTC"を除き拒否する。
+            raise ValueError(
+                f"market_timezone '{self.market_timezone}' はArea/Location形式のIANA Timezone名"
+                "('America/New_York'等)または'UTC'である必要があります"
+                "(例: 'EST'はDSTを考慮しない固定Offset Aliasであり使用禁止)"
+            )
+        if self.observation_time is not None:
+            # pit-auditor Finding(Phase4E-1、MEDIUM): observation_timeとsession_dateが
+            # market_timezone上で矛盾する組み合わせ(例: observation_timeがmarket_timezone
+            # Local基準で翌日になっている)を構造的に拒否する。resolve_available_at実装は
+            # session_dateを基準にAvailabilityを計算するため、この不整合はSilentに
+            # 見過ごされうる。
+            local_date = self.observation_time.astimezone(ZoneInfo(self.market_timezone)).date()
+            if local_date != self.session_date:
+                raise ValueError(
+                    f"observation_time({self.observation_time.isoformat()})はmarket_timezone"
+                    f"('{self.market_timezone}')基準では{local_date.isoformat()}になり、"
+                    f"session_date({self.session_date.isoformat()})と矛盾します"
+                )

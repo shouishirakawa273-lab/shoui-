@@ -66,12 +66,51 @@ def test_empty_market_timezone_rejected() -> None:
         _base_record(market_timezone="")
 
 
+def test_unresolvable_market_timezone_string_rejected() -> None:
+    with pytest.raises(ValueError, match="IANA Timezone"):
+        _base_record(market_timezone="NOT_A_REAL_TIMEZONE")
+
+
+def test_fixed_offset_legacy_timezone_alias_rejected() -> None:
+    """pit-auditor Finding(Phase4E-1、HIGH): `"EST"`は`zoneinfo.ZoneInfo`では
+    解決できてしまうが、DSTを一切考慮しない固定Offset Alias(Legacy/backward-
+    compatibility)であり、実際のNY大引け(夏季EDT=UTC-4)を冬季基準の
+    UTC-5へ誤変換する。この誤りはこのRoundが`lib.market_calendar`の固定
+    Offset方式から意図的に離脱した理由そのものであり、`market_timezone`が
+    構造的にこれを拒否することを確認する。"""
+    with pytest.raises(ValueError, match="Area/Location"):
+        _base_record(market_timezone="EST")
+
+
+def test_utc_market_timezone_is_accepted_without_area_location_slash() -> None:
+    """`"UTC"`はDSTを持たない安全なZoneであり、Area/Location形式でなくても
+    唯一の例外として許可される(FX Recordが実際に使用する、GLOBAL-006参照)。"""
+    record = _base_record(market_timezone="UTC")
+    assert record.market_timezone == "UTC"
+
+
 def test_explicit_observation_time_is_accepted() -> None:
     from zoneinfo import ZoneInfo
 
     close = datetime(2026, 8, 18, 16, 0, tzinfo=ZoneInfo("America/New_York"))
     record = _base_record(observation_time=close)
     assert record.observation_time == close
+
+
+def test_observation_time_inconsistent_with_session_date_under_market_timezone_rejected() -> None:
+    """pit-auditor Finding(Phase4E-1、MEDIUM): `observation_time`をUTC等の
+    別Timezoneで表現し、`market_timezone`(NY)基準のLocal日付が`session_date`
+    とズレている(=NY時間では翌日になっている)組み合わせを構造的に拒否する。
+    resolve_available_at実装は`session_date`のみを基準に計算するため、この
+    種の矛盾はTestに無ければSilentに見過ごされうる。"""
+    from zoneinfo import ZoneInfo
+
+    # UTC 2026-08-19 02:00 はNY(America/New_York, EDT=UTC-4)では8/18 22:00になり、
+    # session_date=8/18とは一致するが、UTC 2026-08-19 05:00はNYでも8/19 01:00になり、
+    # session_date=8/18とは矛盾する。
+    inconsistent_observation_time = datetime(2026, 8, 19, 5, 0, tzinfo=ZoneInfo("UTC"))
+    with pytest.raises(ValueError, match="矛盾"):
+        _base_record(session_date=date(2026, 8, 18), observation_time=inconsistent_observation_time)
 
 
 def test_series_code_and_exchange_default_to_none_not_guessed() -> None:
