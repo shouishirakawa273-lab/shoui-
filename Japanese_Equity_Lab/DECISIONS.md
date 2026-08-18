@@ -4311,9 +4311,62 @@ False`、Known Limitationsを明記)のみ追加。
 
 ### Tests(IR-001〜IR-014、実装からのコピーではなくSkill v1 RuleからExpected値を導出)
 
-`13_tests/test_company_ir_adapter.py`(13件)・`13_tests/test_company_
-ir_normalize.py`(14件)、合計27件を新規追加。実Networkへの接続は一切
-行わず、FakeSession/FakeResponseのみ使用。
+`13_tests/test_company_ir_adapter.py`(14件)・`13_tests/test_company_
+ir_normalize.py`(15件)、合計29件(Reviewer Pass後の追加2件を含む、後述)。
+実Networkへの接続は一切行わず、FakeSession/FakeResponseのみ使用。
+
+IR-003(Raw Hash Mismatch Is Not Revision)専用のTest関数は本Source
+自身には存在しないが、Lab全体を横断するEDINET/TDnetでの既存構造Test
+(`13_tests/test_pit_principles.py::test_defense_in_depth_provider_
+normalizer_files_never_construct_document_relationship`、`lib/
+disclosures/providers/*.py`をGlob)がCompany IRの2 File追加を自動的に
+Coverしている(新規Testコード追加無しで、skeptic-reviewerが同種の指摘を
+したIR-011と同じ形の「Lab全体の構造Testが自動拡張する」実例)。
+
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `1 FINDING(highest severity: LOW)`。指摘: `build_
+   company_ir_document()`がFetch Payloadから`ComplianceCheckResult`を
+   再構築するがAudit Trail用のMetadataとしてのみ扱い、`automated_
+   retrieval`の再確認を行っていない(`CompanyIrAdapter.fetch_document_
+   raw()`を経由しない手組みのPayloadを渡された場合、Compliance未確認
+   でもNormalize可能だった)。PIT/Timestampには影響しないためLOWと
+   分類されたが、直接コードを読んで再確認した上で、この設計そのものが
+   このLabの「構造的に誤用不可能にする」方針(RAW-001等と同じ)に
+   反すると判断し修正した: `build_company_ir_document()`内で`assert_
+   retrieval_allowed()`を再度呼ぶよう変更(`bash 2a30ad6`)。回帰Test
+   1件追加。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。4件のFinding(MEDIUM x2、
+   LOW x2)、いずれも独立に再確認した:
+   - **[MEDIUM、採用・修正]** `ComplianceCheckResult`のFail Closed Gate
+     (`assert_retrieval_allowed()`)が`automated_retrieval`のみを検査し、
+     `terms_checked`/`robots_checked`がFalseのまま`automated_retrieval=
+     ALLOWED`だけを主張する内部矛盾を防いでいなかった。実際に該当Codeを
+     読み再確認の上、`ComplianceCheckResult.__post_init__`へ自己矛盾
+     Guardを追加(`bash ee60c74`)。新しいrobots.txt/利用規約自動解析
+     Engineを追加したわけではなく、既存4 Field間の単純な整合性Checkに
+     留める設計とした(Reviewer自身もこの区別を明記済み)。
+   - **[MEDIUM、採用]** Source Integration Skill v1(PIT-*/RAW-*/
+     EVIDENCE-*/SOURCE-*)には、このRoundで実際に必要になったCompliance
+     Gate・認証情報らしきURL拒否・HTTP Header Allowlistのいずれにも
+     対応するRule IDが存在しなかった(実際にコード中の`Section N`引用が
+     `SKILL.md`に存在しない番号体系を参照していることから、このGapが
+     Skill自身ではなくRound個別のTask指示で埋められたことが直接確認
+     できる、というReviewerの指摘を検証し確認した)。`COMPLY-001〜003`
+     として`SKILL.md`へ追記した(`bash ee60c74`、詳細はSkill v1 Field
+     Test節参照)。
+   - **[LOW、対応せずKnown Limitationとして記録]** `entity_id=None`が
+     既定の場合(Company IRでは典型)、既存Common Core`disclosure_
+     document_to_evidence()`の`entity_id or internal_document_id`
+     Fallbackにより`EvidenceRecord.related_codes`が空Tupleになる。
+     これはEDINET/TDnetと共有するCommon Core側の既存挙動であり
+     Company IR固有のBugではないため、このRoundではCommon Coreを変更
+     しない(Company IR固有Semanticsをこのタイミングで一般Common Core
+     へ押し込まない、という本Round自身の原則に反するため)。下記Known
+     Limitationsに明記。
+   - **[LOW、対応不要と判断]** Test ID `IR-003`が単独のTest関数として
+     存在しない点の指摘。上記Tests節に説明を追記した(既存Lab全体構造
+     Testが自動的にCoverしているため、専用Test追加は不要と判断)。
 
 ### Live/Local Validation: このRoundではLive Fetchを一度も試みていない(意図的)
 
@@ -4329,3 +4382,65 @@ CheckResult`原則(未確認ならFail Closed)に反するため。したがっ�
 提供した。`implementation_status=SKELETON`のまま(EDINETの`CONNECTED`・
 TDnetの`NOT_IMPLEMENTED`いずれとも異なる、実コードはあり疑似Sessionで
 Test済みだが実SiteへのLive到達は未実施という中間状態)。
+
+### Source Integration Skill v1 Field Test結果(隠さず記録)
+
+過去の巨大な設計Promptを再注入せず、`SKILL.md`(v1)+ このRound個別の
+Task指示のみでCompany IRを実装した結果:
+
+- **A. Skillだけで保たれたRule**: PIT-001〜004(UNKNOWN非0/market_
+  public_at!=provider_available_at/market_public_atへのFallback禁止/
+  retrieved_atのSafe Lower Bound位置付け)、RAW-001〜002(Immutable・
+  Hash不一致からのRevision推測禁止)、EVIDENCE-001〜002(Document!=
+  Evidence!=Event・解釈語禁止)、SOURCE-001〜002(推測禁止・Ephemeral
+  URL非永続識別子扱い、Company IRでは該当挙動自体は無いが原則として
+  適用)。いずれもSkillのRule ID単体を読むだけで、旧Promptを再確認する
+  ことなく設計・実装できた。
+- **B. Skillに無く、このRound個別のTask指示で追加確認が必要だった
+  Rule**: Compliance Gate(robots.txt/利用規約Fail Closed)・認証情報
+  らしきURL拒否・HTTP Header Allowlist(いずれも今回のskeptic-reviewer
+  Findingで正式に確認された、上記COMPLY-*参照)。
+- **C. Company IR固有の事情 vs D. 一般的なSkill Gap**: Bで見つかった
+  Gapは**一般的なSkill Gap**と判定した(Company IR固有の事情ではない
+  — 将来Newsサイト・Blog等、規制当局が運営しない任意のWebsiteを
+  Sourceとする場合には必ず同様のCompliance判断が必要になるため)。
+  Company IR固有の事情としては、`publishing_entity`と`disclosure_
+  system`(Venue)が同一主体(発行体自身)になるという`DISCLOSURE_
+  ARCHITECTURE.md`追記(本Decision冒頭のCommit`ecfb634`参照)のみ。
+- **E. Skill v1.1の必要性**: 上記Bを`COMPLY-001〜003`として本Round内で
+  既に`SKILL.md`へ反映済み(次Round以降ではv1.1相当の内容を含んだ状態
+  から開始できる)。
+- **F. Golden Prompt Parity(`GOLDEN_PROMPT_PARITY.md`)への影響**:
+  当該Docは4A.5.1-5時点のRequirement-by-Requirement Mappingであり、
+  Company IRはそのAudit後に追加されたSourceのため対象外。次回Golden
+  Prompt Parity Auditを行う際は`COMPLY-*`も対象へ含める必要がある
+  (このRoundでは`GOLDEN_PROMPT_PARITY.md`自体は更新しない、Scope外)。
+
+### Known Limitations
+
+- 実在のCompany IR Websiteへ、このSession・Userのローカル環境いずれ
+  からもLive Fetchを一度も実施していない(`implementation_status=
+  SKELETON`のまま)。
+- Company IR専用の診断Script(EDINET/TDnetのような)は未作成
+  (`COMPANY_IR_LOCAL_VALIDATION_GUIDE.md` §F)。
+- Compliance確認(robots.txt/利用規約)を自動化する仕組みをこのLabは
+  持たない(意図的な設計判断)。どの企業が実際にAutomated Retrievalを
+  許可しているかの一覧・DatabaseもこのLabは持たない。
+- `entity_id=None`が既定の場合、`disclosure_document_to_evidence()`
+  (Common Core、EDINET/TDnetと共有)の既存Fallback挙動により
+  `EvidenceRecord.related_codes`が空Tupleになる(skeptic-reviewer
+  Finding、上記参照)。Company IR固有の新規Bugではなく、Common Core
+  側の既存挙動をこのRoundでは変更しない。
+- Historical PIT Reconstructionはできない(今Company IR Pageを取得
+  しても、そのDocumentが過去のある時刻から実際にWebsite上で取得可能
+  だったことを遡って証明できない)。
+- `scripts/lab_source_health.py`のCompany IR向け拡張はこのRoundでは
+  行っていない(§31相当、低Cost拡張の余地はあるが本Round Scope外とし、
+  Known Limitationとして記録するに留めた)。
+
+### このDecisionでやらないこと
+
+Phase4B-4のCompletion Report後、次Phaseへ進むことなく完全に停止する。
+TDnetのStatus(`CODE_COMPLETE_AWAITING_ADDON_LOCAL_VALIDATION`)は
+変更していない。Company IRをEvent Engine/News Engine/Monitoring
+Engine/全企業Crawlerへ拡張する作業には一切着手していない。
