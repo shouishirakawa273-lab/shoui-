@@ -28,6 +28,11 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 13 | 内閣府/ESRI GDP速報(QE) | `NOT_IMPLEMENTED`(Adapter未着手) | 1次速報/2次速報/確報という公式Revision Stage名称は複数Snippetで一致(未読)。専用API有無不明 | 同上 |
 | 14 | 総務省統計局 労働力調査(完全失業率) | `NOT_IMPLEMENTED`(Adapter未着手) | e-Stat CPIと同一Endpointで取得可能か未確認。情報が他候補より薄い | 同上 |
 | 15 | 厚生労働省 毎月勤労統計調査(賃金) | `NOT_IMPLEMENTED`(Adapter未着手) | PDF中心の公開形式が示唆。2024年1月Benchmark更新による指数断層の記述は具体的だが未読 | 同上 |
+| 16 | FRED/ALFREDのVintage Query機構(`realtime_start`/`realtime_end`) | 未着手(検証最優先) | 複数第三者Wrapper経由のSnippetのみが根拠、FRED自身の一次文書は未読。実際に文書通り機能するか未確認——これまでのLab Sourceの中で最も具体的な前向きPIT保証候補のため優先度が高い | `GLOBAL_MARKET_ARCHITECTURE.md`、DECISIONS.md D0056 |
+| 17 | FRED `SP500`(S&P 500 Price Index) | `NOT_IMPLEMENTED`(Adapter未着手) | 全情報がSEARCH-SNIPPET-DERIVED(UNVERIFIED)。FRED/S&P DJI間の2014年Licensing Agreementによる過去10年Rolling Window制約が複数Snippetで収斂(未読)。Total Return版の存在有無もUNCONFIRMED | `GLOBAL_MARKET_ARCHITECTURE.md`、`lib/global_market/catalog.py`、DECISIONS.md D0056 |
+| 18 | FRED `DEXJPUS`/`DEXUSEU`(USD/JPY・EUR/USD) | `NOT_IMPLEMENTED`(Adapter未着手) | 「NY正午Buying Rate」という歴史的記述と2019年H.10算出方法変更の関係が未確認。EUR/JPYはFRED上に直接系列が無くCross Rate計算が必要 | 同上 |
+| 19 | FRED `DGS10`(US 10年国債利回り) | `NOT_IMPLEMENTED`(Adapter未着手) | 米財務省がおよそ15:30 ET時点の気配値から算出という記述が見つかったが未読。`home.treasury.gov`自身の値とのCross-Check未実施 | 同上 |
+| 20 | FRED `VIXCLS`(CBOE VIX) | `NOT_IMPLEMENTED`(Adapter未着手) | CBOEのRTH算出Window(9:30am-4:15pm ET)・原典CBOE/配信FREDの分離、いずれもCBOE自身の一次文書は未読 | 同上 |
 
 ## 運用ルール
 

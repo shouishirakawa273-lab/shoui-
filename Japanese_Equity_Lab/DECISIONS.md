@@ -4927,3 +4927,157 @@ News・Portfolio Sizing・Automated Trading・Heavy Monitoring・Mass
 Source Crawling・Statistical Strategy Validationのいずれにも着手して
 いない。TDnet/Company IR/Positioningの既存Validation Backlogは同時に
 消化していない。Phase4Aへの再着手は行っていない。
+
+## D0056 — Phase4E-1: Global Market Data Foundation(設計、Adapter未実装)
+
+海外の株価指数・為替・国債利回り・コモディティ・Volatility Indexを
+PIT-safe/timezone-aware/source-aware/reproducibleな形でこのLabへ取り込む
+ためのData Foundationを新設した。**Market Regime判定・Investment Signal
+・日本株結論(「NASDAQ下落=日本IT株SELL」等)は一切実装していない**
+(Observationまで、Phase4E-1要件§1/§2)。
+
+### Phase4E全体のSplit
+
+Phase4E(Global Market/News/Consensus統合)は4分割(4E-1 Global Market
+Data・4E-2 Japan News・4E-3 Global News・4E-4 Consensus/Expectations
+Inputs)されたユーザー指示に従い、このRoundは**4E-1のみ**を対象とし、
+News/Consensusには着手していない。
+
+### Repository Reality Check
+
+`lib.market_calendar`(日本市場の休日判定、Timezone処理は固定UTC+9
+Offset)・`lib.evidence.model`(`RevisionHistory`/`SourceVersion`/
+`AvailabilityBasis`/`ValueAvailability`/`Frequency`)・`lib.positioning`/
+`lib.macro`(Long-form Record + Source非依存`build_revision_histories()`
+Callback Pattern)を先に確認した。`lib.sources.catalog.DataCapability.
+GLOBAL_MARKET`はPhase3D時点で既に定義済み(未使用のまま)だったため
+新規Enum追加不要だった。既存Repositoryに海外市場Dataへの接続は一切無く、
+Positioningの Price-derived Seriesのような「ゼロリスクで再利用できる
+既存接続」に相当するものが無かった。
+
+### Source Candidate Research(data-source-researcher Agent、2026-08-18)
+
+FRED(セントルイス連銀)・ECB(Frankfurter経由)・CBOE・US Treasury・Yahoo
+Finance(`yfinance`)・Alpha Vantage・Twelve Data・Nasdaq Data Link等を
+調査した。結果はほぼ全てSEARCH-SNIPPET-DERIVED(UNVERIFIED)——
+`fred.stlouisfed.org`/`home.treasury.gov`/`api.fiscaldata.treasury.gov`/
+`www.cboe.com`/`www.alphavantage.co`/`stooq.com`/`www.ecb.europa.eu`
+等へのWebFetchは全て失敗した(`EGRESS_BLOCKED`)。唯一直接読めたのは
+`pypi.org`/`github.com`経由の`fredapi`/`yfinance`/Frankfurter Wrapperの
+README(いずれも第三者OSS Wrapperの説明であり、一次Provider文書ではない)。
+
+**FRED**が「単一APIキーでEquity Index/FX/Rate/Volatilityを横断できる
+Umbrella候補」として最優先で推奨された。特筆すべき所見: (1) FRED上の
+`SP500`/`DJIA`はS&P DJIとの2014年Licensing Agreementにより過去10年分
+Rolling Windowにしかアクセスできない(複数独立Snippetで収斂)、(2)
+FRED/ALFRED APIが`realtime_start`/`realtime_end`によるVintage Query
+機構を持つという記述(複数第三者Wrapper経由で収斂、これまでのLab
+Sourceの中で最も具体的な前向きPIT保証候補)、(3) CBOE VIXのRTH算出
+Windowは9:30am-4:15pm ET(Closeは4:15pm ETでありEquity市場4:00pm Closeと
+異なる)、(4) FX(USD/JPY・EUR/USD)はFRED H.10由来の「NY正午Buying Rate」
+という歴史的記述と、ECB Frankfurter経由の「16:00 CET Reference Rate
+(取引用途非推奨とECB自身が明記)」という、性質の異なる2種類のOfficial
+Reference Rateが見つかった——どちらも市場実勢Rateとは別概念であり
+混同しない。詳細は`GLOBAL_MARKET_ARCHITECTURE.md`「Source候補」節・
+`VALIDATION_BACKLOG.md`参照。
+
+### Adapterは1件も実装しない(ユーザー要件§8に基づく正直なStatus)
+
+検索Snippetのみを根拠にAdapterを実装しない、というユーザー要件に従い、
+このRoundでは5候補(`fred_sp500`/`fred_dexjpus`/`fred_dexuseu`/
+`fred_dgs10`/`fred_vixcls`)全てを`implementation_status=NOT_IMPLEMENTED`
+のまま`lib/global_market/catalog.py`へ登録し、Validation Status=
+`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`を`known_limitations`へ
+明記した(Positioning Phase4C/Macro Phase4Dと同じPattern踏襲)。
+
+### Common Global Market Model(新規Versioning機構は作らない)
+
+`lib/global_market/model.py`の`GlobalMarketRecord`はLong-form 1レコード
+(series × session_date × source)。PIT/Revision管理は`lib.evidence.model.
+RevisionHistory`/`SourceVersion`をそのまま再利用し、Global Market専用の
+新しいVersioning Primitiveは作らなかった(Fundamentals/Positioning/
+Macroと同一のPrimitive、4件目の実証)。
+
+**Timezone/DSTがこのRound最大の設計論点だった**。`lib.market_calendar`の
+固定UTC+9 Offset方式は日本にDSTが無いため正しいが、米国/欧州市場への
+再利用は誤り(DST期間中は1時間ズレる)と判断し、`GlobalMarketRecord.
+market_timezone: str`にIANA Timezone名を保持させ、実際のAvailability
+判定は`zoneinfo.ZoneInfo`でDST-aware datetimeを構築する設計とした
+(`lib.market_calendar`の拡張ではなく、意図的に独立した設計)。1月
+(EST, UTC-5)と7月(EDT, UTC-4)で実際にUTC Offsetが異なることをTestで
+直接検証した(`GLOBAL-003`)。
+
+`IndexReturnType`(PRICE_RETURN/TOTAL_RETURN/NET_RETURN)・`PriceType`
+(SPOT/FRONT_MONTH_FUTURES/CONTINUOUS_FUTURES)・`AdjustmentStatus`
+(ADJUSTED/UNADJUSTED/PROVIDER_TRANSFORMED)は、Macroの`SeasonalAdjustment`
+と同じ正当化根拠(Source固有Field名Mappingではなく、複数Sourceに横断
+して現れる経済的に意味のある構造的区別軸)によりCommon Model Fieldへ
+昇格させた。
+
+`lib/global_market/normalize.py`の`build_revision_histories()`は
+`lib.positioning.normalize`/`lib.macro.normalize`と同型のSource非依存
+`resolve_available_at`Callback Patternを踏襲し、意図的にコード非共有
+(Field名の違い、Phase4C/4D双方で既に判断済みの方針を維持)とした。
+
+### series_idはCaller/Adapterの責務(Macro D0055の教訓を先取り適用)
+
+Macro Phase4Dのskeptic-reviewerが発見した「`series_id`がReference
+Periodを含まないとCollapseする」Findingと同型の失敗モードが、Global
+Marketでは`session_date`について起こりうると判断し、今回は独立して
+発見されるのを待たず、実装と同時に`GlobalMarketRecord`Docstringへ
+責務を明記し、`test_series_id_without_session_date_causes_cross_
+session_collapse_known_limitation`としてPinning Testを追加した(D0055
+Findingの再発防止を実装時に先取りした初めてのケース)。
+
+### Evidence Layer(Common Core、新規Primitiveなし)
+
+`lib/global_market/evidence.py`の`global_market_record_to_evidence()`は
+Fundamentals/Positioning/Macroと同じD0049/D0050 PIT Bugfix方針を踏襲
+する: `source.available_at`には常に`record.retrieved_at`を使い、
+`market_public_at`へのFallbackは行わない。`EvidenceRecord`/
+`SourceMetadata`を変更なしで再利用した(5件目の実証)。
+
+### Japan Decision-Time Leakage(ユーザーが最も重視した論点)
+
+`global_market_as_of()`は`decision_at`がどのTimezoneのtz-aware
+datetimeでも受け取り、Python datetime比較の内部UTC正規化にPIT判定を
+委譲する設計とした(独自のTimezone変換Logicを実装しない)。同一瞬間を
+UTC表現とJST表現で渡しても判定結果が一致すること(`GLOBAL-002`)、
+日本時間の同日朝には前日の米国市場Closeがまだ観測不可能であり翌朝には
+観測可能になること(`GLOBAL-001`)を直接Testで検証した。
+
+### Tests(GLOBAL-001〜014、実装からのコピーではなくPhase4E-1要件から導出)
+
+`13_tests/test_global_market_model.py`(15件)・
+`test_global_market_pit.py`(20件)・`test_global_market_catalog.py`
+(9件)、合計44件を新規追加。実Network接続無し、合成Record Dataのみ
+使用。Positioning/Macroのskeptic-reviewer Findingで「Catalog Descriptor
+群にTest Coverageが無かった/後追いだった」Gapが指摘された教訓を活かし、
+このRoundは最初からCatalog Testを含めた。
+
+### Known Limitations
+
+- Adapterを1件も実装していない(5候補全て`NOT_IMPLEMENTED`、Validation
+  Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`)。
+- FRED/ECB/CBOE/US Treasuryいずれも公式仕様をこのSessionから直接確認
+  できていない(`EGRESS_BLOCKED`)。
+- FRED/ALFREDのVintage Query機構(`realtime_start`/`realtime_end`)は
+  最も有望な前向きPIT保証候補だが、実際に文書通り機能するかはこの
+  Roundでは未確認(次の最優先検証項目)。
+- `lib/global_market/normalize.py`は`lib/positioning/normalize.py`/
+  `lib/macro/normalize.py`とほぼ同型の実装をコードとして共有していない
+  (意図的、Cross-Capability抽象化を見送った判断の3件目)。
+- Continuous FuturesのRoll Methodology・Total Return Index算出方法は
+  未実装(`PriceType`/`IndexReturnType`という区別のFieldのみ用意)。
+- `lib/global_market/catalog.py`の5 Descriptorは`SourceCatalog`への
+  実際のWiring(Application起動時の一元登録)がまだ無い(既存の慣行の
+  まま)。
+
+### このDecisionでやらないこと
+
+Market Regime判定・Investment Signal・BUY/SELL判断・Cross-Asset Signal・
+Portfolio Sizing・Continuous Futures Engine・News NLP・Automated
+Tradingのいずれにも着手していない。Japan News(4E-2)・Global News
+(4E-3)・Consensus/Expectations Inputs(4E-4)には進んでいない。TDnet/
+Company IR/Positioning/Macroの既存Validation Backlogは同時に消化して
+いない。
