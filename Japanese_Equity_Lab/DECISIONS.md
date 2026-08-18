@@ -5705,9 +5705,10 @@ EST/CST/IST等の曖昧なTimezone略称は一意のIANA Timezoneへ自動変換
 と同じ懸念が、今回のGlobal News Source候補調査(SEC RSS)でも実際に
 再確認された。新規`source_declared_timezone`Field(Sourceが記事に添えた
 Timezone文字列を**そのまま**保持する)を追加し、`lib/news/`のいずれの
-Function(`normalize`/`view`/`evidence`)からも読まれないことをAST走査で
-構造的に固定した(GNEWS-004、`test_gnews004_source_declared_timezone_
-is_never_read_by_normalize_view_or_evidence`)。曖昧な略称値もそのまま
+Function(`normalize`/`view`/`evidence`)からも読まれないことをSource
+全文に対する文字列探索(GNEWS-016のAST走査とは異なる手法)で固定した
+(GNEWS-004、`test_gnews004_source_declared_timezone_is_never_read_
+by_normalize_view_or_evidence`)。曖昧な略称値もそのまま
 文字列として保持され、解析・変換されない(`test_gnews004_ambiguous_
 abbreviation_stored_as_is_without_iana_conversion`)。異なるTimezoneを
 跨ぐPublished/Provider Availability(US Eastern基準とCET基準)でも
@@ -5770,3 +5771,82 @@ Pipeline・Continuous Crawler・Monitoring/Alerts・Backtest統合・Decision
 Engine統合・BUY/SELL・Regime判定のいずれにも着手していない。TDnet/
 Company IR/Positioning/Macro/Global Market/Japan Newsの既存Validation
 Backlogは同時に消化していない。
+
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `3 FINDINGS(highest severity: MEDIUM)`。3件とも独立に
+   Code(`lib/news/normalize.py`/`view.py`/`13_tests/test_global_news_
+   pit.py`)を直接読んで再確認の上で対応した。
+   - **[MEDIUM、採用・修正]** GNEWS-016のAST走査が`node.module`/
+     `alias.name`をそのまま比較していたため、`from lib.evidence import
+     retrieval`のような「Packageをimportして属性経由でAccessする」形の
+     D0057境界違反を見逃す構造だった、という指摘を実際にTest Codeを
+     読んで確認した(現時点で実際の違反は無い、Test自体の検出漏れ)。
+     `ImportFrom`のFully Qualified Path(`f"{node.module}.{alias.name}"`)
+     を組み立てて判定するよう修正した。
+   - **[LOW、Documentationで対応]** GNEWS-004(`source_declared_timezone`
+     未参照確認)は実装上「AST走査」ではなく「Source全文への文字列探索」
+     である、という指摘を確認した(GNEWS-016と混同されて`GLOBAL_NEWS_
+     ARCHITECTURE.md`/DECISIONS.mdの両方で"AST走査"と誤記されていた)。
+     安全性そのものは文字列探索でも同等以上に確認できているため
+     Code変更は行わず、両Documentの文言を「Source全文に対する文字列
+     探索(GNEWS-016のAST走査とは異なる手法)」へ訂正した。
+   - **[LOW、採用・修正]** GNEWS-002が`timestamp is None`(Timestamp自体
+     が無い)分岐しか踏んでおらず、「Timestampはあるが`_basis`が未確認」
+     というGDELT/SEC RSS等のScraped Timestampで現実的に起こりうる分岐を
+     確認していなかった、という指摘を`view.py`のGuard Logicと突き合わせて
+     確認した。`test_gnews002_unconfirmed_basis_excluded_even_when_
+     timestamp_itself_is_present_and_past`を追加した。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。3件のMEDIUM・1件の
+   LOW-MEDIUM・2件のLOWを独立に`lib/news/normalize.py`のFunction本体を
+   読んで再確認した:
+   - **[MEDIUM、Test追加で対応]** GNEWS-006が「構造的に確認」と説明され
+     つつ、実際には`source_native_id`が異なる2記事を使っており、その差
+     だけで結果が決まる(`translated_from_article_id`等を読んでいない
+     ことの直接証拠にならない)、という指摘を`normalize.py`を読んで確認
+     した。GNEWS-004と同じ手法(Source全文への文字列探索)で翻訳関連
+     Field名自体が`normalize.py`/`view.py`/`evidence.py`のいずれにも
+     登場しないことを直接確認する`test_gnews006_translation_fields_
+     never_read_by_normalize_view_or_evidence`を追加した。
+   - **[MEDIUM、Documentationで対応]** GNEWS-007/GNEWS-008(Cross-source
+     Duplicate/Syndication)が「意味論的にEventを区別した」証拠として
+     説明されていたが、`find_same_source_native_id_signals()`は
+     `headline`/`wire_origin`/`publisher`のいずれも一切読まないため、
+     異なる`source_id`を持つ記事は実際の内容に関わらず常にPass-Through
+     される、という指摘を`normalize.py`の関数本体を読んで確認した(Code
+     自体は既存の安全な設計、Test/Documentationの説明が実際の証明範囲を
+     超えていた)。該当Testのdocstring、`GLOBAL_NEWS_ARCHITECTURE.md`
+     該当節を「`source_id`によるScopingがAnyのContentに対して安全側に
+     倒れることのPinning Testであり、Event Identity認識の証明ではない」
+     という正確な表現へ訂正した。
+   - **[MEDIUM、Documentationで対応]** GNEWS-013(No Event Inference)の
+     2Testが、実際にはInference Logic自体が存在しないFieldへNoneを渡して
+     Noneが返るだけのStrawman Checkである、という指摘を確認した(model.py
+     の`__post_init__`にHeadline/Language解析Logicが無いことは事実、
+     このRoundにはAdapterが無いためInference Logic自体が実在しない)。
+     該当Testのdocstringと`GLOBAL_NEWS_ARCHITECTURE.md`該当節へ、これらが
+     「将来Adapter実装時のRegression Guard」であり「洗練されたInference
+     試行への防御を証明したもの」ではない旨を明記した。
+   - **[LOW-MEDIUM、Test追加で対応]** 新規9Field中`region`/`jurisdiction`
+     の2つがどのTestからも一度も値を渡されておらず(`13_tests/`全体を
+     Grepして確認)、ルートCLAUDE.mdの「新機能には必ずTestを追加する」
+     原則に反する、という指摘を確認した。`test_region_and_jurisdiction_
+     are_stored_as_given_not_inferred`/`test_region_and_jurisdiction_
+     default_to_none_when_not_supplied`を追加した。
+   - **[LOW、Test追加で対応]** `find_exact_raw_content_duplicate_groups()`
+     がこのRoundの新規Test(`test_global_news_pit.py`)から一度も呼ばれて
+     おらず、Global Newsシナリオでの確認が漏れていた(このRound自身の
+     Reviewer Focus Areaが明示的に指名していた関数であるにも関わらず)、
+     という指摘をFile全体のGrepで確認した。
+     `test_find_exact_raw_content_duplicate_groups_detects_pagination_
+     overlap_in_global_feed`を追加した。
+   - **[LOW、対応不要、既にDocument済みと確認]** `wire_origin`/`publisher`
+     /`source_id`、`country`/`region`/`jurisdiction`がCross-field整合性
+     検証を持たないFree-text Fieldである、という指摘は、`model.py`
+     Docstring(SOURCE-005の3層分離を意図的にそのまま適用した設計)で
+     既に明記済みであり、このRoundにAdapterが1件も無いため実害を及ぼす
+     Execution Pathも現状無いことを確認した。
+
+Blocker/High Findingはいずれのpassでも無し。修正後、全Test(`13_tests/
+test_global_news_pit.py`は24件→29件、Lab全体は887件)を再実行し成功を
+確認した(`bash <このCommit>`)。

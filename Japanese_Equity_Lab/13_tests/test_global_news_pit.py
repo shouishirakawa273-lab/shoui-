@@ -20,7 +20,7 @@ import pytest
 from lib.evidence.model import AvailabilityBasis, AvailabilitySemantics, filter_usable_at
 from lib.news.evidence import news_article_to_evidence
 from lib.news.model import ContentAvailability, NewsArticleRecord
-from lib.news.normalize import find_same_source_native_id_signals
+from lib.news.normalize import find_exact_raw_content_duplicate_groups, find_same_source_native_id_signals
 from lib.news.view import news_as_of
 from lib.sources.catalog import SourceAuthorityClass
 
@@ -105,6 +105,23 @@ def test_gnews002_unknown_provider_availability_excluded_by_default() -> None:
     article = _global_article(internal_article_id="G1")
     far_future = datetime(2030, 1, 1, tzinfo=UTC)
     result = news_as_of([article], far_future)
+    assert article not in result
+
+
+def test_gnews002_unconfirmed_basis_excluded_even_when_timestamp_itself_is_present_and_past() -> None:
+    """`provider_available_at`自体は過去の実在Timestampとして設定されて
+    いても、`provider_available_at_basis`が確認済み(UNKNOWN以外)でない
+    限り除外する(pit-auditor Finding、Phase4E-3: 元のTestは`timestamp is
+    None`の分岐しか踏んでおらず、「Timestampはあるが未確認」というGDELT/
+    SEC RSS等のScraped Timestampで現実的に起こりうる分岐を確認していな
+    かった)。"""
+    article = _global_article(
+        internal_article_id="G1",
+        provider_available_at=datetime(2026, 8, 18, 10, 0, tzinfo=UTC),
+        provider_available_at_basis=AvailabilityBasis.UNKNOWN,
+    )
+    decision_at = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+    result = news_as_of([article], decision_at)
     assert article not in result
 
 
@@ -207,16 +224,43 @@ def test_gnews006_translated_from_field_only_set_when_explicit() -> None:
     assert article.language_variant is None
 
 
+def test_gnews006_translation_fields_never_read_by_normalize_view_or_evidence() -> None:
+    """GNEWS-006の他Testは`source_native_id`が異なる2記事を使っており、
+    その差だけで結果が決まってしまうため`translated_from_article_id`等の
+    翻訳関連Field自体を読んでいないことの直接証拠にはならない(skeptic-
+    reviewer Finding、Phase4E-3: GNEWS-006は「構造的」と説明されていたが
+    実際はGNEWS-004のような直接のSource文字列探索を伴っていなかった)。
+    GNEWS-004と同じ手法で、翻訳関連Field名自体が`lib/news/normalize.py`/
+    `view.py`/`evidence.py`のいずれにも登場しないことを直接確認する。"""
+    import lib.news.evidence as evidence_module
+    import lib.news.normalize as normalize_module
+    import lib.news.view as view_module
+
+    translation_field_names = ("translated_from_article_id", "original_article_id", "language_variant")
+    for module in (normalize_module, view_module, evidence_module):
+        source = module.__file__
+        assert source is not None
+        text = open(source, encoding="utf-8").read()
+        for field_name in translation_field_names:
+            assert field_name not in text, (module.__name__, field_name)
+
+
 # --- GNEWS-007: Cross-source Same Event Is Not Duplicate Article ---
 
 
 def test_gnews007_reuters_and_bloomberg_articles_about_same_event_are_not_flagged() -> None:
-    """Reuters記事とBloomberg記事が同じEventを報じていても(=Event
-    Identityは共通しうる)、Article Identityとしては別物である
-    (Phase4E-3要件§20)。異なる`source_id`(Retrieval Source)を持つ限り、
-    たとえ同じ`source_native_id`文字列を使っていても検出しない
-    (`source_id`でScopeする既存Fix、Phase4E-2 skeptic-reviewer Findingの
-    延長)。"""
+    """`find_same_source_native_id_signals()`は`headline`等のContentを
+    一切読まない(`normalize.py`Docstring参照)ため、Reuters記事とBloomberg
+    記事のように`source_id`が異なる2記事は、それらが実際に同じEvent
+    (Event Identityは共通しうる)を報じていようが全く無関係な話題だろうが
+    区別せずDuplicateとして検出しない——これは「同じEventを検出しつつ
+    正しく別Articleと判定する」という意味論的な区別を証明するTestでは
+    なく、`source_id`でScopeする既存構造(Phase4E-2 skeptic-reviewer
+    Findingの延長)がAnyのContentに対して安全側に倒れることのPinning
+    Testである(skeptic-reviewer Finding、Phase4E-3: 当初の説明は意味論的
+    区別を証明したかのように読めたため訂正)。Article Identity != Event
+    Identity(Phase4E-3要件§20)という設計方針自体は、Event Identityを
+    判定するLogicがこのLabにまだ存在しないことの裏返しでもある。"""
     reuters_article = _global_article(internal_article_id="G_R", source_id="REUTERS_LSEG_API", source_native_id="1001")
     bloomberg_article = _global_article(
         internal_article_id="G_B", source_id="BLOOMBERG_API", source_native_id="1001", wire_origin="Bloomberg"
@@ -238,7 +282,13 @@ def test_gnews008_same_source_and_native_id_is_flagged_as_duplicate_candidate() 
 def test_gnews008_same_wire_origin_via_different_publishers_is_not_automatically_same_article() -> None:
     """同じ`wire_origin`(Reuters)の記事が異なる`publisher`(現地新聞A・B)
     経由で掲載されても、Retrieval Source(`source_id`)が異なる限り自動
-    Duplicateにしない(Syndication、Phase4E-3要件§12)。"""
+    Duplicateにしない(Syndication、Phase4E-3要件§12)。ただし
+    `find_same_source_native_id_signals()`は`wire_origin`/`publisher`を
+    そもそも一切読まない(`normalize.py`Docstring参照)ため、この結果は
+    「Syndication構造を認識した上で区別した」ことの証明ではなく、
+    `source_id`が異なる2記事は常にPass-Throughされるという既存構造の
+    Pinning Testである(skeptic-reviewer Finding、Phase4E-3、GNEWS-007と
+    同型の訂正)。"""
     via_publisher_a = _global_article(
         internal_article_id="G_A",
         source_id="LOCAL_PAPER_A_FEED",
@@ -338,6 +388,15 @@ def test_gnews012_news_article_record_has_no_event_type_field() -> None:
 
 
 def test_gnews013_entity_id_not_inferred_from_headline_mentioning_japanese_company() -> None:
+    """`NewsArticleRecord`は素朴なDataclassであり、`entity_id`はConstructor
+    引数からField代入されるのみでHeadline Text解析を一切経由しない
+    (`__post_init__`にもEntity推定Logicは無い)。このTestが実際に確認
+    するのは「そのようなInference Logicがこのbundle(このRoundで新設した
+    どのModuleにも)存在しない」という現状のPinning(将来Adapter実装時に
+    Headline由来のEntity推定が紛れ込んでいないかを検知するRegression
+    Guard)であり、「Inference Logicへの攻撃に対する防御を証明した」もの
+    ではない(skeptic-reviewer Finding、Phase4E-3: 当初の説明は後者の
+    ように読めたため訂正)。"""
     article = _global_article(
         internal_article_id="G1",
         headline="Toyota Motor faces new tariff challenges, sources say",
@@ -348,7 +407,9 @@ def test_gnews013_entity_id_not_inferred_from_headline_mentioning_japanese_compa
 
 def test_gnews013_country_not_inferred_from_article_language() -> None:
     """`country`はArticleのLanguageから推測しない(Phase4E-3要件§22)。
-    Sourceが明示しない限り`None`のまま。"""
+    Sourceが明示しない限り`None`のまま。GNEWS-013の`entity_id`Testと同様、
+    これは「Language推測Logicが存在しないこと」のPinning Testであり、
+    将来的なInference機能に対する防御力の証明ではない。"""
     japanese_language_article = _global_article(internal_article_id="G1", language="ja", country=None)
     assert japanese_language_article.country is None
 
@@ -386,6 +447,13 @@ def test_gnews015_same_input_produces_same_output() -> None:
 
 
 def test_gnews016_news_evidence_module_never_imports_retrieval_or_filter_usable_at() -> None:
+    """`from lib.evidence import retrieval`のような「Package importして属性
+    経由でAccess」する形も見逃さないよう、`node.module`単体ではなく
+    `module.name`のFully Qualified Pathを組み立てて判定する(pit-auditor
+    Finding、Phase4E-3: 元の実装は`node.module`のみをそのまま集合へ入れて
+    おり、`from lib.evidence import retrieval`だと`"lib.evidence"`にしか
+    ならず`"lib.evidence.retrieval"`という文字列に一致しないため検出漏れ
+    していた)。"""
     import lib.news.evidence as evidence_module
     import lib.news.model as model_module
     import lib.news.normalize as normalize_module
@@ -396,13 +464,16 @@ def test_gnews016_news_evidence_module_never_imports_retrieval_or_filter_usable_
         assert source is not None
         text = open(source, encoding="utf-8").read()
         tree = ast.parse(text)
-        imported_modules: set[str] = set()
+        imported_targets: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                imported_modules.update(alias.name for alias in node.names)
+                imported_targets.update(alias.name for alias in node.names)
             elif isinstance(node, ast.ImportFrom) and node.module is not None:
-                imported_modules.add(node.module)
-        assert "lib.evidence.retrieval" not in imported_modules
+                imported_targets.add(node.module)
+                imported_targets.update(f"{node.module}.{alias.name}" for alias in node.names)
+        assert not any(
+            target == "lib.evidence.retrieval" or target.startswith("lib.evidence.retrieval.") for target in imported_targets
+        ), imported_targets
 
 
 def test_gnews016_filter_usable_at_still_works_but_is_not_called_internally() -> None:
@@ -452,4 +523,60 @@ def test_gnews018_language_defaults_to_none_not_english() -> None:
         normalizer_version="TEST_V1",
     )
     assert article.language is None
-    assert article.language != "en"
+
+
+# --- 追加Field(region/jurisdiction)のRound-trip確認(skeptic-reviewer Finding、Phase4E-3) ---
+# region/jurisdictionはGNEWS-001~018のいずれからも一切構築されておらず、
+# `country`と異なりTest Coverageが皆無だった(CLAUDE.mdの「新機能には必ず
+# Testを追加する」原則にも反する)。country同様、Sourceが明示した値をそのまま
+# 保持するのみでLanguage/Headlineからは推測しないことを直接確認する。
+
+
+def test_region_and_jurisdiction_are_stored_as_given_not_inferred() -> None:
+    article = NewsArticleRecord(
+        internal_article_id="G1",
+        source_id="REUTERS_LSEG_API",
+        headline="European Central Bank statement",
+        language="en",
+        retrieved_at=RETRIEVED_AT,
+        normalizer_version="TEST_V1",
+        country="DE",
+        region="EU",
+        jurisdiction="EU",
+    )
+    assert article.region == "EU"
+    assert article.jurisdiction == "EU"
+
+
+def test_region_and_jurisdiction_default_to_none_when_not_supplied() -> None:
+    article = NewsArticleRecord(
+        internal_article_id="G1",
+        source_id="REUTERS_LSEG_API",
+        headline="Some headline",
+        language="fr",
+        retrieved_at=RETRIEVED_AT,
+        normalizer_version="TEST_V1",
+    )
+    assert article.region is None
+    assert article.jurisdiction is None
+
+
+# --- find_exact_raw_content_duplicate_groups()のGlobal Newsシナリオでの確認(skeptic-reviewer Finding、Phase4E-3) ---
+# 既存Phase4E-2 Testはこの関数をJapan Newsの文脈でのみExerciseしており、
+# このRoundの新規Test(test_global_news_pit.py)は`find_same_source_native_id_
+# signals()`しかImport/呼び出ししていなかった。
+
+
+def test_find_exact_raw_content_duplicate_groups_detects_pagination_overlap_in_global_feed() -> None:
+    """複数国のWire Feedを跨ぐPagination境界で同一行が重複取得された場合の
+    検出(Headlineの言語やSourceの違いを問わず、行全体のHash完全一致のみで
+    判定する既存挙動をGlobal Newsの文脈で再確認する)。"""
+    payload = [
+        {"source_id": "REUTERS_LSEG_API", "source_native_id": "1001", "headline": "ECB holds rates"},
+        {"source_id": "SEC_PRESS_RELEASE", "source_native_id": "2002", "headline": "SEC announces settlement"},
+        {"source_id": "REUTERS_LSEG_API", "source_native_id": "1001", "headline": "ECB holds rates"},
+    ]
+    groups = find_exact_raw_content_duplicate_groups(payload)
+    assert len(groups) == 1
+    (indices,) = groups.values()
+    assert indices == [0, 2]

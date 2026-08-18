@@ -90,7 +90,13 @@ News Syndicationへ適用した:
 を持つが`publisher`が異なる記事は、自動的に同一Articleとはみなさない
 (GNEWS-008)。またReutersとBloombergがそれぞれ同じEventについて書いた
 記事は、Article自体は別物である——Cross-source Duplicateの自動判定は
-行わない(GNEWS-007、Article Identity != Event Identity、§20)。
+行わない(GNEWS-007、Article Identity != Event Identity、§20)。**注記
+(skeptic-reviewer Finding、Phase4E-3)**: GNEWS-007/GNEWS-008は
+`headline`/`wire_origin`/`publisher`のいずれも読まない`find_same_
+source_native_id_signals()`の`source_id`Scoping(既存構造)がAnyの
+Contentに対して安全側に倒れることを確認するPinning Testであり、
+「Event Identityを認識した上で意味論的に区別した」ことの証明ではない
+(そのようなEvent Identity判定Logic自体がこのLabにまだ存在しない)。
 
 ## Timezone Safety(最重要、§14)
 
@@ -104,7 +110,8 @@ News Syndicationへ適用した:
 - `source_declared_timezone`(新規Field)はSourceが実際に添えた
   Timezone文字列を**そのまま**保持するProvenance専用Fieldであり、
   `lib/news/`のいずれのFunction(`normalize`/`view`/`evidence`)からも
-  計算に使われないことをAST走査で構造的に固定した
+  計算に使われないことをSource全文に対する文字列探索(GNEWS-016のAST
+  走査とは異なる手法、pit-auditor Finding反映)で固定した
   (GNEWS-004、`test_gnews004_source_declared_timezone_is_never_read_
   by_normalize_view_or_evidence`)。曖昧な略称値("CST"等)もそのまま
   文字列として保持され、解析・変換されない
@@ -213,6 +220,14 @@ NewsAPI.org・Google News RSS・LSE RNS・Nasdaqを調査した。結果は全�
   自動設定されない)。
 - Country推測: Article言語(例: 英語)からCountryを推測しない
   (GNEWS-013で確認)。
+
+**注記(skeptic-reviewer Finding、Phase4E-3)**: GNEWS-013の2Testは
+「Headline/Language解析からのInference Logicがこのbundleに存在しない
+こと」のPinning Test(将来Adapter実装時のRegression Guard)であり、
+`NewsArticleRecord`は素朴なDataclassでありそもそもそのようなInference
+Codeパス自体が無い。「洗練されたInference試行への防御を証明した」もの
+ではない——将来実Adapterが見出し解析Logicを持ち込んだ際に、この
+Pinning Testが壊れることで検知する設計である。
 
 Hedge Phrase("Sources say"/"reportedly"/"expected to"/"considering"
 等)を含む記述はClaimでありConfirmed Factではない(§23)。
