@@ -265,7 +265,20 @@ def test_global009_future_session_not_visible_to_past_as_of() -> None:
     assert result[future_record.series_id] is None
 
 
-# --- GLOBAL-010: Raw Change Is Not Revision(構造確認) ---
+# --- GLOBAL-010: Raw Change Is Not Revision ---
+
+
+def test_global010_raw_value_change_for_same_series_and_session_does_not_set_is_correction() -> None:
+    """同一series_id・同一session_dateのRecordをRaw値違いで2回投入しても、
+    `build_revision_histories()`は`is_correction`をTrueへ自動的に設定しない
+    (RAW-002原則: Hash/値不一致からのRevision推測禁止)。skeptic-reviewer
+    Finding(Phase4E-1): 従来のGLOBAL-010 Testは構造Import禁止のみを検証し、
+    このRuleの実質的な検証になっていなかった。"""
+    first = _record(record_id="R_FIRST", value="5000.12")
+    second = _record(record_id="R_SECOND", value="5001.50")
+    histories = build_revision_histories([first, second], resolve_available_at=_us_close_resolver)
+    for version in histories[first.series_id].versions:
+        assert version.is_correction is False
 
 
 def test_global010_global_market_modules_never_import_document_relationship() -> None:
@@ -400,3 +413,40 @@ def test_series_id_without_session_date_causes_cross_session_collapse_known_limi
     result = global_market_as_of(histories, after_day2_close)
     assert result[same_series_id] is not None
     assert result[same_series_id].value == "5000.12"  # day1(8/17)の値へは到達できない
+
+
+def test_series_id_without_index_return_type_causes_cross_type_collapse_known_limitation() -> None:
+    """`series_id`が`index_return_type`(Price Index vs Total Return等)を
+    含まない場合も、session_dateと同型のCollapseが起こる(skeptic-reviewer
+    Finding、Phase4E-1: `model.py`Docstringが挙げる区別軸のうち`session_
+    date`以外——`index_return_type`/`price_type`/`currency`——にはPinning
+    Testが無かったGap。ここでは`index_return_type`のケースを代表として
+    固定する)。"""
+    same_series_id = "SPX:PROVIDER:DAILY:2026-08-18"  # index_return_typeを含まない(悪い例)
+    price = _record(record_id="R_PRICE", series_id=same_series_id, value="5000.12")
+    total_return = GlobalMarketRecord(
+        record_id="R_TR",
+        series_id=same_series_id,
+        instrument_category=InstrumentCategory.EQUITY_INDEX,
+        index_return_type=IndexReturnType.TOTAL_RETURN,
+        metric_name="SPX_TOTAL_RETURN",
+        source_id="PROVIDER",
+        frequency=Frequency.DAILY,
+        session_date=date(2026, 8, 18),
+        market_timezone="America/New_York",
+        raw_value="11000.55",
+        value=Decimal("11000.55"),
+        unit="index points",
+        value_availability=ValueAvailability.PRESENT,
+        retrieved_at=RETRIEVED_AT_UTC,
+        normalizer_version="TEST_V1",
+    )
+    histories = build_revision_histories([price, total_return], resolve_available_at=_us_close_resolver)
+    after_close = datetime(2026, 8, 19, 7, 0, tzinfo=ZoneInfo("Asia/Tokyo"))
+    result = global_market_as_of(histories, after_close)
+    assert result[same_series_id] is not None
+    # priceとtotal_returnのavailable_atが同一(同一session_date/market_timezone)のため、
+    # RevisionHistory.as_of()のTie-breakはinput順依存(Macro D0055で確認済みのCommon Core
+    # 既知挙動)——ここではリスト内で先に渡したpriceが決定論的に勝つ。Total Return(11000.55)
+    # へは`global_market_as_of()`経由で二度と到達できなくなる。
+    assert result[same_series_id].value == "5000.12"

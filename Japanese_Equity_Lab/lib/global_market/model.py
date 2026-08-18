@@ -50,6 +50,20 @@ Macroと同一のPrimitive)。
 すべき軸を全て一意に含める責務を呼び出し側/将来Adapterが負う
 (`MacroRecord`と同じ設計、skeptic-reviewer Finding D0055を踏まえ最初
 から明記する)。`GlobalMarketRecord`自体はこれを構造的に強制しない。
+このCollapse失敗Modeは`session_date`軸と`index_return_type`軸の両方に
+ついてPinning Testで固定済み(`13_tests/test_global_market_pit.py`の
+`test_series_id_without_session_date_causes_cross_session_collapse_
+known_limitation`/`test_series_id_without_index_return_type_causes_
+cross_type_collapse_known_limitation`)。`price_type`/`currency`軸は
+同型のリスクを持つが、このRoundでは個別Pinning Testを追加していない
+(skeptic-reviewer Finding、Phase4E-1、Known Limitation)。
+
+`instrument_category`と`index_return_type`/`price_type`の組み合わせが
+経済的に整合しているか(例: COMMODITYにTOTAL_RETURNを設定する等)は
+`__post_init__`が構造的に検証しない。これは`series_id`一意性と同じ
+「呼び出し側/将来Normalizerの責務」という既存の設計判断であり、この
+Dataclass自体が偽の保証を主張しているわけではないが、明示しておく
+(skeptic-reviewer Finding、Phase4E-1)。
 """
 
 from __future__ import annotations
