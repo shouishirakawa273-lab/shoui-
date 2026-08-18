@@ -5213,10 +5213,24 @@ field`)。したがってEvidence経路には「この値は推定である」�
 evidence`/`disclosure_metric_to_evidence`/`disclosure_document_to_
 evidence`/`macro_record_to_evidence`/`global_market_record_to_evidence`
 のいずれも、また`lib.evidence.retrieval.retrieve_evidence()`/`filter_
-usable_at()`も、`scripts/`・`app.py`のいずれからも一切呼び出されていない
-(`grep`で確認済み)。`*_as_of()`系関数群も同様に本番未接続。つまり
-**このLabのEvidence/as_of層全体が、現時点では実際に配線された本番
-Pipeline(Backtest System B)を持たない、Library Codeのみの状態**である。
+usable_at()`も、Repository Root直下の`scripts/`(`Japanese_Equity_Lab/`
+配下ではない。`Japanese_Equity_Lab/scripts/`というDirectoryは存在しない)・
+Root直下の`app.py`(既存Screening Tool、`core/`を使う別Toolであり
+`Japanese_Equity_Lab/lib`とは無関係)のいずれからも一切呼び出されていない
+(`grep`で確認済み、pit-auditorが独立に`Japanese_Equity_Lab/lib`を実際に
+Importしている4件のRoot `scripts/*.py`——`lab_source_health.py`/
+`jquants_financial_summary_diagnostic.py`/`fetch_jquants_local_snapshot.py`
+/`jquants_lab_pipeline.py`——を個別に再確認し、いずれも該当Functionを
+Importしていないことを確定した、D0057 Reviewer Pass参照)。`*_as_of()`
+系関数群も同様に本番未接続。**唯一実際に配線されているPIT判定Pipeline
+(`scripts/jquants_lab_pipeline.py` → `lib.backtest.engine.BacktestEngine`)
+は、`lib.point_in_time.PointInTimeRecord`という別の・より古いPrimitive
+(単一の`available_at=session_close_at(...)`のみを使う、Evidence/as_of
+二重推定Patternとは無関係)を使っており、このRoundが調査した対立構造
+そのものには触れていない**(pit-auditor Finding、D0057 Reviewer Pass、
+ARCHITECTURE_GAP判定を補強する追加証拠)。つまり**このLabのEvidence/
+as_of層全体が、現時点では実際に配線された本番Pipeline(Backtest
+System B)を持たない、Library Codeのみの状態**である。
 
 ### §3 Capability Matrix(Timestamp Semantics)
 
@@ -5350,7 +5364,43 @@ with_as_of_path_when_retrieved_after_session_close`で確認)。
 
 ### §11 Reviewer Pass(pit-auditorのみ、ユーザー指示§13に従う)
 
-`pit-auditor`(Read-only)を実施。Finding: [記載待ち、実施後に追記]。
+`pit-auditor`(Read-only)を実施。`3 FINDINGS(highest severity: LOW)`、
+いずれも独立に再確認の上で採否判定した:
+
+1. **[LOW、採用・修正]** `test_evidence_path_agrees_with_as_of_path_
+   when_retrieved_after_session_close`という名称は、実際にはTest本体の
+   中間Case(`decision_at_between`)がas_of経路とEvidence経路の**不一致**
+   (as_of経路のみ利用可能と判定)を示しており、「一致する」という名称は
+   不正確、という指摘を実際にTest本体を読んで確認した。名称を`test_
+   evidence_path_never_leaks_earlier_than_as_of_path_when_retrieved_
+   after_session_close`へ修正し、Docstringも「一致」ではなく「Leakageの
+   方向が`retrieved_at < available_at`の場合に限られる」という正確な
+   主張へ書き直した(`bash`未Commit、このRound内で修正)。
+2. **[LOW、採用・修正]** D0057本文が「`scripts/`・`app.py`」とだけ記述し、
+   これらがRepository Root直下(`Japanese_Equity_Lab/`配下ではない)に
+   あること、`app.py`が実際には無関係な既存Screening Toolであることを
+   明記していなかった、という指摘を確認した。pit-auditor自身が独立に
+   Root直下`scripts/*.py`のうち`Japanese_Equity_Lab/lib`を実際にImport
+   する4件(`lab_source_health.py`/`jquants_financial_summary_
+   diagnostic.py`/`fetch_jquants_local_snapshot.py`/`jquants_lab_
+   pipeline.py`)を特定し、いずれも該当Functionを呼んでいないことを
+   再確認した上で追加提供した知見(`scripts/jquants_lab_pipeline.py` →
+   `lib.backtest.engine.BacktestEngine`が実際に配線されている唯一の
+   PIT判定Pipelineだが、`lib.point_in_time.PointInTimeRecord`という
+   別の古いPrimitiveを使っており、このRoundが調査したEvidence/as_of
+   二重推定Patternには触れていない)を含め、§2 Repository Reality Check
+   へ反映した(ARCHITECTURE_GAP判定を補強する追加の肯定的証拠)。
+3. **[LOW、対応不要、情報提供のみ]** `include_unknown_availability=True`
+   Opt-in時のLeakage(D0049 §5-1 Follow-up、既存の別Finding)がD0057の
+   Capability Matrixに明記されていない、という指摘。pit-auditor自身が
+   「これはD0057が扱う対象[as_of経路 vs Evidence経路の乖離]とは異なる
+   別のFinding[Opt-in Flagの誤用]であり、混同されていないことの確認
+   目的で提供した」と明記しており、対応不要と判断した(D0057 Scope外の
+   既存Finding、正しく分離されたまま)。
+
+Blocker/High/Medium Findingは無し。pit-auditor自身が「実際に配線された
+PIT判定Pipelineが`lib.point_in_time`という別Primitiveを使っている」
+という新しい肯定的証拠を独立に発見・提供したことも記録する。
 
 ### §12 最終回帰確認
 

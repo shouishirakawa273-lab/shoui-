@@ -149,12 +149,16 @@ def test_evidence_path_leaks_earlier_than_as_of_path_when_retrieved_before_sessi
     assert len(usable_via_evidence) == 1
 
 
-def test_evidence_path_agrees_with_as_of_path_when_retrieved_after_session_close() -> None:
+def test_evidence_path_never_leaks_earlier_than_as_of_path_when_retrieved_after_session_close() -> None:
     """Well-behaved Ordering: retrieved_atがSession Closeより後(=このLabの
     現行運用が実際に想定する順序、Bar確定後に取得)であれば、Evidence経路は
-    as_of経路より**保守的**(遅い、またはSameな判定)になり、乖離しない
-    (Failure Exampleとの対比、`retrieved_at >= available_at`の場合は安全
-    であることの直接確認)。"""
+    as_of経路より**先に**(=早いdecision_atで)利用可能と判定することは
+    絶対に無い(pit-auditor Finding、D0057: Test名を`_agrees_with_`から
+    `_never_leaks_earlier_than_`へ修正——CloseとRetrieved_atの間では
+    実際にはas_of経路の方が先に利用可能と判定する[Evidence経路はまだ
+    利用不可]ため、「一致する」ではなく「Evidenceが先に漏れることは
+    無い」が正確な主張)。Failure Exampleとの対比、Leakageの方向が
+    `retrieved_at < available_at`の場合に限られることの直接確認。"""
     session_date = date(2026, 8, 18)
     close_at = session_close_at(session_date)
     retrieved_at = close_at + timedelta(minutes=10)  # Session Close後に取得(通常の運用)
