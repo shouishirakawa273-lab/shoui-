@@ -307,6 +307,73 @@ def test_macro012_macro_modules_never_import_document_relationship() -> None:
         assert "DuplicateRelationKind" not in text
 
 
+# --- Defense in depth: skeptic-reviewer Finding(Phase4D、series_idにreference_periodを含めない場合の崩壊) ---
+
+
+def test_series_id_without_reference_period_causes_cross_period_collapse_known_limitation() -> None:
+    """`series_id`が`reference_period`を含まない場合、異なる期間のRecordが
+    同一Series扱いになり、より新しい期間の値しか`macro_as_of()`経由で
+    見えなくなることを明示的に固定する(skeptic-reviewer Finding、Phase4D
+    。`series_id`構築はFundamentalsと同じく呼び出し側/Adapterの責務であり、
+    `MacroRecord`自体は構造的に強制しない。将来Adapterは`series_id`へ
+    `reference_period`を必ず含めること、`model.py`Docstring参照)。"""
+    same_series_id = "JP_CPI_HEADLINE:ESTAT:MONTHLY"  # reference_periodを含まない(悪い例)
+    june = _record(
+        record_id="R_JUNE",
+        series_id=same_series_id,
+        reference_period_start=date(2026, 6, 1),
+        reference_period_end=date(2026, 6, 30),
+        market_public_at=datetime(2026, 7, 19, 8, 30, tzinfo=UTC),
+        retrieved_at=datetime(2026, 7, 19, 9, 0, tzinfo=UTC),
+        value="102.9",
+    )
+    july = _record(
+        record_id="R_JULY",
+        series_id=same_series_id,
+        reference_period_start=date(2026, 7, 1),
+        reference_period_end=date(2026, 7, 31),
+        market_public_at=RELEASE_AT,
+        value="103.2",
+    )
+    histories = build_revision_histories([june, july], resolve_available_at=_release_resolver)
+    # 7月分公表後は6月分が"見えなく"なる(同一SeriesとしてCollapseしているため)。
+    after_july_release = RELEASE_AT
+    result = macro_as_of(histories, after_july_release)
+    assert result[same_series_id] is not None
+    assert result[same_series_id].value == "103.2"  # 7月分のみ、6月分の値へは到達できない
+
+
+def test_series_id_including_reference_period_keeps_periods_independently_addressable() -> None:
+    """正しい構築例: `series_id`へ`reference_period`を含めれば、6月分・7月分
+    それぞれ独立してas_of解決できる(上記の崩壊を回避する推奨Pattern)。"""
+    june_series_id = "JP_CPI_HEADLINE:ESTAT:MONTHLY:2026-06"
+    july_series_id = "JP_CPI_HEADLINE:ESTAT:MONTHLY:2026-07"
+    june = _record(
+        record_id="R_JUNE",
+        series_id=june_series_id,
+        reference_period_start=date(2026, 6, 1),
+        reference_period_end=date(2026, 6, 30),
+        market_public_at=datetime(2026, 7, 19, 8, 30, tzinfo=UTC),
+        retrieved_at=datetime(2026, 7, 19, 9, 0, tzinfo=UTC),
+        value="102.9",
+    )
+    july = _record(
+        record_id="R_JULY",
+        series_id=july_series_id,
+        reference_period_start=date(2026, 7, 1),
+        reference_period_end=date(2026, 7, 31),
+        market_public_at=RELEASE_AT,
+        value="103.2",
+    )
+    histories = build_revision_histories([june, july], resolve_available_at=_release_resolver)
+    after_july_release = RELEASE_AT
+    result = macro_as_of(histories, after_july_release)
+    assert result[june_series_id] is not None
+    assert result[june_series_id].value == "102.9"
+    assert result[july_series_id] is not None
+    assert result[july_series_id].value == "103.2"
+
+
 # --- MACRO-013: Series Identity Safety ---
 
 

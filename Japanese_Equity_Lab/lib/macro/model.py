@@ -18,6 +18,38 @@ Positioning/Fundamentals/DisclosuresがEntity(発行体・銘柄)中心だった
 Name(表示名)だけで同一Seriesと判定せず、Provider公式のSeries Code/Table
 Codeがあれば`series_code`として保持する(無ければ`None`のまま、推測しない)。
 
+**`series_id`は`MacroRecord`自体では一意性を構造的に強制しない
+(skeptic-reviewer Finding、Phase4D)。** 呼び出し側/将来Adapterが、
+Source・`metric_name`・`frequency`・`seasonal_adjustment`・
+`reference_period`のうち区別すべき軸を全て`series_id`へ一意に含める
+責務を負う(例: 季節調整値[SA]と原数値[NSA]を同じ`series_id`で構築
+すると、`build_revision_histories()`が両者を同一SeriesとしてGroupingし、
+`macro_as_of()`はより新しい`available_at`を持つ方[SAかNSAかは無関係]
+のみを返してしまう)。これはFundamentals(`series_id`に`fiscal_year_
+target`/`cur_per_type`/`scope`/`accounting_standard`まで含める既存
+Pattern)と同じ責務分担であり、series_id構築はNormalizer/呼び出し側の
+責務、Dataclass自体は構造的に強制しない、という既存設計を踏襲する。
+
+**`series_id`はSourceだけでなく`reference_period`も一意に含める必要が
+ある(skeptic-reviewer Finding、Phase4D)。** `lib.macro.normalize.
+build_revision_histories()`は`series_id`のみでGroupingし、`macro_as_of()`
+はGroup内で`available_at`が最大の1件のみを返す(`lib.evidence.model.
+RevisionHistory.as_of()`の既存仕様)。したがって`series_id`が
+`reference_period`を含まない場合(例: 月次系列を"JP_CPI_HEADLINE:ESTAT:
+MONTHLY"のようにMetric名だけで構築した場合)、**異なるReference Period
+(例: 6月分と7月分)のRecordが同一Seriesへ collapse**し、より新しく
+`available_at`の大きい方の期間だけが返るようになる(過去の期間の値へ
+`macro_as_of()`経由でアクセスできなくなる)。この設計はFundamentals
+(`lib.fundamentals.normalize.parse_financial_summary_payload()`の
+`series_id = "|".join([internal_code, metric_type, fiscal_year_target,
+cur_per_type, scope, accounting_standard])`)と同じ責務分担であり
+(series_id構築はNormalizer/呼び出し側の責務、Dataclass自体は構造的に
+強制しない)、`MacroRecord`自体もこれを構造的に強制しない。**将来
+Adapterを実装する際は、`series_id`に`reference_period_start`/
+`reference_period_end`(または年月/四半期を表す一意な文字列)を必ず
+含めること**(`13_tests/test_macro_pit.py`の`test_series_id_without_
+reference_period_causes_cross_period_collapse_known_limitation`参照)。
+
 ## Long-form、既存PIT Primitiveを再利用する
 
 `MacroRecord`はseries × reference_period × source単位のLong-form 1
