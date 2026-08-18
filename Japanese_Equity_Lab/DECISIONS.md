@@ -4690,3 +4690,163 @@ Continuous Monitoring/Scheduler/Alertは実装していない。
 - `lib/positioning/catalog.py`の5 Descriptorは`SourceCatalog`への
   実際のWiring(Application起動時の一元登録)がまだ無い(Fundamentals/
   Disclosuresと同じく、既存の慣行のまま)。
+
+## D0055 — Phase4D: Japan Macro Data Foundation(設計、Adapter未実装)
+
+日本のMacro/Economic Data(CPI・GDP・失業率・賃金・政策金利等)を
+PIT-safe/revision-aware/reproducibleな形でこのLabへ取り込むためのData
+Foundationを新設した。**Economic Forecast・Regime Detection・BUY/SELL
+判断は一切実装していない**(Observationまで、Phase4D要件§1/§2)。
+
+### 事前の補足指示(このRound開始直前にユーザーから受領)
+
+External Copilot Reviewが再度Phase4A.5.1へのFIX_BEFORE_IMPLEMENTATION
+指摘を行ったが、ユーザーの明示的判断により再オープンしなかった。5件の
+指摘(retrieval_mode/retrieval_provenance・EvidenceCandidate provisional
+lifecycle・Event Extractor/Indexer runtime assertions・TDnet/EDINET/
+J-Quants provider timestamp semantics mapping・available_at==as_ofの
+新Tie-breaker)はいずれも「現在Repositoryに存在しないComponentへの
+言及」を理由に自動採用しないことが明示され、Reviewer Evidence Standard
+(CONFIRMEDには具体的File/Function/Execution Path/Trigger/Impact/
+Detectionが必要、"存在するはず"だけでは不可)がこのRound全体に適用される
+ことが再確認された。Golden Prompt PartyのRequirement-by-Requirement +
+Negative Requirement追跡強化はFuture Improvement Candidateとして記録する
+のみに留め、このRound自体のBlockerにはしない。
+
+### Repository Reality Check
+
+`lib.evidence.model`(`RevisionHistory`/`SourceVersion`/`AvailabilityBasis`
+/`ValueAvailability`)・`lib.fundamentals`/`lib.positioning`(Phase4Cで
+確立したLong-form Record + Source非依存`build_revision_histories()`
+Callback Pattern)を先に確認した。
+
+### Source Candidate Research(data-source-researcher Agent、2026-08-18)
+
+e-Stat(CPI・労働力調査)・日本銀行(政策金利)・内閣府/ESRI(GDP QE)・
+厚生労働省(賃金)の5候補を調査した。結果は全てSEARCH-SNIPPET-DERIVED
+(UNVERIFIED)——このSession自身のNetwork Egressが`e-stat.go.jp`/
+`boj.or.jp`/`esri.cao.go.jp`/`mof.go.jp`等の公式Document URLへ一貫して
+Blockされており(curlで直接再確認済み、`EDINET_SOURCE_ONBOARDING.md`と
+同じ制約)、WebFetchは全て失敗した。最重要のPIT論点(Vintage/Revision-
+History問い合わせ機構の有無)についても、5候補いずれからも確証が得られ
+なかった(Inconclusive、Leaning Negative——判明したのはBase Year改定時の
+「接続指数」によるRebasing/Continuity Patchであり、Vintage Archiveとは
+別物)。詳細は`MACRO_ARCHITECTURE.md`「Source候補」節・`VALIDATION_
+BACKLOG.md`参照。
+
+### Adapterは1件も実装しない(ユーザー要件§33に基づく正直なStatus)
+
+検索Snippetのみを根拠にAdapterを実装しない、というユーザー要件§33に
+従い、このRoundでは5候補全てを`implementation_status=NOT_IMPLEMENTED`
+のまま`lib/macro/catalog.py`へ登録し、Validation Status=`DESIGN_
+COMPLETE_AWAITING_SPEC_VERIFICATION`を`known_limitations`へ明記した
+(Positioning Phase4Cの`NOT_IMPLEMENTED`+Validation Status自由記述
+Patternをそのまま踏襲、新規Schema変更は行わない)。
+
+### Common Macro Model(新規Versioning機構は作らない)
+
+`lib/macro/model.py`の`MacroRecord`はLong-form 1レコード
+(series × reference_period × source)。PositioningがEntity中心
+だったのに対し、MacroはSeries Identity中心になる(§23)ため、
+Entity固有Fieldは持たず`series_code`(Provider公式識別子、未確認なら
+`None`)を持つ。PIT/Revision管理は`lib.evidence.model.RevisionHistory`/
+`SourceVersion`をそのまま再利用し、Macro専用の新しいVersioning
+Primitiveは作らなかった(Fundamentals/Positioningと同一のPrimitive)。
+
+**Vintage(1次速報 -> 2次速報 -> 確報)は新概念を発明せず、既存
+`SourceVersion`の系列としてそのまま表現できる**、という設計判断が
+このRoundの中心的な発見だった。`vintage_label`はSourceが明示的に確認
+できた場合のみ保持する自由記述Fieldとし、公開順序だけからの推測は
+禁止する(EVIDENCE-003と同じ原則)。
+
+`lib/macro/normalize.py`の`build_revision_histories()`は`lib.
+positioning.normalize`と同型のSource非依存`resolve_available_at`
+Callback Patternを踏襲する。ただし意図的に**コードとしては共有せず
+個別実装**とした——`PositioningRecord.observation_end`と`MacroRecord.
+reference_period_end`のようにField名が異なるため、無理にProtocol
+抽象化で共通化するとかえって複雑になると判断した(External Copilot
+Reviewが直前に警告した「推測だけでArchitectureを増やさない」という
+指示にも沿う、過剰な汎用化を避ける判断)。
+
+### Frequency Common Core昇格
+
+`lib.positioning.model.Frequency`はDAILY/WEEKLY/MONTHLY/EVENT_DRIVEN/
+UNKNOWNのみで、MacroがGDP(QUARTERLY)等に必要とするMembershipを欠いて
+いた。第2の意味が食い違いうるFrequency Enumを`lib/macro`側へ複製する
+ことは、このLabがRevisionHistory/SourceVersionについて一貫して避けて
+きた「同じ意味のPrimitiveを複数持たない」原則に反する。したがって
+`Frequency`を`lib.evidence.model`(Common Core)へ昇格し、QUARTERLY/
+ANNUALを追加した(値の意味変更は無し)。`lib.positioning.model`は
+Re-exportにより既存呼び出し元との互換性を維持する。既存Positioning
+Testを1件、新しいMembership全体を確認する形へ更新した(完全一致
+Assertionから部分集合Assertionへ変更)。
+
+### Evidence Layer(Common Core、新規Primitiveなし)
+
+`lib/macro/evidence.py`の`macro_record_to_evidence()`はFundamentals/
+Positioningと同じD0049/D0050 PIT Bugfix方針を踏襲する:
+`source.available_at`には常に`record.retrieved_at`を使い、
+`market_public_at`へのFallbackは行わない。`EvidenceRecord`/
+`SourceMetadata`を変更なしで再利用した(Company IR・Fundamentals・
+Positioningに続き、Provider非依存Common Core設計の4件目の実証)。
+
+### Tests(MACRO-001〜015、実装からのコピーではなくPhase4D要件から導出)
+
+`13_tests/test_macro_model.py`(12件)・`test_macro_pit.py`(21件)・
+`test_macro_catalog.py`(7件)、合計40件を新規追加。実Network接続無し、
+合成Record Dataのみ使用。Phase4C(Positioning)のskeptic-reviewer
+Findingで「Catalog Descriptor群にTest Coverageが無かった」Gapが指摘
+された教訓を活かし、このRoundは最初からCatalog Testを含めた。
+
+### Source Integration Skill v1 Field Test
+
+- **A. Skillだけで守れたRule**: PIT-001〜004(UNKNOWN非0/`market_public_
+  at`優先Fallback禁止/`retrieved_at`のSafe Lower Bound位置付け)・
+  RAW-002(Hash不一致からのRevision推測禁止)・EVIDENCE-001〜003
+  (Document != Evidence != Event、時系列だけからのRelationship推測禁止)
+  ・SOURCE-001(Source固有Field意味論を推測しない)——いずれもSkill単体で
+  Positioning Phase4Cの経験を踏まえた設計をそのまま踏襲できた。
+- **B. Macro固有で追加確認が必要だったRule**: Vintage/Revision Stage
+  (Preliminary/Second Preliminary/Final)の扱い方(既存`SourceVersion`で
+  表現できるという判断自体はSkillに無く、このRound自身の設計判断)、
+  Reference Period vs Release Timingの分離(既存PIT-*Ruleの一般化として
+  導出可能だったが、Macro固有の用語[Quarter Leakage等]はUser Task指示
+  から得た)。
+- **C. Macro固有の事情 vs D. 一般的なSkill Gap**: 上記Bは**Macro固有の
+  事情**と判定した(Vintage概念自体は他Sourceには無い、Disclosure/
+  Positioningでは複数Versionの意味が「訂正」or「別Metric」のいずれか
+  だったが、Macroでは「同一測定対象の精度向上」という第3の意味を持つ
+  ため)。ただし「複数Version = 既存RevisionHistoryで表現可能」という
+  判断パターン自体は今後他Sourceにも再利用できる可能性があり、Concrete
+  Evidence(今回のMacro実例)を伴う一般化候補として記録するに留める
+  (このRoundではSkill本文への追記は行わない、Evidence不足のPreliminary
+  な段階のため)。
+- **E. Skill v1.1の必要性**: 無し(このRoundでは新規Rule追加を行わな
+  かった、上記Cの判断)。
+- **F. Golden Prompt Parityへの影響**: 無し(このRoundはSkillを変更して
+  いない)。
+
+### Known Limitations
+
+- Adapterを1件も実装していない(5候補全て`NOT_IMPLEMENTED`、Validation
+  Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`)。
+- e-Stat/BOJ/ESRI/総務省/厚労省いずれも公式仕様をこのSessionから直接
+  確認できていない(`EGRESS_BLOCKED`、curlで直接再確認済み)。
+- Vintage/Revision-History問い合わせ機構の有無(Q5、最重要PIT論点)は
+  5候補いずれについてもInconclusive(Leaning Negative)のまま。
+- `lib/macro/normalize.py`の`build_revision_histories()`は`lib.
+  positioning.normalize`と意図的にコード非共有(Field名の違いにより
+  Protocol抽象化はPremature Generalizationと判断)。
+- `lib/macro/catalog.py`の5 Descriptorは`SourceCatalog`への実際の
+  Wiring(Application起動時の一元登録)がまだ無い(既存の慣行のまま)。
+- Forward Snapshot Collector(Vintage観測用)は未実装(Procedure/将来
+  要件としてのみ`MACRO_ARCHITECTURE.md`に記録)。
+
+### このDecisionでやらないこと
+
+Economic Forecast・Regime Detection・BUY/SELL判断・Expectations/
+Consensus・Macro Scoring・Sector Rotation Signal・Central Bank NLP・
+News・Portfolio Sizing・Automated Trading・Heavy Monitoring・Mass
+Source Crawling・Statistical Strategy Validationのいずれにも着手して
+いない。TDnet/Company IR/Positioningの既存Validation Backlogは同時に
+消化していない。Phase4Aへの再着手は行っていない。

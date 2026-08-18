@@ -23,6 +23,11 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 8 | J-Quants `trades_spec`(投資部門別売買状況) | `NOT_IMPLEMENTED`(Adapter未着手) | 唯一Light Plan利用可能の可能性(単一の未検証情報源)、認証済みDashboard確認またはLocal接続確認が最優先候補 | 同上 |
 | 9 | JPX直接公開の需給統計(信用取引残高・空売り集計・投資部門別売買状況) | 未着手(候補として記録のみ) | URL Pattern・Format(PDF/Excel)がScript化に適しているか未確認、Index Page Scrapeが必要な可能性 | `POSITIONING_ARCHITECTURE.md`、DECISIONS.md D0054 |
 | 10 | Positioning Price-derived Metric(price_derived_liquidity) Local Real Data Validation | `CONNECTED`(Code)/`FIXTURE_VALIDATED`(Validation) | 合成Bar Dataでの検証のみ実施、実J-Quants Priceに対するEnd-to-End確認は未実施(上流のRawOHLCVBar自体は別Phaseで既にReal Data確認済み) | `POSITIONING_ARCHITECTURE.md`、DECISIONS.md D0054 |
+| 11 | e-Stat CPI(全国CPI総合・コアCPI・コアコアCPI) | `NOT_IMPLEMENTED`(Adapter未着手) | 全情報がSEARCH-SNIPPET-DERIVED(UNVERIFIED)。5候補中最も裏付けが強いが、Wire Schema・認証Parameter・Rate Limit・Timestamp Field未確認。Local Spec Verification最優先候補 | `MACRO_ARCHITECTURE.md`、`lib/macro/catalog.py`、DECISIONS.md D0055 |
+| 12 | 日本銀行 政策金利(時系列統計データ検索サイトAPI) | `NOT_IMPLEMENTED`(Adapter未着手) | 5候補中最も根拠が弱い(2026-02-18付通知見出し+SNS投稿要約のみ)。API新設主張自体の真偽確認が先決 | 同上 |
+| 13 | 内閣府/ESRI GDP速報(QE) | `NOT_IMPLEMENTED`(Adapter未着手) | 1次速報/2次速報/確報という公式Revision Stage名称は複数Snippetで一致(未読)。専用API有無不明 | 同上 |
+| 14 | 総務省統計局 労働力調査(完全失業率) | `NOT_IMPLEMENTED`(Adapter未着手) | e-Stat CPIと同一Endpointで取得可能か未確認。情報が他候補より薄い | 同上 |
+| 15 | 厚生労働省 毎月勤労統計調査(賃金) | `NOT_IMPLEMENTED`(Adapter未着手) | PDF中心の公開形式が示唆。2024年1月Benchmark更新による指数断層の記述は具体的だが未読 | 同上 |
 
 ## 運用ルール
 
