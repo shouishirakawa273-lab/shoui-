@@ -128,6 +128,24 @@ class ValueAvailability(StrEnum):
     UNKNOWN = "UNKNOWN"  # Parse不能等、値の状態そのものが判定できない
 
 
+class Frequency(StrEnum):
+    """Metric/Seriesの観測頻度(Phase4C `lib.positioning.model`で新設、Phase4D
+    `lib.macro`がQUARTERLY/ANNUALを必要としたためCommon Coreへ昇格した)。
+
+    異なるFrequencyのSeriesを暗黙に混ぜない。Weekly/Quarterly ValueをDaily
+    Seriesへforward-fillする処理はこのLayerでは行わない(Data Foundationでは
+    自動forward-fillしない、後続Research Layerの責務)。
+    """
+
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+    QUARTERLY = "QUARTERLY"
+    ANNUAL = "ANNUAL"
+    EVENT_DRIVEN = "EVENT_DRIVEN"
+    UNKNOWN = "UNKNOWN"
+
+
 @dataclass(kw_only=True, frozen=True)
 class AiDerivedProvenance:
     """AIが生成したDerived Record(要約・Event抽出・Entity Mapping・Hypothesis草案等)の

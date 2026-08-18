@@ -39,25 +39,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
-from enum import StrEnum
 
-from lib.evidence.model import AvailabilityBasis, ValueAvailability
+from lib.evidence.model import AvailabilityBasis, Frequency, ValueAvailability
 
 NORMALIZER_VERSION_PRICE_DERIVED = "POSITIONING_PRICE_DERIVED_NORMALIZER_V1"
 
-
-class Frequency(StrEnum):
-    """Metricの観測頻度。異なるFrequencyのSeriesを暗黙に混ぜない(Phase4C §17)。
-
-    Weekly ValueをDaily Seriesへforward-fillする処理はこのLayerでは行わない
-    (後続Research Layerの責務、Data Foundationでは自動forward-fillしない)。
-    """
-
-    DAILY = "DAILY"
-    WEEKLY = "WEEKLY"
-    MONTHLY = "MONTHLY"
-    EVENT_DRIVEN = "EVENT_DRIVEN"
-    UNKNOWN = "UNKNOWN"
+# Frequencyは元々このModuleで定義していたが、Phase4D(`lib.macro`)がQUARTERLY/
+# ANNUALを必要としたためlib.evidence.modelへCommon Coreとして昇格した。
+# 既存の`from lib.positioning.model import Frequency`呼び出し元との互換性の
+# ためここでRe-exportする(値の再定義はしない、Single Source of Truth)。
+__all__ = ["NORMALIZER_VERSION_PRICE_DERIVED", "AvailabilityBasis", "Frequency", "PositioningRecord", "ValueAvailability"]
 
 
 @dataclass(kw_only=True, frozen=True)

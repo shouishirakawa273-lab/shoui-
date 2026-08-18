@@ -66,4 +66,10 @@ def test_observation_start_equal_to_end_is_allowed() -> None:
 
 
 def test_frequency_values_are_distinct_and_explicit() -> None:
-    assert {f.value for f in Frequency} == {"DAILY", "WEEKLY", "MONTHLY", "EVENT_DRIVEN", "UNKNOWN"}
+    """Frequencyはlib.evidence.modelへCommon Core昇格済み(Phase4D、
+    QUARTERLY/ANNUALをlib.macroが必要としたため)。Positioning自身が実際に
+    使うMembership(DAILY/WEEKLY/MONTHLY/EVENT_DRIVEN/UNKNOWN)が引き続き
+    存在することのみを確認する(Enum全体の完全一致は`test_evidence_
+    model.py`側で確認する)。"""
+    values = {f.value for f in Frequency}
+    assert {"DAILY", "WEEKLY", "MONTHLY", "EVENT_DRIVEN", "UNKNOWN"}.issubset(values)

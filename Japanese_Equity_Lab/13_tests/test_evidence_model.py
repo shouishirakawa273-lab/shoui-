@@ -14,6 +14,7 @@ from lib.evidence.model import (
     DataLayer,
     EvidenceRecord,
     EvidenceType,
+    Frequency,
     RevisionHistory,
     SourceVersion,
     ValueAvailability,
@@ -300,3 +301,18 @@ def test_source_version_records_revision_reason() -> None:
     assert version.revision_reason == "会社側の入力ミス訂正"
     assert version.is_correction is True
     assert version.supersedes_version_id == "v1"
+
+
+def test_frequency_full_membership_after_phase4d_promotion() -> None:
+    """FrequencyはPhase4C `lib.positioning.model`発祥、Phase4D `lib.macro`が
+    QUARTERLY/ANNUALを必要としたためCommon Coreへ昇格した(値の再定義なし、
+    Single Source of Truth)。"""
+    assert {f.value for f in Frequency} == {
+        "DAILY",
+        "WEEKLY",
+        "MONTHLY",
+        "QUARTERLY",
+        "ANNUAL",
+        "EVENT_DRIVEN",
+        "UNKNOWN",
+    }
