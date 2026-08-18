@@ -384,7 +384,22 @@ VERIFICATION(ユーザーが別のWeb-access環境から確認したと申告し
 別のSourceでも同様の3層分離が必要になった時点で、この一般化の妥当性を
 再確認すること。
 
-## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記・D0048で更新)
+**Company IR(Phase4B-4)は2つ目のデータ点だが、TDnetとは逆方向の
+確認になった**: Company IRは発行体自身のWebsiteを直接Fetchする設計
+(`lib/disclosures/providers/company_ir.py`)であり、`publishing_
+entity`(発行体企業自身)・`disclosure_system`(企業自身のIR
+Website)・`delivery_provider`(直接Fetch、中間業者なし)の3つが、
+EDINETと同様「Venue自体と配信経路の同一主体性」により2層
+(`originating_source=delivery_provider="COMPANY_IR"`)へ収束する。
+ただしEDINET/TDnetとは異なり、Company IRでは`publishing_entity`
+(発行体)と`disclosure_system`(Venue)も実質的に同一主体(その企業
+自身)であるため、収束の理由がEDINET(規制当局が両方を運営)とは異なる
+(企業自身が発行体でありVenueでもある)。3層分離Frameworkが「なぜ
+収束するか」の理由まで一般化されたSchemaとしては持っていないことを
+示す実例であり、`entity_id`(発行体識別)は依然別軸のまま未解決
+(呼び出し側が確認済み値を渡さない限り`None`)。
+
+## 既知の限界(Phase4B-1時点、Phase4B-2でEDINETについて追記、Phase4B-3でTDnetについて追記・D0048で更新、Phase4B-4でCompany IRについて追記)
 
 - Provider-neutralなFixture Schemaのみで検証済み。Company IRの
   Field名・DocKind値は未確認。EDINETは
