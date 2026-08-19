@@ -6606,6 +6606,17 @@ uses_revise_lineage`が構造的に保証)。
 - Locked Test: 2025-01-06 〜 2025-12-30(約1年、単独Requestとして
   既に取得成功を確認済み)
 
+**Train/Validation比率(2年/1年)の根拠**(skeptic-reviewer LOW
+Finding対応): Locked Test=2025年は独立に取得成功を確認済みの範囲と
+一致させることを優先して固定した。残る2022-2024の2年をTrain/
+Validationへどう配分するかは、機械学習における一般的な「学習データを
+検証データより多く確保する」慣行(Trainを厚めに)以上の、Result依存の
+根拠は無い。境界(2023-12-29/2024-01-04)をこれ以外の日付にする
+具体的な理由も無い。この点はskeptic-reviewerに指摘されるまで明示
+していなかったため、ここに明記する — Strategy Resultを見て選んだ
+比率ではないが、「2年/1年」以外の配分(例: 1年/2年)を排除する
+積極的な理由も無いことを正直に記録する。
+
 **重要な未確認事項**: `_load_real_price_data()`は`train_period_start`
 から各Splitのend_sessionまでを1Requestで要求する設計のため、Locked
 Test実行時には2022-01-04〜2025-12-30という約4年分が単一Requestに
@@ -6644,11 +6655,16 @@ Preregistration/Experiment RecordをSilent Overwriteしない
   「取得可能」範囲の外側を一切含まない機械的な選択であり、複数の
   候補期間からStrategy Resultを見て選んだものではない(そもそも
   Strategyは一度も実行していない)。
-- **Universe Cherry-picking**: 4銘柄は変更していない(Eの通り)。
 - **Post-hoc Redesign**: このRound自体がPost-hoc Redesignだが、
   その理由は純粋なAPI到達可否(HTTP 400)であり、Strategy Resultの
   観測を理由とした変更ではない。Falsification ConditionもPrimary
-  Metricも不変。
+  Metricも不変。skeptic-reviewerが確認した追加の間接経路として、
+  D0037の合成Fixture以前のE2E疎通確認(20営業日Momentum・燃え尽きた
+  期間)で「Censoring[`OUTSIDE_DATA_RANGE`]が期間末尾に集中する」
+  という定性的観察が過去に得られていたが、これはExecution/Censoring
+  Timing一般の事実であり、H0001(5営業日Reversal)のReturn自体には
+  接続しない。実データのReturn数値自体はRepository内のどこにも
+  永続化されていない(Registry・Report・Archiveいずれも確認済み)。
 - **Insufficient History**: Train+Validation+Locked Testの合計が
   約4年(約1000営業日 × 4銘柄)しかない。5営業日Reversal・10営業日
   保有という短期Strategyであるため、営業日単位のSample数自体は
@@ -6657,25 +6673,50 @@ Preregistration/Experiment RecordをSilent Overwriteしない
   **`LIMITED_REAL_DATA_WINDOW`として明示的に記録する**(既存の
   `INSUFFICIENT_EVIDENCE` Conclusion Categoryとは別軸の、データ
   提供期間そのものの限界を指すLabelとして、Backlogおよび将来の
-  Conclusion Recordで使用する)。
-- **Burned-period Contamination**: 最も重要な指摘。提案したTrain+
-  Validation期間(2022-01-04〜2024-12-30)は、RESEARCH_RULES.mdの
-  「燃え尽きた期間」記録(2022-01-04〜2024-12-30・同じ4銘柄・
-  20営業日Momentum→60営業日保有)と**日付範囲・銘柄が完全に一致**する。
-  「燃え尽きた」の定義は期間・銘柄・Strategyパラメータの組み合わせ
-  全体であり、H0001のMechanism(5営業日Reversal・10営業日保有、
-  燃え尽きた組み合わせの20/60営業日Momentumとは符号・長さとも異なる)
-  は技術的には異なる組み合わせのため、Rule上は違反ではない。
-  しかし、この重複がAvailability制約の副産物として生じたことは
-  正直に記録する必要がある。skeptic-reviewerの見解: 技術的な
-  「未見のCombination」の定義は満たすが、この重複は**選択の余地なく
-  データ制約から強制されたもの**であり、Confirmation Biasの意図は
-  無い(Strategy Resultを見て期間を選んだのではなく、逆にResultを
-  見る前に制約から機械的に導出された)。ただしFinal Conclusionの
-  Evidence Strength評価では、この期間重複を「同じ期間の株価Data
-  自体は既に一度Backtestで観測されている」という事実としてQ節
-  (Trade/Ticker Concentration)・R節(Synthetic vs Real Comparison)
-  で必ず明示すること、という条件付きで許容可能と判断した。
+  Conclusion Recordで使用する)。skeptic-reviewerのMEDIUM Finding:
+  RESEARCH_RULES.md「Sample Metricsの用語とholding期間の重複」節
+  (`unique_entry_dates`が`trade_count`より著しく少ない場合は
+  「多数の独立した検証」ではなく「少数の市場局面への賭け」である
+  ことを明記せよ、という既存Rule)が、4銘柄・10営業日保有という
+  このRoundの設計にまさに該当する状況にもかかわらず、当初のGuide
+  Falsifiable Checklistに含まれていなかった。`PHASE5_V1_LOCAL_
+  VALIDATION_GUIDE.md` H節へ`unique_entry_dates`/`trade_count`の
+  比較を明示的な確認項目として追加した(この節末尾に反映)。
+- **Universe Cherry-picking / Burned-period Contamination(結合評価)**:
+  最も重要な指摘。当初この2つを別々のBullet(4銘柄は変更していない
+  こと、期間重複)として個別に評価していたが、skeptic-reviewerの
+  MEDIUM Findingにより、**両者を独立に評価するのは不十分**と判断を
+  改めた。提案したTrain+Validation期間(2022-01-04〜2024-12-30)は、
+  RESEARCH_RULES.mdの「燃え尽きた期間」記録(2022-01-04〜
+  2024-12-30・同じ4銘柄[7203/6758/8056/3626]・20営業日Momentum→
+  60営業日保有)と**日付範囲・銘柄の両方が完全に一致**する。「燃え尽きた」
+  の定義は期間・銘柄・Strategyパラメータの組み合わせ全体であり、
+  H0001のMechanism(5営業日Reversal・10営業日保有、燃え尽きた組み合わせ
+  の20/60営業日Momentumとは符号・長さとも異なる)は技術的には異なる
+  組み合わせのため、Rule上は違反ではない。しかし、**日付軸・銘柄軸の
+  いずれか一方でも独立していれば残る「未見性」の余地が、両軸とも
+  一致することで完全に失われている**(skeptic-reviewerの表現:
+  「技術的な組み合わせの違いはBlindnessを完全には回復しない」)。
+  これはAvailability制約から機械的に強制されたものであり
+  Confirmation Biasの意図は無い(Strategy Resultを見て期間を選んだ
+  のではなく、逆にResultを見る前に制約から導出された)が、この
+  重複の「技術的にはRule違反ではない」という結論と「Evidence
+  としての解釈上は真のOut-of-Sample Testより弱く扱うべき」という
+  結論は両立する、とskeptic-reviewerと合意した。
+
+  **構造的なCommitment(narrativeだけで終わらせない)**: 当初はこの
+  懸念をDECISIONS.mdの記述だけに留めていたが、skeptic-reviewerの
+  指摘(「三か月後に忘れられても何も失敗しない」)を受け、
+  `PHASE5_V1_LOCAL_VALIDATION_GUIDE.md` H節(Falsifiable Checklist)
+  へ以下を明示的な必須確認項目として追加した(このRoundの一部として
+  既に反映済み): 将来のConclusion Recordは、(1)ticker重複と
+  period重複を結合した一文で明示すること(片方だけの言及では不可)、
+  (2)この重複のためEvidence Strengthを真のOut-of-Sample Testより
+  弱く扱うことを明記すること。これによりQ節(Trade/Ticker
+  Concentration)・R節(Synthetic vs Real Comparison)への反映が
+  「書き忘れられる」リスクを、Checklist上の必須項目として構造化した
+  (完全な強制[Testによる自動検証]ではなく、人間が従うChecklistでの
+  強制である点は限界として残る — 将来Round候補としてBacklogに記録)。
 
 **G. PIT Review**: このRoundはコード変更が定数名(`PREREG0001_R1`
 →`_R2`、`EXPERIMENT_ID`同様)とDocstring/Guide文面のみであり、

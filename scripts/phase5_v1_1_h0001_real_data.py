@@ -322,7 +322,7 @@ def build_dataset_contract(*, codes: tuple[str, ...], start: date, end: date) ->
         feature_computation="5営業日Trailing Close-to-Close Return(lib.strategies.short_term_reversal)",
         target_computation="10営業日Holding、NEXT_SESSION_OPEN執行(lib.backtest.engine)",
         notes=(
-            "Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)。実データ実行はユーザーの"
+            "Phase5 v1.1 Real-Data Validation Experiment(H0001-R2)。実データ実行はユーザーの"
             "ローカルPC上で行う。既知の限界: /v2/equities/masterはsplitごと(Train/Validation/"
             "Locked Test)に個別に取得しas_ofでPin留めしていないため、Real Masterデータが取得"
             "タイミング間で変化した場合、3 splitが厳密に同一のUniverse基盤を共有する保証はない。"
@@ -460,7 +460,7 @@ def _run_and_record(
         reproducibility=fingerprint,
         price_adjustment=price_adjustment,
         notes=(
-            f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)、split={split.value}、"
+            f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R2)、split={split.value}、"
             f"universe_resolution=[{','.join(universe_probe_notes)}]"
         ),
         preregistration_id=result.preregistration_id,

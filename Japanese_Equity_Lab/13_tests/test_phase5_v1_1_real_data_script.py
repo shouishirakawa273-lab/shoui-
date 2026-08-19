@@ -1,4 +1,4 @@
-"""Phase5 v1.1 H0001-R1 Real-Data Scriptの原則ベースTest(REALVAL-001〜010)。
+"""Phase5 v1.1 H0001-R2 Real-Data Scriptの原則ベースTest(REALVAL-001〜010)。
 
 `scripts/phase5_v1_1_h0001_real_data.py`はこのセッションが実行できない
 (EGRESS_BLOCKED、DECISIONS.md参照)ため、実際のJ-Quants通信は一切行わず、
@@ -338,6 +338,60 @@ def test_pit_audit_medium_fix_run_and_record_persists_universe_resolution_into_n
     assert "universe_resolution=[" in recorded.notes
     assert "2024-01-04:" in recorded.notes
     assert "2024-01-05:" in recorded.notes
+
+
+def test_d0065_r2_period_design_satisfies_chronological_non_overlap(script: ModuleType, tmp_path: Path) -> None:
+    """pit-auditor MEDIUM Finding対応の回帰Test。
+
+    `PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`/`DECISIONS.md` D0065で確定した
+    実際のR2期間案(Train 2022-01-04〜2023-12-29/Validation 2024-01-04〜
+    2024-12-30/Locked Test 2025-01-06〜2025-12-30)そのものを使って
+    `build_real_preregistration()`を呼び、`Preregistration.__post_init__`の
+    Chronological非重複Checkを実際に通過することを確認する。それまでの
+    Lineage Test(`test_realval010_build_real_preregistration_uses_revise_
+    lineage`)は`revise()`機構自体の検証が目的で任意の日付を使っており、
+    D0065で確定した実際の6つの日付を組で検証するTestが無かった
+    (ドキュメント上の日付をこっそり変えてもTestが検知できないGapだった)。
+    """
+    registry_path = tmp_path / "preregistrations.jsonl"
+    parent = Preregistration(
+        preregistration_id="PREREG0001",
+        hypothesis_id="H0001",
+        research_question="短期(5営業日)Trailing Returnが負の銘柄は、その後TOPIX対比で超過リターンを生むか",
+        alternative_explanations=("説明1で最低限の長さを満たす文字列", "説明2で最低限の長さを満たす文字列"),
+        falsification_condition="Locked Test期間でexcess_returnが0以下であれば、この仮説は支持されない",
+        dataset_contract_id="DC0001_SMOKE_FIXTURE_V1",
+        universe_definition="Price + PIT Universeのみ(Smoke Run)",
+        train_period_start=date(2026, 1, 5),
+        train_period_end=date(2026, 3, 4),
+        validation_period_start=date(2026, 3, 5),
+        validation_period_end=date(2026, 5, 1),
+        locked_test_period_start=date(2026, 5, 5),
+        locked_test_period_end=date(2026, 7, 3),
+        primary_metric="excess_return",
+        parameters=(("lookback_days", "5"), ("holding_period_days", "10")),
+    ).preregister()
+    PreregistrationRegistry(registry_path).record(parent)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(script, "_PREREGISTRATION_REGISTRY_PATH", registry_path)
+    try:
+        revised = script.build_real_preregistration(
+            codes=("7203", "6758", "8056", "3626"),
+            train_start=date(2022, 1, 4),
+            train_end=date(2023, 12, 29),
+            validation_start=date(2024, 1, 4),
+            validation_end=date(2024, 12, 30),
+            locked_test_start=date(2025, 1, 6),
+            locked_test_end=date(2025, 12, 30),
+        )
+        frozen = revised.preregister()
+    finally:
+        monkeypatch.undo()
+
+    assert frozen.status == PreregistrationStatus.PREREGISTERED
+    assert frozen.train_period_end < frozen.validation_period_start
+    assert frozen.validation_period_end < frozen.locked_test_period_start
 
 
 def test_realval010_step_preregister_freezes_and_records_without_overwriting_parent(script: ModuleType, tmp_path: Path) -> None:

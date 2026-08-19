@@ -116,17 +116,30 @@ Testの期間・パラメータを最適化してはならない**(§8/§11)。
 - Locked Test: 2025-01-06 〜 2025-12-30(約1年、単独Requestとして既に
   取得成功を確認済みの範囲と一致)
 
+Locked Test=2025年は独立に取得成功を確認済みの範囲を優先して固定した。
+残る2022-2024の2年をTrain(2年)/Validation(1年)に配分した理由は
+「学習データを検証データより多く確保する」一般的な慣行以上のResult
+依存根拠は無い(境界日を2023-12-29/2024-01-04以外にする積極的な理由も
+無い、DECISIONS.md D0065参照)。
+
 Chronological・非重複・Locked Test分離という設計原則(Preregistration
 の`__post_init__`が構造的に強制)は満たすが、**この期間は
 `RESEARCH_RULES.md`の「燃え尽きた期間」記録(2022-01-04〜
 2024-12-30・同じ7203/6758/8056/3626・20営業日Momentum→60営業日保有)
-とTrain+Validation期間がほぼ完全に重複する**。H0001はMechanism
-(5営業日Reversal・10営業日保有)が異なるため「燃え尽きた期間」の
-定義(期間・銘柄・Strategyパラメータの組み合わせ全体)には該当しない
-が、データ提供期間の制約上これ以上の分離は不可能(利用可能な実データが
-約4年分しかなく、燃え尽きた期間とほぼ同じ範囲しか残っていない)。
-この重複はskeptic-reviewerに明示的に確認させ、Research-Integrity上
-許容可能と判断した根拠をDECISIONS.md D0065に記録している。
+とTrain+Validation期間の日付・銘柄が両方とも完全に一致する**
+(片方だけでなく両軸とも一致 — これは弱いRisk統制ではないため、
+下のQ節の代わりとして扱わないこと)。H0001はMechanism(5営業日
+Reversal・10営業日保有)が異なるため「燃え尽きた期間」の定義
+(期間・銘柄・Strategyパラメータの組み合わせ全体)には技術的には
+該当しないが、データ提供期間の制約上これ以上の分離は不可能(利用可能な
+実データが約4年分しかなく、燃え尽きた期間と同じ範囲しか残っていない)。
+この重複はskeptic-reviewerに明示的に確認させた結果、「技術的には
+Rule違反ではないが、日付軸・銘柄軸のいずれか一方でも独立していれば
+残る未見性が両軸一致により完全に失われている」という結論に至った
+(DECISIONS.md D0065参照)。**将来のConclusion Recordは、この
+ticker+period二重重複を1文で明示し、Evidence Strengthを真の
+Out-of-Sample Testより弱く扱うことを明記すること**(H節のChecklist
+項目として必須化)。
 
 **銘柄選定**: 7203/6758/8056/3626は引き続き使用する。この4銘柄は
 Universe選定として独立した根拠(流動性・時価総額等)を持たないという
@@ -217,6 +230,20 @@ Contamination防止)。`06_backtests/locked_test_audit_real.jsonl`
   比較的短い履歴であること自体は`LIMITED_REAL_DATA_WINDOW`として
   Evidence Limitationに記録すること(D0065参照、他Sourceで長期履歴が
   取得できない限りこのRoundでは解消できない)。
+- **(必須、skeptic-reviewer MEDIUM Finding対応)** `unique_entry_dates`
+  と`trade_count`を比較すること(RESEARCH_RULES.md「Sample Metricsの
+  用語とholding期間の重複」節)。`unique_entry_dates`が`trade_count`
+  より著しく少ない場合、それは「多数の独立した検証」ではなく「少数の
+  市場局面への賭け」であることをConclusion Recordに明記する。4銘柄・
+  10営業日保有という設計はこの重複が起こりやすい形状であるため、
+  他Checklist項目より優先して確認すること。
+- **(必須、skeptic-reviewer MEDIUM Finding対応)** Conclusion Recordは、
+  D節で述べたTicker重複(7203/6758/8056/3626)とPeriod重複
+  (2022-01-04〜2024-12-30がRESEARCH_RULES.mdの燃え尽きた期間と完全
+  一致)を**1つの結合した文**として明示すること(片方だけの言及・
+  暗黙の言及は不可)。その上でEvidence Strengthを、真のOut-of-Sample
+  Testより弱く扱う旨を明記すること。Positive/Negativeいずれの
+  Result(H0001が支持されても棄却されても)でもこの記述は省略しない。
 
 ## I. Claudeへ貼り戻す内容
 
