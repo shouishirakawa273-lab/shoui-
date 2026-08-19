@@ -20,3 +20,14 @@ class DataSourceError(Exception):
 
     メッセージ・chained exceptionにAPIキー/トークンを含めないこと
     (URLクエリパラメータに認証情報を載せるAPIのエラーは特に注意する)。"""
+
+
+class PreregistrationImmutabilityError(Exception):
+    """PREREGISTERED以降のPreregistrationのCore Fieldsを書き換えようとした場合に
+    送出する(Phase5、`lib.research.preregistration`)。"""
+
+
+class LockedTestAccessError(Exception):
+    """Locked TestをUnlockせずに読もうとした場合、または既にUnlock済みのLocked
+    Testを再度Unlockしようとした場合に送出する(Phase5、`lib.research.locked_
+    test`)。"""

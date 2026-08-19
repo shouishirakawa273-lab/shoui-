@@ -74,3 +74,13 @@ class Experiment(RecordMeta):
     # `lib.evidence.model.AvailabilitySemantics`の値を文字列で保持)。Noneは
     # 「未記録」(既存Experimentとの後方互換)。
     availability_semantics: str | None = None
+    # --- Phase5 v1(Hypothesis Validation Pipeline)向け拡張、既定Noneで既存
+    # Semanticsは不変 ---
+    # このExperimentが従うPreregistration(`lib.research.preregistration.
+    # Preregistration`)のID。Noneは「Preregistration経由ではない実行」
+    # (既存のPhase1〜3 Experimentとの後方互換、およびSmoke Test実行の識別)。
+    preregistration_id: str | None = None
+    # このExperimentが使用したDatasetContractのHash(`lib.research.dataset_
+    # contract.DatasetContract.contract_hash()`)。Same Dataset Contract + Same
+    # Commit + Same ConfigならSame Experiment Inputという再現性保証の一部。
+    dataset_contract_hash: str | None = None
