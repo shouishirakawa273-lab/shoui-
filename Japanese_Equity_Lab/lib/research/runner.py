@@ -4,7 +4,7 @@
 (D0034/D0035/D0037/D0038で確立済みのPIT-safe実行機構)をそのまま呼び出す、
 薄いWrapperに徹する(Phase5 v1要件§39: 既存Backtest Engineの再利用)。
 
-このModuleが新たに追加する制約は2つだけ:
+このModuleが新たに追加する制約は3つ:
 
 1. **Preregistrationの状態Gate**(VAL-001): `PreregistrationStatus.DRAFT`の
    Preregistrationに従うRunは実行できない。Preregistration自体が
@@ -15,6 +15,14 @@
    `LockedTestGate.assert_unlocked(experiment_id)`を明示的に通過させる。
    RESEARCH_RULES.md「Hidden Test隔離」のAccess段階を実際のRunコマンドへ
    接続する箇所はここだけ。
+3. **Split境界Gate**(Pre-run PIT Audit BLOCKER、2026-08-19で発見された実際の
+   Bugへの恒久対策): 呼び出し側が渡す`trading_calendar`/`benchmark_bars`が
+   そのsplit自身のend_sessionより先の日付を含んでいる場合、`run_split()`は
+   `SplitBoundaryLeakageError`で即座に失敗する。呼び出し側は必ずsplitごとに
+   `[train_period_start等の開始, そのsplitのend_session]`だけのデータを渡す
+   こと(全期間共通のCalendar/Price Historyを使い回すと、Right Censoring
+   (D0037)の境界がsplit自身のend_sessionより先へ伸び、Trade ExitがSplit境界
+   を越えた後続期間のPriceで決済されうる)。
 
 Train/Validation/Locked Testの期間そのものは`Preregistration`の
 `train_period_*`/`validation_period_*`/`locked_test_period_*`から取得し、
@@ -36,7 +44,7 @@ from lib.backtest.engine import (
     TransactionCostConfig,
 )
 from lib.backtest.price_history import PriceHistorySource
-from lib.errors import PreregistrationImmutabilityError
+from lib.errors import PreregistrationImmutabilityError, SplitBoundaryLeakageError
 from lib.market_calendar import TradingCalendar
 from lib.research.locked_test import LockedTestGateProtocol
 from lib.research.preregistration import Preregistration, PreregistrationStatus
@@ -120,6 +128,38 @@ def run_split(
                 "(Hidden Test隔離、RESEARCH_RULES.md参照)"
             )
         locked_test_gate.assert_unlocked(experiment_id)
+
+    # Split境界の構造的Gate(Pre-run PIT Audit BLOCKER、2026-08-19で確認された
+    # 実際のBugに対する恒久対策)。呼び出し側がsplit自身のend_sessionより先の
+    # 日付を含むTrading Calendar/Benchmark Barsを誤って渡した場合、
+    # `BacktestEngine`のRight Censoring(D0037)がend_session側で正しく機能せず
+    # (calendarのrange_endが実際の境界になるため)、Trade ExitがSplit境界を越えた
+    # 後続期間(最悪Locked Test期間)のPriceで決済されうる。Runner自身がここで
+    # 検証し、Silentに漏れることを防ぐ。
+    #
+    # 注(price_historyを直接rangeチェックしない理由、Fix確認Pre-run PIT Audit
+    # MEDIUM observation): `price_history`(`PriceHistorySource`)はProtocol上
+    # `bars_up_to(code, as_of)`のみを提供し、保持しているBarの全期間を列挙する
+    # 手段を持たない。ただし`BacktestEngine.run()`はExit Dateを`trading_calendar`
+    # で解決した*後*にのみ`price_history`を参照する(range外ならこの時点で
+    # `TradingCalendarResolutionError`→`CENSORED_END_OF_SAMPLE`となり、Price
+    # 参照自体に到達しない)。したがってこの`trading_calendar`チェックが
+    # `price_history`の未来Bar混入も間接的に防ぐ、という不変条件にこのGateは
+    # 依存している。この不変条件が崩れる変更(Exit解決順序の変更等)を
+    # `lib/backtest/engine.py`へ加える場合は、`price_history`自体への直接的な
+    # range検証の追加を再検討すること。
+    if trading_calendar.range_end > end_session:
+        raise SplitBoundaryLeakageError(
+            f"trading_calendar.range_end({trading_calendar.range_end})がsplit={split.value}の"
+            f"end_session({end_session})より先です。呼び出し側はこのsplit自身のend_sessionまでの"
+            "データのみを渡してください(Split境界を越えたPrice参照防止)。"
+        )
+    leaking_benchmark_dates = [b.session_date for b in benchmark_bars if b.session_date > end_session]
+    if leaking_benchmark_dates:
+        raise SplitBoundaryLeakageError(
+            f"benchmark_barsにsplit={split.value}のend_session({end_session})より先の日付"
+            f"({sorted(leaking_benchmark_dates)[:3]}...)が含まれています。"
+        )
 
     config = BacktestRunConfig(
         universe_codes=universe_codes,

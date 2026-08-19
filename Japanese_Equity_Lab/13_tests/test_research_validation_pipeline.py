@@ -1,4 +1,4 @@
-"""Phase5 v1 Hypothesis Validation Pipelineの原則ベースTest(VAL-001〜VAL-026)。
+"""Phase5 v1 Hypothesis Validation Pipelineの原則ベースTest(VAL-001〜VAL-027)。
 
 実装の詳細(具体的な関数名の内部Logic)ではなく、Phase5 v1 kickoff要件が
 明示的に述べた原則(Preregistrationは実行前に固定される・Random Split禁止・
@@ -15,7 +15,12 @@ from pathlib import Path
 import pytest
 from lib.backtest.engine import DataSplit
 from lib.backtest.price_history import StaticPriceHistory
-from lib.errors import AppendOnlyViolationError, LockedTestAccessError, PreregistrationImmutabilityError
+from lib.errors import (
+    AppendOnlyViolationError,
+    LockedTestAccessError,
+    PreregistrationImmutabilityError,
+    SplitBoundaryLeakageError,
+)
 from lib.market_calendar import TradingCalendar
 from lib.research.dataset_contract import DatasetContract
 from lib.research.locked_test import AccessStage, FileBackedLockedTestGate, LockedTestGate
@@ -450,6 +455,72 @@ def test_val018_walk_forward_split_is_out_of_scope_for_phase5_v1() -> None:
             trading_calendar=calendar,
             signal_fn=_always_buy,
         )
+
+
+# --- VAL-027: Runner rejects Split境界を越えたTrading Calendar/Benchmark Bars ------------
+# (Pre-run PIT Audit BLOCKER、2026-08-19。全splitで共通の全期間Calendar/Benchmarkを使い
+# 回すと、Right Censoring(D0037)の境界がsplit自身のend_sessionより先へ伸び、Trade Exitが
+# Split境界を越えた後続期間のPriceで決済されうるという実際のBugへの回帰Test。)
+
+
+def test_val027_runner_rejects_trading_calendar_extending_past_split_end_session() -> None:
+    preregistered = _preregistration().preregister()
+    # Train splitに対して、Validation/Locked Testまで含む全期間分のCalendarを誤って渡す
+    # (実際に発生したBugの再現: Train用のデータ取得がsplit自身のend_sessionで止まらず、
+    # 全期間分を取得してしまっていた)。
+    all_days = _weekdays(_TRAIN_START, _LOCKED_TEST_END)
+    calendar_spanning_all_splits = TradingCalendar(
+        trading_dates=frozenset(all_days), range_start=all_days[0], range_end=all_days[-1]
+    )
+    with pytest.raises(SplitBoundaryLeakageError, match="range_end"):
+        run_split(
+            preregistration=preregistered,
+            dataset_contract_hash=_dataset_contract().contract_hash(),
+            split=DataSplit.TRAIN,
+            universe_codes=("TESTCODE",),
+            price_history=StaticPriceHistory({"TESTCODE": _bars("TESTCODE", all_days)}),
+            benchmark_bars=_bars("TOPIX_SYNTH", all_days, base=2000.0, step=0.5),
+            trading_calendar=calendar_spanning_all_splits,
+            signal_fn=_always_buy,
+        )
+
+
+def test_val027_runner_rejects_benchmark_bars_extending_past_split_end_session() -> None:
+    preregistered = _preregistration().preregister()
+    train_days = _weekdays(_TRAIN_START, _TRAIN_END)
+    all_days = _weekdays(_TRAIN_START, _LOCKED_TEST_END)
+    # trading_calendarはTrain自身に正しく収まっているが、benchmark_barsだけが
+    # 全期間分(Validation/Locked Testの日付を含む)というケースも独立に検知する。
+    calendar = TradingCalendar(trading_dates=frozenset(train_days), range_start=train_days[0], range_end=train_days[-1])
+    with pytest.raises(SplitBoundaryLeakageError, match="benchmark_bars"):
+        run_split(
+            preregistration=preregistered,
+            dataset_contract_hash=_dataset_contract().contract_hash(),
+            split=DataSplit.TRAIN,
+            universe_codes=("TESTCODE",),
+            price_history=StaticPriceHistory({"TESTCODE": _bars("TESTCODE", train_days)}),
+            benchmark_bars=_bars("TOPIX_SYNTH", all_days, base=2000.0, step=0.5),
+            trading_calendar=calendar,
+            signal_fn=_always_buy,
+        )
+
+
+def test_val027_runner_permits_correctly_clipped_data_for_train_split() -> None:
+    """境界ちょうど(range_end == end_session)は正当なケースであり拒否されない。"""
+    preregistered = _preregistration().preregister()
+    train_days = _weekdays(_TRAIN_START, _TRAIN_END)
+    calendar = TradingCalendar(trading_dates=frozenset(train_days), range_start=train_days[0], range_end=train_days[-1])
+    result = run_split(
+        preregistration=preregistered,
+        dataset_contract_hash=_dataset_contract().contract_hash(),
+        split=DataSplit.TRAIN,
+        universe_codes=("TESTCODE",),
+        price_history=StaticPriceHistory({"TESTCODE": _bars("TESTCODE", train_days)}),
+        benchmark_bars=_bars("TOPIX_SYNTH", train_days, base=2000.0, step=0.5),
+        trading_calendar=calendar,
+        signal_fn=_always_buy,
+    )
+    assert result.split == DataSplit.TRAIN
 
 
 # --- VAL-019: Runner never auto-selects/optimizes parameters -----------------------------

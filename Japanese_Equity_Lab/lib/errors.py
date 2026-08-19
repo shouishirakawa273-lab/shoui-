@@ -31,3 +31,11 @@ class LockedTestAccessError(Exception):
     """Locked TestをUnlockせずに読もうとした場合、または既にUnlock済みのLocked
     Testを再度Unlockしようとした場合に送出する(Phase5、`lib.research.locked_
     test`)。"""
+
+
+class SplitBoundaryLeakageError(Exception):
+    """TrainやValidation等のSplitへ渡されたTrading Calendar/Benchmark Barsが、
+    そのSplit自身のend_sessionより先の日付を含んでいる場合に送出する(Phase5、
+    `lib.research.runner.run_split`)。end_sessionより先のデータが混入すると、
+    Right Censoring(D0037)が正しく機能せず、Split境界を越えたExit Priceの
+    参照(=後続Split、最悪Locked Test期間のPrice)が起こりうる。"""

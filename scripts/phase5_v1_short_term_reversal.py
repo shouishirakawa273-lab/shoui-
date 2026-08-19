@@ -68,7 +68,11 @@ BENCHMARK_CODE = "TOPIX_SYNTH"
 HYPOTHESIS_ID = "H0001"
 PREREGISTRATION_ID = "PREREG0001"
 DATASET_CONTRACT_ID = "DC0001_SMOKE_FIXTURE_V1"
-EXPERIMENT_ID = "BT_PHASE5_V1_H0001_SMOKE"
+# V2: BT_PHASE5_V1_H0001_SMOKE(無印)はPre-run PIT Audit(2026-08-19)でsplit境界を
+# 越えたPrice参照Bug(_load_fixture_price_dataが常に全期間を取得していた)が確認され
+# 無効化された(DECISIONS.md D0062参照)。Registryはappend-onlyのため無印のRecordは
+# 削除せず残し、修正後の正式ChainはこのV2 IDで記録する。
+EXPERIMENT_ID = "BT_PHASE5_V1_H0001_SMOKE_V2"
 
 # 128営業日のFixture(2026-01-05〜2026-07-03)を厳密に時系列3分割する
 # (Random Split禁止、Phase5 v1要件§19)。境界の選定はFixtureの実際の
@@ -77,6 +81,20 @@ EXPERIMENT_ID = "BT_PHASE5_V1_H0001_SMOKE"
 TRAIN_START, TRAIN_END = date(2026, 1, 5), date(2026, 3, 4)
 VALIDATION_START, VALIDATION_END = date(2026, 3, 5), date(2026, 5, 1)
 LOCKED_TEST_START, LOCKED_TEST_END = date(2026, 5, 5), date(2026, 7, 3)
+
+# 各splitのデータ取得は必ずこのsplit自身のend_sessionで打ち切る(TRAIN_START〜
+# split自身のend_sessionまで、それより先は絶対に含めない)。lib.backtest.engine.
+# BacktestEngineのRight Censoring(D0037)はtrading_calendar.range_end(通常
+# config.end_sessionと一致)を境界として機能する — 3分割共通の全期間Calendar/
+# PriceHistoryを使い回すと、この境界がsplitのend_sessionより先(Fixtureの最終日)
+# まで伸びてしまい、TrainやValidationのTradeがsplit境界を越えて後続split(最悪
+# Locked Test期間)のPriceで決済されてしまう(Pre-run PIT Audit BLOCKER、
+# 2026-08-19)。必ずsplitごとに個別にデータを取得し直す。
+_SPLIT_DATA_END: dict[DataSplit, date] = {
+    DataSplit.TRAIN: TRAIN_END,
+    DataSplit.VALIDATION: VALIDATION_END,
+    DataSplit.TEST: LOCKED_TEST_END,
+}
 
 _PREREGISTRATION_REGISTRY_PATH = _LAB_DIR / "06_backtests" / "preregistrations.jsonl"
 _LOCKED_TEST_AUDIT_PATH = _LAB_DIR / "06_backtests" / "locked_test_audit.jsonl"
@@ -161,13 +179,22 @@ def build_dataset_contract() -> DatasetContract:
     )
 
 
-def _load_fixture_price_data(split_label: str) -> tuple[PriceHistorySource, list, TradingCalendar, list[SnapshotManifest]]:
+def _load_fixture_price_data(
+    split_label: str, data_end: date
+) -> tuple[PriceHistorySource, list, TradingCalendar, list[SnapshotManifest]]:
+    """`TRAIN_START`から`data_end`(=呼び出し元splitのend_session)までのみを取得する。
+
+    `data_end`より先のデータは一切取得しない。これによりtrading_calendarの
+    range_endがsplit自身のend_sessionと一致し、BacktestEngineのRight Censoring
+    (D0037)がsplit境界で正しく機能する(split境界を越えたExit Priceの参照を
+    構造的に防ぐ、Pre-run PIT Audit BLOCKER修正)。
+    """
     adapter = FixtureDataSourceAdapter(FIXTURE_PATH)
     snapshot_store = RawSnapshotStore(_LAB_DIR / "01_data" / "raw")
 
-    quotes_result = adapter.fetch_equity_bars(codes=list(CODES), start_date=TRAIN_START, end_date=LOCKED_TEST_END)
-    calendar_result = adapter.fetch_trading_calendar(start_date=TRAIN_START, end_date=LOCKED_TEST_END)
-    benchmark_result = adapter.fetch_equity_bars(codes=[BENCHMARK_CODE], start_date=TRAIN_START, end_date=LOCKED_TEST_END)
+    quotes_result = adapter.fetch_equity_bars(codes=list(CODES), start_date=TRAIN_START, end_date=data_end)
+    calendar_result = adapter.fetch_trading_calendar(start_date=TRAIN_START, end_date=data_end)
+    benchmark_result = adapter.fetch_equity_bars(codes=[BENCHMARK_CODE], start_date=TRAIN_START, end_date=data_end)
 
     raw_bars = equity_bars_payload_to_raw_bars(quotes_result.payload, source="fixture")
     raw_by_code: dict[str, list] = {}
@@ -178,9 +205,7 @@ def _load_fixture_price_data(split_label: str) -> tuple[PriceHistorySource, list
     benchmark_raw_bars = equity_bars_payload_to_raw_bars(benchmark_result.payload, source="fixture")
     benchmark_bars = apply_split_adjustments(benchmark_raw_bars, [])
 
-    trading_calendar = trading_calendar_payload_to_calendar(
-        calendar_result.payload, range_start=TRAIN_START, range_end=LOCKED_TEST_END
-    )
+    trading_calendar = trading_calendar_payload_to_calendar(calendar_result.payload, range_start=TRAIN_START, range_end=data_end)
 
     manifests = [
         snapshot_store.save(quotes_result, snapshot_id=f"SNAP_{EXPERIMENT_ID}_{split_label}_equity_bars"),
@@ -222,7 +247,7 @@ def _load_preregistration() -> Preregistration:
 def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestGate | None = None) -> None:
     preregistration = _load_preregistration()
     dataset_contract = build_dataset_contract()
-    price_history, benchmark_bars, trading_calendar, manifests = _load_fixture_price_data(split.value)
+    price_history, benchmark_bars, trading_calendar, manifests = _load_fixture_price_data(split.value, _SPLIT_DATA_END[split])
 
     result = run_split(
         preregistration=preregistration,
