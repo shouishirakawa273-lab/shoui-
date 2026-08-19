@@ -59,7 +59,13 @@ from lib.schemas.experiment import Experiment, ExperimentStatus, Reproducibility
 from lib.schemas.hypothesis import Hypothesis  # noqa: E402
 from lib.schemas.price_data import apply_split_adjustments  # noqa: E402
 from lib.snapshot import RawSnapshotStore, SnapshotManifest  # noqa: E402
-from lib.strategies.short_term_reversal import DEFAULT_CONFIG, STRATEGY_ID, STRATEGY_VERSION, as_buy_signal_fn  # noqa: E402
+from lib.strategies.short_term_reversal import (  # noqa: E402
+    STRATEGY_ID,
+    STRATEGY_VERSION,
+    ShortTermReversalConfig,
+    as_buy_signal_fn,
+    config_from_preregistration_parameters,
+)
 
 FIXTURE_PATH = _LAB_DIR / "13_tests" / "fixtures" / "synthetic_jquants_v2_bars.json"
 CODES = ("7203", "6758", "9984")
@@ -147,8 +153,8 @@ def build_preregistration() -> Preregistration:
         secondary_metrics=("average_return", "win_rate", "max_drawdown", "trade_count", "sharpe相当は本Roundでは計算しない"),
         benchmark="TOPIX_SYNTH(Smoke Run合成Benchmark。実データ実行ではTOPIX)",
         parameters=(
-            ("lookback_days", str(DEFAULT_CONFIG.lookback_days)),
-            ("holding_period_days", str(DEFAULT_CONFIG.holding_period_days)),
+            ("lookback_days", str(ShortTermReversalConfig().lookback_days)),
+            ("holding_period_days", str(ShortTermReversalConfig().holding_period_days)),
         ),
         allowed_adjustments=(
             "Train/Validation結果を見た上でのTransaction Cost前提(commission_bps/slippage_bps)の変更のみ許可する"
@@ -247,6 +253,7 @@ def _load_preregistration() -> Preregistration:
 def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestGate | None = None) -> None:
     preregistration = _load_preregistration()
     dataset_contract = build_dataset_contract()
+    strategy_config = config_from_preregistration_parameters(preregistration.parameters)
     price_history, benchmark_bars, trading_calendar, manifests = _load_fixture_price_data(split.value, _SPLIT_DATA_END[split])
 
     result = run_split(
@@ -257,13 +264,13 @@ def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestG
         price_history=price_history,
         benchmark_bars=benchmark_bars,
         trading_calendar=trading_calendar,
-        signal_fn=as_buy_signal_fn(),
+        signal_fn=as_buy_signal_fn(strategy_config),
         locked_test_gate=locked_test_gate,
         experiment_id=EXPERIMENT_ID if split == DataSplit.TEST else None,
     )
 
     dataset_hash = dataset_hash_from_snapshots([m.content_hash for m in manifests])
-    strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(DEFAULT_CONFIG)})
+    strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(strategy_config)})
     config_hash = hash_json_safe({"split": split.value, "preregistration_id": PREREGISTRATION_ID})
     fingerprint = ReproducibilityFingerprint(
         run_id=f"RUN_{EXPERIMENT_ID}_{split.value}",

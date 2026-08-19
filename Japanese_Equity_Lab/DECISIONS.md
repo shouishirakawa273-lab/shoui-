@@ -6243,3 +6243,121 @@ Code変更は無し(Docのみ)。修正後、`pytest`(Lab+Screening Tool合計
 933件)・`ruff check`・`ruff format --check`・`mypy`いずれもclean、
 `git diff --stat -- core/ app.py tests/ scripts/`で変更が無いことを
 再確認した。
+
+## D0062 — Phase5 v1: Hypothesis Validation Pipeline実装 + Pre-run Review
+
+D0061のPhase5 Readiness Gate(READY_WITH_RESTRICTIONS、Allowed Data =
+Price + PIT Universeのみ)を受け、Phase5 v1 Hypothesis Validation
+Pipelineを実装した。
+
+**A. アーキテクチャ**: 新規`Japanese_Equity_Lab/lib/research/`
+Package。既存`lib.schemas.hypothesis.Hypothesis`のLOCK-based
+Immutability Patternをそのまま踏襲した`Preregistration`
+(`preregistration.py`、DRAFT/PREREGISTERED、Core Fields hashによる
+改ざん検知、`revise()`による新ID発行、Train/Validation/Locked Test
+3期間の厳密な時系列非重複を`__post_init__`で強制)。`DatasetContract`
+(`dataset_contract.py`、データ取得・PIT機構・調整方法等の宣言のみ、
+データ自体は保持しない)。`LockedTestGate`/`FileBackedLockedTestGate`
+(`locked_test.py`、RESEARCH_RULES.md「Hidden Test隔離」Roadmap
+[RESEARCH→VALIDATION→LOCKED_TEST→FUTURE_PAPER_TRADE]をそのまま実装、
+一度Unlockした後の再Unlockを拒否、Unlock状態はJSON Lines追記専用で
+プロセスをまたいで永続化)。`PreregistrationRegistry`
+(`registry.py`、`ExperimentRegistry`と同じ追記専用Pattern)。
+`run_split()`(`runner.py`、新規Backtest Engineは作らず既存
+`lib.backtest.engine.BacktestEngine`をそのまま呼ぶ薄いWrapper、
+Preregistration状態Gate・Locked Test Gateを追加)。既存`Experiment`
+schemaへ`preregistration_id`/`dataset_contract_hash`をOptional
+追加(拡張、複製ではない)。原則ベースTest `VAL-001`〜`VAL-027`
+(`13_tests/test_research_validation_pipeline.py`)。
+
+**B. First Hypothesis(H0001: Short-term Reversal)**:
+`04_hypotheses/H0001_2026-08-19_short_term_reversal.md`。直近5営業日
+Trailing Close-to-Close Returnが負ならBUY、10営業日保有
+(`lib/strategies/short_term_reversal.py`)。既存
+`lib.strategies.fixed_pipeline_validation`(20営業日Momentum→
+60営業日保有、Pipeline配線確認専用)と機構的に対称だが符号が逆であり、
+RESEARCH_RULES.mdが既に記録する「燃え尽きた期間」
+(2022-01-04〜2024-12-30・7203/6758/8056/3626)とはMechanism・
+パラメータ・対象期間の全てで区別した。Preregistration
+(`PREREG0001`)は`scripts/phase5_v1_short_term_reversal.py`
+`build_preregistration()`で構築し`.preregister()`で固定、
+`06_backtests/preregistrations.jsonl`へ記録済み。
+
+**C. データ境界**: このセッションはJ-Quants公式APIへ接続できない
+(EGRESS_BLOCKED)ため、Train/Validation/Locked Testの全期間は
+既存の合成Fixture(`13_tests/fixtures/synthetic_jquants_v2_bars.json`、
+2026-01-05〜2026-07-03、7203/6758/9984/TOPIX_SYNTH)内に収まるよう
+選定した(Train 2026-01-05〜03-04、Validation 03-05〜05-01、
+Locked Test 05-05〜07-03)。この一連の実験は明示的に**Smoke Run
+(Pipeline配線・Infrastructure Validation)であり投資判断のEvidenceでは
+ない**(Preregistration/DatasetContract双方に明記)。実データでの
+Locked Test実行はユーザーが自身のPCで別途実行する(Local Validation
+Guideを別途用意、D0063以降で言及予定)。
+
+**D. Pre-run Reviewの結果と修正**:
+
+1. **[BLOCKER→修正済み] Split境界を越えたPrice参照**: pit-auditorが
+   検出。`scripts/phase5_v1_short_term_reversal.py`の
+   `_load_fixture_price_data`が常にTrain〜Locked Test全期間の
+   データを取得していたため、`TradingCalendar.range_end`がsplit
+   自身のend_sessionより先まで伸び、`BacktestEngine`のRight
+   Censoring(D0037)がend_session側で機能せず、Train/ValidationのTrade
+   がSplit境界を越えた後続期間(最悪Locked Test期間)のPriceで決済
+   されうる状態だった。実際に無効化前のTRAIN実行
+   (`BT_PHASE5_V1_H0001_SMOKE_TRAIN`、Registryに保持したまま無効化)は
+   `censored_count=0`だったが、修正後の再実行
+   (`BT_PHASE5_V1_H0001_SMOKE_V2_TRAIN`)では`censored_count=4`と
+   なり、正しくRight Censoringが機能することを確認した。
+   修正は2段階: (a)`_load_fixture_price_data`をsplit自身の
+   end_sessionまでのみデータ取得するよう修正、(b)`lib/research/
+   runner.py`の`run_split()`に`SplitBoundaryLeakageError`による
+   構造的Gateを追加(trading_calendar.range_end/benchmark_barsが
+   end_sessionを越えていれば即座に失敗、将来の呼び出し側の同種Bugを
+   恒久的に検知)。修正確認のため再度pit-auditorを実行し、CLEAN
+   (残存Riskはprice_historyの独立range検証が無い点のみだが、
+   BacktestEngineのExit解決順序[Calendar先→Price後]に構造的に
+   依存する形で間接的にカバーされていることをコード追跡で確認、
+   MEDIUM未満のObservationとしてrunner.pyのコメントへ明記)。
+   回帰Test`VAL-027`を追加(`13_tests/test_research_validation_
+   pipeline.py`)。
+2. **[MEDIUM→修正済み] lookback_daysの構造的強制が無かった**:
+   skeptic-reviewerが検出。`run_split`は`holding_period_days`のみ
+   Preregistrationとの一致を検証しており、`lookback_days`は
+   `lib.strategies.short_term_reversal.DEFAULT_CONFIG`という
+   Module定数を呼び出し側が直接使うだけで、Preregistrationとの
+   一致がCode上保証されていなかった(Module定数が静かに書き換わっても
+   検知できない)。`config_from_preregistration_parameters()`
+   (`lib/strategies/short_term_reversal.py`)を新設し、実行時の
+   Strategy Configを必ずPreregistration.parametersから導出する
+   よう`scripts/phase5_v1_short_term_reversal.py`を修正。
+   単体Test追加(`13_tests/test_short_term_reversal_strategy.py`)。
+3. **[LOW→Backlog、このRoundでは変更しない] Alternative
+   Explanationsがやや一般的**: skeptic-reviewerが、5営業日
+   Lookback/10営業日Holdという具体的なSignal形状に対して最も
+   直接的な代替説明である「Bid-Ask Bounce/Microstructure Noise」
+   が、既存の2つの代替説明(取引コスト以下のノイズ/対象期間・銘柄
+   依存)の中で明示的に区別されていない、と指摘。この指摘は妥当だが、
+   Preregistrationの`alternative_explanations`は既に`.preregister()`
+   で固定済みのCore Fieldであり、`allowed_adjustments`は
+   Transaction Cost前提の変更のみを許可している(Signal・
+   Alternative Explanations等の変更は不許可、Phase5 v1要件§51)。
+   Preregistration自身が課すこの制約を尊重し、このRoundでは
+   `revise()`による新Preregistration発行は行わず、H0002以降の
+   Preregistration Templateへの反映事項としてBacklogに記録する。
+4. **[LOW→Backlog] Threshold選定(5日/10日)の理由づけが薄い**:
+   「燃え尽きた期間の戦略との対称性・単純性」以外の定量的根拠が
+   無い、との指摘。妥当な指摘だが、Preregistrationが既に固定済み
+   であるため#3と同じ理由でこのRoundでは変更しない。
+5. **[LOW→既知の限界として記録] SmokeデータのUniverse Coverageが
+   弱い**: Fixtureの7203が単調増加系列のため、5営業日Trailing
+   Returnが負になることが無く、Train/Validation双方で実質的に
+   9984銘柄のみがSignalを生成していた(`stock_by_stock_
+   distribution`で確認)。Pipeline配線確認としては機能するが、
+   複数銘柄でのSignal発火を確認する検証としては弱い。実データでの
+   Local Validation実行時にはこの制約は無い(合成データ固有の限界)。
+
+**E. Regression**: `ruff check`/`ruff format --check`/`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean、
+`pytest`(Lab+Screening Tool)974件全てpass。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認
+(Screening Tool不変)。

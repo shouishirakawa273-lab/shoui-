@@ -68,3 +68,23 @@ def as_buy_signal_fn(config: ShortTermReversalConfig = DEFAULT_CONFIG) -> Callab
         return five_day_reversal_signal(bars_up_to_decision, config) == SignalDecision.BUY
 
     return _signal_fn
+
+
+def config_from_preregistration_parameters(parameters: tuple[tuple[str, str], ...]) -> ShortTermReversalConfig:
+    """`Preregistration.parameters`から`ShortTermReversalConfig`を導出する。
+
+    Pre-run skeptic-review MEDIUM Finding(2026-08-19)への対応: 従来は
+    `holding_period_days`のみRunner側(`lib.research.runner.run_split`)が
+    Preregistrationと照合しており、`lookback_days`はこのModuleの`DEFAULT_
+    CONFIG`を呼び出し側が直接使うだけで、Preregistrationとの一致がCode上
+    保証されていなかった(Module定数が静かに書き換わってもPreregistration
+    Immutability機構では検知できない)。実行するSplitのSignal Thresholdは
+    必ずこの関数経由でPreregistrationから導出すること。
+    """
+    params = dict(parameters)
+    if "lookback_days" not in params or "holding_period_days" not in params:
+        raise ValueError("parameters に lookback_days / holding_period_days の両方が必要です")
+    return ShortTermReversalConfig(
+        lookback_days=int(params["lookback_days"]),
+        holding_period_days=int(params["holding_period_days"]),
+    )
