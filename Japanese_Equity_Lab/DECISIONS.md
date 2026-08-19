@@ -6066,3 +6066,130 @@ Blocker/High Findingはいずれのpassでも(HIGH1件を除き)重大な機能�
 9件のまま[1件を`test_no_registered_candidate_is_flagged_enterprise_
 only`へ差し替え]、Lab全体+Screening Tool合計933件)を再実行し成功を
 確認した。
+
+---
+
+## D0061 — Phase4 Integrated Data Foundation Audit / Phase5 Readiness Gate(監査のみ、実装無し)
+
+Phase4A〜4E-4で構築した10 Capability(Fundamentals/EDINET/TDnet/
+Company IR/Positioning/Japan Macro/Global Market/Japan News/Global
+News/Consensus)を横断的に監査し、Phase5(仮説事前登録・PIT-safeな
+Datasetでの反証可能な検証)開始の可否を判定した。**新しいData Source
+は追加していない。新しいCode変更は原則ゼロ**(Reviewer Pass対応分を
+除く)。詳細な全内容は`PHASE5_READINESS.md`にのみ記録し、ここでは
+要点と結論のみを記す(重複管理を避ける、§46)。
+
+### Repository Reality Check(今回のAuditで最も重要な発見)
+
+`scripts/jquants_lab_pipeline.py`(Repo Root、`Japanese_Equity_Lab/`
+配下ではない)を実際に読み、**このLabで実際にBacktest Signal評価まで
+配線されているのはJ-Quants Price + PIT Universe + `lib.point_in_time.
+PointInTimeRecord` Gateのみ**であることを確認した。`lib.backtest.
+engine.BacktestEngine.run()`のSignatureを直接確認し、Fundamentals/
+Disclosures/Positioning/Macro/Global Market/News/Consensus/
+`EvidenceRecord`のいずれも引数に持たないことを確認した。`lib.evidence.
+model.filter_usable_at()`(Evidence経路のPIT Filter)は`lib/evidence/`
+自身の外から一件も呼ばれていない(Grep確認)。この事実がD0057 #21の
+Phase5 Blocker判定(下記)の直接的な根拠になる。
+
+なお、この過程で使用した`Explore` Agentが、当初「`scripts/
+jquants_lab_pipeline.py`は存在しない」という誤った報告をした(Prompt
+がAgentの探索範囲を`Japanese_Equity_Lab/`配下のみに誤って限定していた
+ため)。Main Claude自身が直接`find`/`Read`で再確認し、Repo Root配下に
+実在することを確認した上で上記結論を確定した(Reviewer Evidence
+Standardの「Agent Findingを鵜呑みにせず実Codeで独立再確認する」原則を
+Main Claude自身の調査ミスに対しても適用した一例)。
+
+### Capability Readiness Matrix(要約、全文は`PHASE5_READINESS.md`)
+
+第6の区別を新たに明示した: **REAL DATA CONNECTED != PIT-SAFE USABLE**
+(既存5原則§3に追加)。EDINETが好例——`implementation_status=CONNECTED`
+で実データ疎通・Parseは確認済みだが、`pit_available=False`固定かつ
+Documents Listが日次で書き換わるため「Historical Point-in-Time
+Reconstructionはできない」とDocstring自身が明記している(実データ
+接続済みであることと、PIT-safeにBacktestで使えることは別軸)。
+
+READY_FOR_PHASE5: J-Quants Price、PIT Universe(いずれもPhase5対象外の
+既存Primitiveだが参考として記録)。READY_WITH_RESTRICTIONS:
+Fundamentals(実データ4銘柄Validated、ただしBacktest未配線)、
+Positioning price_derived_liquidity(上流Real、自身はFixture
+Validated)。NOT_READY_FOR_PHASE5: EDINET(PIT不可)・TDnet・Company
+IR・Positioning需給4候補・Japan Macro・Global Market。
+NOT_RELEVANT_TO_PHASE5_V1: Japan News・Global News・Consensus
+(Scope外であって禁止ではない、§45)。
+
+### Validation Backlog Classification
+
+既存33件は一切削除・書き換えしていない。全件へPhase5 Dependencyを
+付与した(`PHASE5_READINESS.md` C節)。**BLOCKS_PHASE5に分類された
+項目はゼロ件**。TDnet(#1)・Company IR(#2/#3)はBLOCKS_SPECIFIC_
+CAPABILITY_ONLY(該当Capabilityを使う場合のみ)、Positioning
+price_derived(#10)はSHOULD_RESOLVE_BEFORE_PHASE6(推奨だが必須では
+ない)、残り(Macro/Global Market/News/Consensus関連19件)はLONG_TERM_
+VALIDATIONまたはOPTIONAL。
+
+### D0057 / Backlog #21 — NON_BLOCKER(条件付き)
+
+判定基準§34(A実際に使用 AND B Concrete Failure Mode AND C既存Guardで
+防げない)のAが不成立(Evidence経路はPhase5含め本番Callerがゼロ)ため
+NON_BLOCKER。ただし**Phase5 v1が`EvidenceRecord` → `filter_usable_at()`
+→ Backtestという経路を新規に配線した瞬間、#21はBLOCKERへ転化する**
+条件付き判定である旨を明記した。Backlog #21はOPENのまま維持、今回
+Common Coreは一切変更していない(§11で明示禁止された`retrieval_mode`
+/Evidence Availability再設計/新Indexer/Event Engineのいずれにも
+着手していない)。
+
+### RevisionHistory Tie-break — NON_BLOCKER
+
+§12基準A〜Dで評価: Phase5 v1候補(Fundamentals/Positioning
+price_derived)いずれも実データで同一`available_at`衝突の発生実績が
+無く(A=いいえ)、§34の「Concrete Failure Mode」要求を満たさないため
+NON_BLOCKER。既存Macro向けPinning Test(`test_tie_on_identical_
+available_at_is_input_order_dependent_known_limitation`)は維持、新規
+Secondary Key追加は行っていない(§12末尾の明示禁止に従う)。
+
+### NewsEvent Reconciliation — NON_BLOCKER
+
+Japan/Global NewsがPhase5 v1 Scope外(`NOT_RELEVANT_TO_PHASE5_V1`)の
+ため無関係。Backlog #26はOPENのまま維持、Event Layer/Reconciliation
+Layerいずれも実装していない(§13で明示禁止)。
+
+### Phase5 PIT Source of Truth(推奨、実装無し)
+
+Phase5 v1は既存の実配線Pipeline(`BacktestEngine`+`PointInTimeRecord`
++`PriceHistorySource`/`AsOfAdjustedPriceHistory`+
+`ListingBasedUniverseProvider`)を、実際にSignal評価されるBacktest
+Executionの唯一のPIT Source of Truthとする。Capability-level `*_as_of()`
+はBacktest Executionへまだ接続せず、Research観察専用のOffline Read
+Pathとして扱う。Evidence経路(`filter_usable_at()`)はPhase5 v1では
+一切使用しない。二重Gateを曖昧に併用しない、という§32要求への回答
+として、この単一の推奨を明示した(実装は次Round)。
+
+### Entity/Series Identity、Catalog、Status Consistency
+
+Macro/Global Market/Consensusの`series_id`Caller責務パターンに
+Collapse Riskがあることは既存Decisionで確認済み(Macro/Global Market
+はPinning Test化済み)。Phase5 v1が実際に使うFundamentals/Positioning
+price_derivedはいずれも実データでCollapse無く動作確認済み。Catalogは
+全10 Capabilityとも単独Descriptor登録のみ(一元Instantiate無し、
+既存の一貫した設計、今回Registry再設計はしていない)。
+`ImplementationStatus`と自由記述Validation Statusの矛盾する組み合わせ
+(例: `NOT_IMPLEMENTED`+`LIVE_VALIDATED`)は発見されなかった。
+
+### Phase5 v1 Allowed / Forbidden Data
+
+`PHASE5_READINESS.md` I節/J節に全文記録。Allowed: J-Quants Price・PIT
+Universe・Fundamentals(要新規配線設計)・Positioning price_derived
+(Backlog #10解消推奨)。Forbidden: EDINET(PIT不可)・TDnet・Company
+IR・Positioning需給4候補・Japan Macro・Global Market・Japan News・
+Global News・Consensus(理由はSPEC_UNVERIFIED/FIXTURE_ONLY/NO_
+HISTORICAL_VINTAGE等、Capabilityごとに異なる)。いずれもModel/
+Architecture/Fixture Testの存在自体は維持する(架空Adapterを作る・
+既存Codeを削除する、いずれも行っていない)。
+
+### Proposed Phase5 v1 Scope(提案のみ、実装しない)
+
+PIT-safe Dataset Contractの明文化・Price+PIT Universeのみでの単純な
+仮説の一気通貫Backtest・Train/Validation/Locked Test分割の`Experiment
+Registry`上での表現設計・Fundamentals新規配線設計、の4項目を次Round
+の課題として提案した(`PHASE5_READINESS.md` N節)。今回は実装しない。
