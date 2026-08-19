@@ -191,6 +191,20 @@ def test_realval007_script_never_imports_forbidden_capabilities() -> None:
             )
 
 
+def test_main_loads_dotenv_before_building_adapter() -> None:
+    """`jquants_lab_pipeline.py`/`fetch_jquants_local_snapshot.py`と同じPattern
+    (`main()`冒頭で`load_dotenv()`)を踏襲していることを確認する回帰Test。
+
+    これが無いと`.env`のJQUANTS_API_KEYがOS環境変数として未Exportの場合に
+    ローカル実行時、原因不明の「JQUANTS_API_KEY が設定されていません」で
+    失敗する(このRoundで発見・修正した実際のGap)。
+    """
+    source = _SCRIPT_PATH.read_text(encoding="utf-8")
+    assert "from dotenv import load_dotenv" in source
+    main_body = source.split("def main() -> None:")[1]
+    assert "load_dotenv()" in main_body.splitlines()[1]
+
+
 # --- REALVAL-009: Real Run Secrets Not Persisted ------------------------------------------
 
 

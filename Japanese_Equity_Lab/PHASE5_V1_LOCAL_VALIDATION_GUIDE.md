@@ -1,24 +1,29 @@
-# PHASE5_V1_LOCAL_VALIDATION_GUIDE.md — H0001の実データLocked Test実行手順
+# PHASE5_V1_LOCAL_VALIDATION_GUIDE.md — H0001-R1の実データ実行手順
 
 ## なぜこの手順が必要か
 
 このセッションはJ-Quants公式APIへ接続できない(EGRESS_BLOCKED、
-`DECISIONS.md`複数箇所参照)。そのため`scripts/phase5_v1_short_term_
-reversal.py`で実行した一連のTrain/Validation/Locked Testは、合成
-Fixtureデータ(`13_tests/fixtures/synthetic_jquants_v2_bars.json`)
-による**Smoke Run(Pipeline配線・Infrastructure Validation)であり、
-投資判断のEvidenceではない**(`12_reports/experiment/BT_PHASE5_V1_
-H0001_SMOKE_V2_2026-08-19_report.md`参照)。H0001(Short-term
-Reversal)を実データで検証するには、ネットワーク接続可能なあなたの
-ローカル環境で以下を実行する必要がある。
+`api.jquants.com:443`/`jpx.gitbook.io:443`双方でCONNECTがPolicy Denial
+(403)により拒否されることをProxy Status Endpoint経由で確認済み、
+`DECISIONS.md` D0062/D0064参照)。そのため`scripts/phase5_v1_short_term_
+reversal.py`(合成Fixture専用)で実行した一連のTrain/Validation/Locked
+Testは、**Smoke Run(Pipeline配線・Infrastructure Validationであり、
+投資判断のEvidenceではない**
+(`12_reports/experiment/BT_PHASE5_V1_H0001_SMOKE_V2_2026-08-19_
+report.md`参照)。
 
-**重要**: `scripts/phase5_v1_short_term_reversal.py`は現状Fixture
-専用に固定されている(このセッションが実APIを検証できないため)。
-実データ実行には、後述の**新しいPreregistration**(既存
-`PREREG0001`とは別ID、`dataset_contract_id`が異なる=異なるDataset
-Contractのため)を発行する小さなAdaptationが必要。Hypothesis
-(`H0001`)自体・Signal定義・パラメータ(`lookback_days=5`/
-`holding_period_days=10`)は変更しない。
+H0001(Short-term Reversal)を実データで検証するPhase5 v1.1では、
+**`scripts/phase5_v1_1_h0001_real_data.py`という専用Script(既存
+`lib.research.*`をそのまま再利用、新規Backtest Engineは無し)を新規に
+実装・Test済み**にした。以下はこのScriptをネットワーク接続可能な
+あなたのローカル環境で実行するための手順。Hypothesis(`H0001`)自体・
+Signal定義・パラメータ(`lookback_days=5`/`holding_period_days=10`)は
+**このRoundでは変更しない**(Phase5 v1.1要件§6)。
+
+このScriptは`Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_
+script.py`(REALVAL-002/003/006/007/009/010相当、`JQuantsAdapter`の
+Dependency Injection Pointを使った非ネットワークTest)で検証済み。
+実際にNetwork Callを行うのはあなたのローカル実行時のみ。
 
 ## A. 同期コマンド
 
@@ -40,24 +45,26 @@ if ($env:JQUANTS_API_KEY) {
 
 未設定なら`.env`(リポジトリルート、`.gitignore`対象)へ
 `JQUANTS_API_KEY=<あなたのAPIキー>`を設定する(`LOCAL_DATA_FETCH_
-GUIDE.md`手順1-2と同じ)。
+GUIDE.md`手順1-2と同じ)。Scriptの`main()`は起動時に`load_dotenv()`を
+呼ぶため、`.env`に設定しておけば別途環境変数へExportしなくてよい。
 
-## C. 小さなSmoke Test(1銘柄・数日)
+## C. Real Data Coverage Check(Preregistration前、Strategy Returnは一切見ない)
+
+Phase5 v1.1要件§8。この段階では行/日付Coverage・欠損Bar・PIT Universe
+件数のみを見る。Strategy Return・Signal件数は一切計算しない
+(`step_coverage_check()`のTest`test_realval003_*`で構造的に保証済み)。
 
 ```powershell
 cd shoui-
-python -c "
-from dotenv import load_dotenv
-load_dotenv()
-import sys
-sys.path.insert(0, 'Japanese_Equity_Lab')
-from datetime import date
-from lib.data_sources.jquants import JQuantsAdapter
-adapter = JQuantsAdapter()
-result = adapter.fetch_equity_bars(codes=['7203'], start_date=date(2024,1,4), end_date=date(2024,1,10))
-print(result.payload[:2])
-"
+python scripts\phase5_v1_1_h0001_real_data.py --step coverage-check `
+    --codes 7203 6758 8056 3626 `
+    --start 2015-01-05 --end 2025-12-30
 ```
+
+出力される`bar_count`/`first`/`last`/`missing_open`/`missing_close`・
+Corporate Action件数・TOPIX Bar件数・`PIT universe as_of=...`の
+`eligible`銘柄数を確認する。**この出力を見てTrain/Validation/Locked
+Testの期間・パラメータを最適化してはならない**(§8/§11)。
 
 ## D. 対象期間・銘柄の選定(RESEARCH_RULES.mdの制約を守る)
 
@@ -67,129 +74,71 @@ print(result.payload[:2])
 Test」として再利用できない。** H0001は別Mechanism(Reversal・
 5営業日/10営業日)だが、疑わしきは避ける観点から、対象銘柄
 またはTrain/Validation/Locked Test期間の少なくとも一方をこの組み合わせ
-とは変えることを推奨する(例: 銘柄はそのまま7203/6758/8056/3626でも、
-期間を2015-2019/2020-2021/2025のように上記期間の外へ設定する)。
-
-以下は一例(調整して構わないが、**一度Preregistrationを`preregister()`
-したら書き換えない**こと。書き換えたくなったら新しい`preregistration_id`
-で`revise()`する)。
+とは変えることを推奨する。以下は一例(Cで確認したReal Data Coverageに
+基づき調整して構わないが、**一度`--step preregister`を実行したら
+書き換えない**こと。書き換えたくなったら新しい`preregistration_id`で
+`revise()`する必要があり、それは新しいScript改修が必要になる):
 
 - Train: 2015-01-05 〜 2019-12-30
 - Validation: 2020-01-06 〜 2021-12-30
 - Locked Test: 2025-01-06 〜 2025-12-30
 
-## E. 新しいPreregistrationを構築する(実データ用、既存PREREG0001とは別ID)
+## E. Preregistrationを固定する(実データ用、既存PREREG0001から`revise()`で派生)
 
-`scripts/phase5_v1_short_term_reversal.py`の`build_preregistration()`
-を参考に、以下のようなPythonスニペットをローカルで実行する
-(このLabの`lib.research`をそのまま再利用、新規実装は不要)。
-
-```python
-import sys
-from datetime import date
-from pathlib import Path
-
-sys.path.insert(0, "Japanese_Equity_Lab")
-from lib.research.preregistration import Preregistration
-from lib.research.registry import PreregistrationRegistry
-
-research_question = "短期(5営業日)Trailing Returnが負の銘柄は、その後TOPIX対比で超過リターンを生むか(実データ)"
-falsification_condition = "Locked Test期間でexcess_returnが0以下であれば、この仮説は支持されない"
-universe_definition = "Price + PIT Universeのみ(Phase5 v1要件§5)。対象銘柄はDに従って選定"
-
-preregistration = Preregistration(
-    preregistration_id="PREREG0002_REAL",
-    hypothesis_id="H0001",
-    research_question=research_question,
-    alternative_explanations=(
-        "単なる取引コスト以下のノイズである可能性",
-        "特定の対象期間・対象銘柄への依存であり、市場全体には一般化できない可能性",
-    ),
-    falsification_condition=falsification_condition,
-    dataset_contract_id="DC0002_JQUANTS_REAL_V1",  # 実データ用の新しいDataset Contract ID
-    universe_definition=universe_definition,
-    train_period_start=date(2015, 1, 5),
-    train_period_end=date(2019, 12, 30),
-    validation_period_start=date(2020, 1, 6),
-    validation_period_end=date(2021, 12, 30),
-    locked_test_period_start=date(2025, 1, 6),
-    locked_test_period_end=date(2025, 12, 30),
-    primary_metric="excess_return",
-    benchmark="TOPIX",
-    parameters=(("lookback_days", "5"), ("holding_period_days", "10")),
-).preregister()
-
-registry_path = Path("Japanese_Equity_Lab/06_backtests/preregistrations.jsonl")
-PreregistrationRegistry(registry_path).record(preregistration)
-print("preregistered:", preregistration.preregistration_id, preregistration.status)
+```powershell
+python scripts\phase5_v1_1_h0001_real_data.py --step preregister `
+    --codes 7203 6758 8056 3626 `
+    --train-start 2015-01-05 --train-end 2019-12-30 `
+    --validation-start 2020-01-06 --validation-end 2021-12-30 `
+    --locked-test-start 2025-01-06 --locked-test-end 2025-12-30
 ```
+
+内部では`PREREG0001`(Phase5 v1の合成FixtureによるSmoke Run
+Preregistration)を`Preregistration.revise()`し、`preregistration_id=
+PREREG0001_R1`・`parent_preregistration_id=PREREG0001`として
+`06_backtests/preregistrations.jsonl`へ追記する(親Recordは一切変更
+されない、Phase5 v1.1要件§5)。`primary_metric`/`parameters`
+(`lookback_days=5`/`holding_period_days=10`)/`falsification_condition`
+は親からそのまま引き継がれ、変更されない(§6/§22)。
 
 **この時点でPreregistrationは固定される。Locked Test結果を見るまでは
 この内容を変更しないこと。**
 
-## F. Train/Validation/Locked Testを実データで実行する
+## F. Train/Validationを実データで実行する
 
-`scripts/phase5_v1_short_term_reversal.py`は`FixtureDataSourceAdapter`
-専用のため、実データ実行には`_build_experiment_runner`相当の処理を
-`JQuantsAdapter`ベースに差し替えたローカル用スクリプトが必要。
-既存の`scripts/jquants_lab_pipeline.py`(`--source jquants`)が
-実データ取得・Raw Snapshot保存・PIT-safe Adjustment適用の全ての配線
-を持っているため、そのDataソース部分(`_build_adapter`〜
-`trading_calendar`構築まで)をコピーし、`lib.research.runner.
-run_split()`へ渡す形に組み替えるのが最短経路。`lib.research.runner`
-自体はSource非依存(`PriceHistorySource`/`TradingCalendar`/
-`Sequence[AdjustedOHLCVBar]`というInterfaceのみに依存)なので、
-`lib/research/`側の変更は一切不要。
+各Splitについて、Scriptは自動的に`train_period_start`から**そのSplit
+自身のend_session**までのデータのみをJ-Quantsから取得する(`run_split()`
+の`SplitBoundaryLeakageError`により、越えていれば実行時に即座に失敗する
+— DECISIONS.md D0062参照)。
 
-各splitについて、**必ずそのsplit自身の`end_session`までのデータのみ**
-を渡すこと(`run_split()`は`SplitBoundaryLeakageError`でこれを検証
-するため、越えていれば実行時に即座に失敗する — DECISIONS.md D0062
-参照)。
-
-```python
-from lib.backtest.engine import DataSplit
-from lib.research.runner import run_split
-# price_history / benchmark_bars / trading_calendar は
-# scripts/jquants_lab_pipeline.py の該当部分を参考に、
-# 各splitのend_sessionまでで構築する。
-
-result = run_split(
-    preregistration=preregistration,
-    dataset_contract_hash=dataset_contract.contract_hash(),
-    split=DataSplit.TRAIN,  # 次にVALIDATION
-    universe_codes=("7203", "6758", "8056", "3626"),
-    price_history=price_history,
-    benchmark_bars=benchmark_bars,
-    trading_calendar=trading_calendar,
-    signal_fn=as_buy_signal_fn(ShortTermReversalConfig(lookback_days=5, holding_period_days=10)),
-)
-print(result.metrics.trade_count, result.metrics.excess_return)
+```powershell
+python scripts\phase5_v1_1_h0001_real_data.py --step train --codes 7203 6758 8056 3626
+python scripts\phase5_v1_1_h0001_real_data.py --step validation --codes 7203 6758 8056 3626
 ```
+
+各実行は標準出力へ`trade_count`/`signal_count`/`excess_return`/
+`benchmark_return`/`stock_by_stock_distribution`を表示し、
+`06_backtests/experiment_registry.jsonl`へ`BT_PHASE5_V1_1_H0001_R1_
+TRAIN`/`BT_PHASE5_V1_1_H0001_R1_VALIDATION`として記録する
+(Experiment.notesにUniverse Snapshot Resolution(PIT Universeの
+Survivorship Bias解決状況)のSummaryも含まれる)。
 
 ## G. Locked Testを一度だけUnlockして実行する
 
 Train/Validationの結果を確認し、`allowed_adjustments`(Transaction
 Cost前提のみ)以外は一切変更しないと決めたら:
 
-```python
-from lib.research.locked_test import FileBackedLockedTestGate
-from pathlib import Path
+```powershell
+python scripts\phase5_v1_1_h0001_real_data.py --step unlock-locked-test `
+    --reason "Train/Validation完了、Final Review実施" --actor "<あなたの名前>"
 
-gate = FileBackedLockedTestGate(Path("Japanese_Equity_Lab/06_backtests/locked_test_audit_real.jsonl"))
-gate.unlock(experiment_id="BT_PHASE5_V1_H0001_REAL", reason="Train/Validation完了、Final Review実施", actor="<あなたの名前>")
-
-result = run_split(
-    preregistration=preregistration,
-    dataset_contract_hash=dataset_contract.contract_hash(),
-    split=DataSplit.TEST,
-    ...,
-    locked_test_gate=gate,
-    experiment_id="BT_PHASE5_V1_H0001_REAL",
-)
+python scripts\phase5_v1_1_h0001_real_data.py --step locked-test --codes 7203 6758 8056 3626
 ```
 
-`gate.unlock()`は同じ`experiment_id`に対して二度目を呼ぶと
-`LockedTestAccessError`になる(意図的、Knowledge Contamination防止)。
+`unlock-locked-test`は同じ`experiment_id`(`BT_PHASE5_V1_1_H0001_R1`)
+に対して二度目を呼ぶと`LockedTestAccessError`になる(意図的、Knowledge
+Contamination防止)。`06_backtests/locked_test_audit_real.jsonl`
+(Phase5 v1の`locked_test_audit.jsonl`とは別File)に記録される。
 
 ## H. 期待される観測(Falsifiable Checklist)
 
@@ -198,6 +147,11 @@ result = run_split(
 - 3 splitとも`stock_by_stock_distribution`が複数銘柄にまたがっている
   こと(Smoke Runでは単一銘柄[9984]のみだった限界が実データでは解消
   されているはず、`12_reports/experiment/`のSmoke Run Reportと比較)。
+- `Experiment.notes`の`universe_resolution=[...]`が`RESOLVED`である
+  こと(`PARTIAL`/`UNRESOLVED`/`DATA_UNAVAILABLE`や
+  `survivorship_bias_unresolved`が出た場合、実データの`/v2/equities/
+  master`のDelisting Field網羅性を疑うこと — pit-auditorのLOW Finding
+  参照)。
 - `censored_count`が各splitのHolding Period・データ密度に応じて妥当な
   範囲であること(0のままなら境界処理を疑う)。
 - Locked Test実行時に`SplitBoundaryLeakageError`/`LockedTestAccessError`
@@ -207,9 +161,9 @@ result = run_split(
 
 エラーが出た場合は、エラーメッセージ全文(**APIキーの値を除いて**)を
 貼り付けてもらえれば対応できる。成功した場合は、3 split分の
-`trade_count`/`excess_return`/`stock_by_stock_distribution`の要約を
-共有してもらえれば、Research Journal(`12_reports/experiment/`)への
-反映を手伝える。**Locked Test結果はUnlock後に初めて見る想定のため、
-貼り付ける前に「これは正式なEvidenceとして扱ってよいか(Train/
-Validationで既に見えていた傾向の延長でしかないか)」を一度確認して
-から共有すること。**
+`trade_count`/`excess_return`/`stock_by_stock_distribution`/
+`universe_resolution`の要約を共有してもらえれば、Research Journal
+(`12_reports/experiment/`)への反映を手伝える。**Locked Test結果は
+Unlock後に初めて見る想定のため、貼り付ける前に「これは正式なEvidence
+として扱ってよいか(Train/Validationで既に見えていた傾向の延長でしか
+ないか)」を一度確認してから共有すること。**

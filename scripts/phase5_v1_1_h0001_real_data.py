@@ -100,6 +100,8 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LAB_DIR = _REPO_ROOT / "Japanese_Equity_Lab"
 sys.path.insert(0, str(_LAB_DIR))
@@ -473,6 +475,7 @@ def _parse_codes(raw: list[str] | None) -> tuple[str, ...]:
 
 
 def main() -> None:
+    load_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--step",

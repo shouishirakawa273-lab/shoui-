@@ -6403,3 +6403,132 @@ Completion Report側で最終確認する。Phase5 v1のScopeはこれで完了�
 Phase5 v2・Fundamentals/Positioning接続・News/Macro/Consensus使用・
 D0057解決・Portfolio/Decision Engine・自動売買のいずれもこのRoundでは
 着手しない(Phase5 v1 kickoff要件§73)。
+
+## D0064 — Phase5 v1.1: Real-Data Validation Experiment(Code Complete、実行はローカル待ち)
+
+D0062/D0063(Phase5 v1、合成FixtureによるSmoke Run)を受け、H0001を
+**実際のJ-Quants Price + PIT Universeデータ**で検証するRound。目的は
+「儲かる戦略を発見すること」ではなく「Phase5 v1 Pipelineが実データ上でも
+End-to-Endで正しく・再現可能に動作するか」(Primary Question)と、
+副次的に「H0001に実データ上でさらなる調査に値するEvidenceがあるか」
+(Secondary Question)を構造的に分離して確認すること。
+
+**A. Repository Reality Check**: このセッションのEgressは
+`api.jquants.com:443`/`jpx.gitbook.io:443`いずれもProxy Status Endpoint
+(`/__agentproxy/status`)の`recentRelayFailures`で`connect_rejected`
+(403、Policy Denial)と確認。`.env`/`JQUANTS_API_KEY`もこのセッションには
+存在しない。したがって**実データでのRun自体はこのセッションでは実行
+できない**(Phase5 v1.1要件§37に従い、Fake/Mockで代替して「実行した」と
+主張しない)。
+
+**B. 実装(`scripts/phase5_v1_1_h0001_real_data.py`、新規)**: 新しい
+Backtest Engineは作らず、Phase5 v1で確立済みの`lib.research.*`
+(`Preregistration`/`DatasetContract`/`run_split`/`FileBackedLockedTest
+Gate`/`PreregistrationRegistry`)をそのまま再利用する薄いDriver。
+
+1. **Preregistration Lineage**: `PREREG0001`(Phase5 v1のSmoke Run)を
+   `Preregistration.revise()`し、`preregistration_id=PREREG0001_R1`・
+   `parent_preregistration_id=PREREG0001`として新規発行。
+   `dataset_contract_id`/`universe_definition`/Train・Validation・
+   Locked Test 3期間/`benchmark`のみ上書きし、`primary_metric`/
+   `parameters`(`lookback_days=5`/`holding_period_days=10`)/
+   `falsification_condition`/`forbidden_capabilities`/
+   `alternative_explanations`/`secondary_metrics`/`allowed_adjustments`
+   は全て親からそのまま継承(Hypothesis Drift禁止、Phase5 v1.1要件
+   §6/§22)。合成H0001のExperiment/Preregistrationは一切上書き・削除
+   しない(§5/§36)。`experiment_id=BT_PHASE5_V1_1_H0001_R1`
+   (`_TRAIN`/`_VALIDATION`/`_TEST`Suffix)は合成Smoke Runの
+   `BT_PHASE5_V1_H0001_SMOKE_V2_*`と明確に別ID。
+2. **Dataset Contract**(`DC0002_JQUANTS_REAL_V1`): `/v2/equities/
+   bars/daily`・`/v2/markets/calendar`・`/v2/indices/bars/daily/
+   topix`・`/v2/equities/master`の実データを宣言。
+3. **Real Data Coverage Check**(`--step coverage-check`): Strategy
+   Return/Signal件数を一切計算せず、行数・日付Coverage・欠損Bar・
+   Corporate Action件数・TOPIX Coverage・PIT Universe該当銘柄数のみを
+   表示する(§8/§11、`test_realval003_*`で構造的に保証)。
+4. **Real Benchmark**: 実TOPIX(`/v2/indices/bars/daily/topix`)を使用。
+   公式公表済みの過去Index値は当時の実際の構成銘柄を反映済みであり、
+   「現在の構成銘柄を過去へ遡及適用する」形のLook-aheadを構造的に含まない
+   ため、新規Benchmark Engineを作らずにPIT安全性を満たす(§17/§18)。
+5. **Universe**: `lib.universe.ListingBasedUniverseProvider`
+   (実`/v2/equities/master`由来)を`run_split()`へ渡し、Current
+   Universeは使用しない(§12)。
+6. **Missing Bars / Split境界**: Phase5 v1で確立済みの`BacktestEngine`
+   Missing Bar処理(欠損はUNEXECUTABLE等で明示、0埋め・Flat Price埋め
+   なし)と`SplitBoundaryLeakageError`(D0062)をそのまま継承・再利用
+   (§14/§46、新規変更なし)。
+
+**C. Pre-run Review**:
+
+1. **pit-auditor MEDIUM(修正済み)**: `lib.universe.UniverseSnapshot.
+   resolution`/`survivorship_bias_unresolved`は`BacktestEngine.run()`
+   内部でdecision_dateごとに解決されるが、`BacktestMetrics`に該当Field
+   が無いため`Experiment`Recordへ伝播しない。`lib/backtest/engine.py`/
+   `BacktestMetrics`(複数の既監査済みPipelineが共有)を変更するのは
+   このRoundの「最小限のReal-data統合Gapのみ」というScope(§46)を
+   超えるため、より小さい修正を選択: `_run_and_record()`が各Split境界
+   (開始・終了)で`universe_provider.as_of()`を独自に呼び、
+   `resolution`(+`survivorship_bias_unresolved`)のSummaryを
+   `Experiment.notes`の`universe_resolution=[...]`として記録する。
+   回帰Test(`test_pit_audit_medium_fix_run_and_record_persists_
+   universe_resolution_into_notes`、Fake Adapter + tmp-path Registryで
+   End-to-Endに`Experiment.notes`の内容を検証)を追加。
+2. **pit-auditor LOW(修正済み)**: `DatasetContract.delisting_
+   handling`が「PIT UniverseによりSurvivorship Bias防止」を無条件の
+   既成事実として記述していたが、実際の`/v2/equities/master`の
+   Delisting Field網羅性は未検証であるため、設計意図であり保証では
+   ない旨へ文言を修正。
+3. **pit-auditor LOW(修正済み、文書化のみ)**: `/v2/equities/master`
+   をTrain/Validation/Locked Testの各Split実行ごとに独立して
+   (`as_of`Pin留めなしで)取得しているため、実Master Dataが取得
+   タイミング間で変化した場合、3 splitが厳密に同一のUniverse基盤を
+   共有する保証はない。ただし各Splitの`SnapshotManifest`/
+   `dataset_hash_from_snapshots`により個別のRaw Snapshotとして記録
+   されるため、サイレントな不整合ではない(再現性検証時にSnapshot
+   Hashを比較すれば検出可能)。`DatasetContract.notes`へ明記。
+4. **skeptic-reviewer LOW × 3(修正済み)**: (a)モジュールDocstring
+   「Result Inspection Cannot Precede Preregistration」の保証根拠が
+   誤って「Import欠如」(構造的)と書かれていたが、実際は`lib.
+   strategies`/`lib.backtest.engine`をModule Top-levelでImportして
+   いる(他Stepで使用するため)。実際の保証は「`step_coverage_check()`
+   の関数本体がこれらを呼ばない」という振る舞い的なものであり、
+   Docstringを訂正。(b) Primary Question(Pipeline検証)とSecondary
+   Question(Hypothesis検証)の区別をDocstringへ明記(§7)。
+   (c)既定`--codes`(7203/6758/8056/3626)がRESEARCH_RULES.mdの
+   「燃え尽きた期間」記録と同じ銘柄集合であり、独立したUniverse選定
+   根拠が無いことをDocstringへ明記。
+5. **副次的に発見・修正した実装Gap(Reviewer指摘ではなく自己発見)**:
+   `main()`が`load_dotenv()`を呼んでいなかった(既存の`jquants_lab_
+   pipeline.py`/`fetch_jquants_local_snapshot.py`は両方とも呼んでいる
+   のに、このScriptだけ欠落していた)。`.env`にAPIキーを設定しても
+   環境変数へ別途Exportしない限りローカル実行時に「JQUANTS_API_KEY が
+   設定されていません」で失敗する状態だった。`main()`冒頭へ
+   `load_dotenv()`を追加し、構造Testで回帰防止。
+
+**D. Test**: `Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_
+script.py`(新規、11Test、REALVAL-002/003/006/007/009/010相当+
+pit-auditor MEDIUM修正の回帰Test+`load_dotenv()`回帰Test)。
+REALVAL-004/005/008相当は既存`VAL-027`/`lib.backtest.engine`Test/
+`VAL-016`が既にCoverするため重複させない(Module Docstringに明記)。
+実ネットワーク通信は一切行わず、`JQuantsAdapter`のDependency
+Injection Point(既存`test_data_sources.py`と同じPattern)を使用。
+
+**E. 実行状態**: **`CODE_COMPLETE_AWAITING_LOCAL_REAL_DATA_RUN`**。
+実データでのTrain/Validation/Locked Test実行は、このセッションの
+Egress制約によりこのRoundでは行っていない(§37/§49に従い、実行した・
+COMPLETEだと主張しない)。ユーザー自身のローカル環境での実行手順は
+`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`(新Scriptの実際のCLIを使う形へ
+全面更新)を参照。`06_backtests/preregistrations.jsonl`/
+`experiment_registry.jsonl`に`PREREG0001_R1`/`BT_PHASE5_V1_1_H0001_R1_*`
+は**まだ記録されていない**(このセッションでは`step_preregister`/
+`_run_and_record`を実Registryに対して一度も実行していないことを
+`grep`で確認済み)。
+
+**F. Regression**: `ruff check`/`ruff format --check`/`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean、
+`pytest`(Lab+Screening Tool)985件全てpass。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認
+(Screening Tool不変)。Phase5 v1.1のScopeはこれで完了とし、H0002・
+Fundamentals/Positioning接続・Phase5 v2・D0057解決・Portfolio/
+Decision Engine・自動売買のいずれもこのRoundでは着手しない
+(Phase5 v1.1 kickoff要件§51)。
