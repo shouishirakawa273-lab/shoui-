@@ -115,7 +115,7 @@ from lib.data_sources.convert import (  # noqa: E402
 )
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
 from lib.errors import LockedTestAccessError, PreregistrationImmutabilityError  # noqa: E402
-from lib.market_calendar import TradingCalendar  # noqa: E402
+from lib.market_calendar import TradingCalendar, session_close_at  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
 from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
@@ -286,11 +286,25 @@ def build_dataset_contract(*, codes: tuple[str, ...], start: date, end: date) ->
         adjustment_method="PIT_AS_OF_ADJFACTOR_V1(decision_atごとのAs-of Adjustment、D0034/D0035)",
         missing_handling="欠損はUNEXECUTABLE_NO_OPEN等として記録しfallbackしない(lib.backtest.engine既存方針)",
         corporate_action_handling="AdjFactor/ExRT由来のCorporate Action Eventを検出しPIT-safeに適用(Case B、Case Aは未実装)",
-        delisting_handling="PIT Universeにより上場廃止銘柄も期間内は含める(Survivorship Bias防止)",
+        delisting_handling=(
+            "ListingBasedUniverseProviderは上場廃止銘柄も期間内はUniverseへ残す設計だが、"
+            "これは実/v2/equities/masterの上場廃止Field(status等)の実際の値・網羅性に依存する"
+            "(未確認・未検証)。Survivorship Bias防止は設計上の意図であり、実データでの保証ではない。"
+            "実行結果のUniverseSnapshot.resolution/survivorship_bias_unresolvedを"
+            "Experiment.notesで確認すること"
+        ),
         liquidity_availability="既存BacktestEngineのPrice可用性判定のみ使用。新規Liquidity Signalは追加しない",
         feature_computation="5営業日Trailing Close-to-Close Return(lib.strategies.short_term_reversal)",
         target_computation="10営業日Holding、NEXT_SESSION_OPEN執行(lib.backtest.engine)",
-        notes="Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)。実データ実行はユーザーのローカルPC上で行う。",
+        notes=(
+            "Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)。実データ実行はユーザーの"
+            "ローカルPC上で行う。既知の限界: /v2/equities/masterはsplitごと(Train/Validation/"
+            "Locked Test)に個別に取得しas_ofでPin留めしていないため、Real Masterデータが取得"
+            "タイミング間で変化した場合、3 splitが厳密に同一のUniverse基盤を共有する保証はない。"
+            "ただしこれはSnapshotManifest/dataset_hash_from_snapshotsで各split固有のRaw "
+            "Snapshotとして記録されるため、サイレントな不整合ではない(再現性検証時に "
+            "SnapshotのHashを比較すれば検出可能)。"
+        ),
     )
 
 
@@ -378,6 +392,22 @@ def _run_and_record(
         experiment_id=EXPERIMENT_ID if split == DataSplit.TEST else None,
     )
 
+    # Pre-run PIT Audit MEDIUM Finding対応: UniverseSnapshotのresolution/
+    # survivorship_bias_unresolvedはBacktestEngine内部でdecision_dateごとに
+    # 解決されるがExperiment Recordへは伝播しない(BacktestMetricsに該当Fieldが
+    # 無いため)。このScript独自にsplit境界(開始・終了)でas_of()を呼び、
+    # 少なくともこのExperiment Recordの`notes`へ残す(この一連の実行で
+    # Survivorship Biasが未解決だったかどうかを、Metricsだけを見た将来の
+    # 読者が見失わないようにする)。
+    period_start = getattr(preregistration, f"{period_field}_start")
+
+    universe_probe_notes = []
+    for probe_date in (period_start, data_end):
+        snapshot = universe_provider.as_of(session_close_at(probe_date))
+        universe_probe_notes.append(f"{probe_date}:{snapshot.resolution.value}")
+        if snapshot.survivorship_bias_unresolved:
+            universe_probe_notes[-1] += ":survivorship_bias_unresolved"
+
     dataset_hash = dataset_hash_from_snapshots([m.content_hash for m in manifests])
     strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(strategy_config)})
     config_hash = hash_json_safe({"split": split.value, "preregistration_id": PREREGISTRATION_ID})
@@ -404,7 +434,10 @@ def _run_and_record(
         metrics=result.metrics,
         reproducibility=fingerprint,
         price_adjustment=price_adjustment,
-        notes=f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)、split={split.value}",
+        notes=(
+            f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)、split={split.value}、"
+            f"universe_resolution=[{','.join(universe_probe_notes)}]"
+        ),
         preregistration_id=result.preregistration_id,
         dataset_contract_hash=result.dataset_contract_hash,
     )

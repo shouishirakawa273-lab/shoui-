@@ -267,6 +267,65 @@ def test_realval010_build_real_preregistration_uses_revise_lineage(script: Modul
     assert revised.allowed_adjustments == parent.allowed_adjustments
 
 
+def test_pit_audit_medium_fix_run_and_record_persists_universe_resolution_into_notes(
+    script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pit-auditor MEDIUM Finding対応の回帰Test。
+
+    `UniverseSnapshot.resolution`/`survivorship_bias_unresolved`は
+    `BacktestMetrics`へ伝播しない(`lib/backtest/engine.py`確認済み)ため、
+    `_run_and_record()`はSplit境界(開始・終了)で`universe_provider.as_of()`
+    を呼び、その結果Summaryを`Experiment.notes`へ書き込む。実際に記録された
+    `Experiment.notes`にその内容が現れることをEnd-to-Endで確認する
+    (`JQuantsAdapter`を`_FakeAdapter`へ差し替え、Registry群をtmp_pathへ退避)。
+    """
+    registry_path = tmp_path / "preregistrations.jsonl"
+    parent = Preregistration(
+        preregistration_id="PREREG0001",
+        hypothesis_id="H0001",
+        research_question="短期(5営業日)Trailing Returnが負の銘柄は、その後TOPIX対比で超過リターンを生むか",
+        alternative_explanations=("説明1で最低限の長さを満たす文字列", "説明2で最低限の長さを満たす文字列"),
+        falsification_condition="Locked Test期間でexcess_returnが0以下であれば、この仮説は支持されない",
+        dataset_contract_id="DC0001_SMOKE_FIXTURE_V1",
+        universe_definition="Price + PIT Universeのみ(Smoke Run)",
+        train_period_start=date(2026, 1, 5),
+        train_period_end=date(2026, 3, 4),
+        validation_period_start=date(2026, 3, 5),
+        validation_period_end=date(2026, 5, 1),
+        locked_test_period_start=date(2026, 5, 5),
+        locked_test_period_end=date(2026, 7, 3),
+        primary_metric="excess_return",
+        parameters=(("lookback_days", "5"), ("holding_period_days", "10")),
+    ).preregister()
+    PreregistrationRegistry(registry_path).record(parent)
+
+    monkeypatch.setattr(script, "_PREREGISTRATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(script, "_EXPERIMENT_REGISTRY_PATH", tmp_path / "experiment_registry.jsonl")
+    monkeypatch.setattr(script, "_PROVENANCE_PATH", tmp_path / "provenance.jsonl")
+    monkeypatch.setattr(script, "_LAB_DIR", tmp_path)
+    monkeypatch.setattr(script, "JQuantsAdapter", _FakeAdapter)
+
+    script.step_preregister(
+        codes=("7203", "6758"),
+        train_start=date(2024, 1, 4),
+        train_end=date(2024, 1, 5),
+        validation_start=date(2024, 1, 8),
+        validation_end=date(2024, 1, 9),
+        locked_test_start=date(2024, 1, 10),
+        locked_test_end=date(2024, 1, 11),
+    )
+
+    script._run_and_record(script.DataSplit.TRAIN, codes=("7203", "6758"))
+
+    exp_registry = script.ExperimentRegistry(script._EXPERIMENT_REGISTRY_PATH)
+    all_experiments = {e.experiment_id: e for e in exp_registry.all()}
+    recorded = all_experiments.get(f"{script.EXPERIMENT_ID}_{script.DataSplit.TRAIN.value}")
+    assert recorded is not None
+    assert "universe_resolution=[" in recorded.notes
+    assert "2024-01-04:" in recorded.notes
+    assert "2024-01-05:" in recorded.notes
+
+
 def test_realval010_step_preregister_freezes_and_records_without_overwriting_parent(script: ModuleType, tmp_path: Path) -> None:
     registry_path = tmp_path / "preregistrations.jsonl"
     parent = Preregistration(
