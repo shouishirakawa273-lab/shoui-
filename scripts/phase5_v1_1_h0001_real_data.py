@@ -39,11 +39,34 @@ Module冒頭でImportしているため、Import自体の不在では保証さ�
 — 保証は`step_coverage_check()`の関数本体がこれらを一切呼ばないという
 実装規律による(Reviewer確認対象)。
 
+## Primary Question != Secondary Question(Phase5 v1.1要件§7)
+
+このRoundのPrimary Research Questionは「Phase5 Validation Pipelineが
+実際のJ-Quants Price + PIT Universeで正しく・再現可能に動作するか」
+(Pipeline Validation)であり、「H0001が儲かるか」ではない。H0001が実データ
+上でどう見えるかはSecondary Questionであり、Pipelineが正常動作したことを
+もってH0001自体が支持されたと自動的に主張しない(この2つを混同しない)。
+最終的な判断はConclusion Recordで両者を明示的に分けて記述する。
+
 ## Data Boundary
 
 Price(Adjusted OHLCV) + PIT Universeのみ(D0061)。Fundamentals/
 Disclosures/Positioning/Macro/Global Market/News/Consensus/Evidence
 Pathは一切Importしない。
+
+## 対象銘柄の既定値について(Pre-run skeptic-review LOW Finding対応)
+
+`_parse_codes()`の既定値(7203/6758/8056/3626)は、RESEARCH_RULES.mdの
+「燃え尽きた期間」記録(2022-01-04〜2024-12-30・同じ4銘柄・20営業日
+Momentum→60営業日保有)と**銘柄だけは重なる**。ただし「燃え尽きた」の
+定義は期間・銘柄・Strategyパラメータの組み合わせ全体であり、このRoundの
+対象期間(2015-2019/2020-2021/2025、後述)・Mechanism(Reversal、符号が逆)
+はいずれも異なるため、組み合わせとしては未観測のHidden Testのままである。
+とはいえこれらは単に過去Roundで使い慣れた4銘柄というだけで、Universe
+選定として独立した根拠(流動性・時価総額等)を持たない。4銘柄は少数
+のため、Synthetic Roundと同様にSignalが実質的に一部銘柄へ偏る
+Riskがある(Q節で必ずReportすること)。より広いPIT Universe
+(`lib.universe`)を使いたい場合は`--codes`を明示的に指定すること。
 
 ## Real Benchmark(Phase5 v1.1要件§17-18)
 

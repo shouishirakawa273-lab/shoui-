@@ -262,6 +262,9 @@ def test_realval010_build_real_preregistration_uses_revise_lineage(script: Modul
     assert revised.parameters == parent.parameters
     assert revised.falsification_condition == parent.falsification_condition
     assert revised.forbidden_capabilities == parent.forbidden_capabilities
+    assert revised.alternative_explanations == parent.alternative_explanations
+    assert revised.secondary_metrics == parent.secondary_metrics
+    assert revised.allowed_adjustments == parent.allowed_adjustments
 
 
 def test_realval010_step_preregister_freezes_and_records_without_overwriting_parent(script: ModuleType, tmp_path: Path) -> None:
