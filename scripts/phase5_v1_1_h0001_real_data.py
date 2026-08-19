@@ -1,4 +1,4 @@
-"""Phase5 v1.1: H0001-R2 Real-Data Validation Experiment。
+"""Phase5 v1.1: H0001-R1 Real-Data Validation Experiment。
 
 Phase5 v1(合成Fixtureによる Smoke Run、`scripts/phase5_v1_short_term_
 reversal.py`、DECISIONS.md D0062/D0063)で完成したPipelineを、実際の
@@ -16,11 +16,11 @@ reversal.md`)のClaim/Mechanism/Signal定義/Holding Periodは一切変更
 しない。5営業日Trailing Return < 0 -> BUY、10営業日保有、という
 Core Ruleをそのまま維持する。
 
-## Preregistration Lineage(Phase5 v1.1要件§5、DECISIONS.md D0065)
+## Preregistration Lineage(Phase5 v1.1要件§5、DECISIONS.md D0065/D0066)
 
 Synthetic Preregistration(`PREREG0001`)を直接上書きせず、
 `Preregistration.revise()`(既存のLineage機構、複製ではない)で
-`PREREG0001_R2`を発行する。`parent_preregistration_id=PREREG0001`が
+`PREREG0001_R1`を発行する。`parent_preregistration_id=PREREG0001`が
 自動的に記録され、Registry上でLineageが明示される。変更するCore
 Fieldsは実データ固有のもの(`dataset_contract_id`/`universe_
 definition`/3期間/`benchmark`)のみで、`primary_metric`/
@@ -28,16 +28,27 @@ definition`/3期間/`benchmark`)のみで、`primary_metric`/
 explanations`/`falsification_condition`/`forbidden_capabilities`は
 Synthetic版から変更しない。
 
-**`PREREG0001_R1`について**: 当初のReal-data replication期間
-(Train 2015-2019/Validation 2020-2021/Locked Test 2025)は、
-実際のLocal Coverage Checkの結果、現在の契約プラン下では取得不能
-(HTTP 400、2021年以前を含むRequestで再現)と判明したため、
-**一度もPreregistration Registryへ`preregister()`・記録されないまま
-Design段階で放棄した**(`PREREG0001_R1`という識別子自体、Immutability
-違反やSilent Overwriteは発生していない — 単に実行前に破棄された計画)。
-この経緯はDECISIONS.md D0065に記録する。`PREREG0001_R2`はこの反省を
-踏まえ、Local Coverage Checkで確認済みのデータ提供期間内で再設計した
-ものである(詳細はD0065参照)。
+**`PREREG0001_R1`という識別子の経緯(2段階、D0065/D0066参照)**:
+(1) 当初のReal-data replication期間案(Train 2015-2019/Validation
+2020-2021/Locked Test 2025)は、実際のLocal Coverage Checkの結果、
+現在の契約プラン下では取得不能(HTTP 400、2021年以前を含むRequestで
+再現)と判明したため、一度もPreregistration Registryへ記録されない
+まま設計段階で放棄した(D0065)。(2) その後2022-2025の範囲内で
+再設計した期間案(下記)を、当時の計画では`PREREG0001_R2`という
+別IDで発行する予定だったが、ユーザーがローカルで`git pull`前の
+旧versionのScriptを使って`--step preregister`を実行してしまい、
+この再設計後の期間案が**`PREREG0001_R1`というIDで実際にRegistryへ
+`PREREGISTERED`状態として記録された**(D0066)。記録された内容
+(期間・Universe・Dataset Contract・Benchmark・Parameter)がD0065の
+`R2`計画と一致することを確認した上で、この既に固定された
+`PREREG0001_R1`を正式なReal-data Preregistrationとして採用し、
+重複する`PREREG0001_R2`は発行しない(不必要なExperiment増殖を避ける、
+D0066)。したがってこのScriptの定数は`PREREG0001_R1`を指す
+(過去のRoundで一時的に`PREREG0001_R2`だった時期があるが、D0066の
+判断によりD0065時点の`R1`という文字列へ戻した — 中身は常にD0065の
+2022-2025設計であり、`_R1`という識別子は(1)の放棄された計画と
+(2)の実際に採用された計画とで異なる中身を指した2つの別History
+Eventだが、Registry上に実在するのは(2)のみである)。
 
 ## Result Inspection Cannot Precede Preregistration(Phase5 v1.1要件§11)
 
@@ -70,7 +81,7 @@ Pathは一切Importしない。
 `_parse_codes()`の既定値(7203/6758/8056/3626)は、RESEARCH_RULES.mdの
 「燃え尽きた期間」記録(2022-01-04〜2024-12-30・同じ4銘柄・20営業日
 Momentum→60営業日保有)と**銘柄が完全に一致し、かつ期間もほぼ完全に
-重複する**(`PREREG0001_R2`のTrain/Validation期間は2022-01-04〜
+重複する**(`PREREG0001_R1`のTrain/Validation期間は2022-01-04〜
 2024-12-30、後述)。「燃え尽きた」の定義は期間・銘柄・Strategy
 パラメータの組み合わせ全体であり、H0001のMechanism(5営業日Reversal・
 10営業日保有)は燃え尽きた組み合わせ(20営業日Momentum・60営業日保有)
@@ -95,12 +106,13 @@ Reportすること)。
 Look-ahead的な混入はない(公表済みIndex値そのものを時系列で取得
 するだけであり、このLabがIndexを再構築するわけではない)。
 
-使い方(D0065で再設計した期間。**--step preregisterの前に、必ず
-以下のCoverage Check(特に2022-01-04〜2025-12-30を1回で要求する
-マルチイヤーRequest)がHTTP 400にならないことを確認すること** —
-`_load_real_price_data()`は`train_period_start`から各splitの
-end_sessionまでを1リクエストで要求するため、Locked Test実行時には
-Train開始日からLocked Test終了日までの全期間が単一Requestになる):
+使い方(D0065で再設計した期間、`PREREG0001_R1`として既にFreeze済み
+— D0066参照)。2022-01-04〜2025-12-30のMulti-year Coverage Checkは
+既にユーザーのローカルで成功を確認済み(978 sessions/4銘柄、
+missing_open=0、missing_close=0、TOPIX 978 bars、6758 Corporate
+Action 1件、4銘柄ともPIT Universe eligible、D0066参照)。
+`--step preregister`は既に(誤って旧Scriptだが、内容は正しく)
+実行済みのため、次に打つべきは`--step train`から:
     python scripts/phase5_v1_1_h0001_real_data.py --step coverage-check \
         --codes 7203 6758 8056 3626 --start 2022-01-04 --end 2025-12-30
     python scripts/phase5_v1_1_h0001_real_data.py --step preregister \
@@ -167,9 +179,9 @@ from lib.universe import ListingBasedUniverseProvider  # noqa: E402
 
 HYPOTHESIS_ID = "H0001"
 PARENT_PREREGISTRATION_ID = "PREREG0001"
-PREREGISTRATION_ID = "PREREG0001_R2"
+PREREGISTRATION_ID = "PREREG0001_R1"
 DATASET_CONTRACT_ID = "DC0002_JQUANTS_REAL_V1"
-EXPERIMENT_ID = "BT_PHASE5_V1_1_H0001_R2"
+EXPERIMENT_ID = "BT_PHASE5_V1_1_H0001_R1"
 
 _PREREGISTRATION_REGISTRY_PATH = _LAB_DIR / "06_backtests" / "preregistrations.jsonl"
 _LOCKED_TEST_AUDIT_PATH = _LAB_DIR / "06_backtests" / "locked_test_audit_real.jsonl"
@@ -322,7 +334,7 @@ def build_dataset_contract(*, codes: tuple[str, ...], start: date, end: date) ->
         feature_computation="5営業日Trailing Close-to-Close Return(lib.strategies.short_term_reversal)",
         target_computation="10営業日Holding、NEXT_SESSION_OPEN執行(lib.backtest.engine)",
         notes=(
-            "Phase5 v1.1 Real-Data Validation Experiment(H0001-R2)。実データ実行はユーザーの"
+            "Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)。実データ実行はユーザーの"
             "ローカルPC上で行う。既知の限界: /v2/equities/masterはsplitごと(Train/Validation/"
             "Locked Test)に個別に取得しas_ofでPin留めしていないため、Real Masterデータが取得"
             "タイミング間で変化した場合、3 splitが厳密に同一のUniverse基盤を共有する保証はない。"
@@ -460,7 +472,7 @@ def _run_and_record(
         reproducibility=fingerprint,
         price_adjustment=price_adjustment,
         notes=(
-            f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R2)、split={split.value}、"
+            f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)、split={split.value}、"
             f"universe_resolution=[{','.join(universe_probe_notes)}]"
         ),
         preregistration_id=result.preregistration_id,

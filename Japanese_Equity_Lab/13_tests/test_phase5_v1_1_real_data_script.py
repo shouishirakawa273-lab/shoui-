@@ -1,4 +1,4 @@
-"""Phase5 v1.1 H0001-R2 Real-Data Scriptの原則ベースTest(REALVAL-001〜010)。
+"""Phase5 v1.1 H0001-R1 Real-Data Scriptの原則ベースTest(REALVAL-001〜010)。
 
 `scripts/phase5_v1_1_h0001_real_data.py`はこのセッションが実行できない
 (EGRESS_BLOCKED、DECISIONS.md参照)ため、実際のJ-Quants通信は一切行わず、
@@ -265,7 +265,7 @@ def test_realval010_build_real_preregistration_uses_revise_lineage(script: Modul
     finally:
         monkeypatch.undo()
 
-    assert revised.preregistration_id == "PREREG0001_R2"
+    assert revised.preregistration_id == "PREREG0001_R1"
     assert revised.parent_preregistration_id == "PREREG0001"
     assert revised.status == PreregistrationStatus.DRAFT  # revise()直後はDRAFT、freezeは呼び出し側の責任
     assert revised.dataset_contract_id == "DC0002_JQUANTS_REAL_V1"
@@ -340,11 +340,12 @@ def test_pit_audit_medium_fix_run_and_record_persists_universe_resolution_into_n
     assert "2024-01-05:" in recorded.notes
 
 
-def test_d0065_r2_period_design_satisfies_chronological_non_overlap(script: ModuleType, tmp_path: Path) -> None:
+def test_d0065_real_data_period_design_satisfies_chronological_non_overlap(script: ModuleType, tmp_path: Path) -> None:
     """pit-auditor MEDIUM Finding対応の回帰Test。
 
-    `PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`/`DECISIONS.md` D0065で確定した
-    実際のR2期間案(Train 2022-01-04〜2023-12-29/Validation 2024-01-04〜
+    `PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`/`DECISIONS.md` D0065で確定し、
+    D0066の経緯により`PREREG0001_R1`として実際にFreezeされた実データ
+    期間案(Train 2022-01-04〜2023-12-29/Validation 2024-01-04〜
     2024-12-30/Locked Test 2025-01-06〜2025-12-30)そのものを使って
     `build_real_preregistration()`を呼び、`Preregistration.__post_init__`の
     Chronological非重複Checkを実際に通過することを確認する。それまでの
@@ -436,6 +437,6 @@ def test_realval010_step_preregister_freezes_and_records_without_overwriting_par
     unchanged_parent = registry.get("PREREG0001")
     assert unchanged_parent is not None
     assert unchanged_parent.train_period_start == date(2026, 1, 5)  # 親は変化しない
-    child = registry.get("PREREG0001_R2")
+    child = registry.get("PREREG0001_R1")
     assert child is not None
     assert child.status == PreregistrationStatus.PREREGISTERED  # step_preregisterでfreezeされている

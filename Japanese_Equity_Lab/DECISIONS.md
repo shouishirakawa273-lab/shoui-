@@ -6750,3 +6750,143 @@ tests/`で変更が無いことを確認(Screening Tool不変)。H0002・
 Parameter Search・Fundamentals/Positioning接続・Phase5 v2・
 D0057解決・Portfolio/Decision Engineのいずれもこのラウンドでは
 着手しない。
+
+## D0066 — Phase5 v1.1: Accidental Preregistration Reconciliation(PREREG0001_R1採用、R2発行取消)
+
+D0065の再設計(`PREREG0001_R2`として発行予定だった2022-2025期間案)を
+実行に移す過程で、ユーザーのローカルPC上でID/Process上の事故が発生した。
+このRoundはResearch Historyを一切削除・改竄せず、既存Architectureに
+沿って最小限の修復で整合させることのみを目的とする。**新しいHypothesis
+・Strategy・Universe・Periodの探索は一切行っていない。**
+
+**A. 実際に何が起きたか(ユーザー報告、このセッションはUncommitted
+Local Fileを直接検証できないため、報告内容として記録する)**:
+ユーザーが最新版を`git pull`する前の旧Version Script(`PREREGISTRATION_
+ID`定数がまだ`"PREREG0001_R1"`のまま、かつCLI引数は2022-2025設計の
+日付を渡した状態)で`--step preregister`を実行した。その結果、
+`06_backtests/preregistrations.jsonl`(Uncommitted、`git status`で
+`M`)へ、**中身はD0065で設計した2022-2025のReal-data案そのものだが
+IDが`PREREG0001_R1`**というRecordが`PREREGISTERED`状態で追記された。
+その後`git pull`し、現在のScriptは(前Roundの結果)`PREREGISTRATION_
+ID = "PREREG0001_R2"`を指すようになっていたため、IDが食い違った。
+
+**B. 不整合の原因**: 単純なID/Timing事故であり、Result依存の
+Redesignではない。旧Scriptが偶然`PREREG0001_R1`という定数を保持して
+いた時点(このセッションが後のRoundで`R2`へRenameする前)で、
+ユーザーが既にD0065時点で決定済みだった2022-2025の期間・Universe・
+Dataset Contract・Benchmark・ParameterをCLI引数として渡して実行した
+ため、「新しい設計が旧IDでFreezeされた」という結果になった。
+
+**C. Research Integrity Impact(実装されたImmutability/Lineage
+Semanticsと照合した判定)**:
+
+- **Preregistration Integrity**: **損なわれていない**。
+  `lib/research/preregistration.py`の`Preregistration.preregister()`
+  は一度呼ばれた後は`PreregistrationImmutabilityError`なしに変更
+  できず、`revise()`のみが新IDでの派生を許す。今回の事故はこの
+  機構を一切迂回・破壊していない — 単に「どのIDでFreezeされたか」
+  という表面的なLabelの食い違いであり、Freezeされた中身(Core
+  Fields)自体は一度もRewriteされていない。
+- **Confirmatory Status**: **損なわれていない**。`PreregistrationRegistry.
+  record()`は重複ID拒否のみを行い、Freeze後にStrategy Return/Signal
+  Performanceを見る経路をそもそも持たない。ユーザーは今回の事故の
+  前にも後にもTrain/Validation/Locked Testのいずれも実行しておらず
+  (§5、ユーザー報告)、Coverage Check(Row数・Missing Bar・PIT
+  Universe該当数のみ)以外の観測は一切行われていない。したがって
+  「Resultを見てからDesignを決めた」という懐疑対象になる経路が
+  存在しない。
+- **Locked Test Integrity**: **損なわれていない**。`06_backtests/
+  locked_test_audit_real.jsonl`はまだ作成されていない(Unlock未実施)。
+  `FileBackedLockedTestGate`のUnlock記録が無いため、Locked Test
+  Access自体が構造的に不可能な状態のまま。
+
+**D. 検討した選択肢**:
+
+- **A. R1をAccidentalとして履歴に残し、予定通りR2を正式発行する**:
+  却下。R1の中身がR2として発行する予定だった内容と一致するため、
+  実質的に同一Experimentの重複Preregistrationを2つ作ることになる
+  (Decision Principle #4「Unnecessary experiment proliferationを
+  避ける」に反する)。
+- **B. R1のCore DesignがR2と同一であることを確認した上でR1を正式な
+  Real-data Preregistrationとして採用し、Script/D0065側をR1へ整合
+  させる**: **採用**。理由はEを参照。
+- **C. 既存Architecture上の正式なabandon/supersede/invalidate
+  mechanismを使う**: 該当する専用Mechanismは存在しない
+  (`PreregistrationRegistry`はrecord/all/getのみを提供し、削除・
+  状態変更APIを持たない、既存の`PreregistrationStatus`もDRAFT/
+  PREREGISTEREDのみで「Abandoned」等の中間状態を持たない)。新設する
+  ことも検討したが、これは「単なるID事故」のためだけに恒久的な
+  新Registry機構を追加することになり、Decision Principle #6
+  「今回だけのための複雑なRegistry機構を作らない」に反するため
+  見送った。既存の`revise()` Lineage機構(親Recordを変更せず新ID
+  で派生する)は、あくまで「Result後に設計を変える」ケース向けの
+  Mechanismであり、今回のような「Result前のID Label訂正」には
+  そのまま適合しない — これもBの選択(Registry Dataそのものには
+  一切触れず、Repository側[Script定数・Doc]をRegistryの実データへ
+  合わせる)を後押しする理由になった。
+
+**E. 採用した整合方法(Option B)**: `PREREG0001_R1`(ユーザーの
+Registry上に既に`PREREGISTERED`状態で存在するRecord)を正式な
+Phase5 v1.1 Real-data Preregistrationとして採用する。`PREREG0001_R2`
+は発行しない(取消)。**`preregistrations.jsonl`のRecord自体は一切
+変更しない**(手作業削除・書き換え・`git restore`によるRevert、
+いずれも行わない — このセッションはそもそもUncommittedな
+ローカルFileへ直接アクセスできないため、変更しようにも変更できない、
+という制約もこの判断を後押しする)。修復は完全に「Repository側
+(Script定数・Docstring・Guide・DECISIONS.md)がRegistry上の実データ
+に合わせて自分自身を訂正する」形で行った。これはPrinciple順位1-3
+(History不変・Result未閲覧の維持・Immutability非侵害)を自動的に
+満たしつつ、Principle 4-6(不要な複製回避・既存Architecture優先・
+新規機構不要)も満たす、最小の修復である。
+
+**F. Registry / Preregistration State After Reconciliation**:
+`06_backtests/preregistrations.jsonl`はこのセッションからは変更
+していない(ユーザーのローカルEnvironmentにある`PREREG0001`+
+`PREREG0001_R1`の2Record構成を、そのまま正式な状態として扱う)。
+`06_backtests/experiment_registry.jsonl`/`locked_test_audit_real.
+jsonl`への新規Recordはこのラウンドでも一切追加していない(Train/
+Validation/Locked Testを実行しないため)。
+
+**G. Code Changes**: `scripts/phase5_v1_1_h0001_real_data.py`の
+`PREREGISTRATION_ID`/`EXPERIMENT_ID`定数を`_R2`→`_R1`へ戻し、
+`Experiment.notes`/`DatasetContract.notes`内の`H0001-R2`Literalも
+`H0001-R1`へ戻した。Docstringの「Preregistration Lineage」節・
+「対象銘柄の既定値について」節・末尾の使い方例を、今回の2段階の
+経緯(放棄された最初のR1計画→R2として計画→事故でR1として実際に
+Freeze→R1をそのまま採用)が正確に伝わるよう書き直した。
+`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`はC節(Multi-year Coverage
+Checkが既に成功済みであることを反映、978 sessions/4銘柄・
+missing_open=0・missing_close=0・TOPIX 978 bars・6758 Corporate
+Action 1件・4銘柄PIT Universe eligible)・D/E/F/G節(ID表記を
+`_R1`へ統一、E節は「既にFreeze済み、再実行不要」という案内へ
+書き換え)を更新した。`Japanese_Equity_Lab/13_tests/test_phase5_
+v1_1_real_data_script.py`のHardcoded Literal 2箇所(`"PREREG0001_
+R2"`→`"PREREG0001_R1"`)・Module Docstring Title・前Roundで追加した
+回帰Testの名前(`_r2_`→`_real_data_`、中身のDate Assertionは変更
+なし)を更新した。`lib/research/*`・`lib/backtest/engine.py`等の
+Core Library・`Preregistration`/`PreregistrationRegistry`の実装は
+一切変更していない(既存Architectureをそのまま使う、新規Mechanism
+は追加しない)。
+
+**H. Tests / Regression**: Code Behaviorの変更は無い(定数値と
+Docstring/Testのラベル文字列のみ)ため、新規Targeted Testは追加して
+いない。既存の回帰Test(前Roundで追加した`test_d0065_r2_period_
+design_satisfies_chronological_non_overlap`、Nameのみ`test_d0065_
+real_data_period_design_satisfies_chronological_non_overlap`へ
+Rename)は`PREREG0001_R1`という新しいID文字列の下でも、D0065の
+実際の6期間日付が`Preregistration.__post_init__`のChronological
+Checkを通過することを引き続き検証する。`ruff check`/`ruff format
+--check`/`mypy`(`core app.py scripts Japanese_Equity_Lab/lib`)
+いずれもclean、`pytest`(Lab+Screening Tool)986件全てpass。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認
+(Screening Tool不変)。
+
+**I. 実行状態**: 引き続き**`CODE_COMPLETE_AWAITING_LOCAL_REAL_
+DATA_RUN`**。Train/Validation/Locked Testはこのラウンドでも実行
+していない。Locked Testはunlockしていない。Strategy Parameter・
+Universe・Periodのいずれも変更していない。次にユーザーがローカルで
+打つべきコマンドは`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md` F節
+(`--step train`)から(E節のPreregisterは既に完了済み、再実行不要)。
+H0002・Parameter Search・Fundamentals/Positioning接続・Phase5 v2・
+D0057解決・Portfolio/Decision Engineのいずれもこのラウンドでは
+着手しない。

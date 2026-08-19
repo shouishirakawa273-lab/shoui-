@@ -1,4 +1,4 @@
-# PHASE5_V1_LOCAL_VALIDATION_GUIDE.md — H0001-R2の実データ実行手順
+# PHASE5_V1_LOCAL_VALIDATION_GUIDE.md — H0001-R1の実データ実行手順
 
 ## なぜこの手順が必要か
 
@@ -20,12 +20,15 @@ H0001(Short-term Reversal)を実データで検証するPhase5 v1.1では、
 Signal定義・パラメータ(`lookback_days=5`/`holding_period_days=10`)は
 **このRoundでも変更しない**(Phase5 v1.1要件§6)。
 
-**`PREREG0001_R1`(当初のTrain 2015-2019/Validation 2020-2021/Locked
-Test 2025という期間設計)は、あなたが実際にローカルで実行したLocal
-Coverage Checkの結果、現在の契約プラン下では取得不能(2021年以前を含む
-Requestが一貫してHTTP 400)と判明したため、一度もPreregistration・
-Runとして実行しないまま設計段階で放棄した。** 以下は、この制約を踏まえて
-再設計した`PREREG0001_R2`の手順(DECISIONS.md D0065参照)。
+**重要(D0066参照)**: このGuideのD節・E節の期間設計は、あなたの
+ローカル環境で**既に`PREREG0001_R1`として`PREREGISTERED`状態で
+固定済み**(`git pull`前の旧Version Scriptで`--step preregister`を
+実行してしまったが、内容自体はこのGuideの設計と一致するため、その
+まま正式なPreregistrationとして採用した)。したがって**E節の
+`--step preregister`コマンドは再実行しない**こと(既に記録済みの
+`preregistration_id`と衝突するため、再実行しても`AppendOnlyViolation
+Error`にはならず「既に記録済み」を表示して何もしない安全設計だが、
+本来不要な操作)。次に打つべきコマンドはF節の`--step train`から。
 
 このScriptは`Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_
 script.py`(REALVAL-002/003/006/007/009/010相当、`JQuantsAdapter`の
@@ -78,29 +81,24 @@ EGRESS_BLOCKED)。上表の「結果」列のみがこのRepositoryが直接確�
 Observed API Behaviorであり、「過去5年」という数字はUser-reported Plan
 Constraintとして区別して扱う(DECISIONS.md D0065参照)。
 
-**D節の期間設計を`--step preregister`で固定する前に、必ず以下を追加で
-確認すること**(まだ未実行、これもStrategy Returnを見ないCoverage
-Checkの一部):
+**マルチイヤーRequestは既に確認済み(D0066)**: `_load_real_price_
+data()`は`train_period_start`から**そのSplit自身のend_session**まで
+を1回のRequestでJ-Quantsへ要求する設計のため、Locked Test実行時には
+Train開始日(2022-01-04)からLocked Test終了日(2025-12-30)までの
+約4年分が単一のRequestになる。以前はこれが未確認だったが、あなたが
+ローカルで以下を実行済み:
 
 ```powershell
-cd shoui-
 python scripts\phase5_v1_1_h0001_real_data.py --step coverage-check `
     --codes 7203 6758 8056 3626 `
     --start 2022-01-04 --end 2025-12-30
 ```
 
-これが重要な理由: `_load_real_price_data()`は`train_period_start`から
-**そのSplit自身のend_session**までを1回のRequestでJ-Quantsへ要求する
-設計になっている。したがってLocked Test実行時には、実際には
-Train開始日(2022-01-04)からLocked Test終了日(2025-12-30)までの
-**約4年分が単一のRequest**になる。これまで確認できているのは
-「単年(2022年・2025年)の単独Request」と「2015年を含む11年分の
-Request(失敗、ただし2021年以前を含んでいたため2022年以降のみの
-複数年Requestが失敗する理由なのか、単に2021年以前を含んでいたことが
-理由なのかを判別できない)」のみであり、**2022年以降だけに限定した
-複数年単一Requestが成功するかどうかはまだ未確認**。この確認が
-HTTP 400になった場合は、D節の期間案を見直す必要がある(Strategy
-Resultには一切影響されない、純粋なAPI到達可否の再設計)。
+**結果(D0066)**: 4銘柄すべて978 sessions、missing_open=0、
+missing_close=0、TOPIX 978 bars、6758のCorporate Action 1件検出、
+4銘柄すべてPIT Universe eligible。HTTP 400は発生しなかった
+(Strategy Return/Signal件数はこの段階でも一切確認していない)。
+この確認結果に基づき`PREREG0001_R1`が固定された(D節・D0066参照)。
 
 出力される`bar_count`/`first`/`last`/`missing_open`/`missing_close`・
 Corporate Action件数・TOPIX Bar件数・`PIT universe as_of=...`の
@@ -109,7 +107,8 @@ Testの期間・パラメータを最適化してはならない**(§8/§11)。
 
 ## D. 対象期間・銘柄の選定(データ提供制約 + RESEARCH_RULES.mdの制約を守る)
 
-**期間設計(D0065、Cのマルチイヤー確認が成功した前提で)**:
+**期間設計(D0065で設計、D0066の経緯により`PREREG0001_R1`として
+既にFreeze済み)**:
 
 - Train: 2022-01-04 〜 2023-12-29(約2年)
 - Validation: 2024-01-04 〜 2024-12-30(約1年)
@@ -148,10 +147,25 @@ Universeから機械的に選定する代替案はD0065で検討したが、こ�
 実施しない(Backlog、理由: 新しいUniverse選定能力の追加はこのRoundの
 Scope外)。
 
-**一度`--step preregister`を実行したら書き換えない**こと。書き換え
-たくなったら新しい`preregistration_id`で`revise()`する必要がある。
+**Preregistrationは一度Freezeしたら書き換えない**こと。書き換えたく
+なったら新しい`preregistration_id`で`revise()`する必要がある。
 
-## E. Preregistrationを固定する(実データ用、既存PREREG0001から`revise()`で派生)
+## E. Preregistration(既にFreeze済み、D0066)
+
+**このStepは既に完了している。再実行しないこと。**
+
+`PREREG0001`(Phase5 v1の合成FixtureによるSmoke Run Preregistration)
+を`Preregistration.revise()`した`PREREG0001_R1`(`parent_
+preregistration_id=PREREG0001`)が、`06_backtests/preregistrations.
+jsonl`へ`PREREGISTERED`状態で既に記録されている(D節の期間・
+Universe・`DC0002_JQUANTS_REAL_V1`・実TOPIX・`lookback_days=5`/
+`holding_period_days=10`/`excess_return`と一致することを確認済み、
+D0066)。`primary_metric`/`parameters`/`falsification_condition`は
+親からそのまま引き継がれ、変更されていない(§6/§22)。
+
+もし誤って以下を再実行しても、`preregistration_id`が既に記録済み
+であるため`step_preregister()`は「既に記録済み」を表示して何も
+書き込まずに終了する(安全、ただし不要な操作なので実行しないこと):
 
 ```powershell
 python scripts\phase5_v1_1_h0001_real_data.py --step preregister `
@@ -161,18 +175,8 @@ python scripts\phase5_v1_1_h0001_real_data.py --step preregister `
     --locked-test-start 2025-01-06 --locked-test-end 2025-12-30
 ```
 
-内部では`PREREG0001`(Phase5 v1の合成FixtureによるSmoke Run
-Preregistration)を`Preregistration.revise()`し、`preregistration_id=
-PREREG0001_R2`・`parent_preregistration_id=PREREG0001`として
-`06_backtests/preregistrations.jsonl`へ追記する(親Recordは一切変更
-されない、Phase5 v1.1要件§5)。`primary_metric`/`parameters`
-(`lookback_days=5`/`holding_period_days=10`)/`falsification_condition`
-は親からそのまま引き継がれ、変更されない(§6/§22)。`PREREG0001_R1`は
-Registryに一度も記録されていないため、上書き・改ざんの対象にもならない
-(単に使われなかった識別子)。
-
-**この時点でPreregistrationは固定される。Locked Test結果を見るまでは
-この内容を変更しないこと。**
+**この内容は既に固定されている。Locked Test結果を見るまではこの
+内容を変更しないこと。**
 
 ## F. Train/Validationを実データで実行する
 
@@ -188,8 +192,8 @@ python scripts\phase5_v1_1_h0001_real_data.py --step validation --codes 7203 675
 
 各実行は標準出力へ`trade_count`/`signal_count`/`excess_return`/
 `benchmark_return`/`stock_by_stock_distribution`を表示し、
-`06_backtests/experiment_registry.jsonl`へ`BT_PHASE5_V1_1_H0001_R2_
-TRAIN`/`BT_PHASE5_V1_1_H0001_R2_VALIDATION`として記録する
+`06_backtests/experiment_registry.jsonl`へ`BT_PHASE5_V1_1_H0001_R1_
+TRAIN`/`BT_PHASE5_V1_1_H0001_R1_VALIDATION`として記録する
 (Experiment.notesにUniverse Snapshot Resolution(PIT Universeの
 Survivorship Bias解決状況)のSummaryも含まれる)。
 
@@ -205,7 +209,7 @@ python scripts\phase5_v1_1_h0001_real_data.py --step unlock-locked-test `
 python scripts\phase5_v1_1_h0001_real_data.py --step locked-test --codes 7203 6758 8056 3626
 ```
 
-`unlock-locked-test`は同じ`experiment_id`(`BT_PHASE5_V1_1_H0001_R2`)
+`unlock-locked-test`は同じ`experiment_id`(`BT_PHASE5_V1_1_H0001_R1`)
 に対して二度目を呼ぶと`LockedTestAccessError`になる(意図的、Knowledge
 Contamination防止)。`06_backtests/locked_test_audit_real.jsonl`
 (Phase5 v1の`locked_test_audit.jsonl`とは別File)に記録される。
@@ -248,9 +252,8 @@ Contamination防止)。`06_backtests/locked_test_audit_real.jsonl`
 ## I. Claudeへ貼り戻す内容
 
 エラーが出た場合は、エラーメッセージ全文(**APIキーの値を除いて**)を
-貼り付けてもらえれば対応できる(特にC節のマルチイヤー確認が
-HTTP 400になった場合は必ず共有すること、期間再設計が必要になる)。
-成功した場合は、3 split分の`trade_count`/`excess_return`/
+貼り付けてもらえれば対応できる。成功した場合は、3 split分の
+`trade_count`/`excess_return`/
 `stock_by_stock_distribution`/`universe_resolution`の要約を共有して
 もらえれば、Research Journal(`12_reports/experiment/`)への反映を
 手伝える。**Locked Test結果はUnlock後に初めて見る想定のため、貼り付ける
