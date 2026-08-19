@@ -260,3 +260,16 @@ Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`
   場合は別Round設計となる。
 - D0057(Backlog #21、ARCHITECTURE_GAP)はこのRoundでも未解決のまま
   維持する。
+- **CONS-020(`_module_never_imports`)のAST走査に残存するBlind Spot**
+  (pit-auditor Finding、Phase4E-4、LOW): 相対Import(`from ..evidence
+  import retrieval`のような形、`ast.ImportFrom.module`はDots解決前の
+  末端名のみを保持するため一致しない)・`from lib import evidence`の
+  ような形でPackage自体をImportした後に`evidence.retrieval`と属性
+  経由でAccessするCase(同一Pytest実行内で`lib.evidence.retrieval`が
+  既に他所でImport済みであれば、Python Module CacheによりAST上は
+  検出されないままRuntimeでは解決してしまいうる)・`importlib.import_
+  module()`等の動的Importは、いずれもこのAST走査単体では検出できない。
+  現時点では`lib/consensus/`のいずれのFileもAbsolute Importのみを
+  使っており(Grep確認済み)実際の違反は無いが、将来Refactorでこの
+  Guardの厳密性に依存する場合はFunctional Check(実際に`sys.modules`
+  を確認する等)の追加を検討する必要がある。

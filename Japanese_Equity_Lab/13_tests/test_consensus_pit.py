@@ -213,12 +213,40 @@ def test_cons003_provider_stated_as_of_disagreeing_with_provider_available_at_do
 # --- CONS-004: Unknown Provider Availability Fails Closed ---
 
 
-def test_cons004_no_available_at_timestamp_excluded_by_default() -> None:
+def test_cons004_resolver_fallback_to_retrieved_at_is_a_caller_choice_not_a_framework_guarantee() -> None:
+    """`_resolver`(このTest File自身のHelper)は`provider_available_at`が
+    無い場合`retrieved_at`をOBSERVED Basisとして返す(楽観的Fallback)——
+    これは「TimestampがなければFrameworkが自動的にFail Closedする」という
+    保証では**ない**(pit-auditor Finding、Phase4E-4: 元のTest名`_excluded_
+    by_default`は、実際にはVisibleになるこのTestの結果と矛盾していた)。
+    実際のFail Closed保証は`RevisionHistory.as_of()`が`availability_basis
+    == UNKNOWN`のVersionを除外する Logic 自体にあり、それは次のTest
+    (`test_cons004_unknown_basis_excluded_even_when_timestamp_itself_is_
+    present`)が直接検証する——将来Adapterがこの`_resolver`のような楽観的
+    Fallbackを安易に実装すると、Timestamp不在のRecordを誤って可視化
+    しうることへの警告的Testでもある。"""
     record = _record(record_id="V1")  # provider_available_atなし
     histories = build_revision_histories([record], resolve_available_at=_resolver)
     result = consensus_as_of(histories, datetime(2030, 1, 1, tzinfo=UTC))
-    # resolver fallback = retrieved_at with OBSERVED basis, so it IS visible far in the future
-    assert result["S1"] is not None
+    assert result["S1"] is not None  # _resolverが楽観的にretrieved_at/OBSERVEDへFallbackするため
+
+
+def test_cons004_pessimistic_resolver_reporting_unknown_basis_is_excluded_by_default() -> None:
+    """Timestamp自体が無い場合に、Resolverが誠実に`AvailabilityBasis.
+    UNKNOWN`(未確認)を返すと(上記の楽観的`_resolver`とは異なる、より
+    現実的なCaller実装)、`RevisionHistory.as_of()`のFail Closed Guardが
+    実際に機能してExcludeされることを直接確認する(CONS-004の本来の主張
+    そのもの)。"""
+
+    def pessimistic_resolver(rec: ConsensusRecord) -> tuple[datetime, AvailabilityBasis]:
+        if rec.provider_available_at is not None:
+            return rec.provider_available_at, rec.provider_available_at_basis
+        return rec.retrieved_at, AvailabilityBasis.UNKNOWN
+
+    record = _record(record_id="V1")  # provider_available_atなし
+    histories = build_revision_histories([record], resolve_available_at=pessimistic_resolver)
+    result = consensus_as_of(histories, datetime(2030, 1, 1, tzinfo=UTC))
+    assert result["S1"] is None
 
 
 def test_cons004_unknown_basis_excluded_even_when_timestamp_itself_is_present() -> None:
