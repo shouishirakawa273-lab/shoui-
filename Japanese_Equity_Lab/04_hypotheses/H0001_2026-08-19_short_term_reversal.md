@@ -70,29 +70,48 @@ Preregistration Record側に記録)。Preregistration(`PREREG0001`)を固定し�
 上でTrain/Validation/Locked Testを実行済み(結果は下記「実行結果と
 Evidence該当性に関する重要な注記」参照)。
 
-## 実行結果とEvidence該当性に関する重要な注記(2026-08-19、final skeptic-review反映)
+## 実行結果とEvidence該当性に関する重要な注記(更新: 2026-08-19、Phase5 v1.1実データ最終監査反映)
 
-**この一連の実行(Train/Validation/Locked Test全て)はJ-Quants公式APIへ
+### Synthetic Smoke Run(Phase5 v1、`PREREG0001`)
+
+この一連の実行(Train/Validation/Locked Test全て)はJ-Quants公式APIへ
 接続できないセッション制約(EGRESS_BLOCKED)下での合成Fixtureデータに
 よるSmoke Run(Pipeline配線・Infrastructure Validation)であり、
-投資判断のEvidenceとして使用してはならない。** 実データでのLocked Test
-実行は、ユーザー自身のPC上でこのHypothesis/Preregistrationをそのまま
-使って別途行う必要がある。
+投資判断のEvidenceとして使用してはならない。Fixtureの3銘柄
+(7203/6758/9984)のうち7203は単調増加系列のためSignalが一度も発火せず、
+Train/Validation/Locked Testのいずれも実質的に**9984銘柄1つのみ・
+3トレードのみ**のBacktestになった。Locked Test結果自体(`excess_
+return`)はPreregistrationのFalsification Condition(`excess_return
+<= 0`)を満たした(=この仮説はこのSmoke Run上では支持されなかった)。
 
-さらに、この特定のSmoke Runには以下の限界がある(final skeptic-reviewの
-MEDIUM Finding):Fixtureの3銘柄(7203/6758/9984)のうち7203は単調増加
-系列のためSignalが一度も発火せず、Train/Validation/Locked Testの
-いずれも実質的に**9984銘柄1つのみ・3トレードのみ**のBacktestになった
-(`stock_by_stock_distribution`で確認)。したがって、このSmoke Runの
-結果は「市場全体を横断したReversal効果の検証」ではなく、Pipeline
-Mechanics(Preregistration固定・Split分離・Locked Test隔離・
-Reproducibility記録)が最後まで正常に動くことの確認に限定される。
+### Real-Data Experiment(Phase5 v1.1、`PREREG0001_R1`、DECISIONS.md D0067)
 
-Locked Test結果自体(`excess_return`)はPreregistrationの
-Falsification Condition(`excess_return <= 0`)を満たした
-(=この仮説はこのSmoke Run上では支持されなかった)。Conclusionの詳細は
-`06_backtests/`配下のExperiment Record、およびPhase5 v1 Completion
-Reportを参照。
+**上記Smoke Runとは別に、実際のJ-Quants Price + PIT Universeデータで
+H0001-R1のTrain(2022-01-04〜2023-12-29)/Validation(2024-01-04〜
+2024-12-30)/Locked Test(2025-01-06〜2025-12-30、7203/6758/8056/3626)
+を実行済み。** Locked Test excess_returnは`+0.00459`(Falsification
+Condition `<= 0` を満たさず、この仮説はこのRoundでは棄却されない)。
+ただし以下の理由によりConclusionは`PARTIALLY_SUPPORTED`(SUPPORTEDでは
+ない)とした。詳細・根拠は`12_reports/experiment/BT_PHASE5_V1_1_H0001_
+R1_2026-08-19_report.md`とDECISIONS.md D0067を参照:
+
+- Excess Return幅(0.01%〜0.46%)はVolatility(5.2%〜6.2%)・Max
+  Drawdown(-22%〜-36%)に比べて非常に小さく、有意性検定(標準誤差・
+  信頼区間)が計算されておらず、Noiseとの識別ができない。
+- Preregistrationの`primary_metric`(`excess_return`)は構造的に
+  取引コスト計算前(`transaction_cost_adjusted_return`とは独立)で
+  あり、このRoundでは`commission_bps`/`slippage_bps`=0のまま実行した
+  (Cost前提の変更は行っていない)。現実的な取引コストを仮定すると
+  符号が反転しうる。
+- Train+Validation期間(2022-01-04〜2024-12-30)はRESEARCH_RULES.mdの
+  「燃え尽きた期間」記録と日付・銘柄が完全に一致する(Mechanism・
+  パラメータは異なるため技術的にはRule違反ではないが、独立性は弱い)。
+- Universe解決状況が全SplitでPARTIAL(`survivorship_bias_unresolved`)
+  であり、Survivorship Bias防止を保証できていない。
+- 銘柄単位のTrade件数・Trade集中度・Sector Benchmarkは現行Schemaでは
+  再現できない(`stock_by_stock_distribution`は平均Returnのみ保持)。
+
+**Conclusion**: `PARTIALLY_SUPPORTED`。BUY/SELL判断ではない。
 
 ## Alternative Explanations(Preregistration側に記録、参照用に転記)
 

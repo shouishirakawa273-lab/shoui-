@@ -6890,3 +6890,159 @@ Universe・Periodのいずれも変更していない。次にユーザーがロ
 H0002・Parameter Search・Fundamentals/Positioning接続・Phase5 v2・
 D0057解決・Portfolio/Decision Engineのいずれもこのラウンドでは
 着手しない。
+
+## D0067 — Phase5 v1.1: Real-Data Final Audit & Phase Close(PARTIALLY_SUPPORTED、COMPLETE)
+
+ユーザーがローカルPCでTrain/Validation/Locked Test(`PREREG0001_R1`)を
+実行し、Registry(`preregistrations.jsonl`/`experiment_registry.jsonl`/
+`provenance.jsonl`/`locked_test_audit_real.jsonl`)をCommit `d0da7c3`
+としてPushした。このRoundはその実際のArtifactをGitHub上の実体
+(Promptの数値ではなく)から再確認し、Final PIT Audit・Final Skeptic
+Reviewを実施した上でPhase5 v1.1のClose判定を行う。**新しいExperiment・
+Strategyは作らず、Locked Testも再実行しない。**
+
+**A. Repository Reality Check**: `git pull`により4File(`preregistrations.
+jsonl`/`experiment_registry.jsonl`/`provenance.jsonl`/`locked_test_
+audit_real.jsonl`)への追記のみを確認(Commit差分は+8行、Code変更
+ゼロ)。`preregistrations.jsonl`の`PREREG0001_R1`はD0065/D0066の設計
+(Train 2022-01-04〜2023-12-29/Validation 2024-01-04〜2024-12-30/
+Locked Test 2025-01-06〜2025-12-30/Universe 7203,6758,8056,3626/
+`DC0002_JQUANTS_REAL_V1`/実TOPIX/`lookback_days=5`・`holding_period_
+days=10`/`parent_preregistration_id=PREREG0001`)と完全一致する
+ことを直接確認した。Secret Scan(`api[_-]?key|bearer|authorization`
+等)は4Fileいずれもゼロ件。
+
+**B. Actual Run(Promptの数値と独立に再取得)**:
+
+| Split | trade_count | signal_count | excess_return | benchmark_return |
+|---|---|---|---|---|
+| TRAIN | 139 | 951 | 0.0001435822588633272 | 0.0058431085163198814 |
+| VALIDATION | 68 | 443 | 0.0021762375148616083 | 0.006866127907086497 |
+| LOCKED TEST | 70 | 445 | 0.004588670657621604 | 0.010445853377711749 |
+
+いずれもPrompt記載値とByte-for-byte一致(独立再確認、Promptを
+Source of Truthとして扱っていない)。
+
+**C. Locked Test Integrity**: `locked_test_audit_real.jsonl`は1行のみ
+(`unlocked_at=2026-08-19T13:26:58Z`、Validation`created_at=13:26:09`
+より後・Locked Test`created_at=13:27:47`より前、正しい順序)。
+`experiment_registry.jsonl`の`BT_PHASE5_V1_1_H0001_R1_TEST`は1件のみ。
+`FileBackedLockedTestGate`/`LockedTestGate.unlock()`・`ExperimentRegistry.
+record()`はいずれも重複を構造的に拒否する実装であることをコード
+(`lib/research/locked_test.py`/`lib/registry/experiment_registry.py`)
+から確認済み — Unlock回数=1・Run回数=1は「たまたま1回だった」ではなく
+「2回目は構造的に拒否される」ことの直接証拠。Unlock Reasonは
+「Train and Validation completed with no parameter, universe,
+benchmark, or metric changes」であり、Post-lock Retuningは無い。
+
+**D. Final PIT Audit**: pit-auditorを実データPathへ実行、**CLEAN**。
+NEXT_SESSION_OPEN執行・`AsOfAdjustedPriceHistory`/`assert_no_
+lookahead`・Split境界Gate(`SplitBoundaryLeakageError`)・6758の
+Corporate Action(Case B、`announced_at=None`、`build_provider_
+derived_adjusted_bars`によるEx-date前のみ調整)・`survivorship_bias_
+unresolved`の解釈(7203/6758/8056/3626全て`delisting_date=None`の
+ため`_auto_detect_survivorship_bias()`が保守的にPARTIALを返す設計
+通りの挙動、この4銘柄自体は期間中未上場廃止のためTrade自体への
+実害は低いという評価付き)、いずれも実装と再取得したArtifactの両方
+から確認。唯一のLimitationは、Raw J-Quants Payload(`01_data/raw/
+jquants/`、Git管理外)がこのセッションから閲覧不能なため、個別
+`AdjFactor`値そのものは検証できず、Code Pathの構造的正しさの確認に
+留まる、という点(NO_OBSERVED_CASEとして記録)。
+
+**E. Final Skeptic Review**: **PASS_WITH_CONCERNS**。Main Claudeが
+実Artifactと照合し確認した主要Finding:
+
+1. **[HIGH、確認済み]** `excess_return = average_return -
+   benchmark_return`(`lib/backtest/engine.py`)であり、
+   `transaction_cost_adjusted_return`を経由しない。Primary Metricは
+   構造的にTransaction Cost非依存。
+2. **[MEDIUM、確認済み]** 3 splitとも`transaction_cost_adjusted_
+   return`が`average_return`とByte-for-byte一致(Cost前提0bpsのまま、
+   Allowed Adjustmentを行使していない)。
+3. **[MEDIUM、確認済み]** `sector_benchmark_return`/`sector_excess_
+   return`は3 splitとも`null`。RESEARCH_RULES.mdのSector Benchmark
+   要件は今回のExperimentでは満たされていない。
+4. **[MEDIUM、確認済み]** `stock_by_stock_distribution`は銘柄別平均
+   Returnのみを保持し、銘柄別Trade件数・集中度・PnL寄与度は現行
+   Schemaで再現不能(構造的Persistence Gap)。
+5. **[MEDIUM、確認済み]** `04_hypotheses/H0001_...md`がSynthetic
+   Smoke Runの記述のみで、実データExperimentの完了を反映していな
+   かった → このRoundで更新(下記H節)。
+6. **[HIGH、要再確認としてFlag]** 燃え尽きた期間との二重重複
+   (D0065/D0066)について、実際のConclusion Recordが「結合した1文
+   で明示・Evidence Strength明示的Downgrade」というGuide §Hの要求
+   通りの文言になっているかは、skeptic-reviewer自身は本文を見ていない
+   ため確認できないとの指摘 → 本D0067・Conclusion Record(`12_reports/
+   experiment/BT_PHASE5_V1_1_H0001_R1_2026-08-19_report.md`)で直接
+   確認・反映済み(Negative Evidence節・Conclusion節参照)。
+7. **[LOW]** Multiple Testing分母の明記が無かった → Conclusion Record
+   へ追加(`ExperimentRegistry.summary()`実測値)。
+
+いずれもFabrication・PIT違反・Locked Test Access迂回は検出されず、
+全てDocumentation/Disclosure上のGapであり、Main Claudeが独立に
+Repo Evidenceで再確認した上でConclusion Record・H0001.mdへ反映した
+(コード変更は無し、Strategy改善目的の変更は一切行っていない)。
+
+**F. Falsification Evaluation**: Locked Test `excess_return =
+0.004589 > 0`。Falsification Condition(`<= 0`)は成立しない
+→ **仮説はこのExperimentでは棄却されない**。ただし`not falsified`
+は`proven`ではない(kickoff要件、Conclusion節で明示)。
+
+**G. Final Conclusion**: **`PARTIALLY_SUPPORTED`**(SUPPORTED /
+INCONCLUSIVE / CONTRADICTED / INSUFFICIENT_EVIDENCEのいずれでもない)。
+3 split全てPositiveという事実を機械的にSUPPORTEDへ変換せず、
+統計的有意性の欠如・Transaction Cost非考慮・燃え尽きた期間との
+二重重複・Sector Benchmark未実施・Trade集中度不明・Universe
+Resolution PARTIALという複数のNegative Evidenceを踏まえて判断した。
+Pipeline Validation(Primary Question、実データ上でPreregistration
+固定・Split分離・Locked Test隔離・PIT安全性を保ったままEnd-to-Endで
+正常動作)はSUPPORTEDと明示的に分離して記録する。詳細は
+`12_reports/experiment/BT_PHASE5_V1_1_H0001_R1_2026-08-19_report.md`
+参照。BUY/SELL判断ではない。
+
+**H. Documentation**: `04_hypotheses/H0001_2026-08-19_short_term_
+reversal.md`の実行結果節を、Synthetic Smoke RunとReal-Data
+Experimentを明示的に分離した形へ更新(実データ実行が完了済みである
+ことを反映)。`12_reports/experiment/BT_PHASE5_V1_1_H0001_R1_2026-08
+-19_report.md`を新規作成(Facts/Unknowns/Result/Negative Evidence/
+Locked Test Integrity/Reviewer Findings/Conclusion/Synthetic vs
+Real Comparison/Reproducibility)。
+
+**I. Research Registry / History**: Synthetic H0001(`PREREG0001`)・
+D0064の`PREREG0001_R1`放棄計画・D0065の再設計・D0066の事故経緯、
+いずれも削除・改変していない(D0064〜D0066は本Roundで一切書き換え
+ていない)。実Experiment(`PREREG0001_R1`・`BT_PHASE5_V1_1_H0001_R1_*`)
+はRegistryへ追記済み。Registry上書きは発生していない
+(`AppendOnlyViolationError`が構造的に保証)。
+
+**J. Code Changes**: このRoundはコード変更なし(`lib/`・`scripts/`
+とも無変更)。Strategy Performance改善目的の変更は行っていない。
+CURRENT_DEFECTと呼べるPIT/Locked Test Integrity上の問題は発見され
+なかった(Final pit-audit CLEAN)。
+
+**K. Tests / Regression**: Code変更が無いためTargeted Testも追加して
+いない。`ruff check`/`ruff format --check`/`mypy`(`core app.py
+scripts Japanese_Equity_Lab/lib`)いずれもclean、`pytest`(Lab+
+Screening Tool)986件全てpass。`git diff --stat -- core/ app.py
+tests/`で変更が無いことを確認(Screening Tool不変)。
+
+**L. Completion Gate判定**: 以下17項目全てをActual Repo Evidenceで
+確認し、全て満たすことを確認した: (1)実J-Quants Run実行済み、
+(2)PIT Universe使用、(3)実TOPIX Benchmark使用、(4)Preregistration
+Integrity維持(D0066のID事故もImmutability非侵害、C節・D0066参照)、
+(5)Train完了、(6)Validation完了、(7)Locked Test Unlock1回、
+(8)Locked Test Run1回、(9)Post-lock Retuning無し、(10)PIT Audit
+Pass(CLEAN)、(11)Skeptic Review完了(PASS_WITH_CONCERNS、Finding
+全て文書化対応済み)、(12)Negative Evidence保持、(13)Final
+Conclusion記録済み(PARTIALLY_SUPPORTED)、(14)Reproducibility
+Metadata十分(`strategy_hash`/`dataset_contract_hash`/`code_commit`
+記録済み、Raw Snapshot自体はGit管理外という既知の制約付き)、
+(15)Secret不在、(16)Forbidden Capability不在(既存REALVAL-007構造
+Testで保証継続)、(17)Regression Clean。
+
+**Phase5 v1.1のPhase Statusを`COMPLETE`へ昇格する。** ただしこれは
+「Pipelineが実データ上で正しく動作することが実証された」ことを
+指し、「H0001が有効な投資戦略である」ことを意味しない
+(`PARTIALLY_SUPPORTED`、G節参照)。H0002・Parameter Exploration・
+Phase5 v2・Fundamentals/Positioning接続・D0057解決・Portfolio/
+Decision Engineのいずれもこのラウンドでは着手しない。
