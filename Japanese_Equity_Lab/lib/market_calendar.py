@@ -44,23 +44,6 @@ def session_close_at(session_date: date) -> datetime:
     return datetime.combine(session_date, market_close_time(session_date), tzinfo=JST)
 
 
-@dataclass(frozen=True)
-class SessionSchedule:
-    """ある取引日の始値・大引け時刻をまとめたもの。"""
-
-    session_date: date
-    open_at: datetime
-    close_at: datetime
-
-
-def session_schedule(session_date: date) -> SessionSchedule:
-    return SessionSchedule(
-        session_date=session_date,
-        open_at=session_open_at(session_date),
-        close_at=session_close_at(session_date),
-    )
-
-
 class TradingCalendarResolutionError(Exception):
     """取引日か否かをTrading Calendarデータで解決できない場合に送出する。
 

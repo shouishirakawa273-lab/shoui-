@@ -7046,3 +7046,74 @@ Testで保証継続)、(17)Regression Clean。
 (`PARTIALLY_SUPPORTED`、G節参照)。H0002・Parameter Exploration・
 Phase5 v2・Fundamentals/Positioning接続・D0057解決・Portfolio/
 Decision Engineのいずれもこのラウンドでは着手しない。
+
+## D0068 — Post-Phase5: Codex Audit Adoption & Safe Cleanup(SessionSchedule削除)
+
+外部のCodexによるIndependent Engineering Audit(Main Repositoryを
+Read-onlyで走査、`git archive HEAD`の隔離コピー上でCall Graph調査・
+削除実験・Test実行まで実施済み)をEvidence Inputとして受け取った。
+このRoundの方針: Codexの報告は鵜呑みにしないが、Repository全体を
+ゼロから再調査もしない — 提示されたExact Path/Symbol/Caller Search
+/Import Search/Test結果をSpot-checkし、矛盾が無ければそのまま採用
+判断へ進む(Heavy Investigation=Codex、Spot Verification+Architecture
+Judgment=Main Claude、という役割分担)。
+
+**採用した変更**: `lib/market_calendar.py`の`SessionSchedule`
+(dataclass)・`session_schedule()`(factory関数)を削除した。
+
+Spot-check(Codexの主張を独立に再確認、範囲を広げずに実施):
+Repository全体をExact Match検索した結果、両Symbolの出現は定義箇所
+(`market_calendar.py`)とDECISIONS.md本文中の1箇所(過去の設計経緯の
+説明文、コードではない)のみで、他の19ファイル(`lib.market_calendar`
+をImportする全ファイル、`test_market_calendar.py`含む)のいずれも
+この2 Symbolを一切参照していないことを確認した。動的Dispatch
+(`getattr`/`importlib`/`globals()[...]`等によるMarket Calendar経由の
+参照)・`__all__`によるRe-export・Star Importのいずれも無い。
+実際に使われているのは同モジュール内の独立した`session_open_at()`/
+`session_close_at()`(Phase5 v1.1 Real-Data Scriptが直接Import)で
+あり、これらは削除対象に含まれず無変更。Codexの「Isolated Copyで
+削除後もBaselineと同じPass数・Failure数」という主張は、このSession
+自身でも削除後に`13_tests/test_market_calendar.py`(10件)・Phase5
+関連Test(68件)・全Regression(986件、Claude標準環境)を実行し直接
+再確認した(986/986 pass、新規Failure無し)。
+
+**採用しなかった/据え置いたFinding**:
+
+- `core/cache.py`の`Cache.get_forecast`/`Cache.set_forecast`:
+  CodexはHigh ConfidenceでDELETE_CANDIDATEとしたが、`core/`/`app.py`/
+  root `tests/`はScreening Tool Protected Pathsであり、Complexity
+  Cleanupを理由にPolicyを解除しない。削除しない。Backlogへ
+  「Externally Unused Candidate(Codex確認済み、Protected Path
+  のため未着手)」として記録するに留める。
+- Catalog Invariant Testsのparameterization・Fixture Helperの統合:
+  CodexはSAFE_NOWとしたが、Test Case Identity/Failure Mode/Semantic
+  Coverageの完全維持をこのRound内で確認する時間的余裕が無く、少しでも
+  疑義があれば見送るという方針(§5)に従いこのRoundでは着手しない。
+  将来の専用Roundの候補として残す。
+- Phase5 Two-CLI Orchestration統合・`AppendOnlyJsonlStore`共通化・
+  Generic As-of Resolver・`BacktestEngine.run`/`compute_metrics`/
+  `jquants_lab_pipeline.run_pipeline`のRefactor・Evidence Path
+  統合・D0057解決・Phase4 Capability削除・Root Screening App
+  再構成: CodexもREFACTOR_AFTER_MORE_VALIDATIONまたはFuture
+  Capability扱いであり、このRoundでは一切着手しない(Large Refactor
+  禁止)。
+
+**Research-Safety Impact**: `PointInTimeRecord`/PIT Universe
+Semantics/`AsOfAdjustedPriceHistory`/Corporate Action PIT Semantics/
+Preregistration Immutability/Locked Test隔離/Experiment・Research
+Registry Semantics/Provenance/Reproducibility Hash/Append-only
+History/Negative Evidence/UNKNOWN・Fail-closed/Principle・Semantic・
+Adversarial Testsのいずれも変更していない(削除した2 Symbolは
+これらのいずれからも参照されていなかったことをSpot-checkで確認済み)。
+
+**Regression**: `ruff check`/`ruff format --check`/`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean、
+`pytest`(Lab+Screening Tool)986件全てpass(Claude標準環境、
+Codexの報告したWindows Baseline[978 pass/8 environment-caused
+failure]とは異なるが、新規Failureが無いことのみを確認基準とした
+— Codex Windows Baselineをこの環境のTruthとして採用し直すことは
+しない、§9)。`git diff --stat -- core/ app.py tests/`で変更が
+無いことを確認(Screening Tool不変)。
+
+Phase5 v2・H0002・Large Refactor・D0057解決・Phase4 Capability削除・
+Portfolio/Decision Engineのいずれもこのラウンドでは着手しない。
