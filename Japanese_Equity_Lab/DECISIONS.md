@@ -6361,3 +6361,45 @@ Guideを別途用意、D0063以降で言及予定)。
 `pytest`(Lab+Screening Tool)974件全てpass。
 `git diff --stat -- core/ app.py tests/`で変更が無いことを確認
 (Screening Tool不変)。
+
+## D0063 — Phase5 v1: Locked Test実行・Final Review・Closure
+
+D0062の続き。Locked Test split(`PREREG0001`の`locked_test_period`
+2026-05-05〜07-03)を`LockedTestGate`経由で一度だけUnlockし
+(`06_backtests/locked_test_audit.jsonl`、reason/actor記録)、一度だけ
+実行した(`BT_PHASE5_V1_H0001_SMOKE_V2_TEST`)。
+
+**Final pit-audit(post-Locked-Test)**: CLEAN。Unlock機構の正当性
+(単一Unlock Record・Gate Enforcement)、Split境界の正しさ(D0062で
+修正済みのBugが再発していないこと、`censored_count`の妥当性)、
+Feature/Target計算のPIT安全性(Locked Test開始前のPrice HistoryはLookback
+Warmupとして正当、Signal自体はLocked Test期間内のDecision Dateのみで
+生成)、Forbidden Data Capability不使用、Reproducibility Fingerprintの
+整合性(strategy_hashが全split共通=パラメータ不変の直接証拠)を確認した。
+
+**Final skeptic-review(post-Locked-Test)**: PASS_WITH_CONCERNS。
+MEDIUM(3 splitとも実質的に単一銘柄[9984]のみでのBacktestであることを
+Conclusionへ明記すべき)→`12_reports/experiment/BT_PHASE5_V1_H0001_
+SMOKE_V2_2026-08-19_report.md`と`H0001_...md`双方へ明記して対応。
+LOW(H0001.md自体に「投資判断のEvidenceではない」旨が無い)→H0001.mdへ
+追記して対応。Cherry-pick・Data Snooping・Benchmark誤認については
+Findingなし(3 splitとも一貫して`excess_return`が負・`win_rate=0.0`
+であり選択的な強調の余地が無いこと、Preregistrationが1版のみで
+`revise()`が無いこと、`allowed_adjustments`が一度も適用されていない
+ことを確認済み)。
+
+**Conclusion**: `INSUFFICIENT_EVIDENCE`(SUPPORTED/PARTIALLY_
+SUPPORTED/INCONCLUSIVE/CONTRADICTEDのいずれでもない)。Locked Test
+の`excess_return`はPreregistrationのFalsification Condition
+(`<=0`)を機械的に満たしたが、合成Fixtureデータかつ実質的に単一銘柄・
+3トレードのみという極小サンプルであるため、Short-term Reversal仮説
+そのものへのEvidenceとしては不十分、という誠実な結論とした
+(理由の詳細は上記Reportを参照)。実データでのLocked Test実行手順は
+`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`として別途用意した。
+
+**Closure**: `PHASE5_VALIDATION_ARCHITECTURE.md`(`lib/research/`の
+設計判断まとめ)を新規作成。Regression(`ruff`/`mypy`/`pytest`)は
+Completion Report側で最終確認する。Phase5 v1のScopeはこれで完了とし、
+Phase5 v2・Fundamentals/Positioning接続・News/Macro/Consensus使用・
+D0057解決・Portfolio/Decision Engine・自動売買のいずれもこのRoundでは
+着手しない(Phase5 v1 kickoff要件§73)。
