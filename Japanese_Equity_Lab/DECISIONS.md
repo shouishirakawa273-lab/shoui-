@@ -5850,3 +5850,132 @@ Backlogは同時に消化していない。
 Blocker/High Findingはいずれのpassでも無し。修正後、全Test(`13_tests/
 test_global_news_pit.py`は24件→29件、Lab全体は887件)を再実行し成功を
 確認した(`bash <このCommit>`)。
+
+---
+
+## D0060 — Phase4E-4: Consensus / Expectations Inputs Data Foundation(設計・実装、Adapter未実装)
+
+将来Expectations Engineに必要となる「その時点でProviderが観測していた
+Analyst Consensus/Estimate」を、PIT-safe/vintage-aware/source-aware/
+provenance-preserving/reproducibleな形で表現するData Foundationを新設
+した。**Beat/Miss・Surprise・Priced-in・Investment Conclusion・
+Expectations Engine本体・Backtest統合は一切実装していない**
+(Observationまで、Phase4E-4要件§1)。
+
+### Repository Reality Check(最重要の設計判断)
+
+`lib.evidence.model`(`RevisionHistory`/`SourceVersion`/
+`AvailabilityBasis`)・`lib.fundamentals.model`(`PeriodType`/
+`ConsolidationScope`)・`lib.sources.catalog`(`DataCapability.
+EXPECTATIONS`が既に存在)を先に確認し、Consensus専用のVersioning
+Frameworkを新設しない、という判断を最初に固定した(Phase4E-4要件§7)。
+新設したのは`StatisticType`/`ForecastHorizon`のみ——既存Capability群に
+相当する概念が存在しない、Consensus固有の区別軸である。
+
+`ConsolidationScope`/`PeriodType`はFundamentalsのModuleから直接Import
+して再利用する(独自の重複Enumを作らない)。`accounting_scope`は
+`ConsolidationScope | None`(Optional)として扱い、Fundamentals自身の
+Enumへ`UNKNOWN` Memberを追加する変更は一切行っていない(Fundamentalsの
+既存Behaviorへの影響ゼロ、既存Testも無変更のまま成功)。
+
+### Vintage / Forecast Evolution != Correction
+
+Vintage管理は`lib.evidence.model.RevisionHistory`/`SourceVersion`を
+そのまま再利用し(Fundamentals/Positioning/Macro/Global Marketと同一
+Primitive)、`lib.consensus.normalize.build_revision_histories()`は
+`is_correction`を常に`False`のまま構築する(Sourceが明示的に
+Correctionと述べない限り`True`へ変更しない、`lib.macro.normalize`/
+`lib.positioning.normalize`と同じEVIDENCE-003原則の踏襲)。
+
+### consensus_as_of の命名衝突回避
+
+Providerが返す"As of"値(`ConsensusRecord.provider_stated_as_of`)は、
+Snapshot計算時刻・Analyst Cutoff時刻・Website表示日等Source-specificな
+意味を持ち、統一的な`provider_available_at`の代用にならない
+(Phase4E-4要件§13)。Record Field名`provider_stated_as_of`とPIT View
+Function名`lib.consensus.view.consensus_as_of()`を意図的に区別する
+命名にし、混同を防いだ。`provider_stated_as_of`が`normalize.py`/
+`view.py`/`evidence.py`のいずれからも実際にAttribute Accessされない
+ことをAST走査で構造的に確認した(CONS-003)。
+
+### Fiscal Period Identity
+
+`period_type`(Fundamentals由来)・`target_period_start`/`target_
+period_end`(Explicit Period)・`provider_target_period_id`(Provider
+Native識別子)を優先Identityとし、`forecast_horizon`(Relative Label、
+新設)は補助情報に留める(Phase4E-4要件§17〜19)。`fiscal_year_end`を
+独立Fieldとして保持し、Calendar Yearとの混同を防ぐ(CONS-026)。
+
+### Source Candidate Research(data-source-researcher Agent、2026-08-19)
+
+LSEG/Refinitiv I/B/E/S・Bloomberg BEst・FactSet Estimates・S&P Capital
+IQ・Visible Alpha・QUICK・IFIS Japan・Nikkei NEEDS/Compass・Alpha
+Vantageを調査した。ほぼ全てが`EGRESS_BLOCKED`だったが、data-source-
+researcher Agentが2つの非公式Client Code(GitHub上、実際に読めた、
+`VERIFIED_SECONDARY`)を確認し、**Alpha Vantageの`EARNINGS_ESTIMATES`
+Endpointの存在自体が確認できなかった**(存在しない可能性が高いと
+判断し、Catalog登録を見送った)。
+
+**Wire Enterprise勢**(LSEG/Bloomberg/S&P Capital IQ/Visible Alpha)は
+Terminal/Platform契約前提のEnterprise専用と判断しCatalog未登録
+(個人ローカル実行という本Labの前提にそぐわない)。**QUICK Consensus**
+(Japan Coverage最強の主張、data-source-researcher推奨順位1位)・
+**FactSet Estimates PIT Consensus**(Timestamp Semantics最も具体的だが
+ENTERPRISE専用、Benchmark参照目的)・**IFIS Japan**(PIT根拠が他候補
+より弱いことを正直に開示)の3候補のみCatalogへ登録した。Nikkei Compass
+はService終了を確認し除外、Nikkei NEEDSはSell-side Consensus自体の
+存在が未確認のため登録見送り。詳細は`CONSENSUS_ARCHITECTURE.md`
+「Source Candidate Landscape」節参照。
+
+### Adapterは1件も実装しない(ユーザー要件§9に基づく正直なStatus)
+
+検索Snippetのみを根拠にAdapterを実装しない、というユーザー要件に従い、
+3候補全てを`implementation_status=NOT_IMPLEMENTED`のまま`lib.consensus.
+catalog`へ登録し、Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_
+VERIFICATION`を`known_limitations`へ明記した。
+
+### Company Guidance / Actual Boundary
+
+`ConsensusRecord`にはGuidance/Actual値を保持するFieldを一切持たない
+(`guidance_value`/`actual_value`/`actual_or_forecast`等はいずれも
+存在しない、CONS-012/CONS-013で構造的に確認)。Company GuidanceもActual
+Resultも既存`lib.fundamentals`側の責務であり、このModuleへ複製しない。
+
+### Tests(CONS-001〜030、実装からのコピーではなくPhase4E-4要件から導出)
+
+`13_tests/test_consensus_pit.py`(34件)・`test_consensus_catalog.py`
+(9件)、合計43件を新規追加。実Network接続無し、合成Record Dataのみ
+使用。以下3点をこのRound最初から反映した(前Round Reviewer Findingの
+予防的適用、詳細は`CONSENSUS_ARCHITECTURE.md`「Reviewer教訓の反映」
+節):
+
+1. 「Fieldが読まれていないこと」の確認はAST Attribute Access走査
+   (Phase4E-3 pit-auditor Findingの教訓)。
+2. 「Moduleをimportしていないこと」の確認はFully Qualified Path走査
+   (Phase4E-3 pit-auditor Finding、GNEWS-016検出漏れの教訓)。
+3. Forbidden Term Scanは、Module自身のDocstringが「〜を生成しない」と
+   説明するために使う語自体(例: "beat"という語が「Beat/Missを生成
+   しない」という説明文に含まれる)を誤検出しないよう、AST Docstring
+   除外Textで実施する——このRound自身の実装中に実際に遭遇し
+   (`lib.consensus.model`のDocstring)、その場で修正した。
+
+CONS-016(Historical API Response Is Not Historical Vintage)はAdapter
+自体が無く再現するExecution Pathが無いため、News/Global Market/Macroと
+同じくCode Testではなく`CONSENSUS_ARCHITECTURE.md`のKnown Limitation
+として文書化するに留めた。
+
+### Known Limitations
+
+- Adapterを1件も実装していない(3候補全て`NOT_IMPLEMENTED`、
+  Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`)。
+- QUICK/FactSet/IFISいずれも公式仕様をこのSessionから直接確認できて
+  いない(`EGRESS_BLOCKED`)。
+- QUICK Consensusが個人/自営業者でも契約可能なTierを持つかが最大の
+  未解決論点(次の最優先検証項目)。
+- `entity_id`(Canonical Entity Registry)へのMapping手法は未設計。
+- Individual Analyst Estimate(v1では扱わない、Phase4E-4要件§26)は
+  `ConsensusRecord`のField構成に含まれていない。
+- CONS-016はCode Testではなく文書上のKnown Limitationとして記録する
+  に留めた(Adapter未実装のため再現不能)。
+- `lib/consensus/catalog.py`の3 Descriptorは`SourceCatalog`への実際の
+  Wiring(Application起動時の一元登録)がまだ無い(既存の慣行のまま)。

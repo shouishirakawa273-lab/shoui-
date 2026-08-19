@@ -42,6 +42,10 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 27 | GDELT DOC 2.0 Timezone Documentation(UTC既定/DST関連)・License("Unrestricted use...without fee"主張)の一次文書確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 全情報がSEARCH-SNIPPET-DERIVED(UNVERIFIED)。News全文ではなくEvent-level Metadataの配信である点は確認済みだが、Timezone/License本文はこのSessionから未読(`EGRESS_BLOCKED`) | `GLOBAL_NEWS_ARCHITECTURE.md`、`lib/news/catalog.py`、DECISIONS.md D0059 |
 | 28 | SEC press release/litigation release RSS: Timezone表記("EST"年間固定Label疑義)・EDGAR Acceptance Datetime対Filing Dateの区別 | `NOT_IMPLEMENTED`(Adapter未着手) | 公式RSS Feedの存在はSnippetで示唆されたが未読。D0056で確認済みの`ZoneInfo("EST")`固定UTC-5問題と同型の懸念がSEC自身のDocumentationにも存在する可能性 | `GLOBAL_NEWS_ARCHITECTURE.md`、`lib/news/catalog.py`、DECISIONS.md D0059 |
 | 29 | Government RSS全般のPIT Risk実例(US Treasury 2021年RSS Replay Bug)の一般化・監視方針 | 未着手(参考事例として記録のみ) | US Treasury自体は候補として不採用だが、将来Government RSS Sourceを採用する際に同種のReplay/再配信Riskを検知する仕組みが必要になりうる | `GLOBAL_NEWS_ARCHITECTURE.md`、DECISIONS.md D0059 |
+| 30 | QUICK Consensus 個人向けTier確認 | `NOT_IMPLEMENTED`(Adapter未着手) | 個人/自営業者でも契約可能なTierを持つか未確認(Qr1 Personalに Consensus Dataが含まれるかも未確認)。data-source-researcher推奨順位1位のため最優先検証対象 | `CONSENSUS_ARCHITECTURE.md`、`lib/consensus/catalog.py`、DECISIONS.md D0060 |
+| 31 | FactSet Estimates PIT Consensus License/Timestamp仕様確認 | `NOT_IMPLEMENTED`(Adapter未着手) | Timestamp Semantics(Local Midnight基準のTimezone)・実際のPricing・個人向けTierの有無、いずれも未確認。ENTERPRISE専用と判断されるためBenchmark参照目的の優先度低 | 同上 |
+| 32 | IFIS Japan Bulk Data Service仕様・個人向けTier確認 | `NOT_IMPLEMENTED`(Adapter未着手) | Wire Schema・API有無(Bulk/File配信のみの可能性)・License/Redistribution Terms・個人向けTierの有無、いずれも未確認。PIT/Vintage主張自体が他候補より弱い | 同上 |
+| 33 | Consensus `entity_id`(Canonical Entity Registry)へのMapping手法設計 | 未着手 | Provider固有Symbol/Ticker/企業IDをEntity Registryへ安全にMapping する手法が未設計(実Adapter実装時の課題) | `CONSENSUS_ARCHITECTURE.md`、DECISIONS.md D0060 |
 
 ## 運用ルール
 
