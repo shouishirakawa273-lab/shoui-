@@ -6110,11 +6110,16 @@ Reconstructionはできない」とDocstring自身が明記している(実デ�
 接続済みであることと、PIT-safeにBacktestで使えることは別軸)。
 
 READY_FOR_PHASE5: J-Quants Price、PIT Universe(いずれもPhase5対象外の
-既存Primitiveだが参考として記録)。READY_WITH_RESTRICTIONS:
-Fundamentals(実データ4銘柄Validated、ただしBacktest未配線)、
-Positioning price_derived_liquidity(上流Real、自身はFixture
-Validated)。NOT_READY_FOR_PHASE5: EDINET(PIT不可)・TDnet・Company
-IR・Positioning需給4候補・Japan Macro・Global Market。
+既存Primitiveだが参考として記録)。READY_WITH_RESTRICTIONS: この
+Labelは単一の均質なTierではない(skeptic-reviewer Finding、下記
+Reviewer Pass参照)——Fundamentals(`WIRING_UNDESIGNED`: 実データ4銘柄
+Validated済みだが、Backtest Signal Loopへの接続点自体が`BacktestEngine.
+run()`にまだ存在せず、検証以前に新規設計が必要)、Positioning
+price_derived_liquidity(`VALIDATION_PENDING`: 上流Price BarはReal
+Data Validated、既にCONNECTED配線済みで残るのはReal-data End-to-End
+検証のみ)——両者の残作業は性質が異なり同程度に「Phase5で使える」
+わけではないことを明示する。NOT_READY_FOR_PHASE5: EDINET(PIT不可)・
+TDnet・Company IR・Positioning需給4候補・Japan Macro・Global Market。
 NOT_RELEVANT_TO_PHASE5_V1: Japan News・Global News・Consensus
 (Scope外であって禁止ではない、§45)。
 
@@ -6193,3 +6198,48 @@ PIT-safe Dataset Contractの明文化・Price+PIT Universeのみでの単純な
 仮説の一気通貫Backtest・Train/Validation/Locked Test分割の`Experiment
 Registry`上での表現設計・Fundamentals新規配線設計、の4項目を次Round
 の課題として提案した(`PHASE5_READINESS.md` N節)。今回は実装しない。
+
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `2 FINDINGS(highest severity: LOW)`。この監査は
+   Claims-Verificationとして実施(A〜I節の各主張を実Codeへ直接照合)、
+   Main Claude自身も独立に`git diff --stat ba8d33b..866feca -- core/
+   app.py tests/ scripts/`を実行しProtected Path無変更を再確認した
+   (pit-auditor自身はBash Tool制約でこの点を検証できなかったため)。
+   - **[LOW、採用・修正]** Section Aの`scripts/jquants_lab_pipeline.py`
+     Import一覧が「のみ」と主張しつつ、実際には`lib.data_sources.
+     base/convert`・`lib.market_calendar`・`lib.registry.provenance`・
+     `lib.reproducibility`・`lib.schemas.experiment/hypothesis`・
+     `lib.snapshot`・`lib.strategies.fixed_pipeline_validation`を省略
+     していたことを実際にFileを読んで確認した。完全なImport一覧へ
+     修正し、重要なのは列挙の完全性ではなくPhase4 Capability/Evidence
+     Moduleが一切含まれないことである旨を明記した。
+   - **[LOW、採用・修正]** Section CのBacklog #26行が「E節で個別判定」
+     と誤って参照していた(正しくはF節)ことを確認し修正した。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。1件のHIGH・1件のMEDIUM
+   を独立にDocument/実Code両方を読んで再確認した:
+   - **[HIGH、採用・修正]** `READY_WITH_RESTRICTIONS`という単一Label
+     が、性質の全く異なる2種類の残作業(Fundamentals=Backtest接続点
+     自体が未設計、Positioning=既にConnected配線済みで検証のみ残る)
+     を同一Tierに見せてしまうという指摘を、Document自身のSection A/
+     K/Nの記述と突き合わせて確認した。B-1表のLabelへ
+     `(WIRING_UNDESIGNED)`/`(VALIDATION_PENDING)`のSub-tagを付与し、
+     両者が同程度にPhase5で使える状態ではないことを明記する注記を
+     追加した。DECISIONS.md本entryの該当箇所も同様に修正した。
+   - **[MEDIUM、採用・修正]** E節(RevisionHistory Tie-break)の
+     NON_BLOCKER判定が、§12 Aの問い(「発生し得るか」)に対し
+     「4銘柄で未観測」という弱い論拠を主根拠にしていた、という指摘を
+     確認した(より強い論拠は「そもそもPhase5 v1では自動Signal Loop
+     に未接続のため実行経路自体が存在しない」というA節/K節の結論から
+     直接導かれるもの)。E節の構成を、より強い論拠を主根拠として先に
+     示す形へ差し替え、「4銘柄で未観測」は補助的根拠かつ小標本である
+     旨を明記する形へ修正した。将来Fundamentals配線設計時にこの判定を
+     無条件に引き継がず再評価すべき旨もN節item 4へ追記した。
+
+Blocker/Highはいずれのpassでも重大な事実誤認ではなくDocumentation
+Calibration/Cross-reference/論拠強度の問題だった(判定結論自体
+[NON_BLOCKER×2、Blockerゼロ件]はいずれのReviewerもそのまま支持)。
+Code変更は無し(Docのみ)。修正後、`pytest`(Lab+Screening Tool合計
+933件)・`ruff check`・`ruff format --check`・`mypy`いずれもclean、
+`git diff --stat -- core/ app.py tests/ scripts/`で変更が無いことを
+再確認した。

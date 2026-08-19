@@ -79,11 +79,11 @@ Pipeline」は、Price(J-Quants OHLCV + Corporate Action As-of Adjustment)
 |---|---|---|---|---|---|---|
 | J-Quants Price(参考、Phase3A/3A.1/3A.2) | CONNECTED | REAL_DATA_VALIDATED | 未検証部分あり(HolDiv/AdjFactor公式仕様確定) | 実データ・実Backtest稼働中 | HIGH(`PointInTimeRecord`+As-of Adjustment) | READY_FOR_PHASE5 |
 | PIT Universe(参考、Phase3C) | CONNECTED | REAL_DATA_VALIDATED(PARTIAL Resolution明示) | J-Quants `/listed/info`のみ、Universe定義自体は自前 | 実データ・実Backtest稼働中 | HIGH | READY_FOR_PHASE5 |
-| Fundamentals | COMPLETE / CONNECTED | REAL_DATA_VALIDATED(4銘柄) | 一部未検証(Field名一部、DocType `_JP`意味等) | 実データ疎通・Parse確認済み | HIGH(構造は健全) だがBacktest未配線 | READY_WITH_RESTRICTIONS |
+| Fundamentals | COMPLETE / CONNECTED | REAL_DATA_VALIDATED(4銘柄) | 一部未検証(Field名一部、DocType `_JP`意味等) | 実データ疎通・Parse確認済み | HIGH(構造は健全) だがBacktest未配線 | READY_WITH_RESTRICTIONS(WIRING_UNDESIGNED) |
 | EDINET | COMPLETE(Raw Fetch)/ CONNECTED | REAL_DATA_VALIDATED(Raw Fetch/ZIP) だが**PIT不可** | 一部未検証(Type2-5等) | 実データ疎通確認済み | **NONE**(`pit_available=False`固定、Historical PIT Reconstruction不可能とDocstringが明記) | NOT_READY_FOR_PHASE5 |
 | TDnet | NOT_IMPLEMENTED(Code Complete、真のValidation未実施) | SPEC_UNVERIFIED(`EXTERNAL_OFFICIAL_SPEC_VERIFICATION`はClaude自身の一次確認ではない) | 未検証(第三者申告のみ) | 未接続(Add-on契約要) | 該当なし(`pit_available=False`) | NOT_READY_FOR_PHASE5 |
 | Company IR | SKELETON | SPEC_UNVERIFIED(`EGRESS_BLOCKED`終始) | 未検証(個別企業ごとに異なる) | 未接続 | 該当なし(`pit_available=False`固定) | NOT_READY_FOR_PHASE5 |
-| Positioning(price_derived) | CONNECTED | FIXTURE_VALIDATED(合成Barのみ、上流Price自体はREAL_DATA_VALIDATED) | 該当なし(Network I/O無し、既存Price由来) | 上流REAL/自身FIXTURE | MEDIUM-HIGH | READY_WITH_RESTRICTIONS |
+| Positioning(price_derived) | CONNECTED | FIXTURE_VALIDATED(合成Barのみ、上流Price自体はREAL_DATA_VALIDATED) | 該当なし(Network I/O無し、既存Price由来) | 上流REAL/自身FIXTURE | MEDIUM-HIGH | READY_WITH_RESTRICTIONS(VALIDATION_PENDING) |
 | Positioning(margin/short-ratio等4候補) | NOT_IMPLEMENTED | SPEC_UNVERIFIED | 未検証 | 未接続 | 該当なし | NOT_READY_FOR_PHASE5 |
 | Japan Macro | NOT_IMPLEMENTED | SPEC_UNVERIFIED(`EGRESS_BLOCKED`) | 未検証 | 未接続 | 該当なし | NOT_READY_FOR_PHASE5 |
 | Global Market | NOT_IMPLEMENTED | SPEC_UNVERIFIED(`EGRESS_BLOCKED`) | 未検証 | 未接続 | 該当なし | NOT_READY_FOR_PHASE5 |
@@ -96,6 +96,19 @@ Scope外」という位置付けのため`NOT_RELEVANT_TO_PHASE5_V1`とした(§
 原則、将来Validation完了後にFeature化しうる)。Japan Macro/Global Market
 は将来Phase5 v2以降でMarket Context Featureとして使う可能性が具体的に
 あるため`NOT_READY_FOR_PHASE5`(現時点で使用禁止、将来有望)とした。
+
+**`READY_WITH_RESTRICTIONS`は単一の均質なTierではない(skeptic-reviewer
+Finding、Phase4 Audit)**: Fundamentals(`WIRING_UNDESIGNED`)と
+Positioning price_derived(`VALIDATION_PENDING`)を同じLabelでまとめると、
+両者が同程度に「あと少しでPhase5で使える」状態であるかのように読めて
+しまうが、実際の残作業の性質は全く異なる。Positioningは「既に`BacktestEngine`
+配線と同型のPrice Bar経路上でCONNECTED、残るのはReal-data End-to-End
+Validation(Backlog #10)という検証Taskのみ」。Fundamentalsは
+「`BacktestEngine.run()`のSignature自体にまだ存在しない新規接続点を
+設計・実装する必要があり(N節item 4、次Roundの独立したDesign
+Decision)、検証以前に設計そのものが未着手」。この非対称性を見落とさない
+よう、B-1表ではLabelへ`(WIRING_UNDESIGNED)`/`(VALIDATION_PENDING)`の
+Sub-tagを付与した。
 
 ### B-2. 詳細(Capabilityごと)
 
@@ -257,19 +270,37 @@ Backlog #21はOPENのまま維持する(`VALIDATION_BACKLOG.md`は変更しな�
 
 **判定: NON_BLOCKER**
 
-判定基準(§12 A〜D):
+判定基準(§12 A〜D)。**最も強い根拠から先に示す(skeptic-reviewer
+Finding、Phase4 Audit: 当初「4銘柄で未発生」という Absence-of-
+Observation Argumentを主根拠にしていたが、これは「発生し得るか
+(Could occur)」という§12 Aの問い自体には弱い回答であり、より強く
+根拠のある「そもそもPhase5 v1では起動されない」という理由を主根拠へ
+差し替えた)**:
 
-- A. Phase5 v1 Datasetで実際に発生し得るか: Phase5 v1候補
-  (Fundamentals/Positioning price_derived)いずれも、同一`series_id`
-  へ同一`available_at`を持つ複数`SourceVersion`が実データで観測された
+- **主根拠(A節/K節の結論から直接導かれる)**: Fundamentals/Positioning
+  いずれも、A節・K節で確認した通りPhase5 v1では`BacktestEngine`の
+  自動化されたSignal評価Loopへ一切配線されない(Fundamentalsは
+  `WIRING_UNDESIGNED`、Positioningは`VALIDATION_PENDING`だが両者とも
+  自動Signal Loop未接続)。したがって`RevisionHistory.as_of()`の
+  Tie-break Behaviorが実際にBacktest判断へ影響する実行経路自体が
+  Phase5 v1には存在せず、規模に関わらずこのRoundでは発火しえない。
+- A. (補助的根拠)Phase5 v1候補で実際に発生し得るか: 同一`series_id`へ
+  同一`available_at`を持つ複数`SourceVersion`が実データで観測された
   実績は無い(Fundamentals 4銘柄Real Data Validationでも未発生)。
+  **ただしこれはn=4という小標本での非観測に過ぎず、将来Fundamentals
+  Coverageが拡大した場合の発生確率を強く保証するものではない**——
+  主根拠(Backtest未接続そのもの)ほど強い論拠ではないため、補助的
+  根拠として位置付ける。
 - B. 発生した場合、結果が変わるか: 理論上は変わりうる(`max()`の仕様上
   最初の候補が勝つ、Pythonのsort安定性に依存)。
 - C. Provider-native orderingは存在するか: Fundamentals/Positioningの
   いずれも、Provider側の明示的なVersion順序Fieldを現在利用していない。
-- D. Phase5 Blockerか: **いいえ**——実際の発生実績が無く(A=いいえ)、
-  §34の「Concrete Failure Mode」要求を満たさない。「将来危険そう」
-  だけではBlockerにしないという§35原則にも合致する。
+- D. Phase5 Blockerか: **いいえ**——主根拠(Phase5 v1では実行経路自体が
+  存在しない)により§34の「Concrete Failure Mode」要求を満たさない。
+  「将来危険そう」だけではBlockerにしないという§35原則にも合致する。
+  **ただしFundamentalsを将来Backtest Signal Loopへ配線する設計
+  (N節item 4)を行う際は、この判定を無条件に引き継がず、その時点の
+  実Coverage規模で再評価すること。**
 
 既存のMacro向けPinning Test(`test_tie_on_identical_available_at_is_
 input_order_dependent_known_limitation`)は維持する。今回、新たな
@@ -447,9 +478,12 @@ Consensus関連、計19件)はLONG_TERM_VALIDATIONまたはOPTIONAL。
 3. **Train/Validation/Locked Testの分割**を`ExperimentRegistry`上で
    どう表現するか(既存Schemaで足りるか、追加Fieldが要るか)の設計
    確認。
-4. Fundamentals(READY_WITH_RESTRICTIONS)を実際にSignalへ使いたい
-   場合の**新規配線設計**(`BacktestEngine.run()`のSignature拡張要否)
-   は、次Roundの独立したDesign Decisionとして扱う(v1.0必須ではない)。
+4. Fundamentals(READY_WITH_RESTRICTIONS(WIRING_UNDESIGNED))を実際に
+   Signalへ使いたい場合の**新規配線設計**(`BacktestEngine.run()`の
+   Signature拡張要否)は、次Roundの独立したDesign Decisionとして扱う
+   (v1.0必須ではない)。この設計に着手する際は、E節の主根拠(Phase5
+   v1では未接続のためTie-break Blockerではない)がその時点でも成立
+   するかを実Coverage規模に基づき再評価すること。
 
 Phase5 v1で使わないCapability(EDINET/TDnet/Company IR/Positioning
 需給4候補/Macro/Global Market/News/Consensus)は「Phase4失敗」とは
