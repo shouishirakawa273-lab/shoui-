@@ -27,11 +27,16 @@ REAL DATA CONNECTED   != PIT-SAFE USABLE   ← 今回のAuditで新たに顕在�
 
 - `scripts/jquants_lab_pipeline.py`(Repo Root、`Japanese_Equity_Lab/`
   ではない)が実在し、`sys.path`へ`Japanese_Equity_Lab`を挿入した上で
-  `lib.backtest.engine.BacktestEngine`・`lib.backtest.price_history.
-  AsOfAdjustedPriceHistory`・`lib.data_sources.{jquants,local_snapshot,
-  fixture}`・`lib.universe.ListingBasedUniverseProvider`・`lib.schemas.
-  price_data.apply_split_adjustments`・`lib.registry.experiment_
-  registry.ExperimentRegistry`のみをImportする。
+  `lib.backtest.{engine,price_history}`・`lib.data_sources.*`・
+  `lib.universe`・`lib.schemas.{price_data,experiment,hypothesis}`・
+  `lib.registry.*`・`lib.reproducibility`・`lib.snapshot`・`lib.
+  strategies.fixed_pipeline_validation`・`lib.market_calendar`をImport
+  する(pit-auditor Finding、Phase4Audit: 当初の記述は一部Moduleを
+  省略した不完全な列挙だった)。**重要なのは列挙の完全性ではなく**、
+  この全Import一覧のいずれにも`lib.fundamentals`/`lib.disclosures`/
+  `lib.positioning`/`lib.macro`/`lib.global_market`/`lib.news`/
+  `lib.consensus`/`lib.evidence.*`のいずれも一切含まれないこと
+  (Grep・Function内部のLate Import含め全数確認済み)。
 - **`lib.fundamentals`/`lib.disclosures`/`lib.positioning`/`lib.macro`/
   `lib.global_market`/`lib.news`/`lib.consensus`/`lib.evidence.*`の
   いずれも、この実Pipeline Scriptから一切importされていない**(Grep
@@ -213,7 +218,7 @@ Scope外」という位置付けのため`NOT_RELEVANT_TO_PHASE5_V1`とした(§
 | 16〜20 | Global Market(FRED等)5候補 | LONG_TERM_VALIDATION |
 | 21 | D0057 Evidence path vs as_of path(Backtest System Bの正) | **BLOCKS_PHASE5 as designed** ではなく、D節で個別判定(NON_BLOCKER、条件付き) |
 | 22〜25 | Japan News候補・BOJ重複 | OPTIONAL(Phase5 v1 Scope外) |
-| 26 | NewsArticleRecord ↔ NewsEvent reconciliation | OPTIONAL、E節で個別判定 |
+| 26 | NewsArticleRecord ↔ NewsEvent reconciliation | OPTIONAL、F節で個別判定 |
 | 27〜29 | Global News候補 | OPTIONAL(Phase5 v1 Scope外) |
 | 30〜33 | Consensus候補・entity_id Mapping | OPTIONAL(Phase5 v1 Scope外) |
 
