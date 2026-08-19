@@ -93,6 +93,21 @@ Providerが明示しない場合は`None`のまま(「Consolidatedとして扱�
 しまう」誤りを防ぐ、Phase4E-4要件§27「UNKNOWN Accounting Scope Is Not
 Consolidated」)。
 
+## adjustment_status(自由記述、専用Enumを作らない理由、skeptic-reviewer Finding反映)
+
+`adjustment_status: str | None`(Phase4E-4要件§22「reported/adjusted/
+normalized」候補)は自由記述Fieldとして保持する。`lib.global_market.
+model.AdjustmentStatus`(ADJUSTED/UNADJUSTED/PROVIDER_TRANSFORMED)は
+一見同じ概念に見えるが、実際にはIndex/Price系列の補正(配当込み/含まず
+等)を指す別概念であり、Consensus Estimateの「Reported値か、One-time
+Item等を除いたAdjusted/Normalized値か」という区別とは意味が異なる
+——名称が似ているという理由だけでGlobal MarketのEnumを転用すると、
+異なる概念に同じ型を被せる誤りになる(skeptic-reviewer Finding、
+Phase4E-4: 当初この判断・理由をDocstringへ明記していなかった)。Provider
+がこの区別を明示しない場合が大半であるため、専用Enumを新設して構造を
+強制するより、確認できた場合のみ生の記述を保持する設計とした——将来
+複数Providerで共通の区別軸が確認できた場合、専用Enum化を再検討する。
+
 ## Statistic Type(Phase4E-4要件§23)
 
 Consensus値は単一Fieldへ潰さない。MEAN/MEDIAN/HIGH/LOW/STANDARD_
@@ -171,11 +186,20 @@ class ConsensusRecord:
     entity x metric x target period x statistic_type x source x vintage)。
 
     `series_id`はRevision/Vintage管理(`lib.evidence.model.RevisionHistory`)
-    のGrouping Keyであり、entity・metric_type・target period・
-    statistic_type・accounting_scope・currencyのうち区別すべき軸を全て
-    一意に含める責務を呼び出し側/将来Normalizerが負う(Fundamentals/
-    Macro/Global Marketと同じ責務分担、Current FY MeanとNext FY Meanを
-    同一Seriesへ潰さないこと、Phase4E-4要件§38)。
+    のGrouping Keyであり、**`source_id`(Provider)**・entity・
+    metric_type・target period・statistic_type・accounting_scope・
+    currencyのうち区別すべき軸を全て一意に含める責務を呼び出し側/将来
+    Normalizerが負う(Fundamentals/Macro/Global Marketと同じ責務分担、
+    Current FY MeanとNext FY Meanを同一Seriesへ潰さないこと、Phase4E-4
+    要件§38)。**`source_id`を明示するのは、このModule最大の原則
+    「Provider AのMean != Provider BのMean」(Consensus != Truth、
+    Phase4E-4要件§6/§29)を`series_id`構築の場面でも徹底するため**
+    ——`lib.macro.model.MacroRecord`のDocstringが`series_id`構築責務の
+    筆頭にSourceを挙げているのと同じ位置付けである(skeptic-reviewer
+    Finding、Phase4E-4: 当初この一覧からSourceが抜けており、Macroの
+    前例より弱い記述になっていた)。異なるProviderのVintageを誤って
+    同一Seriesへ混ぜるとConsensus != Truthという最重要原則そのものを
+    破ることになる(CONS-029/030、`13_tests/test_consensus_pit.py`参照)。
     """
 
     record_id: str

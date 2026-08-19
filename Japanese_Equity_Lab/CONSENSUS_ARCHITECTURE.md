@@ -115,11 +115,17 @@ Consensus値は単一Fieldへ潰さない。`statistic_type`にDefault値を持�
 
 ## Series Identity(呼び出し側の責務、既存Common Coreと同じ設計)
 
-`series_id`はentity・metric_type・target period・statistic_type・
-accounting_scope・currencyのうち区別すべき軸を全て一意に含める責務を
-呼び出し側/将来Normalizerが負う(Fundamentals/Macro/Global Marketと
-同じ責務分担)。Current FY MeanとNext FY Meanを同一Seriesへ潰さない
-(CONS-022)。Mean SeriesとMedian Seriesを同一Seriesへ潰さない
+`series_id`は**`source_id`(Provider)**・entity・metric_type・target
+period・statistic_type・accounting_scope・currencyのうち区別すべき軸を
+全て一意に含める責務を呼び出し側/将来Normalizerが負う(Fundamentals/
+Macro/Global Marketと同じ責務分担)。`source_id`を明示的に一覧の先頭へ
+含めているのは、このRound最大の原則「Provider AのMean != Provider Bの
+Mean」(Consensus != Truth)を`series_id`構築の場面でも徹底するためで
+あり、`lib.macro.model.MacroRecord`のDocstringがSourceを責務一覧の
+筆頭に挙げているのと同じ位置付けである(skeptic-reviewer Finding、
+Phase4E-4: 当初の一覧からSourceが抜けており、Macroの前例より弱い記述に
+なっていたため訂正した)。Current FY MeanとNext FY Meanを同一Seriesへ
+潰さない(CONS-022)。Mean SeriesとMedian Seriesを同一Seriesへ潰さない
 (CONS-021)。**既知のCommon-Core Limitation(RevisionHistory
 Tie-break)**: 同一`available_at`を持つ複数`SourceVersion`が存在する
 場合の順序はInput Order依存であり(Positioning/Macro/Global Marketと
@@ -128,12 +134,19 @@ Tie-break)**: 同一`available_at`を持つ複数`SourceVersion`が存在する
 
 ## Company Guidance / Actual Boundary(Phase4E-4要件§28〜29)
 
-`ConsensusRecord`にはGuidance/Actual値を保持するFieldを一切持たない
-(`guidance_value`/`actual_value`/`actual_or_forecast`等はいずれも
-存在しない、CONS-012/CONS-013で構造的に確認)。Company GuidanceもActual
-Resultも既存`lib.fundamentals`側の責務であり、このModuleへ複製しない。
-将来Join可能なIdentity(entity/metric/target period/accounting scope/
-unit/currency)だけを揃える。
+`ConsensusRecord`にはGuidance/Actual専用に見えるField名(`guidance_
+value`/`actual_value`/`actual_or_forecast`等)を一切持たない
+(CONS-012/CONS-013で確認)。ただしこれは「その名前のFieldが無い」こと
+の確認に限られ、`value: Decimal | None`自体はFundamentalsの`value`
+Fieldと同型のGeneric Numeric Fieldであり、Guidance/Actual/Consensus
+分離は最終的にはこのModuleをどう呼び出すか(呼び出し側/将来Adapterの
+責務)というModule境界のConvention Levelで担保される(skeptic-reviewer
+Finding、Phase4E-4: CONS-029/030が既に採用している「Mechanical
+Pinning、意味論的証明ではない」という自己限定的な説明を、この確認にも
+一貫して適用した)。Company GuidanceもActual Resultも既存`lib.
+fundamentals`側の責務であり、このModuleへ複製しない。将来Join可能な
+Identity(entity/metric/target period/accounting scope/unit/currency)
+だけを揃える。
 
 ## No Surprise / No Priced-in / No BUY-SELL Inference(Phase4E-4要件§30〜31)
 
@@ -175,19 +188,34 @@ Vantageの`EARNINGS_ESTIMATES`Endpointの存在自体が確認できなかった
 
 **分類結果**:
 
-- **Wire Enterprise勢(LSEG/Refinitiv I/B/E/S・Bloomberg BEst・S&P
-  Capital IQ・Visible Alpha)**: いずれもTerminal/Platform契約前提の
-  Enterprise専用と判断され、個人がローカル実行するという本Labの前提
-  (ルートCLAUDE.md)にそぐわないためCatalog未登録。LSEG/Bloombergは
-  Point-in-Time Consensus主張自体はあったが(「Historic Estimates
-  Snapshot」「Point-in-Time Historical」)、詳細なTimestamp Semantics
-  は確認できなかった。S&P Capital IQは"since August 2016"という
-  Change-Capture開始時期の主張があり、それ以前のVintageは再現不能な
-  可能性がある。
-- **FactSet Estimates PIT Consensus**: Timestamp Semantics(Local
-  Midnight Snapshot Cutoff)について最も具体的な記述が見つかったが、
-  確認できた範囲ではENTERPRISE専用。将来Timestamp Semantics設計の
-  Benchmark参照目的でCatalogへ登録した。
+- **Wire Enterprise勢(LSEG/Refinitiv I/B/E/S・Bloomberg BEst・
+  **FactSet Estimates PIT Consensus**・S&P Capital IQ・Visible
+  Alpha)**: いずれもTerminal/Platform契約前提のEnterprise専用と判断
+  され、個人がローカル実行するという本Labの前提(ルートCLAUDE.md)に
+  そぐわないためCatalog未登録(skeptic-reviewer Finding、Phase4E-4:
+  当初FactSetのみ「Benchmark参照目的」という別基準で例外的にCatalog
+  登録していたが、これは同じ理由[ENTERPRISE専用]で他4候補を除外して
+  いた基準と直接矛盾しており、Catalog自体の目的[実装候補の検索可能な
+  一覧、恒久的Documentation参照用ではない]とも合わないと判断し、他の
+  ENTERPRISE専用候補と同じ扱いへ統一した)。以下、参考情報として記録
+  する:
+  - LSEG/Bloombergは Point-in-Time Consensus主張自体はあったが
+    (「Historic Estimates Snapshot」「Point-in-Time Historical」)、
+    詳細なTimestamp Semanticsは確認できなかった。
+  - S&P Capital IQは"since August 2016"というChange-Capture開始時期の
+    主張があり、それ以前のVintageは再現不能な可能性がある。
+  - **FactSet Estimates PIT Consensus**は調査した全候補中、Timestamp
+    Semantics(「Local Midnight Snapshotで計算対象を確定、それ以降
+    入力されたデータは含まない」)について最も具体的な記述が見つかった
+    (SEARCH-SNIPPET-DERIVED、未読)。FactSet自身の記述でも「未確認の
+    状態で消えたBroker見積・QA訂正・Default Currency変更は反映され
+    ない」という明示的な除外事項があり、完全な過去再現ではないことも
+    正直に記録しておく。「Local Midnight」がどのTimezone基準か
+    (発行体所在地/取引所/FactSet自身のいずれか)は未確認。Japan
+    Coverageは東洋経済(Toyo Keizai)由来の可能性が示唆され、FactSet
+    自身のSell-side Panelとは別軸である可能性がある(未確認)。将来
+    Timestamp Semantics設計時の参照値として、このArchitecture Doc上
+    にのみ記録する(Catalogには登録しない)。
 - **QUICK Consensus**: Japan Coverage最強の主張(2005年以降の中小型株
   含む)、Point-in-Time Consensus主張あり、個人向け製品Line(Qr1
   Personal)の存在が示唆されたが、Consensus自体がそこに含まれるかは
@@ -202,7 +230,7 @@ Vantageの`EARNINGS_ESTIMATES`Endpointの存在自体が確認できなかった
   (存在しない可能性が高い)。登録見送り(存在未確認のEndpointを前提に
   したCatalog登録はしない、Phase4E-4要件§9)。
 
-いずれもCatalog登録した3候補全て`implementation_status=
+Catalog登録した2候補(QUICK/IFIS)全て`implementation_status=
 NOT_IMPLEMENTED`、Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_
 VERIFICATION`。
 
@@ -237,7 +265,7 @@ providers/`配下に閉じ込め、Common Core相当の`lib/consensus/model.py`/
 
 ## Validation Status(実装状況とは別軸)
 
-Consensus候補3件とも`implementation_status=NOT_IMPLEMENTED`、
+Consensus候補2件(QUICK/IFIS)とも`implementation_status=NOT_IMPLEMENTED`、
 Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`
 (`lib/consensus/catalog.py`の`known_limitations`へ自由記述)。
 

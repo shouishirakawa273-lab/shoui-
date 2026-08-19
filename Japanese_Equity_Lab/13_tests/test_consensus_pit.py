@@ -255,9 +255,12 @@ def test_cons004_unknown_basis_excluded_even_when_timestamp_itself_is_present() 
         provider_available_at=datetime(2026, 1, 1, tzinfo=UTC),
         provider_available_at_basis=AvailabilityBasis.UNKNOWN,
     )
-    histories = build_revision_histories(
-        [record], resolve_available_at=lambda r: (r.provider_available_at, r.provider_available_at_basis)
-    )
+
+    def resolver_with_present_timestamp(rec: ConsensusRecord) -> tuple[datetime, AvailabilityBasis]:
+        assert rec.provider_available_at is not None
+        return rec.provider_available_at, rec.provider_available_at_basis
+
+    histories = build_revision_histories([record], resolve_available_at=resolver_with_present_timestamp)
     result = consensus_as_of(histories, datetime(2030, 1, 1, tzinfo=UTC))
     assert result["S1"] is None
 
@@ -363,6 +366,17 @@ def test_cons011_current_fy_and_next_fy_are_distinguishable_via_forecast_horizon
 
 
 def test_cons012_cons013_consensus_record_has_no_guidance_or_actual_value_field() -> None:
+    """このTestが実際に確認するのは「Guidance/Actual専用に見えるField名
+    (`lib.fundamentals.model.ActualOrForecast`の実Field名`actual_or_
+    forecast`を含む)が存在しないこと」に限られる——`ConsensusRecord.
+    value: Decimal | None`自体はConsensus専用の値であることを型で強制
+    しているわけではなく(Fundamentalsの`value`Fieldと同型のGeneric
+    Numeric Field)、Guidance/Actual/Consensus分離は最終的にはこのModule
+    をどう呼び出すか(呼び出し側/将来Adapterの責務)というModule境界の
+    Convention Levelで担保される(skeptic-reviewer Finding、Phase4E-4:
+    CONS-029/030が既に採用している「Mechanical Pinning、意味論的証明
+    ではない」という同じ自己限定的な説明を、このTestにも一貫して適用
+    する)。"""
     import dataclasses
 
     field_names = {f.name for f in dataclasses.fields(ConsensusRecord)}
@@ -442,6 +456,35 @@ def test_cons018_unit_and_currency_round_trip_unchanged() -> None:
     )
     assert record.unit == "JPY"
     assert record.currency == "JPY"
+
+
+# --- adjustment_statusのRound-trip確認(skeptic-reviewer Finding、Phase4E-4) ---
+# adjustment_statusはCONS-001~030のいずれからも一切構築されておらず、
+# 他のOptional Fieldと異なりTest Coverageが皆無だった(CLAUDE.mdの
+# 「新機能には必ずTestを追加する」原則にも反する)。
+
+
+def test_adjustment_status_is_stored_as_given_not_inferred() -> None:
+    record = ConsensusRecord(
+        record_id="V1",
+        series_id="S1",
+        source_id="TEST_PROVIDER",
+        source_entity_identifier="7203",
+        metric_type="EPS",
+        statistic_type=StatisticType.MEAN,
+        raw_value="105",
+        value=Decimal("105"),
+        value_availability=ValueAvailability.PRESENT,
+        retrieved_at=RETRIEVED_AT,
+        normalizer_version="TEST_V1",
+        adjustment_status="adjusted",
+    )
+    assert record.adjustment_status == "adjusted"
+
+
+def test_adjustment_status_defaults_to_none_when_not_supplied() -> None:
+    record = _record(record_id="V1")
+    assert record.adjustment_status is None
 
 
 # --- CONS-019: Determinism ---

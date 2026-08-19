@@ -16,34 +16,40 @@ Egressが全ての候補Provider Domainへ一貫してBlockされており
 (UNVERIFIED)に留まった。検索Snippetのみを根拠にAdapterを実装しない
 (Phase4E-4要件§9)。
 
-## このRoundで登録した候補(3件)
+## このRoundで登録した候補(2件)
 
 Historical Vintage支持の明確さ・Japan Coverage・Timestamp Semanticsの
-明確さを基準に(Phase4E-4要件§56)、以下3件のみ登録する:
+明確さを基準に(Phase4E-4要件§56)、Catalogが本来意図する「実装候補の
+検索可能な一覧」(`lib.sources.catalog`モジュールDocstring参照)という
+目的に沿う、個人ローカル実行という本LabのCLAUDE.md前提のもとで将来
+接続しうる候補のみを登録する:
 
 - `quick_consensus_japan`: data-source-researcher推奨順位1位(Japan
   Coverage最強の主張、Point-in-Time Consensus主張あり、個人向け製品Line
   [Qr1 Personal]の存在が示唆されるがConsensus自体がそこに含まれるかは
   未確認)。
-- `factset_estimates_pit_consensus`: 調査した全候補中、Timestamp
-  Semantics(Local Midnight Snapshot Cutoff)の記述が最も具体的だったが、
-  確認できた範囲では明確にENTERPRISE専用(個人ローカル実行という本Lab
-  の前提にそぐわない)。参考Benchmarkとして記録する。
 - `ifis_japan_consensus`: Japan-domesticかつJP-GAAP特有の経常利益等を
   含む候補だが、PIT/Vintage主張自体が他候補より弱い(見つからなかった)。
 
-**登録しなかった候補**: LSEG/Refinitiv I/B/E/S・Bloomberg BEst・S&P
-Capital IQ・Visible Alphaはいずれも明確にENTERPRISE専用と判断され
-(Terminal/Platform契約前提)、個別Catalog Entryとしては登録せず
-`CONSENSUS_ARCHITECTURE.md`のSource Landscape節で記録するに留める。
-Nikkei CompassはService終了(Discontinued)が確認されたため候補から除外。
-Nikkei NEEDSはPIT主張自体が見つからず、そもそも実際のSell-side
-Consensus Estimateを持つか(Derived Multipleのみの可能性)不明のため
-登録を見送った。Alpha Vantageの`EARNINGS_ESTIMATES`Endpointはdata-
-source-researcher Agentが2つの独立したClient Code(1つはAlpha Vantage
-公式Organizationの`alphavantage_mcp` README)を実際に読んだ結果、その
-存在自体を確認できなかった(存在しない可能性が高い)——存在未確認の
-Endpointを前提にしたCatalog登録はしない。
+**登録しなかった候補**: LSEG/Refinitiv I/B/E/S・Bloomberg BEst・
+**FactSet Estimates Point-in-Time Consensus**・S&P Capital IQ・Visible
+Alphaはいずれも明確にENTERPRISE専用と判断され(Terminal/Platform契約
+前提)、個別Catalog Entryとしては登録せず`CONSENSUS_ARCHITECTURE.md`の
+Source Landscape節で記録するに留める(skeptic-reviewer Finding、
+Phase4E-4: FactSetのみ「Benchmark参照目的」という別基準でCatalog登録
+していたが、これは他のENTERPRISE専用候補への除外基準と矛盾しており、
+Catalog自体の目的[実装候補の一覧、恒久的Documentation参照用ではない]
+とも合わない判断だったため、他のENTERPRISE専用候補と同じ扱いへ統一
+した——FactSetのTimestamp Semantics記述自体の価値は失われておらず、
+`CONSENSUS_ARCHITECTURE.md`のSource Candidate Landscape節でより詳細に
+記録している)。Nikkei CompassはService終了(Discontinued)が確認された
+ため候補から除外。Nikkei NEEDSはPIT主張自体が見つからず、そもそも実際
+のSell-side Consensus Estimateを持つか(Derived Multipleのみの可能性)
+不明のため登録を見送った。Alpha Vantageの`EARNINGS_ESTIMATES`Endpoint
+はdata-source-researcher Agentが2つの独立したClient Code(1つはAlpha
+Vantage公式Organizationの`alphavantage_mcp` README)を実際に読んだ結果、
+その存在自体を確認できなかった(存在しない可能性が高い)——存在未確認
+のEndpointを前提にしたCatalog登録はしない。
 """
 
 from __future__ import annotations
@@ -92,47 +98,6 @@ def build_quick_consensus_japan_dataset_descriptor() -> DatasetDescriptor:
     )
 
 
-def build_factset_estimates_pit_consensus_dataset_descriptor() -> DatasetDescriptor:
-    """FactSet Estimates Point-in-Time Consensus(FactSet Research
-    Systems)経由の候補。
-
-    **未実装(NOT_IMPLEMENTED)**。調査した全候補中、Timestamp Semantics
-    (「Local Midnight Snapshotで計算対象を確定、それ以降入力されたデータ
-    は含まない」)について最も具体的な記述が見つかった(ただしこの
-    Sessionから直接該当ページをWebFetchできず、WebSearch要約経由の
-    SEARCH-SNIPPET-DERIVED)。ただし確認できた範囲ではCapital IQ Pro等
-    と同じくENTERPRISE専用のInstitutional Subscription製品であり、個人
-    がローカル実行するという本LabのCLAUDE.md前提にそぐわない。Real-time
-    APIとしての実装ではなく、将来のTimestamp Semantics設計における
-    「良いPIT設計の実例」としてBenchmark参照する目的で登録する。Japan
-    Coverageは東洋経済(Toyo Keizai)由来の可能性が示唆され、FactSet自身
-    のSell-side Panelとは別軸である可能性がある(未確認)。
-    """
-    return DatasetDescriptor(
-        dataset_id="factset_estimates_pit_consensus",
-        source_id="factset",
-        capability=DataCapability.EXPECTATIONS,
-        authority_class=SourceAuthorityClass.VERIFIED_SECONDARY,
-        implementation_status=ImplementationStatus.NOT_IMPLEMENTED,
-        update_frequency="Daily(Local Midnight Snapshot Cutoffと示唆、未読)",
-        pit_available=False,
-        applicable_codes=None,
-        applicable_countries=("US", "JP"),
-        cost_or_plan_dependency="ENTERPRISE(Institutional Subscription、個人向けTierは無いと推定される)。",
-        applicable_sectors=(),
-        known_limitations=(
-            "ENTERPRISE専用と判断される(FactSet Estimates Report Builder APIの存在はFactSet自身の"
-            "Developer Catalog上で確認できたが、Auth方式・実際のPricing・個人向けTierの有無は未確認)。"
-            "「Local Midnight」がどのTimezone基準か(発行体所在地/取引所/FactSet自身のいずれか)未確認。"
-            "FactSet自身の記述でも「未確認の状態で消えたBroker見積・QA訂正・Default Currency変更は"
-            "反映されない」という明示的な除外事項があり、完全な過去再現ではないことを正直に開示する。"
-            "VALIDATION_STATUS=DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION、実装優先度は低い"
-            "(ENTERPRISE専用、Benchmark参照目的での登録)。"
-        ),
-        notes="Source Candidate Research: data-source-researcher Agent 2026-08-19、DECISIONS.md参照。",
-    )
-
-
 def build_ifis_japan_consensus_dataset_descriptor() -> DatasetDescriptor:
     """IFIS Japan(アイフィスジャパン)コンセンサス・データ・サービス経由の
     候補。
@@ -170,7 +135,6 @@ def build_ifis_japan_consensus_dataset_descriptor() -> DatasetDescriptor:
 
 
 __all__ = [
-    "build_factset_estimates_pit_consensus_dataset_descriptor",
     "build_ifis_japan_consensus_dataset_descriptor",
     "build_quick_consensus_japan_dataset_descriptor",
 ]

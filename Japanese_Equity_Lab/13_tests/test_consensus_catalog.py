@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 from lib.consensus.catalog import (
-    build_factset_estimates_pit_consensus_dataset_descriptor,
     build_ifis_japan_consensus_dataset_descriptor,
     build_quick_consensus_japan_dataset_descriptor,
 )
@@ -16,7 +15,6 @@ from lib.sources.catalog import DataCapability, ImplementationStatus, SourceCata
 
 _ALL_BUILDERS = (
     build_quick_consensus_japan_dataset_descriptor,
-    build_factset_estimates_pit_consensus_dataset_descriptor,
     build_ifis_japan_consensus_dataset_descriptor,
 )
 
@@ -24,12 +22,12 @@ _ALL_BUILDERS = (
 def test_all_consensus_datasets_register_without_duplicate_id_conflict() -> None:
     catalog = SourceCatalog([builder() for builder in _ALL_BUILDERS])
     found = catalog.find(capability=DataCapability.EXPECTATIONS)
-    assert len(found) == 3
+    assert len(found) == 2
 
 
 def test_all_consensus_candidates_are_not_implemented_and_not_pit_available() -> None:
     """未検証SourceをLIVE_VALIDATED/CONNECTEDと記録しない(Phase4E-4要件
-    §50)。このRoundはAdapterを1件も実装していないため、3件全て
+    §50)。このRoundはAdapterを1件も実装していないため、2件全て
     NOT_IMPLEMENTED。"""
     for builder in _ALL_BUILDERS:
         descriptor = builder()
@@ -62,12 +60,18 @@ def test_duplicate_registration_raises() -> None:
         catalog.register(build_quick_consensus_japan_dataset_descriptor())
 
 
-def test_factset_is_flagged_enterprise_cost_tier() -> None:
-    """ENTERPRISE専用と判断したSourceを、高品質だから実装優先とは自動判断
-    しない(Phase4E-4要件§10、Cost Reality)——`cost_or_plan_dependency`
-    にENTERPRISEである旨が明記されていることを直接確認する。"""
-    descriptor = build_factset_estimates_pit_consensus_dataset_descriptor()
-    assert "ENTERPRISE" in descriptor.cost_or_plan_dependency
+def test_no_registered_candidate_is_flagged_enterprise_only() -> None:
+    """ENTERPRISE専用と判断したSource(FactSet/LSEG/Bloomberg/S&P Capital
+    IQ/Visible Alpha)は、高品質・詳細なPIT設計であっても個人ローカル
+    実行という本Labの前提にそぐわないためCatalogへ登録しない(Phase4E-4
+    要件§10、Cost Reality、skeptic-reviewer Finding: FactSetのみ
+    「Benchmark参照目的」で例外的に登録していたが、他のENTERPRISE専用
+    候補への除外基準と矛盾していたため統一した)。登録された候補は
+    いずれも`cost_or_plan_dependency`にENTERPRISEという確定的な記述を
+    持たないことを直接確認する。"""
+    for builder in _ALL_BUILDERS:
+        descriptor = builder()
+        assert "ENTERPRISE" not in descriptor.cost_or_plan_dependency, descriptor.dataset_id
 
 
 def test_quick_consensus_is_the_top_ranked_japan_focused_candidate() -> None:

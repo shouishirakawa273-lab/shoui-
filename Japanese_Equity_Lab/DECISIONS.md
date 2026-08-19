@@ -5916,35 +5916,44 @@ researcher Agentが2つの非公式Client Code(GitHub上、実際に読めた、
 Endpointの存在自体が確認できなかった**(存在しない可能性が高いと
 判断し、Catalog登録を見送った)。
 
-**Wire Enterprise勢**(LSEG/Bloomberg/S&P Capital IQ/Visible Alpha)は
-Terminal/Platform契約前提のEnterprise専用と判断しCatalog未登録
-(個人ローカル実行という本Labの前提にそぐわない)。**QUICK Consensus**
-(Japan Coverage最強の主張、data-source-researcher推奨順位1位)・
-**FactSet Estimates PIT Consensus**(Timestamp Semantics最も具体的だが
-ENTERPRISE専用、Benchmark参照目的)・**IFIS Japan**(PIT根拠が他候補
-より弱いことを正直に開示)の3候補のみCatalogへ登録した。Nikkei Compass
-はService終了を確認し除外、Nikkei NEEDSはSell-side Consensus自体の
-存在が未確認のため登録見送り。詳細は`CONSENSUS_ARCHITECTURE.md`
-「Source Candidate Landscape」節参照。
+**Wire Enterprise勢**(LSEG/Bloomberg/**FactSet Estimates PIT
+Consensus**/S&P Capital IQ/Visible Alpha)はTerminal/Platform契約前提の
+Enterprise専用と判断しCatalog未登録(個人ローカル実行という本Labの
+前提にそぐわない)。当初FactSetのみ「Timestamp Semantics最も具体的
+だから」という理由でBenchmark参照目的の例外としてCatalog登録して
+いたが、skeptic-reviewer Findingで他4候補への除外基準(ENTERPRISE
+専用)と直接矛盾していることが指摘され、統一してCatalog未登録へ変更
+した(詳細情報は`CONSENSUS_ARCHITECTURE.md`のSource Landscape節に
+残す)。**QUICK Consensus**(Japan Coverage最強の主張、data-source-
+researcher推奨順位1位)・**IFIS Japan**(PIT根拠が他候補より弱いことを
+正直に開示)の2候補のみCatalogへ登録した。Nikkei CompassはService終了
+を確認し除外、Nikkei NEEDSはSell-side Consensus自体の存在が未確認の
+ため登録見送り。詳細は`CONSENSUS_ARCHITECTURE.md`「Source Candidate
+Landscape」節参照。
 
 ### Adapterは1件も実装しない(ユーザー要件§9に基づく正直なStatus)
 
 検索Snippetのみを根拠にAdapterを実装しない、というユーザー要件に従い、
-3候補全てを`implementation_status=NOT_IMPLEMENTED`のまま`lib.consensus.
+2候補全てを`implementation_status=NOT_IMPLEMENTED`のまま`lib.consensus.
 catalog`へ登録し、Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_
 VERIFICATION`を`known_limitations`へ明記した。
 
 ### Company Guidance / Actual Boundary
 
-`ConsensusRecord`にはGuidance/Actual値を保持するFieldを一切持たない
-(`guidance_value`/`actual_value`/`actual_or_forecast`等はいずれも
-存在しない、CONS-012/CONS-013で構造的に確認)。Company GuidanceもActual
+`ConsensusRecord`にはGuidance/Actual専用に見えるField名(`guidance_
+value`/`actual_value`/`actual_or_forecast`等)を一切持たない
+(CONS-012/CONS-013で確認)。ただしこれは特定Field名の不在確認に限られ、
+`value`Field自体はFundamentalsと同型のGeneric Numeric Fieldであり、
+分離の実効性はModule境界のConvention Levelで担保される旨をTest
+Docstring自身に明記した(skeptic-reviewer Finding、Phase4E-4:
+CONS-029/030が既に採用していた「Mechanical Pinning」という自己限定的
+説明を、この確認にも一貫して適用した)。Company GuidanceもActual
 Resultも既存`lib.fundamentals`側の責務であり、このModuleへ複製しない。
 
 ### Tests(CONS-001〜030、実装からのコピーではなくPhase4E-4要件から導出)
 
-`13_tests/test_consensus_pit.py`(34件)・`test_consensus_catalog.py`
-(9件)、合計43件を新規追加。実Network接続無し、合成Record Dataのみ
+`13_tests/test_consensus_pit.py`(37件)・`test_consensus_catalog.py`
+(9件)、合計46件を新規追加。実Network接続無し、合成Record Dataのみ
 使用。以下3点をこのRound最初から反映した(前Round Reviewer Findingの
 予防的適用、詳細は`CONSENSUS_ARCHITECTURE.md`「Reviewer教訓の反映」
 節):
@@ -5966,10 +5975,10 @@ CONS-016(Historical API Response Is Not Historical Vintage)はAdapter
 
 ### Known Limitations
 
-- Adapterを1件も実装していない(3候補全て`NOT_IMPLEMENTED`、
+- Adapterを1件も実装していない(2候補全て`NOT_IMPLEMENTED`、
   Validation Status=`DESIGN_COMPLETE_AWAITING_SPEC_VERIFICATION`)。
-- QUICK/FactSet/IFISいずれも公式仕様をこのSessionから直接確認できて
-  いない(`EGRESS_BLOCKED`)。
+- QUICK/IFISいずれも公式仕様をこのSessionから直接確認できていない
+  (`EGRESS_BLOCKED`)。
 - QUICK Consensusが個人/自営業者でも契約可能なTierを持つかが最大の
   未解決論点(次の最優先検証項目)。
 - `entity_id`(Canonical Entity Registry)へのMapping手法は未設計。
@@ -5977,5 +5986,83 @@ CONS-016(Historical API Response Is Not Historical Vintage)はAdapter
   `ConsensusRecord`のField構成に含まれていない。
 - CONS-016はCode Testではなく文書上のKnown Limitationとして記録する
   に留めた(Adapter未実装のため再現不能)。
-- `lib/consensus/catalog.py`の3 Descriptorは`SourceCatalog`への実際の
+- `lib/consensus/catalog.py`の2 Descriptorは`SourceCatalog`への実際の
   Wiring(Application起動時の一元登録)がまだ無い(既存の慣行のまま)。
+- CONS-020(`_module_never_imports`)のAST走査は、相対Import・Package
+  経由の属性Access・動的Importには対応しないBlind Spotがある(pit-
+  auditor Finding、Phase4E-4、LOW)。現状`lib/consensus/`はAbsolute
+  Importのみで実害は無いが、将来Refactorでこの Guard の厳密性に依存
+  する場合はFunctional Checkの追加を検討する必要がある。
+
+### Reviewer Pass(pit-auditor 1回・skeptic-reviewer 1回、Findingsは全て独立に再確認の上で採否判定)
+
+1. **pit-auditor**: `2 FINDINGS(highest severity: LOW)`。2件とも独立に
+   Code(`13_tests/test_consensus_pit.py`)を直接読んで再確認の上で
+   対応した。
+   - **[LOW、採用・修正]** `test_cons004_no_available_at_timestamp_
+     excluded_by_default`という名前が「除外される」と主張しながら、
+     実際のAssertion(`is not None`)は「除外されない」ことを示して
+     おり矛盾していた、という指摘を実際にTest Codeを読んで確認した
+     (Test Helper`_resolver`が楽観的にretrieved_at/OBSERVED Basisへ
+     Fallbackするため)。Testを`test_cons004_resolver_fallback_to_
+     retrieved_at_is_a_caller_choice_not_a_framework_guarantee`へ
+     Renameしてこの挙動を正確に説明し、CONS-004本来の主張(Timestamp
+     が無くResolverが誠実にUNKNOWN Basisを返す場合は除外される)を
+     直接検証する`test_cons004_pessimistic_resolver_reporting_
+     unknown_basis_is_excluded_by_default`を追加した。
+   - **[LOW、Documentationで対応]** `_module_never_imports()`のAST
+     走査が、Phase4E-3で修正した`from X import Y`型の検出漏れは正しく
+     閉じているものの、相対Import・Package経由の属性Access・動的
+     Importには対応しないBlind Spotが残る、という指摘を実際にHelper
+     関数のCodeを読んで確認した(現状`lib/consensus/`はAbsolute
+     Importのみで実害は無いことをGrepで確認済み)。Code変更ではなく
+     `CONSENSUS_ARCHITECTURE.md`/DECISIONS.mdのKnown Limitationとして
+     記録した。
+2. **skeptic-reviewer**: `PASS_WITH_CONCERNS`。1件のHIGH・3件のMEDIUM・
+   1件のLOWを独立にCode/Documentを読んで再確認した:
+   - **[HIGH、採用・修正]** `ConsensusRecord.series_id`のDocstringが
+     列挙する構築責務Axis一覧から`source_id`(Provider)が抜けており、
+     このRound最大の原則「Provider AのMean != Provider BのMean」を
+     `series_id`構築の場面で徹底する記述が無かった、という指摘を
+     `model.py`/`CONSENSUS_ARCHITECTURE.md`を読んで確認した(`lib.
+     macro.model.MacroRecord`のDocstringがSourceを責務一覧の筆頭に
+     挙げている前例より弱い記述になっていた)。両Documentの一覧へ
+     `source_id`を明示的に追加し、この原則との結び付きを説明する文言
+     を加えた。
+   - **[MEDIUM、Documentationで対応]** CONS-012/013が「Guidance/
+     Actual値Fieldが無いことを構造的に確認した」と説明されていたが、
+     実際に確認しているのは特定Field名の不在のみであり、`value`Field
+     自体はGeneric Numeric Fieldで型レベルの強制は無いという限界が
+     あった、という指摘を確認した。CONS-029/030が既に採用していた
+     「Mechanical Pinning、意味論的証明ではない」という自己限定的な
+     説明を、Test Docstring・両Documentへ一貫して適用した。
+   - **[MEDIUM、Documentationで対応]** `adjustment_status: str | None`
+     Fieldが、Module Docstring・Architecture Doc・DECISIONS.mdの
+     いずれにも説明が無く、Test Coverageも皆無だった、という指摘を
+     確認した(`lib.global_market.model.AdjustmentStatus`という類似
+     名の既存Enumがあるにも関わらず転用しなかった理由も未説明だった)。
+     Module Docstringへ「Global MarketのAdjustmentStatusとは異なる
+     概念であり転用しない」という理由を明記し、Round-trip Testを
+     追加した。
+   - **[MEDIUM、採用・修正]** FactSetを「ENTERPRISE専用だがBenchmark
+     参照目的」という別基準でCatalog登録していたことが、同じ理由
+     (ENTERPRISE専用)で他4候補(LSEG/Bloomberg/S&P Capital IQ/
+     Visible Alpha)を除外していた基準と直接矛盾しており、Catalog
+     自体の目的(`lib.sources.catalog`Module Docstringが定める「実装
+     候補の検索可能な一覧」)とも合わない、という指摘を確認した。
+     FactSetのCatalog Descriptorを削除し、他のENTERPRISE専用候補と
+     同じく`CONSENSUS_ARCHITECTURE.md`のSource Landscape節でのみ記録
+     する扱いへ統一した(登録候補は`quick_consensus_japan`/`ifis_
+     japan_consensus`の2件のみに変更)。
+   - **[LOW、対応不要、既に適切な設計と確認]** CONS-028(Evidence
+     Content Forbidden Term Scan)が固定Templateに対する検証であり
+     現時点では自明に成功する、という指摘を確認したが、これは将来の
+     Regression Guardとして正当な設計であり(Templateへ解釈語が
+     混入する変更を検知する)、Code変更は行わなかった。
+
+Blocker/High Findingはいずれのpassでも(HIGH1件を除き)重大な機能欠陥
+ではなくDocumentation/Catalog設計の一貫性問題だった。修正後、全Test
+(`test_consensus_pit.py`は35件→37件、`test_consensus_catalog.py`は
+9件のまま[1件を`test_no_registered_candidate_is_flagged_enterprise_
+only`へ差し替え]、Lab全体+Screening Tool合計933件)を再実行し成功を
+確認した。
