@@ -1,4 +1,4 @@
-"""Phase5 v1.1: H0001-R1 Real-Data Validation Experiment。
+"""Phase5 v1.1: H0001-R2 Real-Data Validation Experiment。
 
 Phase5 v1(合成Fixtureによる Smoke Run、`scripts/phase5_v1_short_term_
 reversal.py`、DECISIONS.md D0062/D0063)で完成したPipelineを、実際の
@@ -16,17 +16,28 @@ reversal.md`)のClaim/Mechanism/Signal定義/Holding Periodは一切変更
 しない。5営業日Trailing Return < 0 -> BUY、10営業日保有、という
 Core Ruleをそのまま維持する。
 
-## Preregistration Lineage(Phase5 v1.1要件§5)
+## Preregistration Lineage(Phase5 v1.1要件§5、DECISIONS.md D0065)
 
 Synthetic Preregistration(`PREREG0001`)を直接上書きせず、
 `Preregistration.revise()`(既存のLineage機構、複製ではない)で
-`PREREG0001_R1`を発行する。`parent_preregistration_id=PREREG0001`が
+`PREREG0001_R2`を発行する。`parent_preregistration_id=PREREG0001`が
 自動的に記録され、Registry上でLineageが明示される。変更するCore
 Fieldsは実データ固有のもの(`dataset_contract_id`/`universe_
 definition`/3期間/`benchmark`)のみで、`primary_metric`/
 `parameters`(lookback_days/holding_period_days)/`alternative_
 explanations`/`falsification_condition`/`forbidden_capabilities`は
 Synthetic版から変更しない。
+
+**`PREREG0001_R1`について**: 当初のReal-data replication期間
+(Train 2015-2019/Validation 2020-2021/Locked Test 2025)は、
+実際のLocal Coverage Checkの結果、現在の契約プラン下では取得不能
+(HTTP 400、2021年以前を含むRequestで再現)と判明したため、
+**一度もPreregistration Registryへ`preregister()`・記録されないまま
+Design段階で放棄した**(`PREREG0001_R1`という識別子自体、Immutability
+違反やSilent Overwriteは発生していない — 単に実行前に破棄された計画)。
+この経緯はDECISIONS.md D0065に記録する。`PREREG0001_R2`はこの反省を
+踏まえ、Local Coverage Checkで確認済みのデータ提供期間内で再設計した
+ものである(詳細はD0065参照)。
 
 ## Result Inspection Cannot Precede Preregistration(Phase5 v1.1要件§11)
 
@@ -54,19 +65,26 @@ Price(Adjusted OHLCV) + PIT Universeのみ(D0061)。Fundamentals/
 Disclosures/Positioning/Macro/Global Market/News/Consensus/Evidence
 Pathは一切Importしない。
 
-## 対象銘柄の既定値について(Pre-run skeptic-review LOW Finding対応)
+## 対象銘柄の既定値について(Pre-run skeptic-review LOW Finding対応、D0065で再確認)
 
 `_parse_codes()`の既定値(7203/6758/8056/3626)は、RESEARCH_RULES.mdの
 「燃え尽きた期間」記録(2022-01-04〜2024-12-30・同じ4銘柄・20営業日
-Momentum→60営業日保有)と**銘柄だけは重なる**。ただし「燃え尽きた」の
-定義は期間・銘柄・Strategyパラメータの組み合わせ全体であり、このRoundの
-対象期間(2015-2019/2020-2021/2025、後述)・Mechanism(Reversal、符号が逆)
-はいずれも異なるため、組み合わせとしては未観測のHidden Testのままである。
-とはいえこれらは単に過去Roundで使い慣れた4銘柄というだけで、Universe
-選定として独立した根拠(流動性・時価総額等)を持たない。4銘柄は少数
-のため、Synthetic Roundと同様にSignalが実質的に一部銘柄へ偏る
-Riskがある(Q節で必ずReportすること)。より広いPIT Universe
-(`lib.universe`)を使いたい場合は`--codes`を明示的に指定すること。
+Momentum→60営業日保有)と**銘柄が完全に一致し、かつ期間もほぼ完全に
+重複する**(`PREREG0001_R2`のTrain/Validation期間は2022-01-04〜
+2024-12-30、後述)。「燃え尽きた」の定義は期間・銘柄・Strategy
+パラメータの組み合わせ全体であり、H0001のMechanism(5営業日Reversal・
+10営業日保有)は燃え尽きた組み合わせ(20営業日Momentum・60営業日保有)
+と異なるため、組み合わせとしては未観測のHidden Testのままであるが、
+D0065時点でこの重複はデータ提供期間の制約上避けられない(利用可能な
+実データが約4年分[2022年以降]しかなく、燃え尽きた期間[2022-2024]と
+ほぼ同じ範囲しか残っていない)。この重複はConfirmation Biasの観点で
+D0065のskeptic-reviewerに明示的に確認させた(結果は同Decisionを参照)。
+4銘柄自体もUniverse選定として独立した根拠(流動性・時価総額等)を
+持たないままであり、より広いPIT Universe(`lib.universe`)由来の
+機械的な選定へ切り替える案はD0065で検討したが、このRoundでは
+実施しない(Backlog、理由はD0065参照)。4銘柄は少数のため、Synthetic
+Roundと同様にSignalが実質的に一部銘柄へ偏るRiskがある(Q節で必ず
+Reportすること)。
 
 ## Real Benchmark(Phase5 v1.1要件§17-18)
 
@@ -77,13 +95,18 @@ Riskがある(Q節で必ずReportすること)。より広いPIT Universe
 Look-ahead的な混入はない(公表済みIndex値そのものを時系列で取得
 するだけであり、このLabがIndexを再構築するわけではない)。
 
-使い方:
+使い方(D0065で再設計した期間。**--step preregisterの前に、必ず
+以下のCoverage Check(特に2022-01-04〜2025-12-30を1回で要求する
+マルチイヤーRequest)がHTTP 400にならないことを確認すること** —
+`_load_real_price_data()`は`train_period_start`から各splitの
+end_sessionまでを1リクエストで要求するため、Locked Test実行時には
+Train開始日からLocked Test終了日までの全期間が単一Requestになる):
     python scripts/phase5_v1_1_h0001_real_data.py --step coverage-check \
-        --codes 7203 6758 8056 3626 --start 2015-01-05 --end 2025-12-30
+        --codes 7203 6758 8056 3626 --start 2022-01-04 --end 2025-12-30
     python scripts/phase5_v1_1_h0001_real_data.py --step preregister \
         --codes 7203 6758 8056 3626 \
-        --train-start 2015-01-05 --train-end 2019-12-30 \
-        --validation-start 2020-01-06 --validation-end 2021-12-30 \
+        --train-start 2022-01-04 --train-end 2023-12-29 \
+        --validation-start 2024-01-04 --validation-end 2024-12-30 \
         --locked-test-start 2025-01-06 --locked-test-end 2025-12-30
     python scripts/phase5_v1_1_h0001_real_data.py --step train
     python scripts/phase5_v1_1_h0001_real_data.py --step validation
@@ -144,9 +167,9 @@ from lib.universe import ListingBasedUniverseProvider  # noqa: E402
 
 HYPOTHESIS_ID = "H0001"
 PARENT_PREREGISTRATION_ID = "PREREG0001"
-PREREGISTRATION_ID = "PREREG0001_R1"
+PREREGISTRATION_ID = "PREREG0001_R2"
 DATASET_CONTRACT_ID = "DC0002_JQUANTS_REAL_V1"
-EXPERIMENT_ID = "BT_PHASE5_V1_1_H0001_R1"
+EXPERIMENT_ID = "BT_PHASE5_V1_1_H0001_R2"
 
 _PREREGISTRATION_REGISTRY_PATH = _LAB_DIR / "06_backtests" / "preregistrations.jsonl"
 _LOCKED_TEST_AUDIT_PATH = _LAB_DIR / "06_backtests" / "locked_test_audit_real.jsonl"

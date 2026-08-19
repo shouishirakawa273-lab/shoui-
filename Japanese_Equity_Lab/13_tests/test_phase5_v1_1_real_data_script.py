@@ -265,7 +265,7 @@ def test_realval010_build_real_preregistration_uses_revise_lineage(script: Modul
     finally:
         monkeypatch.undo()
 
-    assert revised.preregistration_id == "PREREG0001_R1"
+    assert revised.preregistration_id == "PREREG0001_R2"
     assert revised.parent_preregistration_id == "PREREG0001"
     assert revised.status == PreregistrationStatus.DRAFT  # revise()直後はDRAFT、freezeは呼び出し側の責任
     assert revised.dataset_contract_id == "DC0002_JQUANTS_REAL_V1"
@@ -382,6 +382,6 @@ def test_realval010_step_preregister_freezes_and_records_without_overwriting_par
     unchanged_parent = registry.get("PREREG0001")
     assert unchanged_parent is not None
     assert unchanged_parent.train_period_start == date(2026, 1, 5)  # 親は変化しない
-    child = registry.get("PREREG0001_R1")
+    child = registry.get("PREREG0001_R2")
     assert child is not None
     assert child.status == PreregistrationStatus.PREREGISTERED  # step_preregisterでfreezeされている

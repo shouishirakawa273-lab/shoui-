@@ -6532,3 +6532,180 @@ COMPLETEだと主張しない)。ユーザー自身のローカル環境での�
 Fundamentals/Positioning接続・Phase5 v2・D0057解決・Portfolio/
 Decision Engine・自動売買のいずれもこのRoundでは着手しない
 (Phase5 v1.1 kickoff要件§51)。
+
+## D0065 — Phase5 v1.1: Real-Data Availability Constraint Resolution(PREREG0001_R1放棄、PREREG0001_R2再設計)
+
+D0064後、ユーザーがローカル環境で`scripts/phase5_v1_1_h0001_real_
+data.py --step coverage-check`を実際に実行した。この結果、当初の
+`PREREG0001_R1`期間設計(Train 2015-2019/Validation 2020-2021/Locked
+Test 2025)は現在の契約プラン下で取得不能と判明した。このRoundは
+その事実をResearch Historyへ誠実に記録し、Resultを一切見ないまま
+新しい期間設計(`PREREG0001_R2`)へ再設計することが目的である。
+**新しいStrategy・パラメータ探索は行っていない。**
+
+**A. Observed API Behavior(このRepositoryが直接確認した事実)**:
+
+| Request範囲 | 結果 |
+|---|---|
+| 2022-01-04 〜 2022-12-30 | 取得成功 |
+| 2025-01-06 〜 2025-12-30 | 取得成功 |
+| 2021-01-04 〜 2021-12-30 | HTTP 400 |
+| 2020-01-06 〜 2021-12-30 | HTTP 400 |
+| 2015-01-05 〜 2025-12-30 | HTTP 400 |
+
+7203/TOPIX/Trading Calendar/PIT Universeの基本経路自体は2022年・
+2025年の両方で正常動作しており、`step_coverage_check()`のPipeline
+配線自体に問題は無い。Strategy Return/Signal件数は一切確認していない
+(Coverage Checkのみ)。
+
+**B. User-reported Plan Constraint(このRepositoryが未検証、区別して
+記録)**: ユーザーの認識では現在の契約プラン(Light、D0031で既出)は
+過去約5年分のみ履歴取得可能。このセッションはJ-Quants公式ドキュメント
+(`jpx.gitbook.io`)へ引き続き接続できない(EGRESS_BLOCKED)ため、
+この「約5年」という具体的な数字を公式仕様として確認したものではない。
+**Aの表(Observed API Behavior)とBのUser-reported Plan Constraintは
+明確に別カテゴリとして記録する**(Observed Factを未検証の推測で
+上書きしない、CLAUDE.md「未確認のSource仕様を推測で埋めない」原則)。
+2021年と2022年の間に境界があるというObserved Factは、Bの「約5年」
+という認識と整合的ではあるが、Aの表それ自体から導かれる結論は
+「2022-01-04以降・2025-12-30以前の範囲では少なくとも単年Requestは
+成功する」ことのみである。
+
+**C. `PREREG0001_R1`の状態**: **`DESIGN_ABANDONED_PRE_RUN`**
+(Formal Run前にData Availability制約により実行不能と判明したため
+放棄)。重要な点として、`PREREG0001_R1`は`Preregistration.
+preregister()`によってRegistry(`06_backtests/preregistrations.
+jsonl`)へ一度も記録されていない(D0064時点でもこのRoundの時点でも
+`grep`で0件を確認済み)。したがって**Immutability違反やSilent
+Overwriteは発生していない** — `PREREG0001_R1`は単にコード上の定数・
+`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`上の期間案として存在した
+「実行前に破棄された計画」であり、Research Registry上のRecordを
+書き換えたわけではない。この区別(Registry上のRecordの改ざん
+禁止 vs 未実行の計画の変更)は重要であり、後者は当然自由に変更できる。
+この経緯自体は消さず、この節として記録する(RESEARCH_RULES.md
+「失敗した実験を削除しない」の精神を、実行前の計画放棄にも適用)。
+
+**D. `PREREG0001_R2`の設計(新しいLineage、Resultは一切見ずに決定)**:
+`scripts/phase5_v1_1_h0001_real_data.py`の`PREREGISTRATION_ID`/
+`EXPERIMENT_ID`定数を`PREREG0001_R2`/`BT_PHASE5_V1_1_H0001_R2`へ
+変更した(`PARENT_PREREGISTRATION_ID=PREREG0001`は不変、Lineageは
+兄弟関係— `R1`を`revise()`したのではなく、未実行の`R1`計画を
+破棄して`PREREG0001`から新規に`R2`を`revise()`する)。変更した
+Core Fieldsは実データ固有のもの(`dataset_contract_id`/`universe_
+definition`/3期間/`benchmark`)のみで、`primary_metric`/
+`parameters`(`lookback_days=5`/`holding_period_days=10`)/
+`falsification_condition`/`forbidden_capabilities`/`alternative_
+explanations`/`secondary_metrics`/`allowed_adjustments`は一切
+変更しない(既存Test`test_realval010_build_real_preregistration_
+uses_revise_lineage`が構造的に保証)。
+
+提案期間(Aで確認済みの2022-2025の範囲内、Chronological・非重複):
+
+- Train: 2022-01-04 〜 2023-12-29(約2年)
+- Validation: 2024-01-04 〜 2024-12-30(約1年)
+- Locked Test: 2025-01-06 〜 2025-12-30(約1年、単独Requestとして
+  既に取得成功を確認済み)
+
+**重要な未確認事項**: `_load_real_price_data()`は`train_period_start`
+から各Splitのend_sessionまでを1Requestで要求する設計のため、Locked
+Test実行時には2022-01-04〜2025-12-30という約4年分が単一Requestに
+なる。Aで確認済みなのは単年Requestの成功と、2015年を含む11年
+Requestの失敗のみであり、**2022年以降だけに限定した複数年単一
+Requestが成功するかどうかは未確認**。したがって`PREREG0001_R2`は
+**このRoundでは`preregister()`によってRegistryへ`freeze`していない**
+(このセッション自身がEGRESS_BLOCKEDのため、この確認ができない)。
+ユーザーが`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md` C節の追加Coverage
+Check(`--start 2022-01-04 --end 2025-12-30`)を実行して成功を確認した
+後、同Guide E節の`--step preregister`コマンドで初めてFreezeする
+(この段取り自体もResult非依存、純粋なAPI到達可否確認)。
+
+**E. Universe再検討**: 7203/6758/8056/3626をそのまま使用する(変更
+しない)。より広いPIT Universe(`lib.universe`)から機械的・
+事前定義可能な方法(例: `/v2/equities/master`のPrime Market
+共通株式をCode昇順で先頭K件選ぶ等、Strategy Resultに依存しない
+選定Rule)で選ぶ代替案を検討したが、このRoundでは実施しない。
+理由: (1)現行`step_coverage_check()`は`--codes`で指定された銘柄の
+Universe該当性のみを報告する設計であり、全Universe列挙には新しい
+出力機能の追加が必要(Phase5 v1.1要件§46「最小限のReal-data統合Gap
+のみ」のScopeを超える)、(2)このRoundの目的はStrategyやUniverseの
+改善ではなくData Availability制約への対応であり、Universe変更を
+同時に行うと変更の原因が混在する。4銘柄に独立した選定根拠が無い
+という限界(D0064で既出)は解消されないままBacklogとして残す。
+Universe変更を将来行う場合は、既存の`revise()` Lineage機構により
+`PREREG0001`(または`R2`)の子として新しいIDを発行し、既存の
+Preregistration/Experiment RecordをSilent Overwriteしない
+(D0064で確立済みの原則をそのまま適用)。
+
+**F. Confirmation-Bias / Research-Integrity Review**: このRoundの
+再設計案が以下のBiasを含まないか、独立したskeptic-reviewer(read-only、
+コードは変更しない)に確認させた。
+
+- **Period Cherry-picking**: 提案期間(2022-2025)はAで確認した
+  「取得可能」範囲の外側を一切含まない機械的な選択であり、複数の
+  候補期間からStrategy Resultを見て選んだものではない(そもそも
+  Strategyは一度も実行していない)。
+- **Universe Cherry-picking**: 4銘柄は変更していない(Eの通り)。
+- **Post-hoc Redesign**: このRound自体がPost-hoc Redesignだが、
+  その理由は純粋なAPI到達可否(HTTP 400)であり、Strategy Resultの
+  観測を理由とした変更ではない。Falsification ConditionもPrimary
+  Metricも不変。
+- **Insufficient History**: Train+Validation+Locked Testの合計が
+  約4年(約1000営業日 × 4銘柄)しかない。5営業日Reversal・10営業日
+  保有という短期Strategyであるため、営業日単位のSample数自体は
+  Phase5 v1のSmoke Runより大幅に増える見込みだが、複数の市場Regime
+  (景気循環・金利環境の変化等)を跨いだ検証は構造的に不可能。
+  **`LIMITED_REAL_DATA_WINDOW`として明示的に記録する**(既存の
+  `INSUFFICIENT_EVIDENCE` Conclusion Categoryとは別軸の、データ
+  提供期間そのものの限界を指すLabelとして、Backlogおよび将来の
+  Conclusion Recordで使用する)。
+- **Burned-period Contamination**: 最も重要な指摘。提案したTrain+
+  Validation期間(2022-01-04〜2024-12-30)は、RESEARCH_RULES.mdの
+  「燃え尽きた期間」記録(2022-01-04〜2024-12-30・同じ4銘柄・
+  20営業日Momentum→60営業日保有)と**日付範囲・銘柄が完全に一致**する。
+  「燃え尽きた」の定義は期間・銘柄・Strategyパラメータの組み合わせ
+  全体であり、H0001のMechanism(5営業日Reversal・10営業日保有、
+  燃え尽きた組み合わせの20/60営業日Momentumとは符号・長さとも異なる)
+  は技術的には異なる組み合わせのため、Rule上は違反ではない。
+  しかし、この重複がAvailability制約の副産物として生じたことは
+  正直に記録する必要がある。skeptic-reviewerの見解: 技術的な
+  「未見のCombination」の定義は満たすが、この重複は**選択の余地なく
+  データ制約から強制されたもの**であり、Confirmation Biasの意図は
+  無い(Strategy Resultを見て期間を選んだのではなく、逆にResultを
+  見る前に制約から機械的に導出された)。ただしFinal Conclusionの
+  Evidence Strength評価では、この期間重複を「同じ期間の株価Data
+  自体は既に一度Backtestで観測されている」という事実としてQ節
+  (Trade/Ticker Concentration)・R節(Synthetic vs Real Comparison)
+  で必ず明示すること、という条件付きで許容可能と判断した。
+
+**G. PIT Review**: このRoundはコード変更が定数名(`PREREG0001_R1`
+→`_R2`、`EXPERIMENT_ID`同様)とDocstring/Guide文面のみであり、
+`lib.research.*`/`lib.backtest.engine`本体には一切触れていない。
+D0064で確認済みのPIT機構(Split境界Gate・PIT Universe・Missing Bar
+処理・Real Benchmark)はそのまま維持される。新しい期間案
+(Train 2022-01-04〜2023-12-29/Validation 2024-01-04〜2024-12-30/
+Locked Test 2025-01-06〜2025-12-30)はChronological・非重複であり、
+`Preregistration.__post_init__`が構造的に強制する制約を満たす。
+
+**H. Files Changed**: `scripts/phase5_v1_1_h0001_real_data.py`
+(定数`PREREGISTRATION_ID`/`EXPERIMENT_ID`を`_R1`→`_R2`、
+Docstringを新期間・R1放棄の経緯・燃え尽きた期間との重複説明へ
+更新)、`Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_
+script.py`(ハードコードされた`"PREREG0001_R1"`Literal 2箇所を
+`"PREREG0001_R2"`へ更新)、`PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`
+(全面更新、Observed API Behavior表・追加Coverage Check手順・
+新期間案・燃え尽きた期間との重複の明示を追加)。
+
+**I. 実行状態**: 引き続き**`CODE_COMPLETE_AWAITING_LOCAL_REAL_
+DATA_RUN`**。`PREREG0001_R2`はこのRoundでも`preregister()`により
+Registryへ記録していない(C節の未確認Multi-year Request確認を
+ユーザーがローカルで実施した後にFreezeする設計、D節参照)。
+Train/Validation/Locked Testはこのラウンドでも実行していない。
+
+**J. Regression**: `ruff check`/`ruff format --check`/`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean、
+`pytest`(Lab+Screening Tool)985件全てpass(定数変更に伴う
+Test文字列更新2箇所を含む)。`git diff --stat -- core/ app.py
+tests/`で変更が無いことを確認(Screening Tool不変)。H0002・
+Parameter Search・Fundamentals/Positioning接続・Phase5 v2・
+D0057解決・Portfolio/Decision Engineのいずれもこのラウンドでは
+着手しない。
