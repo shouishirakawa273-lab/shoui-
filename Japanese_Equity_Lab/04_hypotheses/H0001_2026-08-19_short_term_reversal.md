@@ -66,7 +66,33 @@ TOPIX(Price Return、`lib.backtest.benchmark`)。
 ## Status
 
 `DRAFT` -> `LOCKED`(このRoundで`lock()`を実行、`locked_terms_hash`は
-Preregistration Record側に記録)。
+Preregistration Record側に記録)。Preregistration(`PREREG0001`)を固定した
+上でTrain/Validation/Locked Testを実行済み(結果は下記「実行結果と
+Evidence該当性に関する重要な注記」参照)。
+
+## 実行結果とEvidence該当性に関する重要な注記(2026-08-19、final skeptic-review反映)
+
+**この一連の実行(Train/Validation/Locked Test全て)はJ-Quants公式APIへ
+接続できないセッション制約(EGRESS_BLOCKED)下での合成Fixtureデータに
+よるSmoke Run(Pipeline配線・Infrastructure Validation)であり、
+投資判断のEvidenceとして使用してはならない。** 実データでのLocked Test
+実行は、ユーザー自身のPC上でこのHypothesis/Preregistrationをそのまま
+使って別途行う必要がある。
+
+さらに、この特定のSmoke Runには以下の限界がある(final skeptic-reviewの
+MEDIUM Finding):Fixtureの3銘柄(7203/6758/9984)のうち7203は単調増加
+系列のためSignalが一度も発火せず、Train/Validation/Locked Testの
+いずれも実質的に**9984銘柄1つのみ・3トレードのみ**のBacktestになった
+(`stock_by_stock_distribution`で確認)。したがって、このSmoke Runの
+結果は「市場全体を横断したReversal効果の検証」ではなく、Pipeline
+Mechanics(Preregistration固定・Split分離・Locked Test隔離・
+Reproducibility記録)が最後まで正常に動くことの確認に限定される。
+
+Locked Test結果自体(`excess_return`)はPreregistrationの
+Falsification Condition(`excess_return <= 0`)を満たした
+(=この仮説はこのSmoke Run上では支持されなかった)。Conclusionの詳細は
+`06_backtests/`配下のExperiment Record、およびPhase5 v1 Completion
+Reportを参照。
 
 ## Alternative Explanations(Preregistration側に記録、参照用に転記)
 
