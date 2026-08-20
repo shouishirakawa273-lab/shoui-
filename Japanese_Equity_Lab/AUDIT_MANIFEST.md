@@ -429,6 +429,15 @@ Unit4/5への依存も無い(D0061 Readiness Gateが意図した分離が
 
 ## G. Codex-Sized Task Breakdown
 
+**Repo Access Gateの前提**: 今後Codexには、Task本文の指示だけでなく
+実際のFile-level Access自体を制限するGateを設ける前提とする(現時点
+ではまだ未実装)。したがって以下の各Task行の「Exact Scope」列は
+単なる説明ではなく、**そのGateが許可すべきAllow-listの原案**として
+扱う — Codexが「指示されていないが読めてしまうので読んだ」という
+状態を、指示レベルだけでなくAccess制御レベルでも防ぐことを意図した
+記述にしている。Gate実装そのものはこのRoundのScope外(Constraints
+参照)。
+
 以下は各Unitを実際にCodexへ渡す際の粒度イメージ(Prompt本文は
 まだ作らない、Scope定義のみ)。
 
