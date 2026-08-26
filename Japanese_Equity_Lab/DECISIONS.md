@@ -7566,3 +7566,185 @@ Snapshot)として保存した上で、それを本Sessionへ持ち込む(また
 は本Entry・DECISIONS.md追記のみのDoc-only変更のため、Lab全体Regression
 の再実行は不要と判断した(D0071 Round同様、Doc-onlyはCode Regression
 Scope外)。
+
+## D0074 — Stage 3.1: Real-Data Research Acceptance再試行(ユーザーのローカルPC環境、実行成功)
+
+D0073がBLOCKEDと判定した根拠(実データ0件・Egress遮断)は、D0073自身が
+明記した通りその時点のセッション固有の状態だった。今回、ユーザーの
+ローカルPC上の別セッションで再確認したところ、以下の事実が確認された
+(いずれも直接確認、推測なし):
+
+1. **Egress**: `api.jquants.com`への直接TLS接続を確認(`curl -v`、
+   実際のAWS API Gateway応答`x-amzn-RequestId`/`{"message": "The api
+   key is required."}`)。Proxy Blockではなく到達可能。
+2. **JQUANTS_API_KEY**: 環境変数はSETされていたが、値が実際のAPIキー
+   ではなくクリップボード貼り付け用PowerShellコマンド文そのものだった
+   (設定ミス、ユーザー環境固有の問題でありCode欠陥ではない)。今回は
+   このKeyを使った新規Fetchは行っていない。
+3. **Local Raw Snapshot**: `Japanese_Equity_Lab/01_data/raw/
+   local_snapshot_input/`(`.gitignore`対象)に、2026-08-16に取得済みの
+   実J-Quants Local Snapshot(Financial Summary + Daily Bars、7203/6758/
+   8056/3626の4銘柄)が既に存在していた。D0073の「実データ0件」は
+   このRoundのセッションには当てはまらない。
+
+### 実施内容(`scripts/stage3_1_research_artifact_7203.py`、新規)
+
+新しいJ-Quants Client・新しいEvidence Framework・新しいEngineは作らず、
+既存の`LocalSnapshotAdapter`/`parse_financial_summary_payload`/
+`equity_bars_payload_to_raw_bars`/`build_research_artifact`(D0072)を
+そのまま再利用し、1社(7203、トヨタ自動車、選定はInvestment
+Recommendationではない)+ 明示的`as_of`(2024-11-15T15:00 JST)で
+`build_research_artifact()`を実データでEnd-to-End実行した。新規API
+呼び出しは一切行っていない(既存Local Snapshotのみ使用)。
+
+**Historical PIT Safetyを「実データである」ことの根拠にしなかった**:
+今回のSnapshotの`retrieved_at`は実際には2026-08-16頃(ファイルmtime
+起源)である。既存の2つのPIT機構を無変更のまま適用した結果:
+
+- Fundamentals(`disclosure_metric_to_evidence()`、`available_at=
+  envelope.retrieved_at`固定、D0049）: 主要Metric(sales/operating_
+  profit/net_profit/eps/ordinary_profit)についてEvidence 80件を構築
+  したが、`retrieved_at`(2026-08-16)が`as_of`(2024-11-15)より後のため
+  `filter_usable_at()`により**全80件が構造的に除外された**。これは
+  欠陥ではなく意図通りのFail Closed動作であり、`DataGap`
+  (status=UNAVAILABLE)として記録した。
+- Positioning(price-derived、`price_derived_record_to_evidence()`、
+  `session_close_at(observation_end)`基準でretrieved_atと無関係、
+  D0057を安全側に回避する既存Consumer）: 直近10 Session分のTurnover
+  Value + Volume Moving Average(20D)、Evidence 20件のうち**18件が
+  `as_of`時点で利用可能と判定された**。除外された2件(2024-11-15分)は
+  `session_close_at(2024-11-15)`が15:30 JST(2024-11-05のTSE取引時間
+  延長を`lib.market_calendar`が正しく反映)であり、`as_of`の15:00 JST
+  より後だったため——これもFail Closedの正しい動作であり、意図的に
+  `as_of`を調整して回避することはしなかった(値の推測補完・Filter回避
+  はいずれも行っていない)。
+- Disclosures(EDINET/TDnet): 7203向けの実Documentは未取得のため
+  `DataGap`(status=MISSING)。Consensus/Macro/News/Expectations:
+  Phase5 v1 Scope外(`DEFAULT_ALLOWED_CAPABILITIES`が構造的に強制、
+  変更していない）。
+
+結果、`ResearchArtifact`(`artifact_id=ART_STAGE3_1_7203_20241115_V1`)
+はPositioning Evidence 18件のみを`included_evidence_ids`に持ち、Bull/
+Bear Caseはいずれも空(Evidence無し)、Base CaseはPositioning Evidenceの
+記述統計のみを参照、`conclusion=INSUFFICIENT_EVIDENCE`・
+`research_confidence=INSUFFICIENT`(`__post_init__`の整合性検証を
+満たす）で構築された。Evidence捏造・Fail Closed回避はいずれも発生して
+いない(`ResearchArtifactRegistry`(`lib/registry/research_artifact_
+registry.py`)の`record()`で`Japanese_Equity_Lab/02_company_research/
+7203_Toyota_Motor/research_artifacts.jsonl`(`.gitignore`対象外、この
+Round初のRegistry永続化先として選定——`06_backtests/`と同型のAppend-only
+Registryだが、Backtestではなく企業別Researchのため`02_company_research/
+<証券コード>_<企業名>/`配下に置いた)へ記録済み)。
+
+### Code変更
+
+`scripts/stage3_1_research_artifact_7203.py`(新規、運用スクリプト、
+`core`/`app.py`/`lib/`のいずれも無変更)。`git status --short`で
+`lib/`等既存Production Codeへの変更が無いことを確認済み。
+
+### Regression(訂正: Full Regression未実施だった点を訂正。件数表記の誤りはD0072側にあった)
+
+初版は「`lib/`/`core/`/`app.py`を変更していないためLab全体Regressionは
+不要」と判断していたが、これは誤り — `scripts/stage3_1_research_
+artifact_7203.py`という新規`.py`File自体を追加しており、D0071 §7
+(Verification Staging: targeted→relevant→full regression)の基準に
+従えばFull Regressionが必要だった。本Roundで訂正し、実際にFull
+Regressionを実行した。
+
+**件数表記について**: 初版は「`test_research_artifact.py`(24件)・
+`test_research_artifact_registry.py`(5件)、計23件」と書いており、
+「24+5=23」という表記の整合性自体が誤りだった。`--collect-only`で
+直接数え直したところ、`test_research_artifact.py`は実際には**18件**
+(D0072本文中の「24件」という記載自体が誤り——本Entryでは訂正しない、
+D0072は既にRegistryへ記録済みのため上書きせず、この食い違いのみここに
+記録する)・`test_research_artifact_registry.py`は5件で、**合計23件が
+正しい数値**だった。つまり初版の「23件」という合計自体はたまたま
+正しく、直す必要は無かった。
+
+**Full Regression結果**(`.venv/Scripts/python.exe -m pytest tests/
+Japanese_Equity_Lab/13_tests/ -q`、Windows実Venv):
+1031 passed, 1 failed。失敗は`Japanese_Equity_Lab/13_tests/
+test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+tool_paths`のみで、`git stash`で本Round差分(DECISIONS.md追記・新規
+Script・新規Registry出力)を一時退避しSyncした`origin`のPristine HEAD
+(`a5d637c`)上で同一Testを再実行しても同じ失敗が再現することを直接確認
+した(=本Roundの変更とは無関係な既存環境問題、`.claude/hooks/
+protected_path_warning.sh`のWindows Git Bash上でのPath正規化/`jq`
+呼び出し起因と推定、Hook自体は修正していない)。`test_research_
+artifact.py`(実18件)・`test_research_artifact_registry.py`(5件)は
+Full Regressionの一部として引き続き全件pass(計23件)。H0001 Locked
+Testは実行していない。
+
+### Quality Gate(ruff / mypy、`requirements-dev.txt`の既存宣言を使用)
+
+`postEdit`Hook(`.claude/hooks/post_edit_quality_gate.sh`)は
+`.venv/bin/python`というUnix Venv Layoutを前提としており、この
+Windows環境の実際のVenv(`.venv/Scripts/python.exe`)を見つけられず
+`python3`(Microsoft Store版、Package無し)へFallbackして毎回失敗する
+(本Roundの変更とは無関係な既存Hookの環境依存Bug、Hook自体は指示通り
+修正していない)。
+
+`requirements-dev.txt`(`ruff>=0.6`・`mypy>=1.11`、既存宣言)から
+`.venv/Scripts/python.exe -m pip install -r requirements-dev.txt`で
+インストールし(ruff 0.16.4・mypy 2.3.1が解決された、Versionを独自に
+選定してはいない)、実際に実行した:
+
+- `ruff check .`: 新規Scriptに5件の指摘(未使用変数1・行長超過2・
+  未使用Import1[後続修正で判明]・未使用Helper関数1)を検出、いずれも
+  修正(`ruff format`含む)し、最終的に`All checks passed!`(288 File)。
+- `ruff format --check .`: 最終的に全File整形済み。
+- `mypy core app.py scripts Japanese_Equity_Lab/lib`: **QUALITY_GATE_
+  ENV_BLOCKED**。`.venv/Lib/site-packages/numpy/__init__.pyi:737: error:
+  Type statement is only supported in Python 3.12 and greater [syntax]`
+  で即座に停止する。`pyproject.toml`の`[tool.mypy] python_version =
+  "3.11"`と、`requirements-dev.txt`解決済みのnumpy Stub(3.12構文使用)
+  の非互換が原因(`git stash`でPristine HEAD上でも同一Errorを確認済み、
+  本Round起因ではない)。numpy/mypyのVersion Pin変更は「勝手にVersionを
+  選ぶ」ことになるため今回は行っていない。
+
+### Stage 4候補(初版の断定を訂正)
+
+初版は「Fundamentals Evidence経路へのPolling Log機構、またはA系統の
+正式サポートを追加すべき」と断定的に記載したが、これは過大な主張
+だった。今回のRoundで実際にCONFIRMEDなのは以下のみ:
+
+- B系統(`disclosure_metric_to_evidence()`、`available_at=envelope.
+  retrieved_at`固定)経路では、Historical Fundamentalsが構造的に
+  全除外されること(直接確認済み、80件中0件usable)。
+- A系統(`AvailabilitySemantics.MARKET_PUBLIC_AT`、`published_at`
+  基準)という既存Capability自体は`lib/fundamentals/view.py`の
+  `as_of_by_semantics()`に既に存在するが、これが`ResearchArtifact`
+  Evidence経路(`disclosure_metric_to_evidence()`→`filter_usable_at()`)
+  へ安全に接続可能かどうかは、**今回のRoundでは未検証**(`disclosure_
+  metric_to_evidence()`はSemantics引数を持たず、`available_at`を
+  常にB系統固定で構築するため、A系統をEvidence経路へ繋ぐには何らかの
+  追加設計が要る——ただしそれがPolling Log新設という重い解決策を要する
+  のか、既存A系統Viewの再利用で足りるのかは未調査)。
+
+したがって次の候補は「Polling Log機構を追加する」と断定せず、
+**「Fundamentals A系統/B系統のAvailability Pathを狭く監査し、
+既存A系統(`as_of_by_semantics(availability_semantics=MARKET_PUBLIC_AT)`)
+の再利用でEvidence経路への安全な接続が足りるか、それとも実際に
+Polling Log相当の新規観測機構が必要かを判断する」**という調査Task
+とする(このRoundでは調査・実装いずれも着手していない)。
+
+### Registry Output(`research_artifacts.jsonl`)のCommit方針
+
+`Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/
+research_artifacts.jsonl`の内容を確認した — Secret(APIキー等)・Raw
+Payload(生のJ-Quants Response)のいずれも含まない。含むのはArtifact
+ID・企業Code・as_of・Evidence ID一覧・Bull/Base/Bear要約文・DataGap・
+Confidence・Conclusionのみ(Evidence本体ではなく、そのID参照のみ)。
+
+`.gitignore`を確認した結果、`02_company_research/`にも本Fileパターンにも
+除外ルールは無い。一方、同型のAppend-only Registry(`lib/registry/
+research_artifact_registry.py`はD0072で「既存`ExperimentRegistry`と
+同じAppend-only JSON Linesパターン」と明記済み)である
+`Japanese_Equity_Lab/06_backtests/{experiment_registry,provenance,
+preregistrations,locked_test_audit,locked_test_audit_real}.jsonl`は
+いずれも`git ls-files`で追跡済み(=既にCommit対象として運用されている)
+ことを確認した。したがって「明確な既存方針が無い」わけではなく、
+**既存の同型Registryは一貫してCommit対象として扱われている**、という
+Precedentがある。ただし`02_company_research/`配下という新しいPath自体は
+今回が初のRegistry設置であり、この判断が正しいかはユーザー確認を要する
+ため、本Roundではgit addせず報告に留める(Commit実行はしていない)。
