@@ -7318,3 +7318,70 @@ H0002・Strategy最適化・Parameter探索・Phase5 v2・実Broker Cost較正�
 Liquidity/Market Impact・PIT Universe再設計・D0057解決・Research/
 Discovery/Decision/Portfolio Engine・Complexity Refactorのいずれも
 このラウンドでは着手しない。
+
+## D0071 — Japanese Equity Lab: Token-Efficient AI Development Policy
+
+Production機能追加ではなく、AI開発Process(Claude Code / Codex /
+Sub-agentのToken消費)に関する運用Policy Decisionである。**Quality /
+Research Safety > Token Saving**を最上位原則とし、「AIに読む量を
+我慢させる」のではなく「不要なContextを読ませない」ことをToken削減の
+目的とする(More Context/Agent/Token = Better Quality/Researchでは
+ないことも明記)。
+
+**Repo Reality First(実施済み)**: `git rev-parse HEAD`
+(`27db177...`)・`git status --short`(clean)・`git branch --show-current`
+(`claude/investment-strategy-pipeline-jyfby5`)を確認した上で、関係する
+既存文書のみを選択的に読んだ(`CLAUDE.md`両階層・`CLAUDE_CODE_RESEARCH_
+WORKFLOW.md`・`AUDIT_MANIFEST.md`該当Section・DECISIONS.md該当Section
+[4A.5.1系・D0052]、全文探索はしていない)。
+
+**既存Policyとの重複回避(§1要件通り)**: 調査の結果、以下が既に存在する
+ことを確認したため、新規文書は作らず既存文書へ統合した:
+- Context層分類(`ALWAYS`/`ON_DEMAND`/`TASK_ONLY`/`EVIDENCE_ONLY`、
+  `CLAUDE_CODE_RESEARCH_WORKFLOW.md`「Context Architecture」、4A.5.1-3)
+- Reviewer/Author分離・3 Subagentの役割(同File冒頭)
+- Codex Task粒度・Safety-Critical Boundary・Repo Access Gateの前提
+  (`AUDIT_MANIFEST.md` §E/G/H、Post-Phase5 Complexity Auditで既に導入
+  済み)
+- Research Safety原則本体(`Japanese_Equity_Lab/CLAUDE.md`「安全原則・
+  禁止事項」「Claude Code Guardrails」・`RESEARCH_RULES.md`)
+
+これらは重複記載せず、`CLAUDE_CODE_RESEARCH_WORKFLOW.md`の新設Section
+(「Token-Efficient AI Development Policy」)から相互参照するのみとした。
+新規に明文化した内容(既存慣行の追認であり新規Toolingではない):
+
+1. Task Prompt Policy(Thin Task Router、巨大Master Promptの複製禁止)
+2. Primary Scope Policy(PRIMARY_SCOPE明示、拡大時は理由記録、Safety
+   目的のScope拡大は常に許可)
+3. **Codex Report ≠ Source of Truth**(D0068・D0070で実際に運用した
+   Spot-check慣行の明文化。特にD0070ではAudited HEADがこのRepositoryの
+   どのBranchにも存在せず、Finding本文の「既に実装済み」という前提の
+   一部が誤りだった実例を明記し、この原則の根拠として引用した)
+4. 1 Codex Task = 1つの明確な調査質問、Codex Evidence Rule(HEAD/Path/
+   Symbol/Caller/Test/Search Evidence要求、無条件に真実扱いしない)
+5. Agent Policy(Task Independence > Agent数、既定0 Agent、出力budget
+   [STATUS/CONFIRMED FINDINGS/EXACT PATHS・SYMBOLS/RISKS/
+   RECOMMENDATION]、既存3 Subagentの運用方針自体は変更なし)
+6. Task Complexity分類(SMALL/MEDIUM/LARGE/SAFETY_CRITICAL)とVerification
+   厚みの対応表、Investigation Stop Rule
+7. File Re-read Policy・Verification Staging(targeted→relevant→full
+   regression)・Diff/Log段階読み(`git diff --stat`→変更File→Hunk)・
+   Stage Handoff Summary(ただしEvidenceの代替にはしない)
+8. Documentation Policy(このSection自体を実践例として明記)
+9. 「Token節約が上書きしないもの」— PIT/availability/provenance/
+   falsification/contradictory evidence/UNKNOWN/Locked Test/
+   preregistration整合性/append-only/backward compatibility/final
+   regressionのいずれもToken理由で省略しないことを明記
+10. Desired Operating Flow(既存2Workflow図を置き換えない追加の俯瞰図)
+
+**変更していないもの**: `Japanese_Equity_Lab/CLAUDE.md`(ALWAYS層は
+増やさないという既存原則4A.5.1-3 §3を維持)・`AUDIT_MANIFEST.md`
+(Scope変更なしのため無編集)・`.claude/skills/`・`.claude/agents/`・
+コード・Test・Registry・Preregistrationのいずれも無変更。Regression
+実行は本Round不要と判断した(Doc-only変更、`.py`Fileを1つも変更して
+いないため`post_edit_quality_gate.sh`のruff/mypy/pytestは実質的に
+no-opで完走することのみ確認、`git diff --stat -- core/ app.py tests/`
+も空を確認)。
+
+Production機能追加・H0002・Phase5 v2・新Tooling/Hook/Agent種別の追加
+にはこのRoundでは着手しない。
