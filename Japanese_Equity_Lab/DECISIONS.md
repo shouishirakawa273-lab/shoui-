@@ -7880,3 +7880,125 @@ Stage 4広範実装・Expectations Engine・Decision Engine・Discovery Engine�
 H0001再実行のいずれにも着手していない。`generic available_at`を
 `market_public_at`へ戻す変更(既存`disclosure_metric_to_evidence()`)も
 行っていない。
+
+## D0076 — Stage 3.2: MARKET_PUBLIC_AT Real-Data Acceptance(D0075のDogfood、Code変更なし)
+
+D0075で実装したFundamentals A-Path Bridgeを、既存7203 Local Snapshot
+(新規Fetchなし、Raw Snapshot無変更)で実際に実行し、B系統(既定)との
+比較・Research Usefulness評価・次のBottleneck特定を行った。**新機能は
+追加していない、Code欠陥も発見されなかったため無変更。**
+
+### 実行結果(`scripts/stage3_1_research_artifact_7203.py --semantics
+{B,A}`、いずれも既存artifact_idのためAppendOnlyViolationErrorで
+Persistenceは拒否されたが、Print出力はRegistry書き込み前に実行される
+ため前Round[D0075]の記録値とByte-identicalであることを確認した——
+決定論的な再現性の直接確認、Registryの重複拒否も期待通り機能):
+
+| 項目 | B(既定、retrieved_at基準) | A(MARKET_PUBLIC_AT) |
+|---|---|---|
+| Fundamentals raw(PRESENTのみ、全20開示×主要Metric) | 80 | 16 series評価 |
+| as_of選択後 | (B系統はSeries選択を経ない) | 16(16/16選択、全series該当) |
+| Fundamentals usable Evidence | 0 | 16 |
+| Positioning usable | 18 | 18(A/Bで不変) |
+| Total Evidence | 18 | 34 |
+| data_confidence | LOW | LOW |
+| evidence_confidence | MEDIUM | MEDIUM |
+| research_confidence | INSUFFICIENT | LOW |
+| conclusion | INSUFFICIENT_EVIDENCE | INCONCLUSIVE |
+
+### A-Path選択内容の直接検証(Read-only Inspection Script、Repo変更なし)
+
+16件の内訳を実際に読み出して確認した: `sales`/`operating_profit`/
+`net_profit`/`eps`の4 Metric × `1Q`(2024-08-01公表、対象期2024-06-30)・
+`2Q`(2024-11-06公表、対象期2024-09-30)・`3Q`(2024-02-06公表、対象期
+2023-12-31)・`FY`(2024-05-08公表、対象期2024-03-31)の4 Period、全て
+`ActualOrForecast.ACTUAL`(Forecast/Guidance系Metricは今回のKey Metric
+Setに含めていない、Bridge自体の制約ではなくScript側のScope選択)。
+`ordinary_profit`はIFRS下`NOT_APPLICABLE`のため実装中に一度誤って
+20 series全件を選定してしまうBugを作りかけたが、`value_availability=
+PRESENT`絞り込みを追加して修正済み(D0075で記録済み、本Roundで再確認の
+み、新規修正なし)。4 Period(1Q/2Q/3Q/FY)は`PeriodBasis.CUMULATIVE`
+(累計値)であり、かつ1Q/2Qは会計年度2025年3月期、3Q/FYは2024年3月期
+(異なる会計年度)であるため、この4値をそのまま「直近4四半期の連続
+Trend」として単純比較すると異なる会計年度の累計期間を混同する
+(Growth評価をPARTIALに留めた理由、下記)。
+
+### Source Vintage Constraint(推測禁止、確認事項のみ)
+
+A系統でEvidenceが16件usableになったことは、「2026年取得Snapshotが
+2024年当時のOriginal Provider Snapshotを完全に保存している」ことを
+意味しない。J-Quants Financial SummaryのHistorical Revision/Correction
+Completenessは今回も確認していない(確認する手段がこのRoundには無い)。
+`data_confidence=LOW`・`research_confidence=LOW`・`DataGap(status=
+UNVERIFIED、topic="J-Quants Financial Summary Source Vintage
+Completeness")`として既存Confidence/DataGap機構へ反映済み(D0075と
+同一の扱いを維持、この制約を消すための推測・断定は行っていない)。
+
+### Research Usefulness Evaluation(実際のEvidence内容に基づく判定)
+
+| Section | 判定 | 根拠 |
+|---|---|---|
+| Business/Earnings | SUPPORTED_BY_DATA | Sales/OP/NP実績4期分(ACTUAL)を直接確認できる |
+| Growth | PARTIAL | 4期分はあるが異なる会計年度のCUMULATIVE値混在のため単純比較不可、真のYoY比較(例: 2Q FY2025 vs 2Q FY2024)はas_of選択の性質上1系列につき1Versionのみ保持のため今回のEvidence Poolには含まれない |
+| Financial Quality | UNAVAILABLE | TA/Eq/EqAR/CFO/CFI/CFF等はそもそも`lib.fundamentals.normalize._METRIC_FIELD_MAP`に未マッピング(A/B系統どちらの問題でもない、Normalize層の既存制約) |
+| Guidance | UNAVAILABLE | 会社予想系Metric(`*_current_year_forecast`等)は今回のScript実行のKey Metric Setに含めていない(Bridge自体はForecast Metricも同じ経路で扱える設計、次Roundで追加可能な狭いScope) |
+| Valuation | UNAVAILABLE | 生Close PriceがEvidence化されていない(Positioning EvidenceはTurnover Value/Volume MAのみ)・BPS未マッピングのため、PER/PBR等の倍率を計算できない |
+| Catalysts | UNAVAILABLE | Disclosure Documents(EDINET/TDnet)・NewsともにMISSING DataGap |
+| Risks | UNAVAILABLE | 同上、定性的Risk Factor記述の情報源が無い |
+
+### Bull/Base/Bear
+
+`scripts/stage3_1_research_artifact_7203.py`の既存実装(D0075時点)が
+そのまま要件を満たしていることを確認した(追加変更なし): Bull/Bear
+Caseはいずれも空(方向性のあるClaimを主張しない、Evidence無し)。Base
+Caseのみ、実際にincluded_evidence_idsに含まれる34件(Fundamentals
+16 + Positioning 18)を`supporting_evidence_ids`として参照する記述的
+要約(Research != Decision、Narrative完成を目的にしていない)。
+
+### Key Question: 次にResearch Qualityを最も制限しているものは何か
+
+**Valuation dataと判定した**(想像ではなく今回のActual Run結果から
+消去法で評価):
+
+- Consensus/Expectations・Macro: Phase5 v1 Scope外(`DEFAULT_ALLOWED_
+  CAPABILITIES`が構造的に除外、そもそも今回の対象外であり「次に閉じる
+  べきGap」ではない)。
+- Disclosure content/News/Catalysts: 依然MISSING。ただしEDINET/TDnet
+  接続は既存`PHASE5_READINESS.md`監査で`NOT_READY_FOR_PHASE5`(License/
+  Spec未確認)と既に判定済みの大きめのGapであり、新規Provider統合相当の
+  作業を要する。
+- Source Vintage reliability: Confidenceの天井を作っているが、
+  「何も評価できない」原因ではなく「評価の確からしさを下げる」制約
+  である(質的に異なる種類の制限)。
+- Research synthesis: 今回のMechanical Pipeline自体は正しく機能して
+  おり、Synthesis能力自体のGapではない。
+- **Valuation data**: 今回のRunで唯一「材料(生Close Price・EPS)は
+  ほぼ手元にあるのに、Evidence化されていないために計算できない」
+  という、Scopeが狭く・新規Provider不要な残存Gapである(Price Data
+  自体は既存`01_data/raw/local_snapshot_input/`に既にある、Positioning
+  Evidence Converterが生Priceを持たないだけ)。
+
+### Do Not(§7、遵守確認)
+
+Polling Log・D0057一般解決・新規Provider・Expectations/Decision/
+Discovery/Portfolio Engine・H0002・Phase5 v2・BUY/SELL・target price・
+Optimizationのいずれにも着手していない。
+
+### Code Change / Verification
+
+Code変更なし(Execution/Semantic Defect未発見、「データが足りない」は
+Code欠陥として扱っていない)。Verification Policy(§10)に従い、Code
+変更が無いためTargeted Smokeのみ実施(`--semantics B`/`--semantics A`
+再実行、いずれも前Round[D0075]記録値とByte-identicalな出力を確認)。
+Full Regression・`ruff`/`mypy`は本Roundでは再実行していない(Code変更
+無しのため、D0071/D0074と同じ判断基準)。既知のWindows Hook/mypy
+Environment Issue(D0074/D0075既出)は本Roundでも未修正。H0001 Locked
+Testは実行していない。
+
+### Persistence
+
+Runtime ResearchArtifact(A/B双方)はLocal保持のまま(`02_company_
+research/7203_Toyota_Motor/research_artifacts.jsonl`、Registry
+Long-term Commit Policy未確定のため今回もCommit対象外)。Raw Snapshot
+も無変更・Commit対象外。本RoundでCommitするのはこのDECISIONS.md追記
+(Doc-only)のみ。
