@@ -7385,3 +7385,122 @@ no-opで完走することのみ確認、`git diff --stat -- core/ app.py tests/
 
 Production機能追加・H0002・Phase5 v2・新Tooling/Hook/Agent種別の追加
 にはこのRoundでは着手しない。
+
+## D0072 — Stage 3 v1: Research Artifact(1企業 + as_of、PIT-safe Evidence合成)
+
+Research Engineの最小Vertical Sliceを実装した。**Research != Decision**
+(BUY/SELL/target price/position sizingに相当するFieldは`ResearchArtifact`
+のどこにも存在しない、構造的禁止、Phase5 VAL-026と同じPattern)。
+
+**新規Module**: `lib/evidence/research_artifact.py`(`ResearchArtifact`/
+`NarrativeCase`/`DataGap`/`ConfidenceLevel`/`DataGapStatus`/
+`ResearchConclusion`/`build_research_artifact()`/`price_derived_record_
+to_evidence()`)、`lib/registry/research_artifact_registry.py`
+(`ResearchArtifactRegistry`、既存`ExperimentRegistry`と同じAppend-only
+JSON Linesパターン)。新しいEvidence Frameworkは作らず、既存の
+`EvidenceRecord`/`EvidencePacket`/`build_evidence_packet()`/
+`ResearchQuestion`/`filter_usable_at()`/`RecordMeta`/Append-only Registry
+慣行をそのまま再利用した。
+
+**要件v1充足**: versioned Artifact(`artifact_version`/
+`supersedes_artifact_id`、`Hypothesis.revise()`と同じLineage)・Evidence
+ID lineage(`included_evidence_ids`)・Bull/Base/Bear(Evidence参照無しの
+主張を`__post_init__`で拒否、捏造防止)・SUPPORTS/CONTRADICTS/
+ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN(`build_evidence_packet()`を
+再利用)・Data/Evidence/Research Confidence 3軸分離・MISSING/UNAVAILABLE/
+UNVERIFIED/UNKNOWN(`DataGap`、Bear Caseとは別Field、missing source !=
+negative evidence)・Research Conclusion・INSUFFICIENT_EVIDENCE
+Abstention(Evidence 0件時に他Conclusionを構造的に禁止)・Append-only
+永続化。
+
+**D0057との関係(場当たり的に回避しない)**: このModuleはEvidence Pathの
+実際の最初のConsumerである。D0057(ARCHITECTURE_GAP)が確認した
+「Positioning Evidence Path(`positioning_record_to_evidence()`、
+`retrieved_at`基準)がas_of Path(`resolve_available_at()`、Session
+Close基準)より早く「利用可能」と誤判定しうる」問題に対し、
+`lib/positioning/evidence.py`/`lib/positioning/derived/price_derived.py`
+のいずれも変更せず(D0057自体の解決はこのRoundのScope外)、新規
+`price_derived_record_to_evidence()`がas_of Pathの既存の安全な規約
+(`resolve_available_at()`)を採用することで、この新規Consumerだけを
+安全側にした。
+
+### pit-auditor Review(実施・全4件を独立に再確認の上で対応)
+
+Codex/外部Reviewではなく、このLabの`pit-auditor`Subagent(Read-only)へ
+実装完了後にReviewを依頼した(`PIT AUDIT: 4 FINDINGS(highest severity:
+HIGH)`)。ユーザー指示・Lab既存方針(Reviewer Findingは無条件に真実
+扱いせずMain Claudeが実Codeで再検証する)に従い、全FindingをMain Claude
+自身が実際に該当Fileを読み直して再確認した上で対応した。
+
+1. **[HIGH、CONFIRMED、修正済み]** `capability=DataCapability.
+   POSITIONING`というTagだけでは、安全な`price_derived_record_to_
+   evidence()`(このModule)と、既存の`positioning_record_to_evidence()`
+   (D0057でLeak Risk確認済み)のどちらで構築されたEvidenceかを区別
+   できない — 両者とも同じ`DataCapability.POSITIONING`をTagし、
+   `EvidenceRecord`/`SourceMetadata`のいずれにも構築元を示すFieldが
+   無いため。実際に`lib/positioning/evidence.py`を読み直し、同じ
+   Price-derived `PositioningRecord`形状が両Converterへ渡せることを
+   独立に確認した(CONFIRMED)。**修正**: `build_research_artifact()`
+   へ`_uses_session_close_availability()`検証を追加した。新しいField
+   追加はせず(Common Core Schema変更はD0057自身が見送った判断であり
+   踏襲)、`price_derived_record_to_evidence()`の出力が持つ観測可能な
+   性質(`available_at`が`session_close_at(value_date)`と厳密に一致
+   する)を直接確認し、一致しないPOSITIONING Evidenceをfail closedで
+   拒否する。回帰Test
+   (`test_build_research_artifact_rejects_positioning_evidence_from_
+   unsafe_converter`)で、既存`positioning_record_to_evidence()`経由の
+   Evidenceが実際に拒否されることを直接確認した。
+2. **[MEDIUM、CONFIRMED、既知の限界として文書化]** PIT安全性の検証は
+   `build_research_artifact()`にのみ存在し、`ResearchArtifact`を直接
+   構築(`build_research_artifact()`を経由しない)した場合や
+   `ResearchArtifactRegistry.record()`単体では再検証されない。実際に
+   `ResearchArtifact.__post_init__`/`ResearchArtifactRegistry.record()`
+   を読み直し、いずれもTimestamp検証を持たないことを確認した
+   (CONFIRMED)。**対応**: 既存の`Hypothesis`/`SplitRunResult`等でも
+   Builder関数を経由しない直接構築自体は禁止していないという既存慣行
+   に合わせ、`ResearchArtifact`のDocstringへ「本番用途は必ず
+   `build_research_artifact()`を経由すること」を明記するに留めた
+   (`ResearchArtifactRegistry`が`evidence_pool`を受け取って再検証する
+   設計への拡張は、このRoundの「最小Vertical Slice」の範囲を超える
+   ためBacklog、Stage 3 v1では実施しない)。
+3. **[LOW、CONFIRMED、修正済み]** `price_derived_record_to_evidence()`
+   が計算する`AvailabilityBasis.INFERRED`は`EvidenceRecord`に保持され
+   ない(`SourceMetadata`にBasis相当のFieldが無いため、既存の全
+   Evidence Converterに共通する制約)。既存`positioning_record_to_
+   evidence()`のDocstringにはこの制約への注意書きがあるが、新規関数の
+   Docstringに同等の注意書きが無かった(CONFIRMED)。**修正**:
+   Docstringへ同等の注意書きを追加した。
+4. **[LOW、CONFIRMED、修正済み]** `evidence_pool`内で`evidence_id`が
+   重複する場合(呼び出し側のBug)、Future Leakage判定・Evidence捏造
+   判定のSet演算が意図しない挙動になりうる。呼び出し側のBugが前提の
+   低優先度指摘だが、対応コストが低いため採用した。**修正**:
+   `build_research_artifact()`冒頭で`evidence_id`の重複を検知し
+   `ValueError`にする。
+
+### Tests
+
+`13_tests/test_research_artifact.py`(24件、Research != Decision・
+Evidence捏造防止・Future Leakage防止・Allowed Default Data fail
+closed・Confidence 3軸分離・INSUFFICIENT_EVIDENCE Abstention・missing
+source != negative evidence・CONTRADICTS/ALTERNATIVE_EXPLANATIONの
+生存確認・Versioned Lineage・D0057安全化・pit-auditor Finding回帰2件・
+Acceptance End-to-End)、`13_tests/test_research_artifact_registry.py`
+(5件、Append-only・重複拒否・delete/update無し・`latest_for()`・
+旧Record後方互換読み込み)。
+
+### Regression
+
+`ruff check`/`ruff format --check`/`mypy`(`core app.py scripts
+Japanese_Equity_Lab/lib`)いずれもclean、`pytest`(Lab+Screening Tool)
+1032件全てpass(既存1009件+新規23件、pit-auditor Finding対応で回帰Test
+2件追加、新規Failure無し)。`git diff --stat -- core/ app.py tests/`で
+変更が無いことを確認(Screening Tool Protected Paths不変)。
+
+### このRoundで着手していないもの
+
+Discovery Engine・Expectations Engine・Decision Engine・Portfolio
+Engine・新規Data Provider・H0002・Phase5 v2・D0057自体の解決(2経路の
+どちらを正とするかを決める設計変更)・Agent階層のいずれにも着手して
+いない。Macro/News/Consensus(EXPECTATIONS)/non-price Positioning/
+Availability未確認のhistorical disclosureは既定で使用しない
+(`DEFAULT_ALLOWED_CAPABILITIES`によりfail closed)。

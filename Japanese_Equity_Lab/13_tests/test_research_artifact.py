@@ -37,6 +37,7 @@ from lib.fundamentals.model import (
     PeriodBasis,
     PeriodType,
 )
+from lib.positioning.evidence import positioning_record_to_evidence
 from lib.positioning.model import Frequency, PositioningRecord
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
@@ -539,6 +540,78 @@ def test_price_derived_evidence_included_in_research_artifact() -> None:
     )
     assert evidence.evidence_id in artifact.included_evidence_ids
     assert evidence.evidence_id in packet.unknowns
+
+
+# --- pit-auditor HIGH Finding回帰: Capability Tagだけでは安全な構築元を区別できない -------
+
+
+def test_build_research_artifact_rejects_positioning_evidence_from_unsafe_converter() -> None:
+    """pit-auditorのHIGH Finding再現・回帰Test: 同じPrice-derived
+    `PositioningRecord`でも、既存の(D0057でLeak Riskが確認済みの)
+    `positioning_record_to_evidence()`(retrieved_at基準)経由で構築した
+    Evidenceは、`capability=DataCapability.POSITIONING`というTagだけでは
+    `DEFAULT_ALLOWED_CAPABILITIES`を通過してしまう。`build_research_
+    artifact()`が`_uses_session_close_availability()`による追加検証で
+    これをfail closedに拒否することを確認する。"""
+    observation_end = date(2026, 6, 1)
+    intraday_retrieved_at = datetime(2026, 6, 1, 3, 0, tzinfo=UTC)  # 12:00 JST(取引時間中)
+    record = _positioning_record(observation_end=observation_end, retrieved_at=intraday_retrieved_at)
+
+    # 安全でない既存Converter(D0057 Leak Riskあり)を意図的に使う。
+    unsafe_evidence = positioning_record_to_evidence(
+        record,
+        layer=DataLayer.DERIVED,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+    assert unsafe_evidence.capability == DataCapability.POSITIONING  # allowed_capabilitiesだけでは弾けない前提の確認
+    assert unsafe_evidence.source.available_at == intraday_retrieved_at  # retrieved_atがそのままavailable_at(Leak Risk)
+
+    as_of = datetime(2026, 6, 1, 5, 0, tzinfo=UTC)  # 14:00 JST、Session Close(15:30 JST)前
+    with pytest.raises(ValueError, match="Session Close基準"):
+        build_research_artifact(
+            artifact_id="ART_TEST_UNSAFE_1",
+            entity_code=_ENTITY,
+            question=_question(as_of),
+            evidence_pool=[unsafe_evidence],
+            relations={unsafe_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+            bull_case=_bull(),
+            base_case=_base(),
+            bear_case=_bear(),
+            data_confidence=ConfidenceLevel.MEDIUM,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.MEDIUM,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="test",
+        )
+
+
+def test_build_research_artifact_rejects_duplicate_evidence_id() -> None:
+    """pit-auditorのLOW Finding回帰: evidence_pool内でevidence_idが重複する場合、
+    Future Leakage判定・Evidence捏造判定が別のEvidenceを指してしまう可能性が
+    あるため拒否する。"""
+    as_of = datetime(2026, 6, 1, tzinfo=UTC)
+    evidence_a = _fundamental_evidence(retrieved_at=datetime(2026, 5, 1, tzinfo=UTC), suffix="DUP")
+    evidence_b = _fundamental_evidence(retrieved_at=datetime(2026, 5, 2, tzinfo=UTC), suffix="DUP")
+    assert evidence_a.evidence_id == evidence_b.evidence_id  # 同じsuffixのため意図的に重複させる
+
+    with pytest.raises(ValueError, match="重複"):
+        build_research_artifact(
+            artifact_id="ART_TEST_DUP_1",
+            entity_code=_ENTITY,
+            question=_question(as_of),
+            evidence_pool=[evidence_a, evidence_b],
+            relations={},
+            bull_case=_bull(),
+            base_case=_base(),
+            bear_case=_bear(),
+            data_confidence=ConfidenceLevel.MEDIUM,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.MEDIUM,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="test",
+        )
 
 
 # --- Acceptance: 1 company + as_of -> ResearchArtifact生成可能(End-to-End) ---------------

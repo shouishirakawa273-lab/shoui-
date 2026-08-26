@@ -40,6 +40,25 @@ derived/price_derived.py`のいずれも変更しない — これはD0057自体
 `ValueError`にする(fail closed)。Macro/News/Consensus(EXPECTATIONS)/
 non-price Positioningを既定で使わないという要件を、文書だけでなく構造的に
 強制する。
+
+## Capability Tagだけでは安全な構築元を区別できない(pit-auditor HIGH Finding対応)
+
+`capability=DataCapability.POSITIONING`というTagだけでは、
+`price_derived_record_to_evidence()`(このModule、安全)と`lib.positioning.
+evidence.positioning_record_to_evidence()`(既存、D0057で確認された
+retrieved_at基準のLeak Riskあり)のどちらで構築されたEvidenceかを
+区別できない — `EvidenceRecord`/`SourceMetadata`のいずれにも構築元を示す
+Fieldが無いため(Common Core Schemaへの新規Field追加はD0057自身が
+明示的に見送った判断であり、このModuleでも行わない)。
+
+したがって`build_research_artifact()`は、POSITIONING capabilityの
+Evidenceについて追加で「`available_at`が`session_close_at(value_date)`と
+厳密に一致するか」を検証する(`_uses_session_close_availability()`)。
+これは新しいFieldを追加せず、`price_derived_record_to_evidence()`の
+出力が持つ観測可能な性質(available_atがSession Close時刻そのもの)を
+直接確認する検証であり、`positioning_record_to_evidence()`の出力
+(available_at=retrieved_at、実際のFetch時刻でありSession Close時刻と
+厳密に一致することは通常無い)を構造的にfail closedで拒否する。
 """
 
 from __future__ import annotations
@@ -53,6 +72,7 @@ from lib.errors import LookAheadBiasError
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceRelation, EvidenceType, filter_usable_at
 from lib.evidence.packet import EvidencePacket, build_evidence_packet
 from lib.evidence.retrieval import ResearchQuestion
+from lib.market_calendar import session_close_at
 from lib.positioning.derived.price_derived import resolve_available_at
 from lib.positioning.model import PositioningRecord
 from lib.schemas.base import RecordMeta
@@ -144,6 +164,16 @@ class ResearchArtifact(RecordMeta):
     `supersedes_artifact_id`は同一Researchの改訂版であることを示す
     (`Hypothesis.revise()`/`SourceVersion.supersedes_version_id`と同じ
     Append-only Lineageパターン、既存を上書きしない、要件v1-1)。
+
+    **既知の限界(pit-auditor MEDIUM Finding)**: `__post_init__`はBull/
+    Base/Bearの参照整合性・0件Evidence時のAbstention整合性のみを検証し、
+    `included_evidence_ids`に列挙されたIDが実際にas_of時点でPIT-safeで
+    あったかまでは検証できない(`ResearchArtifact`自体はEvidenceの
+    Timestampへアクセスしないため)。本番用途では必ず`build_research_
+    artifact()`(Future Leakage・Capability・POSITIONING構築元検証を
+    実施する)を経由して構築すること。直接構築(このDataclassを直接
+    呼ぶこと)はTest/内部用途に限る(既存の`Hypothesis`/`SplitRunResult`
+    等、他Schemaでも直接構築自体は禁止していない、同じ既存慣行)。
     """
 
     artifact_id: str
@@ -215,6 +245,14 @@ def price_derived_record_to_evidence(
     INFERRED`)をavailable_atとして採用する。`lib/positioning/evidence.py`/
     `lib/positioning/derived/price_derived.py`のいずれも変更しない
     (D0057自体は解決せず、この新規Consumerが安全側を選んだだけ)。
+
+    **`AvailabilityBasis`は保持されない(pit-auditor LOW Finding)**:
+    `resolve_available_at()`が返す`AvailabilityBasis.INFERRED`はこの
+    Evidenceには保持されない(`SourceMetadata`にBasis相当のFieldが無い、
+    `lib.positioning.evidence.positioning_record_to_evidence()`Docstring
+    と同じ制約)。厳密なB系統PIT判定・Basis考慮が必要な場合は
+    `lib.positioning.derived.price_derived.resolve_available_at()`または
+    `lib.positioning.view.positioning_as_of()`を直接使うこと。
     """
     available_at, _basis = resolve_available_at(record)
     value_display = record.raw_value if record.raw_value is not None else record.value_availability.value
@@ -248,6 +286,23 @@ def price_derived_record_to_evidence(
         related_codes=(record.entity_code,),
         provenance_id=record.provenance_id,
     )
+
+
+def _uses_session_close_availability(evidence: EvidenceRecord) -> bool:
+    """POSITIONING capability Evidenceのavailable_atが、実際に
+    `resolve_available_at()`(Session Close基準)から導出されたものかを
+    検証する(pit-auditor HIGH Finding対応)。
+
+    `value_date`(=`observation_end`)から`session_close_at()`を再計算し、
+    `available_at`と厳密に一致するかを確認する。`price_derived_record_to_
+    evidence()`の出力は常にこの等式を満たす。`positioning_record_to_
+    evidence()`の出力(`available_at=retrieved_at`)は、実際のFetch時刻が
+    Session Closeの瞬間と厳密に一致しない限り満たさない。`value_date`が
+    無いEvidenceは検証不能としてFalse(fail closed、推測しない)。
+    """
+    if evidence.value_date is None:
+        return False
+    return evidence.source.available_at == session_close_at(evidence.value_date)
 
 
 def build_research_artifact(
@@ -294,9 +349,26 @@ def build_research_artifact(
     Research Questionとの関係)は呼び出し側が明示的に1件ずつ判定した結果を
     渡す(`build_evidence_packet()`と同じ設計、新しいDiscovery/Expectations
     Engineはここでは作らない)。
+
+    **POSITIONING Evidenceの構築元検証(pit-auditor HIGH Finding対応)**:
+    `capability=DataCapability.POSITIONING`というTagだけでは、安全な
+    `price_derived_record_to_evidence()`と、D0057で確認されたLeak Riskが
+    ある既存`positioning_record_to_evidence()`のどちらで構築された
+    Evidenceかを区別できない。したがってPOSITIONING capabilityの
+    Evidenceは追加で`_uses_session_close_availability()`を満たす必要が
+    あり、満たさない場合はfail closedで`ValueError`にする。
+
+    **evidence_idの重複防止**: `evidence_pool`内で`evidence_id`が重複する
+    場合、Future Leakage判定・Evidence捏造判定のいずれも別の
+    `EvidenceRecord`を指してしまう可能性があるため、`ValueError`にする。
     """
     if question.as_of.tzinfo is None:
         raise ValueError("question.as_of はtz-awareである必要があります")
+
+    pool_id_list = [e.evidence_id for e in evidence_pool]
+    if len(pool_id_list) != len(set(pool_id_list)):
+        duplicates = sorted({eid for eid in pool_id_list if pool_id_list.count(eid) > 1})
+        raise ValueError(f"evidence_poolにevidence_idの重複があります(区別不能なため禁止): {duplicates}")
 
     disallowed = {e.capability for e in evidence_pool} - allowed_capabilities
     if disallowed:
@@ -304,6 +376,19 @@ def build_research_artifact(
             "evidence_poolにStage 3 v1のDefault許可Capability外のEvidenceが含まれています"
             f"(fail closed): {sorted(c.value for c in disallowed)}。"
             "許可する場合は呼び出し側がallowed_capabilitiesを明示的に指定すること。"
+        )
+
+    unsafe_positioning = [
+        e for e in evidence_pool if e.capability == DataCapability.POSITIONING and not _uses_session_close_availability(e)
+    ]
+    if unsafe_positioning:
+        raise ValueError(
+            "evidence_poolにPOSITIONING capabilityのEvidenceが含まれていますが、available_atが"
+            "Session Close基準(price_derived_record_to_evidence()のresolve_available_at())と"
+            "一致しません(fail closed、D0057 Finding)。lib.positioning.evidence."
+            "positioning_record_to_evidence()(D0057で確認されたLeak Riskあり)ではなく、"
+            "このModuleのprice_derived_record_to_evidence()でEvidenceを構築してください: "
+            f"{sorted(e.evidence_id for e in unsafe_positioning)}"
         )
 
     usable_evidence = filter_usable_at(evidence_pool, question.as_of)
