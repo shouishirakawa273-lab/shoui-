@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from lib.errors import AppendOnlyViolationError
+from lib.evidence.model import AvailabilitySemantics
 from lib.evidence.research_artifact import (
     ConfidenceLevel,
     DataGap,
@@ -38,6 +39,7 @@ def _artifact_to_dict(artifact: ResearchArtifact) -> dict[str, Any]:
     payload["evidence_confidence"] = artifact.evidence_confidence.value
     payload["research_confidence"] = artifact.research_confidence.value
     payload["conclusion"] = artifact.conclusion.value
+    payload["fundamentals_availability_semantics"] = artifact.fundamentals_availability_semantics.value
     return payload
 
 
@@ -58,6 +60,9 @@ def _artifact_from_dict(data: dict[str, Any]) -> ResearchArtifact:
     d["evidence_confidence"] = ConfidenceLevel(d["evidence_confidence"])
     d["research_confidence"] = ConfidenceLevel(d["research_confidence"])
     d["conclusion"] = ResearchConclusion(d["conclusion"])
+    d["fundamentals_availability_semantics"] = AvailabilitySemantics(
+        d.get("fundamentals_availability_semantics", AvailabilitySemantics.PROVIDER_AVAILABLE_AT.value)
+    )
     d["bull_case"] = _narrative_case_from_dict(d["bull_case"])
     d["base_case"] = _narrative_case_from_dict(d["base_case"])
     d["bear_case"] = _narrative_case_from_dict(d["bear_case"])

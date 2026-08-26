@@ -21,9 +21,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType
+from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType, SourceVersion
 from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
+
+# A系統(MARKET_PUBLIC_AT)Bridgeが構築したEvidenceであることを示すTag
+# (`SourceMetadata.source_type`は自由文字列であり、新しいSchema Fieldは
+# 追加しない。`lib.evidence.research_artifact`がこの値でA/B混在を検知する)。
+MARKET_PUBLIC_AT_SOURCE_TYPE = "JQUANTS_FINS_SUMMARY_MARKET_PUBLIC_AT"
 
 
 def disclosure_metric_to_evidence(envelope: DisclosureEnvelope, metric: FundamentalMetric) -> EvidenceRecord:
@@ -89,4 +94,62 @@ def disclosure_metric_to_evidence(envelope: DisclosureEnvelope, metric: Fundamen
         source=source,
         related_codes=(envelope.internal_code,),
         provenance_id=envelope.provenance_id,
+    )
+
+
+def source_version_to_evidence_market_public_at(version: SourceVersion, *, entity_code: str) -> EvidenceRecord:
+    """A系統(Market Information Study、`AvailabilitySemantics.MARKET_PUBLIC_AT`)の
+    選定済み`SourceVersion`をEvidence化する(D0072/D0074 Follow-up、Fundamentals
+    A-Path Bridge)。
+
+    **必ず`lib.fundamentals.view.fundamentals_as_of(availability_semantics=
+    MARKET_PUBLIC_AT)`が選定した`SourceVersion`を渡すこと**(このRoundの
+    設計上の要求)。生の`FundamentalMetric`全件を素通しでmarket_public_atへ
+    変換してはいけない — `fundamentals_as_of()`の`RevisionHistory.
+    as_of_by_semantics()`が`published_at <= decision_at`のCandidateのみに
+    絞り込み、その中で最新のVersionを選ぶことで、Future Revision/Correctionが
+    過去のas_ofへ漏れることを防ぐ(このBridge自身はas_of選択を行わない)。
+
+    **UNKNOWN Timestampはfail closed**: `version.published_at`が`None`
+    (=`market_public_at_basis=UNKNOWN`、DiscTime欠損等)の場合は例外にする。
+    `fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`自体が
+    `published_at is None`のVersionを既に候補から除外するため通常到達しない
+    Guardだが、直接呼び出し等の誤用に備えて明示的に検証する。
+
+    **B系統(`disclosure_metric_to_evidence()`)とは独立**: 生成される
+    `available_at`はB系統の`envelope.retrieved_at`ではなく`version.
+    published_at`そのもの(D0049は不変、`available_at`の生Fallback禁止は
+    B系統のみに適用される既存の原則であり、この新しいA系統専用関数は
+    別のSemanticsとして`source.published_at`をそのまま使う)。`source_type`
+    に`MARKET_PUBLIC_AT_SOURCE_TYPE`を付与し、`build_research_artifact()`が
+    A/B混在をfail closedで検知できるようにする。
+    """
+    if version.published_at is None:
+        raise ValueError(
+            f"source_version_id={version.source_version_id}: published_at(market_public_at)が"
+            "UNKNOWNのVersionはA系統Evidenceにできません(fail closed、値を推測しない)"
+        )
+    content = f"{entity_code}: {version.source_record_id}={version.value}(market_public_at={version.published_at.isoformat()})"
+    source = SourceMetadata(
+        source_id=version.source_version_id,
+        source_type=MARKET_PUBLIC_AT_SOURCE_TYPE,
+        provider_name="J-Quants",
+        source_authority_class=SourceAuthorityClass.COMPANY_PRIMARY,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=version.retrieved_at,
+        published_at=version.published_at,
+        available_at=version.published_at,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+        provenance_id=None,
+    )
+    return EvidenceRecord(
+        evidence_id=f"EVID_A_{version.source_version_id}",
+        evidence_type=EvidenceType.FACT,
+        layer=DataLayer.NORMALIZED,
+        capability=DataCapability.FUNDAMENTAL,
+        content=content,
+        source=source,
+        related_codes=(entity_code,),
+        provenance_id=None,
     )

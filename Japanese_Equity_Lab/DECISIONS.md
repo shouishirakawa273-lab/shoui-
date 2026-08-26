@@ -7748,3 +7748,135 @@ preregistrations,locked_test_audit,locked_test_audit_real}.jsonl`は
 Precedentがある。ただし`02_company_research/`配下という新しいPath自体は
 今回が初のRegistry設置であり、この判断が正しいかはユーザー確認を要する
 ため、本Roundではgit addせず報告に留める(Commit実行はしていない)。
+
+## D0075 — Fundamentals A-Path → ResearchArtifact Minimal Bridge(A/B Availability Semanticsの明示的分離)
+
+D0074で確認されたFundamentals Availability Architecture Gap(B系統
+(`disclosure_metric_to_evidence()`、`available_at=envelope.retrieved_at`
+固定)経路では、Local Snapshotのretrieved_at(実際には2026-08-16頃)が
+歴史的`as_of`より後になるため、Historical Fundamentalsが構造的に全除外
+される)を最小限解消した。**Polling Logは実装していない**(B系統の
+Future Capabilityとして保留、要件通り)。
+
+### 事前確認(Before Implementation)
+
+「Codex Fundamentals PIT Audit」という文書をリポジトリ全体(DECISIONS.md・
+`12_reports/`・`AUDIT_MANIFEST.md`含む)から`grep`したが**見つからな
+かった**(該当ゼロ件)。HEADはLocal/Remoteとも`15edf30`で同期済み
+(未Sync分は無い)。したがってこのRoundは、この文書の内容ではなく、
+ユーザー自身が指示中で明示したArchitecture Decision(A系統/B系統の定義)
+と、実際に読み直したD0049(`lib/fundamentals/evidence.py`のPIT Bugfix)
+・D0057(Cross-Capability PIT Gate、Positioning Evidence Pathの2経路
+不一致)・D0072(ResearchArtifact、POSITIONING構築元検証のPrecedent)・
+D0074(A系統再検証)を根拠に設計・実装した。ユーザー提示のArchitecture
+Decision(A=Market Information Research/B=Reproducible System
+Simulation)は、実Codeで確認した`lib.evidence.model.AvailabilitySemantics`
+(`MARKET_PUBLIC_AT`/`PROVIDER_AVAILABLE_AT`、D0042で新設済みのEnum)の
+既存定義と完全に一致することを確認した(新規Enum追加は不要と判断)。
+
+### Architecture Decision(既存Enumの再利用のみ、新規Enumは追加していない)
+
+- A = `AvailabilitySemantics.MARKET_PUBLIC_AT`(既存Enum、Market
+  Information Research、「その時点で市場へ公表済みだった情報」)。
+- B = `AvailabilitySemantics.PROVIDER_AVAILABLE_AT`(既存Enum、
+  Reproducible System Simulation、「その時点でLab/Providerから実際に
+  取得可能だった情報」、既定)。
+
+### 実施内容
+
+1. **`lib/fundamentals/evidence.py`(新規関数追加のみ、既存
+   `disclosure_metric_to_evidence()`は無変更)**: `source_version_to_
+   evidence_market_public_at(version: SourceVersion, *, entity_code:
+   str) -> EvidenceRecord`を追加。Flow: `fundamentals_as_of(availability_
+   semantics=MARKET_PUBLIC_AT)`が選定した`SourceVersion`のみを受け取り、
+   `available_at=version.published_at`(市場公表時刻そのもの)を使う。
+   `version.published_at is None`(UNKNOWN)の場合は`ValueError`で
+   fail closed(要件v1-3)。`SourceMetadata.source_type`へ`MARKET_
+   PUBLIC_AT_SOURCE_TYPE`("JQUANTS_FINS_SUMMARY_MARKET_PUBLIC_AT")と
+   いうTag文字列を付与——新しいSchema Fieldは追加せず、既存の自由文字列
+   Fieldへ異なる値を入れるだけでA/B構築元を判別可能にする(D0072
+   pit-auditor HIGH Finding[POSITIONING構築元検証]と同じ設計思想を
+   Fundamentalsへ適用)。
+2. **`lib/evidence/research_artifact.py`**: `ResearchArtifact`へ
+   `fundamentals_availability_semantics: AvailabilitySemantics =
+   PROVIDER_AVAILABLE_AT`(既定=B系統、後方互換)Fieldを追加。`build_
+   research_artifact()`へ同名引数(既定値同じ)を追加し、`evidence_pool`
+   内のFUNDAMENTAL capability Evidenceの実際の構築元(`source.
+   source_type == MARKET_PUBLIC_AT_SOURCE_TYPE`か否か)と、宣言された
+   `fundamentals_availability_semantics`が一致しない場合、POSITIONING
+   の`_uses_session_close_availability()`と同型のfail closed Validation
+   で`ValueError`にする(A/B混在防止、要件v1-5)。
+3. **`lib/registry/research_artifact_registry.py`**: `_artifact_to_
+   dict`/`_artifact_from_dict`へ`fundamentals_availability_semantics`
+   のSerialize/Deserializeを追加。旧Record(このField無し)は`.get()`
+   Defaultで`PROVIDER_AVAILABLE_AT`として後方互換Load可能(既存の
+   `data_gaps`後方互換Patternと同じ、回帰Testで確認)。
+4. **`scripts/stage3_1_research_artifact_7203.py`**: `--semantics
+   {B,A}`(既定B)を追加。B実行は既存Behaviorとbyte-identical
+   (`fundamentals_evidence_built=80 usable=0`・`positioning usable=18`、
+   再実行で確認済み)。A実行は`build_revision_histories()`→
+   `fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`→
+   `source_version_to_evidence_market_public_at()`のFlowで、主要Metric
+   (sales/operating_profit/net_profit/eps/ordinary_profit)のうち
+   `value_availability=PRESENT`のみ(IFRS下でNOT_APPLICABLEな
+   ordinary_profitは除外——実装中に一度この絞り込みを漏らし、20series
+   全件が「選定」されたが中身が空文字列のMetricを含んでいたBugを発見・
+   修正した)を対象に、実際に`as_of`(2024-11-15T15:00 JST)時点で市場
+   公表済みだった16件のみをEvidence化した(16 series評価・16件選定・
+   16件全件usable、80件を無理に通したわけではないことを実行結果で確認、
+   要件v1-8)。
+
+### Source Vintage Guard(要件v1-7、大きなFrameworkは作っていない)
+
+J-Quants Financial Summaryが「訂正前値を必ずhistorical rowとして保持
+する」ことを公式仕様から完全確認できていないため、A系統実行のArtifactは
+Source-vintage completenessをSUPPORTEDと断定しない。既存の`ConfidenceLevel`
+(`data_confidence=LOW`・`research_confidence=LOW`)・`DataGap`
+(`status=UNVERIFIED`、topic="J-Quants Financial Summary Source Vintage
+Completeness")のみで表現し、新しいProvider Validation Frameworkは
+作っていない。`conclusion=ResearchConclusion.INCONCLUSIVE`(SUPPORTED/
+PARTIALLY_SUPPORTEDへは倒さない)。
+
+### PIT Safety(A/B/Future Leakage)
+
+`fundamentals_as_of()`自体(D0042既存実装、無変更)が`published_at <=
+decision_at`の候補のみに絞り込み最新Versionを選ぶため、Future Revision/
+Correctionのas_of以前への漏洩は構造的に発生しない——このBridge自体は
+selection Logicを持たない(要件v1-6)。B系統(`disclosure_metric_to_
+evidence()`)は一切変更していない(D0049 rollbackなし)。D0057自体
+(Positioning Evidence Path 2経路不一致の一般解決)にも着手していない
+(Do Not §10)。
+
+### Tests(新規17件、全てpass)
+
+- `13_tests/test_fundamentals_evidence_market_public_at.py`(新規、6件):
+  A path開示前unavailable・A path開示後usable・future revision非leak・
+  future correction非leak・UNKNOWN market_public_at拒否(Bridge単体+
+  `fundamentals_as_of()`両方)。
+- `13_tests/test_research_artifact.py`(既存24件[実18件]に4件追加、
+  計22件[実測]): Semantics既定値記録(B変更なし確認)・A Semantics記録・
+  B evidence宣言時のA混在拒否・A宣言時のB混在拒否・A path開示前PIT除外。
+- `13_tests/test_research_artifact_registry.py`(既存5件に1件追加、
+  計6件): 旧Record(Field無し)の後方互換Load。
+
+### Regression
+
+`pytest tests/ Japanese_Equity_Lab/13_tests/`: **1042 passed, 1 failed**
+(失敗は`test_protected_path_hook.py::test_hook_warns_on_protected_
+screening_tool_paths`のみ、D0074で確認済みの既存環境問題[Windows Git
+Bash上の`protected_path_warning.sh`]と同一、本Round無関係)。`ruff
+check .`/`ruff format --check .`いずれも`All checks passed!`(初回
+`ruff check`で新規Fileに軽微な指摘[未使用変数・行長超過]2件、`ruff
+format`で解消)。`mypy core app.py scripts Japanese_Equity_Lab/lib`は
+D0074と同一の**QUALITY_GATE_ENV_BLOCKED**(numpy stub/python_version
+非互換、pre-existing、本Round起因ではない)。`git diff --stat -- core/
+app.py tests/`で変更が無いことを確認済み(Screening Tool Protected
+Paths不変)。H0001 Locked Testは実行していない。
+
+### このRoundでやらないこと(Do Not §10、遵守確認)
+
+Polling/first-seen Log実装・D0049 rollback・D0057一般解決・新規Provider・
+Stage 4広範実装・Expectations Engine・Decision Engine・Discovery Engine・
+H0001再実行のいずれにも着手していない。`generic available_at`を
+`market_public_at`へ戻す変更(既存`disclosure_metric_to_evidence()`)も
+行っていない。

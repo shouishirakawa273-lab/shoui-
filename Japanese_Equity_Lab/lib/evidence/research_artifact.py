@@ -69,9 +69,10 @@ from datetime import datetime
 from enum import StrEnum
 
 from lib.errors import LookAheadBiasError
-from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceRelation, EvidenceType, filter_usable_at
+from lib.evidence.model import AvailabilitySemantics, DataLayer, EvidenceRecord, EvidenceRelation, EvidenceType, filter_usable_at
 from lib.evidence.packet import EvidencePacket, build_evidence_packet
 from lib.evidence.retrieval import ResearchQuestion
+from lib.fundamentals.evidence import MARKET_PUBLIC_AT_SOURCE_TYPE
 from lib.market_calendar import session_close_at
 from lib.positioning.derived.price_derived import resolve_available_at
 from lib.positioning.model import PositioningRecord
@@ -174,6 +175,18 @@ class ResearchArtifact(RecordMeta):
     実施する)を経由して構築すること。直接構築(このDataclassを直接
     呼ぶこと)はTest/内部用途に限る(既存の`Hypothesis`/`SplitRunResult`
     等、他Schemaでも直接構築自体は禁止していない、同じ既存慣行)。
+
+    **`fundamentals_availability_semantics`(Fundamentals A-Path Bridge、
+    D0072/D0074 Follow-up)**: このArtifactのFundamentals Evidenceが
+    どちらのPIT Semantics(`lib.evidence.model.AvailabilitySemantics`、
+    既存Enumを再利用・新規Enumは追加しない)で構築されたかを明示的に
+    保持する。既定は`PROVIDER_AVAILABLE_AT`(B系統、`disclosure_metric_
+    to_evidence()`、既存挙動そのまま・後方互換)。`MARKET_PUBLIC_AT`
+    (A系統)は`source_version_to_evidence_market_public_at()`Bridge
+    経由でのみ構築されたFundamentals Evidenceを期待する。`build_
+    research_artifact()`がA/B混在をfail closedで検知するために使う
+    (Field自体はTimestampを再検証しない、`__post_init__`の既知の限界は
+    上記と同様)。
     """
 
     artifact_id: str
@@ -193,6 +206,7 @@ class ResearchArtifact(RecordMeta):
     supersedes_artifact_id: str | None = None
     included_evidence_ids: tuple[str, ...] = field(default_factory=tuple)
     data_gaps: tuple[DataGap, ...] = field(default_factory=tuple)
+    fundamentals_availability_semantics: AvailabilitySemantics = AvailabilitySemantics.PROVIDER_AVAILABLE_AT
 
     def __post_init__(self) -> None:
         if self.as_of.tzinfo is None:
@@ -327,6 +341,7 @@ def build_research_artifact(
     artifact_version: int = 1,
     supersedes_artifact_id: str | None = None,
     allowed_capabilities: frozenset[DataCapability] = DEFAULT_ALLOWED_CAPABILITIES,
+    fundamentals_availability_semantics: AvailabilitySemantics = AvailabilitySemantics.PROVIDER_AVAILABLE_AT,
 ) -> tuple[ResearchArtifact, EvidencePacket]:
     """PIT-safe Evidence PoolからResearchArtifactを組み立てる(Stage 3 v1 Entry Point)。
 
@@ -361,6 +376,19 @@ def build_research_artifact(
     **evidence_idの重複防止**: `evidence_pool`内で`evidence_id`が重複する
     場合、Future Leakage判定・Evidence捏造判定のいずれも別の
     `EvidenceRecord`を指してしまう可能性があるため、`ValueError`にする。
+
+    **FUNDAMENTAL Evidenceの構築元検証(A/B混在防止、D0072/D0074
+    Follow-up)**: `fundamentals_availability_semantics`(既定
+    `PROVIDER_AVAILABLE_AT`、B系統、既存挙動そのまま)で宣言した
+    Semanticsと、`evidence_pool`内のFUNDAMENTAL capability Evidenceの
+    実際の構築元(`source.source_type`が`MARKET_PUBLIC_AT_SOURCE_TYPE`か
+    否か)が一致しない場合、POSITIONINGと同様にfail closedで`ValueError`
+    にする。`MARKET_PUBLIC_AT`を宣言したのにB系統(`disclosure_metric_
+    to_evidence()`)由来のEvidenceが混ざっている場合、およびその逆
+    (既定`PROVIDER_AVAILABLE_AT`を宣言したのにA系統
+    (`source_version_to_evidence_market_public_at()`)由来のEvidenceが
+    混ざっている場合)のいずれも拒否する。A/B Semanticsを同一Artifactへ
+    無言で混在させない(要件v1、このRound)。
     """
     if question.as_of.tzinfo is None:
         raise ValueError("question.as_of はtz-awareである必要があります")
@@ -389,6 +417,21 @@ def build_research_artifact(
             "positioning_record_to_evidence()(D0057で確認されたLeak Riskあり)ではなく、"
             "このModuleのprice_derived_record_to_evidence()でEvidenceを構築してください: "
             f"{sorted(e.evidence_id for e in unsafe_positioning)}"
+        )
+
+    declares_market_public_at = fundamentals_availability_semantics == AvailabilitySemantics.MARKET_PUBLIC_AT
+    mismatched_fundamentals = [
+        e
+        for e in evidence_pool
+        if e.capability == DataCapability.FUNDAMENTAL
+        and (e.source.source_type == MARKET_PUBLIC_AT_SOURCE_TYPE) != declares_market_public_at
+    ]
+    if mismatched_fundamentals:
+        raise ValueError(
+            "evidence_poolにFUNDAMENTAL capabilityのEvidenceが含まれていますが、宣言された"
+            f"fundamentals_availability_semantics={fundamentals_availability_semantics.value}と"
+            "実際の構築元(source.source_type)が一致しません(fail closed、A/B混在防止): "
+            f"{sorted(e.evidence_id for e in mismatched_fundamentals)}"
         )
 
     usable_evidence = filter_usable_at(evidence_pool, question.as_of)
@@ -439,6 +482,7 @@ def build_research_artifact(
         research_confidence=research_confidence,
         conclusion=conclusion,
         conclusion_rationale=conclusion_rationale,
+        fundamentals_availability_semantics=fundamentals_availability_semantics,
     )
     return artifact, packet
 

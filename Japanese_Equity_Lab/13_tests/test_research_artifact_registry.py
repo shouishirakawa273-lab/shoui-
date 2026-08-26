@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 from lib.errors import AppendOnlyViolationError
+from lib.evidence.model import AvailabilitySemantics
 from lib.evidence.research_artifact import (
     ConfidenceLevel,
     DataGap,
@@ -109,3 +110,24 @@ def test_old_records_without_data_gaps_key_still_load(tmp_path: Path) -> None:
     loaded = ResearchArtifactRegistry(storage_path).all()[0]
     assert loaded.data_gaps == ()
     assert loaded.artifact_id == "ART_OLD"
+
+
+def test_old_records_without_fundamentals_availability_semantics_key_default_to_provider_available_at(
+    tmp_path: Path,
+) -> None:
+    """`fundamentals_availability_semantics`追加前の既存Record(D0072/D0074時点)が、
+    キー自体を持たなくても引き続き読み込め、既定でB系統(PROVIDER_AVAILABLE_AT、
+    既存の暗黙の挙動)として解釈されることを確認する(後方互換、要件v1-1)。"""
+    storage_path = tmp_path / "research_artifacts.jsonl"
+    registry = ResearchArtifactRegistry(storage_path)
+    as_of = datetime(2026, 6, 1, tzinfo=UTC)
+    registry.record(_artifact(artifact_id="ART_PRE_SEMANTICS_FIELD", as_of=as_of))
+
+    lines = storage_path.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[0])
+    del record["fundamentals_availability_semantics"]
+    storage_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    loaded = ResearchArtifactRegistry(storage_path).all()[0]
+    assert loaded.fundamentals_availability_semantics == AvailabilitySemantics.PROVIDER_AVAILABLE_AT
+    assert loaded.artifact_id == "ART_PRE_SEMANTICS_FIELD"

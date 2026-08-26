@@ -15,7 +15,16 @@ import pytest
 from lib.disclosures.evidence import disclosure_document_to_evidence
 from lib.disclosures.model import DisclosureDocument, DocumentKind
 from lib.errors import LookAheadBiasError
-from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceRelation, EvidenceType, ValueAvailability
+from lib.evidence.model import (
+    AvailabilityBasis,
+    AvailabilitySemantics,
+    DataLayer,
+    EvidenceRecord,
+    EvidenceRelation,
+    EvidenceType,
+    SourceVersion,
+    ValueAvailability,
+)
 from lib.evidence.research_artifact import (
     ConfidenceLevel,
     DataGap,
@@ -27,7 +36,7 @@ from lib.evidence.research_artifact import (
     price_derived_record_to_evidence,
 )
 from lib.evidence.retrieval import ResearchQuestion
-from lib.fundamentals.evidence import disclosure_metric_to_evidence
+from lib.fundamentals.evidence import disclosure_metric_to_evidence, source_version_to_evidence_market_public_at
 from lib.fundamentals.model import (
     ActualOrForecast,
     ConsolidationScope,
@@ -77,6 +86,19 @@ def _fundamental_evidence(*, retrieved_at: datetime, suffix: str = "1") -> Evide
         source_field="FOP",
     )
     return disclosure_metric_to_evidence(envelope, metric)
+
+
+def _market_public_at_fundamental_evidence(*, published_at: datetime, suffix: str = "A1") -> EvidenceRecord:
+    version = SourceVersion(
+        source_record_id=f"{_ENTITY}|sales|CURRENT_FISCAL_YEAR|2Q|CONSOLIDATED|IFRS",
+        source_version_id=f"MET_TEST_{suffix}",
+        value="15481299000000",
+        available_at=published_at,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        availability_basis=AvailabilityBasis.UNKNOWN,
+        published_at=published_at,
+    )
+    return source_version_to_evidence_market_public_at(version, entity_code=_ENTITY)
 
 
 def _disclosure_evidence(*, retrieved_at: datetime) -> EvidenceRecord:
@@ -666,3 +688,119 @@ def test_single_company_as_of_produces_research_artifact_with_all_evidence_trace
     assert artifact.entity_code == _ENTITY
     assert artifact.as_of == as_of
     assert artifact.evidence_packet_id == packet.packet_id
+    # B系統(disclosure_metric_to_evidence())は変更していないため、Semanticsを
+    # 明示しない既存呼び出しは既定でPROVIDER_AVAILABLE_AT(B系統)のまま
+    # 挙動不変であることを確認する(要件v1、このRound)。
+    assert artifact.fundamentals_availability_semantics == AvailabilitySemantics.PROVIDER_AVAILABLE_AT
+
+
+# --- Fundamentals A-Path Bridge(MARKET_PUBLIC_AT Semantics、D0072/D0074 Follow-up) -------
+
+
+def test_market_public_at_semantics_is_recorded_on_artifact() -> None:
+    """A系統(MARKET_PUBLIC_AT)を明示的に宣言してArtifactを構築した場合、
+    そのSemanticsが`ResearchArtifact.fundamentals_availability_semantics`へ
+    後から判定可能な形で保持されることを確認する(要件v1-1)。"""
+    as_of = datetime(2024, 11, 15, 6, 0, tzinfo=UTC)
+    published_at = datetime(2024, 11, 6, 4, 55, tzinfo=UTC)  # 13:55 JST
+    evidence = _market_public_at_fundamental_evidence(published_at=published_at)
+
+    artifact, _packet = build_research_artifact(
+        artifact_id="ART_TEST_A_SEMANTICS_1",
+        entity_code=_ENTITY,
+        question=_question(as_of),
+        evidence_pool=[evidence],
+        relations={evidence.evidence_id: EvidenceRelation.NEUTRAL},
+        bull_case=_bull(),
+        base_case=NarrativeCase(summary="開示された実績値", supporting_evidence_ids=(evidence.evidence_id,)),
+        bear_case=_bear(),
+        data_confidence=ConfidenceLevel.LOW,
+        evidence_confidence=ConfidenceLevel.MEDIUM,
+        research_confidence=ConfidenceLevel.LOW,
+        conclusion=ResearchConclusion.INCONCLUSIVE,
+        conclusion_rationale="A系統Fundamentals 1件のみ",
+        fundamentals_availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+    )
+    assert artifact.fundamentals_availability_semantics == AvailabilitySemantics.MARKET_PUBLIC_AT
+    assert evidence.evidence_id in artifact.included_evidence_ids
+
+
+def test_build_research_artifact_rejects_b_path_fundamental_evidence_when_market_public_at_declared() -> None:
+    """A系統を宣言したのに、実際にはB系統(`disclosure_metric_to_evidence()`、
+    `available_at=retrieved_at`)由来のFundamentals Evidenceが混ざっている場合、
+    fail closedで拒否することを確認する(A/B混在防止、要件v1-5)。"""
+    as_of = datetime(2026, 6, 1, tzinfo=UTC)
+    b_path_evidence = _fundamental_evidence(retrieved_at=datetime(2026, 5, 1, tzinfo=UTC))
+
+    with pytest.raises(ValueError, match="fundamentals_availability_semantics"):
+        build_research_artifact(
+            artifact_id="ART_TEST_MIXED_1",
+            entity_code=_ENTITY,
+            question=_question(as_of),
+            evidence_pool=[b_path_evidence],
+            relations={b_path_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+            bull_case=_bull(),
+            base_case=_base(),
+            bear_case=_bear(),
+            data_confidence=ConfidenceLevel.MEDIUM,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.MEDIUM,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="test",
+            fundamentals_availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+        )
+
+
+def test_build_research_artifact_rejects_a_path_fundamental_evidence_under_default_b_semantics() -> None:
+    """逆方向: `fundamentals_availability_semantics`を明示せず(既定
+    PROVIDER_AVAILABLE_AT=B系統)、実際にはA系統
+    (`source_version_to_evidence_market_public_at()`)由来のEvidenceが
+    混ざっている場合もfail closedで拒否することを確認する(要件v1-5)。"""
+    as_of = datetime(2024, 11, 15, 6, 0, tzinfo=UTC)
+    a_path_evidence = _market_public_at_fundamental_evidence(published_at=datetime(2024, 11, 6, 4, 55, tzinfo=UTC))
+
+    with pytest.raises(ValueError, match="fundamentals_availability_semantics"):
+        build_research_artifact(
+            artifact_id="ART_TEST_MIXED_2",
+            entity_code=_ENTITY,
+            question=_question(as_of),
+            evidence_pool=[a_path_evidence],
+            relations={a_path_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+            bull_case=_bull(),
+            base_case=_base(),
+            bear_case=_bear(),
+            data_confidence=ConfidenceLevel.MEDIUM,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.MEDIUM,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="test",
+            # fundamentals_availability_semanticsを明示しない(既定=B系統)。
+        )
+
+
+def test_market_public_at_evidence_before_disclosure_is_pit_excluded() -> None:
+    """A系統Evidenceも、開示(market_public_at)前のas_ofでは他Evidence同様
+    `filter_usable_at()`によりPacketから除外される(通常のPIT Gateがそのまま
+    効くことの確認、Bridge自体が特別扱いを作っていないことの確認)。"""
+    published_at = datetime(2024, 11, 6, 4, 55, tzinfo=UTC)
+    evidence = _market_public_at_fundamental_evidence(published_at=published_at)
+    as_of_before = datetime(2024, 11, 1, tzinfo=UTC)  # 開示前
+
+    artifact, packet = build_research_artifact(
+        artifact_id="ART_TEST_A_BEFORE_1",
+        entity_code=_ENTITY,
+        question=_question(as_of_before),
+        evidence_pool=[evidence],
+        relations={},
+        bull_case=_bull(),
+        base_case=_base(),
+        bear_case=_bear(),
+        data_confidence=ConfidenceLevel.INSUFFICIENT,
+        evidence_confidence=ConfidenceLevel.INSUFFICIENT,
+        research_confidence=ConfidenceLevel.INSUFFICIENT,
+        conclusion=ResearchConclusion.INSUFFICIENT_EVIDENCE,
+        conclusion_rationale="開示前のためEvidence無し",
+        fundamentals_availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+    )
+    assert evidence.evidence_id not in artifact.included_evidence_ids
+    assert evidence.evidence_id not in packet.included_evidence_ids
