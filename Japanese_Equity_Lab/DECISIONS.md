@@ -7504,3 +7504,65 @@ Engine・新規Data Provider・H0002・Phase5 v2・D0057自体の解決(2経路�
 いない。Macro/News/Consensus(EXPECTATIONS)/non-price Positioning/
 Availability未確認のhistorical disclosureは既定で使用しない
 (`DEFAULT_ALLOWED_CAPABILITIES`によりfail closed)。
+
+## D0073 — Stage 3.1: Real-Data Research Acceptance(実データ0件、BLOCKED)
+
+Stage 3 v1(`ResearchArtifact`、D0072)を「新しいEngineを作らず、既存
+Repoで確認できる実データ1件」でDogfoodする試みを実施した。**結論:
+このSessionから到達可能な範囲に、Fundamentals/Disclosures/Positioning
+いずれについても実データ(非Fixture)が1件も存在しない。** ユーザーの
+明示指示「Research内容を埋めるためにEvidenceを捏造しない。使える
+Evidenceが少なければ、その不足自体を結果として残す」に従い、実データを
+Fixtureで代替する・Evidenceを捏造する・SUPPORTED/INCONCLUSIVEを無理に
+出すのいずれも行わず、この不足そのものをこのEntryとして記録する。
+
+**確認した事実(すべてこのRound内で直接確認、推測なし)**:
+
+1. `Japanese_Equity_Lab/01_data/`配下(`fundamentals/`・`point_in_time/`・
+   `sectors/`・`prices/`・`corporate_events/`・`processed/`・`market/`)は
+   いずれも`.gitkeep`のみでデータファイルが0件。
+2. `01_data/raw/`には`fixture/`のみが存在し、中身はPhase5 Backtest
+   Smoke Test用の合成Data(`equity_bars`/`benchmark`/`trading_calendar`/
+   `daily_quotes`、`01_data/README.md`が「`fixture/`配下(合成データ)」
+   と明記)。Fundamentals/Disclosures/Positioning Domainのデータは
+   1件も含まれず、仮に含まれていたとしても合成データである以上使用
+   できない。
+3. `01_data/raw/jquants/`(実データの置き場、`.gitignore`対象)は
+   このSessionのファイルシステム上に**存在しない**(過去に一度も
+   Fetchされていない、または本Container起動時に持ち越されていない)。
+4. `JQUANTS_API_KEY`は未設定、`.env`ファイルもRepository Root配下に
+   存在しない。
+5. このSessionから`https://api.jquants.com/`への通信はProxy Level で
+   Block されている(`curl`が`CONNECT tunnel failed, response 403`)。
+   長期的に確認済みのEGRESS_BLOCKED制約(Phase5 v1.1以降繰り返し確認)
+   がこのRoundでも変わっていないことを再確認した。
+
+**実施しなかったこと(禁止事項の遵守)**: 新規Provider実装・新規Fetch
+Engine構築・UNKNOWN Availabilityの上書き・Fixtureを実データと称して
+使用・Evidence 0件のままSUPPORTED/PARTIALLY_SUPPORTEDを捻出、のいずれも
+行っていない。`build_research_artifact()`・
+`ResearchArtifactRegistry`・Evidence Converter群(`disclosure_metric_
+to_evidence()`/`disclosure_document_to_evidence()`/`price_derived_
+record_to_evidence()`)はいずれも無変更(実行を妨げるコード上の欠陥は
+見つかっていないため、「実行阻害要因が見つかった場合のみ本番Code変更」
+の条件に該当しない)。
+
+**このRoundでの結論**: Stage 3 v1自体の実装(D0072)に欠陥があるという
+証拠はない — 阻害要因はCodeではなくDataの不在である。次にStage 3.1を
+再試行する場合、ユーザー自身のローカルPC上で(`local-validation`
+Skillに従い)既存の`JQuantsAdapter`/`fetch_jquants_local_snapshot.py`を
+使って最低1銘柄分のFundamentals(および可能であればDisclosures/Price)
+Raw SnapshotをFetchし、`01_data/raw/jquants/`(または同等のLocal
+Snapshot)として保存した上で、それを本Sessionへ持ち込む(または
+ユーザー環境で直接本Round相当の処理を実行する)必要がある。このLabの
+既存の禁止事項(新規Provider・H0002・D0057解決)はいずれも今回の
+結論に影響しない — 単に「実データそのものがこのSession内に存在
+しない」という、Provider/Architecture以前の問題である。
+
+**Code変更・Test追加**: 無し(コード上の実行阻害要因が見つからなかった
+ため、`13_tests/`への新規Test追加もこのRoundでは不要と判断した — Test
+すべき新しいCode Pathが無い)。`git diff --stat -- core/ app.py tests/`
+で変更が無いことを確認(Screening Tool Protected Paths不変)。Regression
+は本Entry・DECISIONS.md追記のみのDoc-only変更のため、Lab全体Regression
+の再実行は不要と判断した(D0071 Round同様、Doc-onlyはCode Regression
+Scope外)。
