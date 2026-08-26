@@ -157,6 +157,112 @@ def test_compute_metrics_trade_concentration_visible_for_single_ticker_dominance
     assert metrics.stock_by_stock_trade_share["6758"] == pytest.approx(0.25)
 
 
+# --- Post-Phase5 Hardening B(Codex Transaction Cost Audit、D0070) -----------------------
+# Finding1: Gross/Net Semantic Clarity
+
+
+def test_trade_result_gross_pretax_return_alias_matches_net_pretax_return() -> None:
+    """`net_pretax_return`という Field名は歴史的経緯によるもので、実際の格納値は
+    取引コスト控除前のGross Returnである(D0070 Finding1)。新しいAliasが同じ値を
+    返すことを確認する(Field名自体はBackward Compatibilityのため変更しない)。"""
+    trade = TradeResult(code="7203", sector="Auto", year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.0321)
+    assert trade.gross_pretax_return == trade.net_pretax_return == pytest.approx(0.0321)
+
+
+def test_compute_metrics_gross_equals_net_at_zero_cost() -> None:
+    trades = [TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.05)]
+    metrics = compute_metrics(trades, data_split=DataSplit.TEST, transaction_cost_bps=0.0)
+    assert metrics.average_return == pytest.approx(metrics.transaction_cost_adjusted_return)
+
+
+def test_compute_metrics_net_below_gross_for_positive_finite_cost() -> None:
+    trades = [TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.05)]
+    metrics = compute_metrics(trades, data_split=DataSplit.TEST, transaction_cost_bps=10.0)
+    assert metrics.transaction_cost_adjusted_return < metrics.average_return
+
+
+# Finding2: excess_return Population Mismatch
+
+
+def test_compute_metrics_excess_return_uses_pairwise_population_when_benchmark_missing_for_some_trades() -> None:
+    """Trade1はBenchmarkが観測でき、Trade2は観測できない(D0070 Finding2の再現Case)。
+    旧実装は`average_return`(全trade平均、Trade1+Trade2)と`benchmark_return`
+    (観測できたTrade1のみの平均)という異なる母集団同士を引き算していた。
+    修正後は`gross_excess_return`/`net_excess_return`/`excess_return`いずれも
+    Trade1のみ(両方観測できたtrade)の母集団で計算されることを確認する。"""
+    trades = [
+        TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.10),
+        TradeResult(code="6758", sector=None, year=2026, entry_date=date(2026, 2, 3), net_pretax_return=0.20),
+    ]
+    # Trade1(7203)はBenchmark観測できた(0.03)、Trade2(6758)は観測できない(None)。
+    benchmark_returns_by_trade = [0.03, None]
+    metrics = compute_metrics(
+        trades,
+        data_split=DataSplit.TEST,
+        benchmark_return=0.03,  # 観測できたTrade1のみの平均(BacktestEngine.run()と同じ定義)
+        transaction_cost_bps=10.0,
+        benchmark_returns_by_trade=benchmark_returns_by_trade,
+    )
+    # Pairwise population(Trade1のみ)での差分。全trade平均(0.15)との差分ではない。
+    assert metrics.gross_excess_return == pytest.approx(0.10 - 0.03)
+    assert metrics.excess_return == pytest.approx(metrics.gross_excess_return)
+    cost = 10.0 / 10_000
+    assert metrics.net_excess_return == pytest.approx((0.10 - cost) - 0.03)
+    # 旧実装(異なる母集団同士の差分)には一致しないことも明示的に確認する。
+    mismatched_population_excess_return = metrics.average_return - 0.03  # 旧式: 全trade平均 - benchmark
+    assert metrics.excess_return != pytest.approx(mismatched_population_excess_return)
+
+
+def test_compute_metrics_excess_return_is_none_when_no_trade_has_matched_benchmark() -> None:
+    """対応が取れるtradeが1件も無い場合、異なる母集団のまま残さずNoneにする(D0070 Finding2)。"""
+    trades = [TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.10)]
+    metrics = compute_metrics(trades, data_split=DataSplit.TEST, benchmark_return=None, benchmark_returns_by_trade=[None])
+    assert metrics.gross_excess_return is None
+    assert metrics.net_excess_return is None
+    assert metrics.excess_return is None
+
+
+def test_compute_metrics_excess_return_falls_back_to_legacy_formula_without_per_trade_benchmark() -> None:
+    """`benchmark_returns_by_trade`を渡さない直接呼び出し(Event Study等)は、trade単位の
+    対応情報が無いため従来通りscalar同士の単純差分にfallbackする(既存呼び出し元の後方互換)。"""
+    trades = [
+        TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.10),
+        TradeResult(code="6758", sector=None, year=2026, entry_date=date(2026, 2, 3), net_pretax_return=0.20),
+    ]
+    metrics = compute_metrics(trades, data_split=DataSplit.TEST, benchmark_return=0.03)
+    assert metrics.excess_return == pytest.approx(metrics.average_return - 0.03)
+    assert metrics.gross_excess_return == pytest.approx(metrics.excess_return)
+
+
+def test_compute_metrics_rejects_benchmark_returns_by_trade_with_mismatched_length() -> None:
+    trades = [TradeResult(code="7203", sector=None, year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.10)]
+    with pytest.raises(ValueError, match="benchmark_returns_by_trade"):
+        compute_metrics(trades, data_split=DataSplit.TEST, benchmark_returns_by_trade=[0.03, 0.04])
+
+
+# Finding4: Non-finite Cost
+
+
+def test_transaction_cost_config_rejects_nan_commission() -> None:
+    with pytest.raises(ValueError, match="有限"):
+        TransactionCostConfig(commission_bps=float("nan"))
+
+
+def test_transaction_cost_config_rejects_positive_infinity_slippage() -> None:
+    with pytest.raises(ValueError, match="有限"):
+        TransactionCostConfig(slippage_bps=float("inf"))
+
+
+def test_transaction_cost_config_rejects_negative_infinity_commission() -> None:
+    with pytest.raises(ValueError, match="有限"):
+        TransactionCostConfig(commission_bps=float("-inf"))
+
+
+def test_transaction_cost_config_still_rejects_negative_finite_values() -> None:
+    with pytest.raises(ValueError, match="0以上"):
+        TransactionCostConfig(commission_bps=-1.0)
+
+
 def test_compute_metrics_distinguishes_policy_skip_from_execution_failure() -> None:
     """SKIPPED_POSITION_OPEN(Policy Skip)とUNEXECUTABLE_NO_OPEN(Execution Failure)を
     同じ「unexecuted」として合算しないことを直接確認する。"""

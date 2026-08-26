@@ -453,7 +453,11 @@ def _run_and_record(
 
     dataset_hash = dataset_hash_from_snapshots([m.content_hash for m in manifests])
     strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(strategy_config)})
-    config_hash = hash_json_safe({"split": split.value, "preregistration_id": PREREGISTRATION_ID})
+    # Post-Phase5 Hardening B(Codex Transaction Cost Audit Finding3、D0070):
+    # 独自にconfig_hashを組み立てず、run_split()が実際にBacktestEngineへ渡した
+    # BacktestRunConfig(Transaction Cost含む)から計算したeffective_config_hash
+    # (Single Source of Truth)をそのまま再利用する。
+    config_hash = result.effective_config_hash
     fingerprint = ReproducibilityFingerprint(
         run_id=f"RUN_{EXPERIMENT_ID}_{split.value}",
         dataset_hash=dataset_hash,
@@ -480,7 +484,8 @@ def _run_and_record(
         price_adjustment=price_adjustment,
         notes=(
             f"Phase5 v1.1 Real-Data Validation Experiment(H0001-R1)、split={split.value}、"
-            f"universe_resolution=[{','.join(universe_probe_notes)}]"
+            f"universe_resolution=[{','.join(universe_probe_notes)}]、"
+            f"effective_transaction_cost_bps={result.effective_transaction_cost_bps}"
         ),
         preregistration_id=result.preregistration_id,
         dataset_contract_hash=result.dataset_contract_hash,

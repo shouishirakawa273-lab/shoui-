@@ -7202,3 +7202,119 @@ Record後方互換2件)を追加。
 H0002・Strategy最適化・Parameter探索・Phase5 v2・Transaction Cost
 較正・PIT Universe再設計・D0057解決・Portfolio/Decision Engine・
 Complexity Refactorのいずれもこのラウンドでは着手しない。
+
+## D0070 — Post-Phase5 Hardening B: Codex Transaction Cost Audit Finding Resolution
+
+Codexによる独立Transaction Cost Audit(判定PASS_WITH_CONCERNS)のFindingのうち、
+ChatGPT reviewでACCEPT済みの4件(Gross/Net Semantic・excess_return母集団
+mismatch・Effective Cost Provenance・Non-finite Cost)のみを最小修正した。
+「compute_metrics()を外部callerが誤用してnet値を渡す可能性」はActual
+Production Callerで再現しないためNOT CURRENT DEFECTとしてOut of Scopeとし、
+新しいTransaction Cost Frameworkは作らない(ユーザー指示)。
+
+**Audited HEADについての実測結果(§9 Output A、重要な食い違い)**: ユーザーから
+提示されたAudited HEAD(`e8eb683791482d12000e712e915fd9613c2903be`)は、
+`git log --all`(fetch後)でこのRepository(ローカル・origin両方)のどのBranch
+にも存在しないことを確認した。またFinding2が「既に存在する」と述べた
+`gross_excess_return`/`net_excess_return`のPairwise実装、Finding3が述べた
+`SplitRunResult.effective_config_hash`、Finding3が述べた`ExecutionAssumptions`
+は、実際のRepository全文検索(grep)でいずれも0件で、着手前の時点では
+存在しなかった。これはCodexが監査した対象がこのSession手元のRepository
+State(直前のRound、D0069時点のHEAD `84e4fd6`)と完全には一致していない
+可能性を示す(ローカル/Remote差異は本Session過去のD0066でも実例あり)。
+ユーザーからの「鵜呑みにせず、しかしゼロから全部を再調査もしない」という
+指示に従い、Finding自体が指す**問題(Defect)の実在**は独立に`lib/backtest/
+engine.py`/`lib/research/runner.py`の実コードを読んで直接確認した上で
+(全4件とも実際に確認できた、下記参照)、「解決策が既に存在する」という
+Findingの前提部分だけを外し、Main Claude自身がFinding記載の設計原則に
+沿って新規実装した。
+
+**Finding1確認(Gross/Net Semantic Clarity)**: `lib/backtest/engine.py`の
+`BacktestEngine.run()`は`gross_return = exit_bar.open / entry_bar.open - 1`
+を計算し、そのまま`TradeResult(..., net_pretax_return=gross_return)`へ
+代入していた(取引コスト控除前の値がnet-suffixedなFieldに入っていた)。
+`TradeResult`クラスDocstring自体は元から正しく「取引コスト控除前・税引前の
+gross return」と説明していたため、意味論自体に矛盾は無かったが、Field名
+そのものは誤解を招く。Field名は互換のため変更せず、`gross_pretax_return`
+という読み取り専用Property Aliasを追加した。
+
+**Finding2確認・修正(excess_return Population Mismatch)**: `BacktestEngine.
+run()`は、各tradeについてBenchmarkのEntry/Exit両方のBarが揃っている場合の
+みそのtradeのBenchmark Returnを`matched_benchmark_returns`へ追加していた
+一方、`average_return`(→`excess_return`の一方の項)は全executed trade
+(Benchmark欠損の有無を問わない)から計算していた。すなわち`excess_return
+= average_return(全trade) - benchmark_return(matched部分集合のみ)`という
+異なる母集団同士の差分になっていた(Benchmark Barが1件でも欠損すれば
+発生する実際のDefect)。修正: `compute_metrics()`に新しいOptional引数
+`benchmark_returns_by_trade`(tradesと同じ長さ・同じ順序、対応が取れない
+tradeは`None`)を追加し、`BacktestEngine.run()`はtrade単位で位置揃えした
+Benchmark Returnの列を渡すよう変更した。渡された場合、`gross_excess_return`
+/`net_excess_return`/`excess_return`(`excess_return`は`gross_excess_return`
+と同値、Option A)はいずれも「両方観測できたtradeのみ」の同一母集団で
+計算する。対応が取れるtradeが1件も無い場合はNone(異なる母集団のまま
+残さない)。`benchmark_returns_by_trade`を渡さない直接呼び出し(Event
+Study等の既存呼び出し元)は、trade単位の対応情報が無いため従来通りscalar
+同士の単純差分にfallbackする(既存呼び出し元・既存Testとの後方互換を
+保つため)。`BacktestMetrics`へ`gross_excess_return`/`net_excess_return`
+(いずれも`float | None = None`)を追加。過去に記録済みのH0001-R1 Experiment
+Recordは追記専用Registryのため一切書き換えていない(この修正は将来の
+Experiment記録にのみ影響する)。
+
+**Finding3確認・修正(Effective Cost Provenance)**: `scripts/phase5_v1_1_
+h0001_real_data.py`・`scripts/phase5_v1_short_term_reversal.py`はいずれも
+`run_split()`へ`transaction_cost`引数を渡していなかった(既定の`Transaction
+CostConfig()`=0bpsがそのまま実行された)。両Scriptとも独自に`config_hash =
+hash_json_safe({"split": ..., "preregistration_id": ...})`を組み立てて
+おり、実際に有効だったTransaction Cost設定を全く反映しないHashだった。
+`SplitRunResult`(`lib/research/runner.py`)へ`effective_config_hash`
+(`run_split()`が実際に`BacktestEngine.run()`へ渡した`BacktestRunConfig`
+全体、Transaction Cost含む、から`hash_json_safe(asdict(config))`で計算)と
+`effective_transaction_cost_bps`(同Configの`round_trip_bps()`)を追加し、
+Single Source of Truthとした。両Scriptの`config_hash`計算をこの
+`result.effective_config_hash`の再利用へ置き換え(重複Hashロジックを
+作らない)、`effective_transaction_cost_bps`は既存の`notes`文字列パターン
+(D0067 Pre-run PIT Audit対応で確立済みのUniverse Resolution記録と同じ
+慣習)へ追記して人間可読な形でも残るようにした。`ExecutionAssumptions`と
+いう専用型は新設していない(Frameworkを作らないというユーザー指示)。
+H0001-R1は既にRegistryへ確定記録済み(Append-only、experiment_id重複は
+`AppendOnlyViolationError`)のため、この変更が過去記録を書き換えることは
+構造的に不可能であり、また再実行もしていない。
+
+**Finding4確認・修正(Non-finite Cost)**: `TransactionCostConfig.
+__post_init__`は`commission_bps < 0 or slippage_bps < 0`のみを検査して
+おり、`NaN < 0`がPythonでは`False`になるためNaNを素通りさせていた
+(`+inf`/`-inf`は`< 0`判定自体は正しく動くが、Cost計算を無意味な値に
+する点で同様に問題)。`math.isfinite()`によるNaN/±inf拒否を`>=0`
+チェックの前に追加した。
+
+**後方互換**: `BacktestMetrics.gross_excess_return`/`net_excess_return`は
+`float | None = None`のOptional追加Fieldで、旧Experiment Recordはこの
+キーを持たなくても`BacktestMetrics(**d)`のデフォルト適用で読み込める。
+`ReproducibilityFingerprint`自体は変更していない(`config_hash`という
+既存Fieldの計算式のみが将来のRunから変わる)。`SplitRunResult`は
+Experiment Registryへ直接Serializeされない中間結果のため、後方互換
+Migrationの対象外(唯一の構築箇所である`run_split()`のみを更新)。
+
+**Research-Safety Impact**: PIT Semantics/`PointInTimeRecord`/PIT Universe/
+Corporate Action Timing/Preregistration Semantics/Locked Test Semantics/
+H0001のParameter・Conclusion/既存の実データ結果値のいずれも変更していない。
+H0001 Locked Testは再実行していない(Synthetic/Fixture入力のみを使う
+既存Test Harness `test_phase5_v1_1_real_data_script.py`の`_FakeAdapter`
+経由でのみ`_run_and_record()`を呼び出した)。
+
+**Tests**: `13_tests/test_backtest_engine.py`にFinding1(2件)・Finding2
+(4件)・Finding4(4件)、`13_tests/test_phase5_v1_1_real_data_script.py`に
+Finding3(既存の`_FakeAdapter`End-to-End Harnessを再利用した1件、
+config_hashがlegacy式と一致しないこと・`effective_transaction_cost_bps`
+がnotesに残ることを確認)を追加。
+
+**Regression**: `ruff check`/`ruff format --check`/`mypy`(`core app.py
+scripts Japanese_Equity_Lab/lib`)いずれもclean、`pytest`(Lab+Screening
+Tool)1009件全てpass(既存997件+新規12件、新規Failure無し)。
+`git diff --stat -- core/ app.py tests/`で変更が無いことを確認
+(Screening Tool Protected Paths不変)。
+
+H0002・Strategy最適化・Parameter探索・Phase5 v2・実Broker Cost較正・
+Liquidity/Market Impact・PIT Universe再設計・D0057解決・Research/
+Discovery/Decision/Portfolio Engine・Complexity Refactorのいずれも
+このラウンドでは着手しない。

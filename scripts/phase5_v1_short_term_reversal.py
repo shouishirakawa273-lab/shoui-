@@ -277,7 +277,10 @@ def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestG
 
     dataset_hash = dataset_hash_from_snapshots([m.content_hash for m in manifests])
     strategy_hash = hash_json_safe({"strategy_id": STRATEGY_ID, "version": STRATEGY_VERSION, "config": asdict(strategy_config)})
-    config_hash = hash_json_safe({"split": split.value, "preregistration_id": PREREGISTRATION_ID})
+    # Post-Phase5 Hardening B(Codex Transaction Cost Audit Finding3、D0070):
+    # 独自にconfig_hashを組み立てず、run_split()が実際に有効だったBacktestRunConfig
+    # (Transaction Cost含む)から計算したeffective_config_hashを再利用する。
+    config_hash = result.effective_config_hash
     fingerprint = ReproducibilityFingerprint(
         run_id=f"RUN_{EXPERIMENT_ID}_{split.value}",
         dataset_hash=dataset_hash,
@@ -295,7 +298,10 @@ def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestG
         status=ExperimentStatus.TESTED,
         metrics=result.metrics,
         reproducibility=fingerprint,
-        notes=f"Phase5 v1 Smoke Run(Fixture合成データ、投資判断のEvidenceではない)、split={split.value}",
+        notes=(
+            f"Phase5 v1 Smoke Run(Fixture合成データ、投資判断のEvidenceではない)、split={split.value}、"
+            f"effective_transaction_cost_bps={result.effective_transaction_cost_bps}"
+        ),
         preregistration_id=result.preregistration_id,
         dataset_contract_hash=result.dataset_contract_hash,
     )

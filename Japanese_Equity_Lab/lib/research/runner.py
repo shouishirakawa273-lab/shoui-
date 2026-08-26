@@ -33,7 +33,7 @@ Runner自身が期間を選ぶことはしない(Runner側でのパラメータ�
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from lib.backtest.engine import (
     BacktestEngine,
@@ -46,6 +46,7 @@ from lib.backtest.engine import (
 from lib.backtest.price_history import PriceHistorySource
 from lib.errors import PreregistrationImmutabilityError, SplitBoundaryLeakageError
 from lib.market_calendar import TradingCalendar
+from lib.reproducibility import hash_json_safe
 from lib.research.locked_test import LockedTestGateProtocol
 from lib.research.preregistration import Preregistration, PreregistrationStatus
 from lib.schemas.price_data import AdjustedOHLCVBar
@@ -64,12 +65,25 @@ _SPLIT_TO_PERIOD_FIELDS: dict[DataSplit, tuple[str, str]] = {
 
 @dataclass(frozen=True)
 class SplitRunResult:
-    """1 split分のRun結果(Metrics + どの期間・Preregistrationで実行したか)。"""
+    """1 split分のRun結果(Metrics + どの期間・Preregistrationで実行したか)。
+
+    `effective_config_hash` / `effective_transaction_cost_bps`(Post-Phase5
+    Hardening B、Codex Transaction Cost Audit Finding3、D0070): 呼び出し側
+    (Phase5 Script等)が実際に効いた`BacktestRunConfig`(transaction_cost含む)
+    と無関係に独自のconfig_hashを組み立て、実行時に効いたTransaction Cost
+    設定がExperiment Recordへ十分伝播しない問題への対応。この2 Fieldは
+    `run_split()`が実際に`BacktestEngine.run()`へ渡した`BacktestRunConfig`
+    (このsplitで本当に有効だった設定)から直接計算する、Single Source of
+    Truth。呼び出し側は独自にconfig_hashを再計算せず、この値をそのまま
+    `ReproducibilityFingerprint.config_hash`等へ再利用すること。
+    """
 
     split: DataSplit
     metrics: BacktestMetrics
     preregistration_id: str
     dataset_contract_hash: str
+    effective_config_hash: str
+    effective_transaction_cost_bps: float
 
 
 def _holding_period_days(preregistration: Preregistration) -> int:
@@ -184,6 +198,8 @@ def run_split(
         metrics=metrics,
         preregistration_id=preregistration.preregistration_id,
         dataset_contract_hash=dataset_contract_hash,
+        effective_config_hash=hash_json_safe(asdict(config)),
+        effective_transaction_cost_bps=config.transaction_cost.round_trip_bps(),
     )
 
 

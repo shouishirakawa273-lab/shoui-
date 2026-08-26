@@ -19,6 +19,7 @@ Event Study(個々のシグナルの前後リターンをoverlapさせたまま�
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -194,13 +195,25 @@ class TradeResult:
     サンプルとして扱わないこと(RESEARCH_RULES.md参照)。`BacktestEngine.run()`は
     デフォルトでPositionPolicy.NO_REENTRY_WHILE_POSITION_OPENにより重複を防ぐが、
     compute_metrics()を直接使う場合(Event Study等)は呼び出し側の責任で扱うこと。
+
+    Post-Phase5 Hardening B(Codex Transaction Cost Audit Finding1、D0070):
+    `net_pretax_return`という Field名は歴史的経緯によるもので、実際に格納されて
+    いるのはクラスDocstring通りGross(取引コスト控除前)のReturnである。過去の
+    Experiment Record・既存APIとの互換のためField名自体は変更しない
+    (Breaking Renameを避ける)。新しいコードは意味論が明確な
+    `gross_pretax_return`(このFieldへの読み取り専用Alias)を使うこと。
     """
 
     code: str
     sector: str | None
     year: int
     entry_date: date
-    net_pretax_return: float
+    net_pretax_return: float  # 実際の格納値はGross(取引コスト控除前)。Field名は後方互換のため維持。
+
+    @property
+    def gross_pretax_return(self) -> float:
+        """`net_pretax_return`の正しい意味論(Gross)を示す読み取り専用Alias(D0070)。"""
+        return self.net_pretax_return
 
 
 @dataclass(frozen=True)
@@ -245,6 +258,17 @@ class BacktestMetrics:
       事後検証可能にするための追加指標であり、既存のstock_by_stock_distribution
       (銘柄別平均リターン)と対になる。空dict(既定値)は「集中していない」ではなく
       「未記録」であり、旧Experiment Recordとの後方互換のためdefault_factory=dictにする。
+    - excess_return / gross_excess_return / net_excess_return(Post-Phase5 Hardening B、
+      Codex Transaction Cost Audit Finding2、D0070): `compute_metrics()`が
+      `benchmark_returns_by_trade`(trade単位で対応するBenchmark Returnの列、
+      対応が取れないtradeは`None`)を渡された場合、strategy側・benchmark側を
+      「両方が観測できたtradeのみ」の同一母集団に揃えて計算する(Pairwise)。
+      `excess_return`は`gross_excess_return`と同じ値になる(旧`excess_return`が
+      全trade平均とBenchmark一部欠損時の部分集合平均という異なる母集団同士の
+      差になっていた不整合を修正、D0070 Finding2)。`benchmark_returns_by_trade`
+      を渡さない直接呼び出し(Event Study等)では、trade単位の対応情報が無いため
+      従来通りscalar同士の単純差分にfallbackする(既存呼び出し元の後方互換)。
+      対応が取れるtradeが1件も無い場合はNone(異なる母集団のまま残さない)。
     """
 
     data_split: DataSplit
@@ -276,6 +300,8 @@ class BacktestMetrics:
     stock_by_stock_distribution: dict[str, float] = field(default_factory=dict)
     stock_by_stock_trade_count: dict[str, int] = field(default_factory=dict)
     stock_by_stock_trade_share: dict[str, float] = field(default_factory=dict)
+    gross_excess_return: float | None = None
+    net_excess_return: float | None = None
 
 
 def compute_metrics(
@@ -287,13 +313,27 @@ def compute_metrics(
     transaction_cost_bps: float = 0.0,
     signal_count: int = 0,
     execution_outcomes: Mapping[str, int] | None = None,
+    benchmark_returns_by_trade: Sequence[float | None] | None = None,
 ) -> BacktestMetrics:
     """税引前・取引コスト調整後のリターン分布からBacktestMetricsを計算する。
 
     signal_count / execution_outcomesを渡さない場合(0件・空のまま)、
     signal_to_trade_rate / order_execution_rateはNoneになる
     (Event Studyのように「シグナルの分母」を追跡しない用途での直接呼び出しを想定)。
+
+    `benchmark_returns_by_trade`(Post-Phase5 Hardening B、D0070 Finding2)は
+    `trades`と同じ長さ・同じ順序で、各tradeに対応するBenchmark Returnを渡す
+    (対応が取れない場合は`None`)。これを渡した場合、`excess_return`は
+    「両方観測できたtradeのみ」の同一母集団で計算する(strategy側=全trade平均・
+    benchmark側=Benchmark観測できたtradeのみの平均、という異なる母集団同士の
+    差にしない)。渡さない場合(Event Study等の直接呼び出し)は、trade単位の
+    対応情報が無いため従来通りscalar同士の単純差分にfallbackする。
     """
+    if benchmark_returns_by_trade is not None and len(benchmark_returns_by_trade) != len(trades):
+        raise ValueError(
+            "benchmark_returns_by_tradeはtradesと同じ長さである必要があります"
+            f"(trades={len(trades)}, benchmark_returns_by_trade={len(benchmark_returns_by_trade)})"
+        )
     returns = [t.net_pretax_return for t in trades]
     cost = transaction_cost_bps / 10_000
     cost_adjusted = [r - cost for r in returns]
@@ -314,7 +354,30 @@ def compute_metrics(
             sector_perf.setdefault(t.sector, []).append(t.net_pretax_return)
         stock_perf.setdefault(t.code, []).append(t.net_pretax_return)
 
-    excess_return = None if average_return is None or benchmark_return is None else average_return - benchmark_return
+    if benchmark_returns_by_trade is not None:
+        matched_pairs = [
+            (r, cr, b) for r, cr, b in zip(returns, cost_adjusted, benchmark_returns_by_trade, strict=True) if b is not None
+        ]
+        if matched_pairs:
+            matched_gross = [p[0] for p in matched_pairs]
+            matched_net = [p[1] for p in matched_pairs]
+            matched_benchmark = [p[2] for p in matched_pairs]
+            gross_excess_return = statistics.fmean(matched_gross) - statistics.fmean(matched_benchmark)
+            net_excess_return = statistics.fmean(matched_net) - statistics.fmean(matched_benchmark)
+        else:
+            gross_excess_return = None
+            net_excess_return = None
+        excess_return = gross_excess_return
+    else:
+        # trade単位の対応情報が無い直接呼び出し(Event Study等)。母集団mismatchを
+        # 検出する材料が無いため、従来通りscalar同士の単純差分にfallbackする。
+        excess_return = None if average_return is None or benchmark_return is None else average_return - benchmark_return
+        gross_excess_return = excess_return
+        net_excess_return = (
+            None
+            if transaction_cost_adjusted_return is None or benchmark_return is None
+            else transaction_cost_adjusted_return - benchmark_return
+        )
     sector_excess_return = (
         None if average_return is None or sector_benchmark_return is None else average_return - sector_benchmark_return
     )
@@ -359,6 +422,8 @@ def compute_metrics(
         stock_by_stock_distribution={c: statistics.fmean(rs) for c, rs in stock_perf.items()},
         stock_by_stock_trade_count={c: len(rs) for c, rs in stock_perf.items()},
         stock_by_stock_trade_share=({c: len(rs) / executed_count for c, rs in stock_perf.items()} if executed_count > 0 else {}),
+        gross_excess_return=gross_excess_return,
+        net_excess_return=net_excess_return,
     )
 
 
@@ -387,6 +452,11 @@ class TransactionCostConfig:
     slippage_bps: float = 0.0
 
     def __post_init__(self) -> None:
+        # Post-Phase5 Hardening B(Codex Transaction Cost Audit Finding4、D0070):
+        # >=0チェックだけではNaNを通してしまう(NaN < 0はFalseのため)。
+        # NaN/+inf/-infはいずれもCost計算を無意味な値にするため、有限な非負数のみ許可する。
+        if not math.isfinite(self.commission_bps) or not math.isfinite(self.slippage_bps):
+            raise ValueError("commission_bps / slippage_bps は有限な数値である必要があります(NaN/inf不可)")
         if self.commission_bps < 0 or self.slippage_bps < 0:
             raise ValueError("commission_bps / slippage_bps は0以上である必要があります")
 
@@ -477,7 +547,9 @@ class BacktestEngine:
         decision_dates = sorted(d for d in trading_calendar.trading_dates if config.start_session <= d <= config.end_session)
 
         trades: list[TradeResult] = []
-        matched_benchmark_returns: list[float] = []
+        # tradesと同じ長さ・同じ順序(D0070 Finding2)。対応するBenchmark Return
+        # (執行日・Exit日双方のBenchmark Barが揃っているtradeのみ値を持つ)。
+        benchmark_returns_by_trade: list[float | None] = []
         signal_count = 0
         outcome_counter: Counter[str] = Counter()
         universe_snapshot_cache: dict[date, frozenset[str]] = {}
@@ -586,15 +658,20 @@ class BacktestEngine:
                     and benchmark_exit is not None
                     and benchmark_exit.open is not None
                 ):
-                    matched_benchmark_returns.append(benchmark_exit.open / benchmark_entry.open - 1)
-                # Benchmark側の価格が欠損している場合でも、トレード自体はEXECUTED済みとして扱う
-                # (Executionの成否とBenchmark比較可否は別の関心事)。
+                    benchmark_returns_by_trade.append(benchmark_exit.open / benchmark_entry.open - 1)
+                else:
+                    # Benchmark側の価格が欠損している場合でも、トレード自体はEXECUTED済みとして扱う
+                    # (Executionの成否とBenchmark比較可否は別の関心事)。tradesと位置を揃えるため
+                    # Noneを積む(D0070 Finding2、excess_returnの母集団mismatch修正)。
+                    benchmark_returns_by_trade.append(None)
 
+        matched_benchmark_returns = [b for b in benchmark_returns_by_trade if b is not None]
         benchmark_return = statistics.fmean(matched_benchmark_returns) if matched_benchmark_returns else None
         return compute_metrics(
             trades,
             data_split=config.data_split,
             benchmark_return=benchmark_return,
+            benchmark_returns_by_trade=benchmark_returns_by_trade,
             transaction_cost_bps=config.transaction_cost.round_trip_bps(),
             signal_count=signal_count,
             execution_outcomes=dict(outcome_counter),

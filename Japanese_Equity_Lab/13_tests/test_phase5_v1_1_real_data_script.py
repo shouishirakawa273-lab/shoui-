@@ -340,6 +340,66 @@ def test_pit_audit_medium_fix_run_and_record_persists_universe_resolution_into_n
     assert "2024-01-05:" in recorded.notes
 
 
+def test_d0070_run_and_record_uses_effective_config_hash_and_records_cost_in_notes(
+    script: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Post-Phase5 Hardening B(Codex Transaction Cost Audit Finding3、D0070)の
+    回帰Test。`_run_and_record()`が独自に組み立てた`config_hash`ではなく、
+    `run_split()`が実際に有効だった`BacktestRunConfig`(Transaction Cost含む)
+    から計算した`result.effective_config_hash`をそのまま使うこと、および
+    `effective_transaction_cost_bps`が`Experiment.notes`から再現可能な形で
+    残ることをEnd-to-Endで確認する。"""
+    registry_path = tmp_path / "preregistrations.jsonl"
+    parent = Preregistration(
+        preregistration_id="PREREG0001",
+        hypothesis_id="H0001",
+        research_question="短期(5営業日)Trailing Returnが負の銘柄は、その後TOPIX対比で超過リターンを生むか",
+        alternative_explanations=("説明1で最低限の長さを満たす文字列", "説明2で最低限の長さを満たす文字列"),
+        falsification_condition="Locked Test期間でexcess_returnが0以下であれば、この仮説は支持されない",
+        dataset_contract_id="DC0001_SMOKE_FIXTURE_V1",
+        universe_definition="Price + PIT Universeのみ(Smoke Run)",
+        train_period_start=date(2026, 1, 5),
+        train_period_end=date(2026, 3, 4),
+        validation_period_start=date(2026, 3, 5),
+        validation_period_end=date(2026, 5, 1),
+        locked_test_period_start=date(2026, 5, 5),
+        locked_test_period_end=date(2026, 7, 3),
+        primary_metric="excess_return",
+        parameters=(("lookback_days", "5"), ("holding_period_days", "10")),
+    ).preregister()
+    PreregistrationRegistry(registry_path).record(parent)
+
+    monkeypatch.setattr(script, "_PREREGISTRATION_REGISTRY_PATH", registry_path)
+    monkeypatch.setattr(script, "_EXPERIMENT_REGISTRY_PATH", tmp_path / "experiment_registry.jsonl")
+    monkeypatch.setattr(script, "_PROVENANCE_PATH", tmp_path / "provenance.jsonl")
+    monkeypatch.setattr(script, "_LAB_DIR", tmp_path)
+    monkeypatch.setattr(script, "JQuantsAdapter", _FakeAdapter)
+
+    script.step_preregister(
+        codes=("7203", "6758"),
+        train_start=date(2024, 1, 4),
+        train_end=date(2024, 1, 5),
+        validation_start=date(2024, 1, 8),
+        validation_end=date(2024, 1, 9),
+        locked_test_start=date(2024, 1, 10),
+        locked_test_end=date(2024, 1, 11),
+    )
+
+    script._run_and_record(script.DataSplit.TRAIN, codes=("7203", "6758"))
+
+    exp_registry = script.ExperimentRegistry(script._EXPERIMENT_REGISTRY_PATH)
+    all_experiments = {e.experiment_id: e for e in exp_registry.all()}
+    recorded = all_experiments.get(f"{script.EXPERIMENT_ID}_{script.DataSplit.TRAIN.value}")
+    assert recorded is not None
+    assert recorded.reproducibility is not None
+
+    legacy_config_hash = script.hash_json_safe({"split": "TRAIN", "preregistration_id": script.PREREGISTRATION_ID})
+    assert recorded.reproducibility.config_hash != legacy_config_hash, (
+        "config_hashは独自組み立てのlegacy式ではなくrun_split()のeffective_config_hashを使うこと"
+    )
+    assert "effective_transaction_cost_bps=" in recorded.notes
+
+
 def test_d0065_real_data_period_design_satisfies_chronological_non_overlap(script: ModuleType, tmp_path: Path) -> None:
     """pit-auditor MEDIUM Finding対応の回帰Test。
 
