@@ -108,6 +108,97 @@ def test_record_and_read_back_roundtrip_preserves_price_adjustment(tmp_path: Pat
     assert loaded.price_adjustment.raw_snapshot_ids == ("SNAP_TEST_equity_bars",)
 
 
+def test_reproducibility_source_code_state_hash_roundtrips(tmp_path: Path) -> None:
+    """Post-Phase5 Hardening A(D0069)で追加したsource_code_state_hashが
+    追記専用Registryを往復しても保持される。"""
+    registry = ExperimentRegistry(tmp_path / "experiments.jsonl")
+    fingerprint = ReproducibilityFingerprint(
+        run_id="RUN0002",
+        dataset_hash="abc123",
+        strategy_hash="def456",
+        config_hash="ghi789",
+        code_commit="f30d1a9",
+        git_dirty=False,
+        source_code_state_hash="src_hash_abc",
+    )
+    experiment = Experiment(
+        experiment_id="BT0004",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+        reproducibility=fingerprint,
+    )
+    registry.record(experiment)
+
+    loaded = registry.all()[0]
+    assert loaded.reproducibility == fingerprint
+    assert loaded.reproducibility.source_code_state_hash == "src_hash_abc"
+
+
+def test_old_reproducibility_records_without_source_code_state_hash_key_still_load(tmp_path: Path) -> None:
+    """source_code_state_hashフィールド新設前の既存Experiment Record(D0069以前)が、
+    キー自体を持たなくても引き続き読み込める(後方互換)。"""
+    storage_path = tmp_path / "experiments.jsonl"
+    old_fingerprint = ReproducibilityFingerprint(
+        run_id="RUN_OLD",
+        dataset_hash="abc123",
+        strategy_hash="def456",
+        config_hash="ghi789",
+        code_commit="8011cb6",
+        git_dirty=True,
+    )
+    old_style_experiment = Experiment(
+        experiment_id="BT_OLD_REPRO",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+        reproducibility=old_fingerprint,
+    )
+    registry = ExperimentRegistry(storage_path)
+    registry.record(old_style_experiment)
+
+    # source_code_state_hashキー自体が無い(D0069以前の実データを模す)状態を作る。
+    lines = storage_path.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[0])
+    del record["reproducibility"]["source_code_state_hash"]
+    storage_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    loaded = ExperimentRegistry(storage_path).all()[0]
+    assert loaded.reproducibility is not None
+    assert loaded.reproducibility.source_code_state_hash is None
+    assert loaded.reproducibility.code_commit == "8011cb6"
+    assert loaded.reproducibility.git_dirty is True
+
+
+def test_old_metrics_records_without_stock_by_stock_trade_fields_still_load(tmp_path: Path) -> None:
+    """stock_by_stock_trade_count/shareフィールド新設前の既存Experiment Record
+    (D0069以前)が、キー自体を持たなくても引き続き読み込める(後方互換)。"""
+    storage_path = tmp_path / "experiments.jsonl"
+    old_style_experiment = Experiment(
+        experiment_id="BT_OLD_METRICS",
+        hypothesis_id="H0001",
+        strategy_id="S0001",
+        status=ExperimentStatus.TESTED,
+        metrics=_metrics(),
+    )
+    registry = ExperimentRegistry(storage_path)
+    registry.record(old_style_experiment)
+
+    lines = storage_path.read_text(encoding="utf-8").splitlines()
+    record = json.loads(lines[0])
+    del record["metrics"]["stock_by_stock_trade_count"]
+    del record["metrics"]["stock_by_stock_trade_share"]
+    storage_path.write_text(json.dumps(record, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    loaded = ExperimentRegistry(storage_path).all()[0]
+    assert loaded.metrics is not None
+    assert loaded.metrics.stock_by_stock_trade_count == {}
+    assert loaded.metrics.stock_by_stock_trade_share == {}
+    assert loaded.metrics.stock_by_stock_distribution == {"7203": 0.05}  # 既存Fieldは影響を受けない
+
+
 def test_old_records_without_price_adjustment_key_still_load(tmp_path: Path) -> None:
     """price_adjustmentフィールド新設前(Phase3A.1以前)の既存レコードが、
     キー自体を持たなくても引き続き読み込める(後方互換)。"""

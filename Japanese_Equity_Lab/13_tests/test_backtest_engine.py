@@ -128,6 +128,33 @@ def test_compute_metrics_basic_distribution() -> None:
     assert metrics.year_by_year_performance[2026] == pytest.approx((-0.02 + 0.10) / 2)
     assert metrics.sector_by_sector_performance["Auto"] == pytest.approx((0.05 - 0.02) / 2)
     assert metrics.stock_by_stock_distribution["9984"] == pytest.approx(0.10)
+    # Post-Phase5 Hardening A(D0069): 銘柄別trade数・trade数シェア。
+    assert metrics.stock_by_stock_trade_count == {"7203": 2, "9984": 1}
+    assert metrics.stock_by_stock_trade_share["7203"] == pytest.approx(2 / 3)
+    assert metrics.stock_by_stock_trade_share["9984"] == pytest.approx(1 / 3)
+
+
+def test_compute_metrics_stock_by_stock_trade_share_empty_when_no_trades() -> None:
+    """trade件数0の場合、stock_by_stock_trade_shareはZeroDivisionを起こさず空dictになる。"""
+    metrics = compute_metrics([], data_split=DataSplit.TEST, signal_count=0)
+    assert metrics.stock_by_stock_trade_count == {}
+    assert metrics.stock_by_stock_trade_share == {}
+    assert metrics.stock_by_stock_distribution == {}
+
+
+def test_compute_metrics_trade_concentration_visible_for_single_ticker_dominance() -> None:
+    """少数銘柄への集中(旧BacktestMetricsでは事後検証できなかったGap、D0067/skeptic-reviewer指摘)を
+    trade_countだけでなくtrade数・shareとして直接確認できる。"""
+    trades = [
+        TradeResult(code="7203", sector="Auto", year=2026, entry_date=date(2026, 1, 6), net_pretax_return=0.01),
+        TradeResult(code="7203", sector="Auto", year=2026, entry_date=date(2026, 2, 3), net_pretax_return=0.02),
+        TradeResult(code="7203", sector="Auto", year=2026, entry_date=date(2026, 3, 3), net_pretax_return=-0.01),
+        TradeResult(code="6758", sector="Tech", year=2026, entry_date=date(2026, 4, 1), net_pretax_return=0.03),
+    ]
+    metrics = compute_metrics(trades, data_split=DataSplit.TEST, signal_count=4)
+    assert metrics.stock_by_stock_trade_count == {"7203": 3, "6758": 1}
+    assert metrics.stock_by_stock_trade_share["7203"] == pytest.approx(0.75)
+    assert metrics.stock_by_stock_trade_share["6758"] == pytest.approx(0.25)
 
 
 def test_compute_metrics_distinguishes_policy_skip_from_execution_failure() -> None:

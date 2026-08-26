@@ -7117,3 +7117,88 @@ failure]とは異なるが、新規Failureが無いことのみを確認基準�
 
 Phase5 v2・H0002・Large Refactor・D0057解決・Phase4 Capability削除・
 Portfolio/Decision Engineのいずれもこのラウンドでは着手しない。
+
+## D0069 — Post-Phase5 Hardening A: Experiment Observability & Reproducibility
+
+Phase5 v1.1 COMPLETE後、D0067(Final Audit)のskeptic-reviewerが実際に
+指摘した2件のInfrastructure Gap(新規仮説の探索ではない)のみを対象に、
+最小限のHardeningを行った。H0001 Locked Testの再実行・再Unlock・
+Parameter/Universe/Benchmark/Metricの変更は一切行っていない
+(このRoundはCode変更のみで、Registryへの新規Experiment記録は無い)。
+
+**Gap 1 — Ticker-level Observability**: `BacktestMetrics`
+(`lib/backtest/engine.py`)は銘柄別平均リターン(`stock_by_stock_
+distribution`)のみを保持し、銘柄別trade数・trade数シェアを事後検証
+できなかった(D0067「Trade/Ticker集中度は不可逆的に未回収」指摘に
+対応)。`compute_metrics()`が既に内部で構築している`stock_perf: dict[str,
+list[float]]`(銘柄別リターンのlist)から、`len(rs)`(trade数)と
+`len(rs)/executed_count`(全trade数に占める比率)を追加集計するだけで
+実装できたため、新しいデータ収集経路は不要だった。追加した2 Field
+(`stock_by_stock_trade_count: dict[str, int]` / `stock_by_stock_trade_
+share: dict[str, float]`)はいずれも既存の3 Field(`year_by_year_
+performance`等)と同じ`field(default_factory=dict)`パターンを踏襲し、
+`BacktestMetrics(**d)`(`lib/registry/experiment_registry.py`の
+`_metrics_from_dict`)がキー欠如時に既定値`{}`へ自動fallbackするため、
+過去のExperiment RecordのMigrationは不要(後方互換、追記専用Registry
+は無変更)。過去のH0001-R1記録(既に固定済み)はこのRoundで一切
+書き換えていない。
+
+**Gap 2 — Reproducibility**: 既存の`ReproducibilityFingerprint`
+(`lib/schemas/experiment.py`)は`code_commit`+`git_dirty`のみを持ち、
+`git_dirty=True`の場合に実際どこがcommit内容と異なるのかを再現できな
+かった(H0001-R1の実記録で`code_commit=8011cb6...`・`git_dirty=true`
+だったことがD0067で確認済み)。ユーザーからの明示的な制約により、
+「`git_dirty==true`なら実行禁止」という設計にはしていない —
+Experiment Registry・Reportの生成自体がこのRun自身のworking treeを
+変化させるため(`06_backtests/*.jsonl`・`12_reports/`等への書き込み)、
+Run開始前にcleanでもRun終了時には必然的にdirtyになりうる。この
+汚染を避けるため、gitのcommit/diff状態を一切見ず、呼び出し側が
+明示的に指定したSourceパス(`lib/`ディレクトリと実行中のScript自身)
+配下の`*.py`ファイル内容だけをhash化する`source_code_state_hash()`
+(`lib/reproducibility.py`)を新設した。対象パスに生成物ディレクトリ
+(`06_backtests/`・`12_reports/`等)や`.env`を含めない限り、これらは
+構造的にhash入力へ混入しない(`*.py`拡張子のみを対象にする点も
+Secrets誤混入への追加防御)。gitに一切依存しないため、git repository
+外や過去のcommitに関わらず動作する。`ReproducibilityFingerprint`へ
+`source_code_state_hash: str | None = None`を追加Field(既定None)で
+追加し、`scripts/phase5_v1_1_h0001_real_data.py`・`scripts/phase5_v1_
+short_term_reversal.py`・`scripts/jquants_lab_pipeline.py`の3 Script
+(全てのReproducibilityFingerprint構築箇所)へ配線した。H0001-R1の
+Train/Validation/Locked Testは既にRegistry上に確定記録済みで
+`ExperimentRegistry.record()`はexperiment_id重複をAppendOnlyViolation
+Errorにするため、`phase5_v1_1_h0001_real_data.py`のこの変更が過去の
+H0001-R1記録を書き換えることは構造的に不可能であり、また再実行も
+していない。
+
+**後方互換**: 追加した3 Field(`stock_by_stock_trade_count`/
+`stock_by_stock_trade_share`/`source_code_state_hash`)はいずれも
+Optional/既定値付きで、既存のJSON Lines Registry(追記専用)は無変更。
+過去のRecordのMigrationは行っていない。`13_tests/test_experiment_
+registry.py`に、新Fieldのキー自体が無い旧形式Recordが引き続き
+読み込めることを直接確認する回帰Testを追加した(`price_adjustment`の
+既存後方互換Testと同じパターン)。
+
+**Research-Safety Impact**: PIT Semantics/`PointInTimeRecord`/PIT
+Universe/Corporate Action Timing/Preregistration Semantics/Locked
+Test Semantics/H0001のParameter・Conclusion/既存の実データ結果値の
+いずれも変更していない。H0001 Locked Testは再実行していない(この
+Roundで実行したのは新規追加した回帰Test[Synthetic/Fixture入力の
+みを使用]のみ)。
+
+**Tests**: `13_tests/test_backtest_engine.py`(Gap1の3 Test:
+Trade数/Shareの直接確認・trade0件時のZeroDivision非発生・単一銘柄
+集中Caseの直接確認)、`13_tests/test_reproducibility.py`(Gap2の
+6 Test: 決定性・内容変化での差分・非.pyファイル除外・出力Directory
+非混入・空Source時のNone・単一ファイルSource対応)、
+`13_tests/test_experiment_registry.py`(新Field往復保持2件+旧形式
+Record後方互換2件)を追加。
+
+**Regression**: `ruff check`/`ruff format --check`/`mypy`
+(`core app.py scripts Japanese_Equity_Lab/lib`)いずれもclean、
+`pytest`(Lab+Screening Tool)997件全てpass(既存986件+新規11件、
+新規Failure無し)。`git diff --stat -- core/ app.py tests/`で
+変更が無いことを確認(Screening Tool Protected Paths不変)。
+
+H0002・Strategy最適化・Parameter探索・Phase5 v2・Transaction Cost
+較正・PIT Universe再設計・D0057解決・Portfolio/Decision Engine・
+Complexity Refactorのいずれもこのラウンドでは着手しない。

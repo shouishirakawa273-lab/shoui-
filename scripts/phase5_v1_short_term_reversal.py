@@ -49,7 +49,13 @@ from lib.errors import LockedTestAccessError, PreregistrationImmutabilityError  
 from lib.market_calendar import TradingCalendar  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
-from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
+from lib.reproducibility import (  # noqa: E402
+    current_code_commit,
+    dataset_hash_from_snapshots,
+    hash_json_safe,
+    is_git_dirty,
+    source_code_state_hash,
+)
 from lib.research.dataset_contract import DatasetContract  # noqa: E402
 from lib.research.locked_test import AccessStage, FileBackedLockedTestGate  # noqa: E402
 from lib.research.preregistration import Preregistration, PreregistrationStatus  # noqa: E402
@@ -279,6 +285,7 @@ def _run_and_record(split: DataSplit, *, locked_test_gate: FileBackedLockedTestG
         config_hash=config_hash,
         code_commit=current_code_commit(cwd=str(_REPO_ROOT)),
         git_dirty=is_git_dirty(cwd=str(_REPO_ROOT)),
+        source_code_state_hash=source_code_state_hash([_LAB_DIR / "lib", Path(__file__)], repo_root=_REPO_ROOT),
     )
 
     experiment = Experiment(

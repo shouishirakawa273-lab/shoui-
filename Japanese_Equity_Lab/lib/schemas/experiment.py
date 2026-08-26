@@ -28,6 +28,12 @@ class ReproducibilityFingerprint:
     `code_commit`はコミットIDのみで、working treeが変更されていたかどうかは分からない。
     `git_dirty=True`の場合、`code_commit`が指すコミットの内容と実行時のコード内容が
     完全には一致していない可能性があり、完全な再現性は保証されない。
+
+    `source_code_state_hash`(Post-Phase5 Hardening A、D0069)は、`code_commit`+
+    `git_dirty`だけでは分からない「実行時点で実際に使われていたコード内容」を、
+    `lib.reproducibility.source_code_state_hash()`で計算したhashとして追加で
+    保持する。Noneは「未計算」(既存Experimentとの後方互換、およびこの関数を
+    呼ばない呼び出し側)を意味し、`git_dirty`のように「判定不能」を意味しない。
     """
 
     run_id: str
@@ -36,6 +42,7 @@ class ReproducibilityFingerprint:
     config_hash: str  # BacktestRunConfig等の実行時設定のhash
     code_commit: str | None = None  # 実行時点のgit commit hash(取得できない場合はNone)
     git_dirty: bool | None = None  # working treeに未コミットの変更があったか(判定不能ならNone)
+    source_code_state_hash: str | None = None  # 実行時点のSourceコード内容hash(未計算ならNone)
 
 
 @dataclass(kw_only=True, frozen=True)

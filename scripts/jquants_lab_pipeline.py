@@ -57,7 +57,13 @@ from lib.data_sources.local_snapshot import LocalSnapshotAdapter  # noqa: E402
 from lib.market_calendar import session_close_at  # noqa: E402
 from lib.registry.experiment_registry import ExperimentRegistry  # noqa: E402
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore  # noqa: E402
-from lib.reproducibility import current_code_commit, dataset_hash_from_snapshots, hash_json_safe, is_git_dirty  # noqa: E402
+from lib.reproducibility import (  # noqa: E402
+    current_code_commit,
+    dataset_hash_from_snapshots,
+    hash_json_safe,
+    is_git_dirty,
+    source_code_state_hash,
+)
 from lib.schemas.experiment import (  # noqa: E402
     Experiment,
     ExperimentStatus,
@@ -232,6 +238,7 @@ def run_pipeline(
         config_hash=config_hash,
         code_commit=current_code_commit(cwd=str(_REPO_ROOT)),
         git_dirty=git_dirty,
+        source_code_state_hash=source_code_state_hash([_LAB_DIR / "lib", Path(__file__)], repo_root=_REPO_ROOT),
     )
     if git_dirty:
         print(

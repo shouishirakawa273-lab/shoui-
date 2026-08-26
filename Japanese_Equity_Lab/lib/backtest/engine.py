@@ -240,6 +240,11 @@ class BacktestMetrics:
       同時期に多くの銘柄へエントリーしている=市場全体のレジームに従属した結果である可能性が
       高いことを示唆する(独立サンプルとみなせるかどうかの目安)。
     - execution_outcomes: ExecutionOutcome別の件数(silent skipしない)。
+    - stock_by_stock_trade_count / stock_by_stock_trade_share: 銘柄別のtrade数、および
+      全trade数に占める比率(Post-Phase5 Hardening A、D0069)。少数銘柄への集中度を
+      事後検証可能にするための追加指標であり、既存のstock_by_stock_distribution
+      (銘柄別平均リターン)と対になる。空dict(既定値)は「集中していない」ではなく
+      「未記録」であり、旧Experiment Recordとの後方互換のためdefault_factory=dictにする。
     """
 
     data_split: DataSplit
@@ -269,6 +274,8 @@ class BacktestMetrics:
     year_by_year_performance: dict[int, float] = field(default_factory=dict)
     sector_by_sector_performance: dict[str, float] = field(default_factory=dict)
     stock_by_stock_distribution: dict[str, float] = field(default_factory=dict)
+    stock_by_stock_trade_count: dict[str, int] = field(default_factory=dict)
+    stock_by_stock_trade_share: dict[str, float] = field(default_factory=dict)
 
 
 def compute_metrics(
@@ -350,6 +357,8 @@ def compute_metrics(
         year_by_year_performance={y: statistics.fmean(rs) for y, rs in year_perf.items()},
         sector_by_sector_performance={s: statistics.fmean(rs) for s, rs in sector_perf.items()},
         stock_by_stock_distribution={c: statistics.fmean(rs) for c, rs in stock_perf.items()},
+        stock_by_stock_trade_count={c: len(rs) for c, rs in stock_perf.items()},
+        stock_by_stock_trade_share=({c: len(rs) / executed_count for c, rs in stock_perf.items()} if executed_count > 0 else {}),
     )
 
 
