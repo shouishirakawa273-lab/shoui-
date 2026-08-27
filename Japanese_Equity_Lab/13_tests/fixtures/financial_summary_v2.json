@@ -28,7 +28,10 @@
       "NxFNP": "",
       "SigChgInC": "",
       "RetroRst": "",
-      "MatChgSub": "false"
+      "MatChgSub": "false",
+      "CFO": "500000",
+      "CFI": "-300000",
+      "CFF": "0"
     },
     {
       "Code": "72030",
@@ -46,6 +49,36 @@
       "NxFSales": "",
       "NxFOP": "",
       "NxFNP": ""
+    },
+    {
+      "Code": "72030",
+      "DiscNo": "20240801001",
+      "DocType": "1QFinancialStatements_Consolidated_IFRS",
+      "DiscDate": "2024-08-01",
+      "DiscTime": "13:25",
+      "CurPerType": "1Q",
+      "CurPerSt": "2024-04-01",
+      "CurPerEn": "2024-06-30",
+      "CurFYSt": "2024-04-01",
+      "CurFYEn": "2025-03-31",
+      "CFO": "200000",
+      "CFI": "-50000",
+      "CFF": "-10000"
+    },
+    {
+      "Code": "72030",
+      "DiscNo": "20241101001",
+      "DocType": "2QFinancialStatements_Consolidated_IFRS",
+      "DiscDate": "2024-11-06",
+      "DiscTime": "13:55",
+      "CurPerType": "2Q",
+      "CurPerSt": "2024-04-01",
+      "CurPerEn": "2024-09-30",
+      "CurFYSt": "2024-04-01",
+      "CurFYEn": "2025-03-31",
+      "CFO": "450000",
+      "CFI": "-120000",
+      "CFF": "-30000"
     },
     {
       "Code": "67580",

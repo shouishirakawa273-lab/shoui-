@@ -8455,3 +8455,145 @@ Forward PER・PBR・Peer Selection・Consensus・Expectations Engine・DCF・
 target price・BUY/SELL・Decision Engine・Portfolio Engine・新規Providerの
 いずれにも着手していない。D0057 General Fix・H0001 Locked Testの再実行も
 していない。
+
+## D0080 — Stage 3.6: Cash Flow Financial Quality v1(CFO/CFI/CFFのみ、Codex Financial Quality Readiness AuditでREADY_WITH_GUARDSと判定された最小Slice)
+
+D0079後のFinancial Quality Readiness Auditで示された最小Slice(CFO/CFI/CFF)
+のみを既存Fundamentals A-Pathへ追加した。TA/Eq/ShEq/EqAR/BPS/ROE(Stock/
+Point-in-Time系指標)は`PeriodBasis.POINT_IN_TIME`が未実装のため今回は
+追加しない(意味論上のGapを埋めずに追加すると誤った累計/時点の混同を招く)。
+
+### Metric定義(§1-3)
+
+3つのみ追加: `cash_flow_from_operations`(CFO)・`cash_flow_from_investing`
+(CFI)・`cash_flow_from_financing`(CFF)。いずれも`ActualOrForecast.ACTUAL`・
+`FiscalYearTarget.CURRENT_FISCAL_YEAR`・`ConsolidationScope.CONSOLIDATED`・
+`PeriodBasis.CUMULATIVE`(既存Sales/OP/NP等と同じ累計Flow、2Q値を2Q単独へ
+Derivationしない)。`lib/fundamentals/normalize.py`の`_METRIC_FIELD_MAP`へ
+3エントリ追加のみ(既存Mapping・既存Metric Type名との衝突無し)。
+
+**実データで確認**: 7203 Local Snapshot(全20件のDisclosure)全件でCFO/CFI/
+CFFフィールドが実在し、`CurPerSt`が常にFY開始日(1Q/2Q/3Qいずれも)である
+ことを実測で確認した(2Qの`CurPerSt`が2024-04-01であり、Q2単独開始日
+2024-07-01ではないことをTestで明示的に確認、2Q値をQ2 standalone値と誤解釈
+しないことの裏付け)。CFIは全期間で負値、CFFは正負混在(実データで負値・
+0の双方が有効なDecimalとして扱われることを確認)。
+
+### Evidence Converter(§4-6)
+
+既存`source_version_to_evidence_market_public_at()`(P&L用、`SourceVersion`
+のみを引数に取り、series_id文字列以外にperiod_start/period_endを保持
+しない)は変更していない。新規`financial_quality_metric_to_evidence_
+market_public_at()`(`lib/fundamentals/evidence.py`)を追加し、`SourceVersion`
+に加えて対応する`FundamentalMetric`/`DisclosureEnvelope`を受け取ることで、
+`content`へperiod_start/period_end/period_type/period_basis/
+consolidation_scope/accounting_standardを型付きFieldから直接埋め込む
+(series_id文字列のfree-form parseはしていない)。`source_type=
+MARKET_PUBLIC_AT_SOURCE_TYPE`・`available_at=version.published_at`は
+既存A系統と完全に同一のPIT Semanticsを再利用しており、`build_research_
+artifact()`のA/B混在Guard(`source.source_type`ベース)をそのまま通過する
+ことをTestで確認した。Unit/Currencyは`FundamentalMetric.currency`/`.unit`
+が確認できない限り`UNIT_STATUS_UNVERIFIED`("UNVERIFIED"、"JPY"/"yen"/"円"
+等の推測は一切していない)。Defense-in-depthとして`metric.metric_id !=
+version.source_version_id`・`metric.envelope_id != envelope.envelope_id`
+はfail closedで`ValueError`にする(既存`build_latest_reported_fy_per()`と
+同じ設計方針)。
+
+### Interpretation Boundary(§7の実装確認)
+
+Evidence Contentは常に「CFO=Xとして開示された」というFACT文言のみで、
+「healthy」「strong」「良い」「健全」等の解釈語は一切含めていない(禁止語
+Scanで確認)。符号(正負)自体は単なるDecimal値として保持するのみで、
+これ単体からResearch Conclusionを導いていない。
+
+### 実データ受け入れ(§10、7203、as_of=2024-11-15 15:00 JST)
+
+`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`でas_of時点の
+最新CFO/CFI/CFFを確認(hard-code無し、Local Snapshotから読み取り):
+
+| metric | value | period_start | period_end | published_at |
+|---|---|---|---|---|
+| cash_flow_from_operations | 1817177000000 | 2024-04-01 | 2024-09-30 | 2024-11-06 13:55 JST |
+| cash_flow_from_investing | -3085752000000 | 2024-04-01 | 2024-09-30 | 2024-11-06 13:55 JST |
+| cash_flow_from_financing | -289752000000 | 2024-04-01 | 2024-09-30 | 2024-11-06 13:55 JST |
+
+想定通り、2024-11-06公表のFY2025 2Q Disclosureがas_of時点で利用可能な最新
+2Q累計Cash Flowとして選定された。
+
+### Stage 3.1/ResearchArtifact統合実測(§11、Read-only Scratch、Repo未追加)
+
+A系統Key Metric SetへCFO/CFI/CFFを追加し(既存P&L 5 Metric Typeは無変更)、
+`build_research_artifact()`経由で実測:
+
+| 項目 | 件数 |
+|---|---|
+| Fundamentals series評価対象(P&L 16 + Cash Flow 12) | 28 |
+| Fundamentals A系統Evidence usable | 28 |
+| うちCash Flow(CFO/CFI/CFF、1Q/2Q/3Q/FY各1件ずつ選定) | 12 |
+| Positioning usable | 18 |
+| **Total Artifact Evidence** | **46** |
+
+Cash Flowが12件なのは、既存P&L Metric(Sales/OP等)と同じく、A系統が
+period_type(1Q/2Q/3Q/FY)ごとに独立したSeriesとしてas_of時点の最新値を
+選定する既存挙動(D0075)をそのまま踏襲した結果であり、CFO/CFI/CFFの
+3 Metric × 4 Period Type = 12(新しいSelection Logicは追加していない)。
+既存P&L 16件は無変更。Valuation Evidence(D0077)は今回のScratch Scriptへは
+含めていない(Scope外、Cash Flow単体の測定に限定)。
+
+### Financial Quality再評価(§12)
+
+**Cash Flow Coverage = SUPPORTED_BY_DATA**(CFO/CFI/CFFがas_of時点で
+PIT安全に取得できることを実データで確認)。ただし**Overall Financial
+Quality = PARTIAL**(Balance Sheet/ROE/BPS等のStock系指標は未実装のため、
+Cash Flowの符号だけで企業のFinancial Qualityを「良い/悪い」と判断しない、
+今回もそのような判断は一切していない)。
+
+### Source Vintage / Confidence(§16)
+
+D0075 Source Vintage Guard(UNVERIFIED)を継続。Cash Flow Evidence追加を
+理由に`data_confidence`/`research_confidence`を自動昇格しない。
+
+### Do Not(§13遵守確認)
+
+`PeriodBasis.POINT_IN_TIME`・TA・Eq・ShEq・EqAR・BPS・ROE・Forward PER・
+PBR・Peer・Historical Valuation extension・Guidance wiring・Consensus・
+Expectations・News・Disclosure・Decision Engine・Portfolio Engine・D0057
+General Fix・新規Provider・H0001 Locked Testのいずれにも着手していない。
+
+### Tests(§14)
+
+新規: `13_tests/test_fundamentals_financial_quality_evidence.py`(9件)、
+`13_tests/test_fundamentals_normalize.py`へCash Flow専用13件追加、
+`13_tests/test_research_artifact.py`へA/B混在Guard確認2件追加(計24件
+新規)。Fixture(`financial_summary_v2.json`)は既存行へCFO/CFI/CFF追加+
+1Q/2Q(FY開始日基準のPeriod境界確認用)2行追加(既存行は削除・変更なし)。
+
+### Verification(§15)
+
+- Syntax/Compile: 全対象ファイルOK(`ast.parse`)。
+- Targeted(新規24件): 全PASS。
+- Relevant(`-k "fundamental or research_artifact or catalog or
+  evidence"`): 319/319 PASS。
+- Full Regression(`13_tests/`): 1042/1043 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074/D0075/D0077と同一の既知Windows Hook Environment
+  Issue(今回のScopeと無関係、修正していない)。
+- `ruff check`: 対象ファイル全てPASS。
+- `ruff format --check`: 初回2ファイルで長い行/未整形を検出、`ruff format`
+  で整形して解消(内容の変更なし)。
+- `mypy`(`lib/fundamentals/normalize.py`・`lib/fundamentals/evidence.py`):
+  Success、0 issues。Test File側はD0077と同一の既知Windows/numpy/Python
+  3.14 Environment Issue(`numpy/__init__.pyi`のPython 3.12+専用構文)が
+  Pristine HEADの既存Testファイルでも再現するため`QUALITY_GATE_ENV_
+  BLOCKED`として記録、修正していない。H0001 Locked Testは実行していない。
+
+### Persistence / Commit対象(§18)
+
+`lib/fundamentals/normalize.py`・`lib/fundamentals/evidence.py`・
+`13_tests/test_fundamentals_normalize.py`(既存へ追記)・
+`13_tests/test_fundamentals_financial_quality_evidence.py`(新規)・
+`13_tests/test_research_artifact.py`(既存へ追記)・
+`13_tests/fixtures/financial_summary_v2.json`(既存へ追記)・このDECISIONS.md
+追記をCommit対象とする。Raw Snapshot・`02_company_research/7203_Toyota_
+Motor/`(今回無変更)はいずれもCommit対象外。Historical Valuation Context
+関連(D0079)は今回のScope外、無変更。

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -233,6 +233,127 @@ def test_forecast_revision_builds_multiple_versions_in_same_series() -> None:
     assert len(history.versions) == 2
     values = sorted(v.value for v in history.versions)
     assert values == ["105000", "120000"]
+
+
+# --- Stage 3.6(D0079): Cash Flow(CFO/CFI/CFF)v1 ---
+
+
+def test_cfo_field_maps_correctly() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "cash_flow_from_operations")
+    assert m.source_field == "CFO"
+    assert m.value == Decimal("500000")
+    assert m.value_availability == ValueAvailability.PRESENT
+
+
+def test_cfi_field_maps_correctly() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "cash_flow_from_investing")
+    assert m.source_field == "CFI"
+    assert m.value == Decimal("-300000")
+    assert m.value_availability == ValueAvailability.PRESENT
+
+
+def test_cff_field_maps_correctly() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "cash_flow_from_financing")
+    assert m.source_field == "CFF"
+    assert m.value == Decimal("0")
+    assert m.value_availability == ValueAvailability.PRESENT
+
+
+def test_cash_flow_metrics_are_actual_not_forecast() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    cash_flow_metrics = [
+        m
+        for m in metrics
+        if m.metric_type in {"cash_flow_from_operations", "cash_flow_from_investing", "cash_flow_from_financing"}
+    ]
+    assert cash_flow_metrics
+    assert all(m.actual_or_forecast == ActualOrForecast.ACTUAL for m in cash_flow_metrics)
+
+
+def test_cash_flow_metrics_are_consolidated() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    cash_flow_metrics = [
+        m
+        for m in metrics
+        if m.metric_type in {"cash_flow_from_operations", "cash_flow_from_investing", "cash_flow_from_financing"}
+    ]
+    assert cash_flow_metrics
+    assert all(m.consolidation_scope == ConsolidationScope.CONSOLIDATED for m in cash_flow_metrics)
+
+
+def test_cash_flow_metrics_are_always_cumulative() -> None:
+    """累計Flowを2Q単独等へ勝手にderivationしない(period_basisは常にCUMULATIVE)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    cash_flow_metrics = [
+        m
+        for m in metrics
+        if m.metric_type in {"cash_flow_from_operations", "cash_flow_from_investing", "cash_flow_from_financing"}
+    ]
+    assert cash_flow_metrics
+    assert all(m.period_basis == PeriodBasis.CUMULATIVE for m in cash_flow_metrics)
+
+
+def test_cash_flow_1q_period_start_end_from_fy_start() -> None:
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    env = next(e for e in envelopes if e.envelope_id == "ENV_7203_20240801001")
+    assert env.current_period_type == PeriodType.Q1
+    assert env.current_period_start == date(2024, 4, 1)
+    assert env.current_period_end == date(2024, 6, 30)
+
+
+def test_cash_flow_2q_period_start_end_from_fy_start() -> None:
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    env = next(e for e in envelopes if e.envelope_id == "ENV_7203_20241101001")
+    assert env.current_period_type == PeriodType.Q2
+    assert env.current_period_start == date(2024, 4, 1)
+    assert env.current_period_end == date(2024, 9, 30)
+
+
+def test_cash_flow_fy_period_start_end() -> None:
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    env = next(e for e in envelopes if e.envelope_id == "ENV_7203_20240510001")
+    assert env.current_period_type == PeriodType.FY
+    assert env.current_period_start == date(2023, 4, 1)
+    assert env.current_period_end == date(2024, 3, 31)
+
+
+def test_cash_flow_2q_is_not_treated_as_standalone_q2() -> None:
+    """2Qのperiod_startはFY開始日(2024-04-01)であり、Q2単独の開始日
+    (2024-07-01相当)ではない -- 2Q累計値をQ2 standalone値と解釈していないことの確認。"""
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    env = next(e for e in envelopes if e.envelope_id == "ENV_7203_20241101001")
+    assert env.current_period_start == env.current_fiscal_year_start
+    assert env.current_period_start != date(2024, 7, 1)
+
+
+def test_negative_cash_flow_from_investing_remains_valid_decimal() -> None:
+    """負のCFIをInvalid扱いしない(単なる符号付きDecimal)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "cash_flow_from_investing")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.value == Decimal("-300000")
+    assert m.value < 0
+
+
+def test_zero_cash_flow_from_financing_remains_present_not_missing() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "cash_flow_from_financing")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.value == Decimal("0")
+    assert m.value is not None
+
+
+def test_missing_cash_flow_field_is_missing_or_unspecified() -> None:
+    """CFO/CFI/CFF自体がRaw Payloadに存在しないDisclosure(ENV_7203_20240809001)では、
+    NOT_APPLICABLEではなくMISSING_OR_UNSPECIFIEDとして扱う(会計基準から不存在と
+    確認できたわけではないため)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240809001" and x.metric_type == "cash_flow_from_operations")
+    assert m.value_availability == ValueAvailability.MISSING_OR_UNSPECIFIED
+    assert m.value is None
 
 
 # --- 決定性(Reproducibility): 同じRaw Payload -> 同じ結果 ---

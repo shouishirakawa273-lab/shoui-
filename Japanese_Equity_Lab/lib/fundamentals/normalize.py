@@ -177,6 +177,32 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
     ),
+    # Stage 3.6(D0079): CFO/CFI/CFFはLocal Real Data Validation(7203実
+    # Snapshot、全20件のDisclosureで確認)でField名が実在し、Sales/OP等と同じ
+    # 累計Flow(CurPerSt=FY開始日、CurPerEn=当該期間終了日)であることを確認済み。
+    # 2Q値を2Q単独値として再解釈しない(period_basisは他Metricと同じCUMULATIVE、
+    # DerivationやStandalone化はこのRoundでは行わない)。TA/Eq/ShEq/EqAR/BPS/ROE
+    # (Stock/Point-in-Time系指標)はこのRoundでは追加しない(PeriodBasis.
+    # POINT_IN_TIMEが未実装のため、意味論上のGapを埋めずに追加すると誤った
+    # 累計/時点の混同を招くため、D0079 Do Not参照)。
+    "cash_flow_from_operations": (
+        "CFO",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    "cash_flow_from_investing": (
+        "CFI",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
+    "cash_flow_from_financing": (
+        "CFF",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+    ),
 }
 
 # Providerが使う会計基準を表すLabel文字列。IFRSは公式仕様(IFRS/USGAAPには

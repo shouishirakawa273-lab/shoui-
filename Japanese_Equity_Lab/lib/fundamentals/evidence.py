@@ -25,6 +25,9 @@ from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType, SourceVe
 from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
+# 通貨/単位がRaw Payloadから未確認であることを明示するLabel(推測禁止、D0079)。
+UNIT_STATUS_UNVERIFIED = "UNVERIFIED"
+
 # A系統(MARKET_PUBLIC_AT)Bridgeが構築したEvidenceであることを示すTag
 # (`SourceMetadata.source_type`は自由文字列であり、新しいSchema Fieldは
 # 追加しない。`lib.evidence.research_artifact`がこの値でA/B混在を検知する)。
@@ -152,4 +155,83 @@ def source_version_to_evidence_market_public_at(version: SourceVersion, *, entit
         source=source,
         related_codes=(entity_code,),
         provenance_id=None,
+    )
+
+
+def financial_quality_metric_to_evidence_market_public_at(
+    version: SourceVersion, *, metric: FundamentalMetric, envelope: DisclosureEnvelope, entity_code: str
+) -> EvidenceRecord:
+    """Financial Quality系Metric(Stage 3.6: CFO/CFI/CFF)専用のA系統Evidence化。
+
+    `source_version_to_evidence_market_public_at()`と同じA系統PIT Semantics
+    (`published_at <= as_of`のCandidateからas_of時点最新のVersionを選ぶのは
+    呼び出し側の`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`、
+    この関数自体はas_of選択を行わない。`available_at=version.published_at`、
+    `source_type=MARKET_PUBLIC_AT_SOURCE_TYPE`)をそのまま再利用しつつ、
+    対応する`FundamentalMetric`/`DisclosureEnvelope`を追加で受け取ることで、
+    `content`へperiod_start/period_end/period_type/period_basis/
+    consolidation_scope/accounting_standardを保持する(既存の軽量Bridgeは
+    `source_record_id`=series_id文字列のみで、これらの一部(特にperiod_start/
+    period_end)を保持していなかった)。
+
+    **series_id文字列のfree-form parseはしない**: period_type/consolidation_
+    scope/accounting_standard等は`metric`/`envelope`の型付きFieldから直接
+    読む(series_idはSeries Keyとしてのみ扱う)。
+
+    Unit/Currencyは`FundamentalMetric.currency`/`.unit`が実際に確認できた
+    場合のみそれを使い、確認できていない場合は`UNIT_STATUS_UNVERIFIED`を
+    明示する(値を推測しない、D0079要件)。
+
+    **Defense-in-depth**: `metric.metric_id != version.source_version_id`
+    または`metric.envelope_id != envelope.envelope_id`の場合、呼び出し側の
+    入力自体が矛盾しているため`ValueError`にする(既存`build_latest_
+    reported_fy_per()`と同様の設計)。
+    """
+    if version.published_at is None:
+        raise ValueError(
+            f"source_version_id={version.source_version_id}: published_at(market_public_at)が"
+            "UNKNOWNのVersionはA系統Evidenceにできません(fail closed、値を推測しない)"
+        )
+    if metric.metric_id != version.source_version_id:
+        raise ValueError(
+            f"metric.metric_id({metric.metric_id})がversion.source_version_id({version.source_version_id})と一致しません"
+        )
+    if metric.envelope_id != envelope.envelope_id:
+        raise ValueError(f"metric.envelope_id({metric.envelope_id})がenvelope.envelope_id({envelope.envelope_id})と一致しません")
+
+    period_start = envelope.current_period_start.isoformat() if envelope.current_period_start is not None else "UNKNOWN"
+    period_end = envelope.current_period_end.isoformat() if envelope.current_period_end is not None else "UNKNOWN"
+    unit_status = metric.unit if metric.unit is not None else UNIT_STATUS_UNVERIFIED
+    currency_status = metric.currency if metric.currency is not None else UNIT_STATUS_UNVERIFIED
+    content = (
+        f"{entity_code}: {metric.metric_type}(source_field={metric.source_field}, "
+        f"period={period_start}..{period_end}, period_type={metric.period_type.value}, "
+        f"period_basis={metric.period_basis.value}, consolidation_scope={metric.consolidation_scope.value}, "
+        f"accounting_standard={metric.accounting_standard or 'UNKNOWN'}, "
+        f"currency={currency_status}, unit={unit_status})="
+        f"{version.value}(market_public_at={version.published_at.isoformat()})"
+    )
+    source = SourceMetadata(
+        source_id=version.source_version_id,
+        source_type=MARKET_PUBLIC_AT_SOURCE_TYPE,
+        provider_name="J-Quants",
+        source_authority_class=SourceAuthorityClass.COMPANY_PRIMARY,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=version.retrieved_at,
+        published_at=version.published_at,
+        available_at=version.published_at,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+        provenance_id=envelope.provenance_id,
+    )
+    return EvidenceRecord(
+        evidence_id=f"EVID_A_FQ_{version.source_version_id}",
+        evidence_type=EvidenceType.FACT,
+        layer=DataLayer.NORMALIZED,
+        capability=DataCapability.FUNDAMENTAL,
+        content=content,
+        source=source,
+        related_codes=(entity_code,),
+        value_date=envelope.current_period_end,
+        provenance_id=envelope.provenance_id,
     )
