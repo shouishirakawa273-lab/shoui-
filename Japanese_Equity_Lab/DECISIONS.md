@@ -8938,3 +8938,209 @@ BPS実装・ROE・PBR・Guidance実装・Forward PER・Consensus・Expectations
 Engine・Peer・新規Historical Fetch・新規Provider・Decision Engine・
 Portfolio Engine・D0057 General Fixのいずれにも着手していない。H0001
 Locked Testの再実行もしていない。
+
+## D0083 — Stage 3.9: Company Guidance Wiring v1(Current Fiscal Year Company Forecastのみ、D0082で最大の次候補と実測されたGuidance WiringをEvidence Poolへ接続)
+
+D0082で実測された次候補(Guidance Wiring)を最小実装した。既にNormalizer
+でParse済みの会社予想Metric(sales/operating_profit/net_profit/eps、
+current_year_forecastのみ)を、明示的に`COMPANY_FORECAST`とLabelした
+PIT-safe Evidenceとしてはじめて`ResearchArtifact`へ接続した。Next-Year
+Forecast・Forward PERはいずれも今回実装していない。
+
+### Critical Forecast Semantics(§2の実装確認)
+
+`lib/fundamentals/evidence.py`へ新規`guidance_metric_to_evidence_market_
+public_at()`を追加した。D0080/D0081の`financial_quality_metric_to_
+evidence_market_public_at()`はそのまま流用していない(CUMULATIVE Branchの
+`period=current_period_start..current_period_end`表示は、Company全体の
+FY Forecastを「この開示のCurrent Period(1Q/2Q/3Q等)の予想」であるかの
+ように誤表現するため)。新Converterは`forecast_period_start`/
+`forecast_period_end`に`envelope.current_fiscal_year_start`/`.
+current_fiscal_year_end`のみを使い、`current_period_start`/`.
+current_period_end`は一切参照しない。`metric.period_type`(1Q/2Q/3Q/FY)は
+`disclosure_period_type`としてのみContentへ含める(Forecast Horizonとして
+扱わない)。
+
+### Structural Guards(§5)
+
+Converter自身が以下をfail closedで検証する: `metric.actual_or_forecast !=
+ActualOrForecast.COMPANY_FORECAST`(ACTUAL Metricの誤混入防止)、
+`metric.fiscal_year_target != FiscalYearTarget.CURRENT_FISCAL_YEAR`
+(Next-Year ForecastをSilent Acceptせず`ValueError`、v1はCurrent Yearのみ)、
+`metric.metric_id != version.source_version_id`、`metric.envelope_id !=
+envelope.envelope_id`(既存Defense-in-depth Pattern)、
+`version.published_at is None`。全てTestで確認済み。
+
+### Availability != Forecast Horizon(§7)
+
+`source.available_at`/`published_at`は既存A系統と同じく`version.
+published_at`のまま(Forecast Period Endが未来でもEvidenceの利用可能時刻を
+未来にしない)。`EvidenceRecord.value_date`は`forecast_period_end`との
+整合性がActual Repoで確認できていないため、既定の`None`のままとした
+(安易な代入をしない、Testで確認)。
+
+### Unit/Currency(§8)
+
+引き続き`UNIT_STATUS_UNVERIFIED`("JPY"/"yen"/"円"の推測は一切していない)。
+
+### 実データ受け入れ(§12、7203、as_of=2024-11-15 15:00 JST)
+
+`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`でas_of時点の
+最新Current-Year Company Forecastを確認(hard-code無し、Local Snapshotから
+読み取り):
+
+| metric_type | source_field | value | forecast_period | disclosure_period_type | published_at |
+|---|---|---|---|---|---|
+| sales_current_year_forecast | FSales | 46000000000000 | 2024-04-01..2025-03-31 | 2Q | 2024-11-06 13:55 JST |
+| operating_profit_current_year_forecast | FOP | 4300000000000 | 2024-04-01..2025-03-31 | 2Q | 2024-11-06 13:55 JST |
+| net_profit_current_year_forecast | FNP | 3570000000000 | 2024-04-01..2025-03-31 | 2Q | 2024-11-06 13:55 JST |
+| eps_current_year_forecast | FEPS | 268.77 | 2024-04-01..2025-03-31 | 2Q | 2024-11-06 13:55 JST |
+
+D0082測定時の概算値と完全一致した(hard-codeではなくSnapshot読み取りで
+再現)。`LATEST_GUIDANCE_PUBLISHED_AT=2024-11-06 13:55 JST`。
+
+**副次的発見(今回実測)**: FY Cadence Disclosure(2024-05-08)では
+`current_year_forecast`系Fieldが全て空文字列であり、代わりに`next_year_
+forecast`系Field(NxFSales等)にFY2025向けの初回Guidanceが入っていることを
+確認した。これは欠陥ではなく、FY実績開示時点では「Current Year」の予想が
+既に無意味になる(その期が終わったばかりのため)という構造上自然な挙動
+であり、FY Cadenceの`current_year_forecast` Evidenceが存在しないことの
+説明となる。
+
+### 複数Disclosure Cadence(§11)
+
+1Q/2Q/3Q Cadenceそれぞれについて、as-of-latestのCurrent-Year-Forecast
+Evidenceが同時に存在することを実測で確認した(1Q=2024-08-01公表、2Q=
+2024-11-06公表)。**3Q Cadenceの値は2024-02-06公表(旧FY2024向けの3Q時点
+Guidance)のまま**であり、FY2025向けの3Q Guidanceはまだ開示されていない
+(次回3Q開示は2025-02が想定)。これは「1つのCurrent Guidance」ではなく、
+異なるCadence・異なる対象年度のSnapshotが混在しうることの実例であり、
+DECISIONS本文でも「Current Guidance」と一括りにせず、各値に
+`disclosure_period_type`/`published_at`/`forecast_period`を必ず併記する。
+新しいLatest Guidance Selector等はProductionへ追加していない。
+
+### Stage 3.1/ResearchArtifact統合実測(§14、23、Read-only Scratch、Repo未追加)
+
+D0082のIntegrated ArtifactへGuidance Evidenceを追加し、`build_research_
+artifact()`経由で実測:
+
+| Evidence種別 | usable件数 |
+|---|---|
+| P&L(D0075、無変更) | 16 |
+| Cash Flow(D0080、無変更) | 12 |
+| Balance Sheet(D0081、無変更) | 12 |
+| Guidance(Stage 3.9、新規) | 12 |
+| Positioning(無変更) | 18 |
+| Valuation(D0077、無変更) | 1 |
+| **Total** | **71** |
+
+`artifact_id=ART_STAGE3_9_7203_20241115_A_GUIDANCE_V1`(`build_research_
+artifact()`経由、直接構築はしていない、Local登録はしていない)。既存
+P&L/Cash Flow/Balance Sheet/Positioning/Valuation Evidence件数はいずれも
+D0082から不変。`VALUATION_MULTIPLE=7.2853`も不変。
+
+### Interpretation Boundary(§13遵守確認)
+
+Evidence Content・Narrative・DECISIONS本文いずれにも「optimistic/
+conservative/beat/miss/upside/downside/上振れ/下振れ/強気/弱気/達成可能/
+未達見込み」および既存の禁止語群を含めていないことを機械的Scanで確認した
+(0件)。Forecast Revision Relationshipの推論(「上方修正した」等)も
+生成していない(単一`FundamentalMetric`のみを扱う既存D0043原則を維持)。
+
+### Guidance Research Status再評価(§15)
+
+**Guidance Coverage = SUPPORTED_BY_DATA**(Current Year Forecast 4 Metric
+Type × 3 Cadence = 12件、PIT安全に取得できることを実データで確認)。
+**Guidance Interpretation**は別軸として引き続き扱わない(会社予想が存在
+すること自体から方向性判断を作らない、Forecast vs Actualの比較Derived
+Factも今回作っていない)。
+
+### No Latest-Guidance Engine Yet(§16遵守確認)
+
+`latest_guidance_published_at`はAcceptance Measurementとしてのみ算出した
+(`max(published_at)`)。Latest Guidance Selector・Forecast Revision
+Engine・Guidance Trend EngineのいずれもProductionへ追加していない。
+
+### Forward PER Boundary(§18遵守確認)
+
+`FEPS=268.77`が利用可能になったが、Forward PERは今回実装していない
+(次Bottleneck候補としてのみ評価、§次のBottleneck判断参照)。
+
+### 次のBottleneck判断(§24、実装容易性のみで決めない)
+
+Guidance追加後のActual Artifactを踏まえ、3軸(Research Qualityへの寄与 ×
+Data Surface × Semantic Safety)で評価:
+
+- **Forward PER(Company Forecast EPS基準)**: Data Surface即座に利用可能
+  (FEPS=268.77が既にEvidence化済み)。D0077の`LATEST_REPORTED_FY_PER`と
+  対になる新しいValuation軸(実績basisとForecast basisの並置)を開く。
+  Semantic Safetyは、既存`LATEST_REPORTED_FY_PER`のPIT設計(Price Selector
+  + Corporate Action Guard)をForecast EPS Denominatorへ再利用できるため
+  比較的低リスクと見積もれる——ただし「Forward」という言葉自体が
+  Investment Interpretationと混同されやすく、Naming/Boundary設計は要
+  注意。
+- **BPS**: D0082で既に「既存Balance Sheet軸の補強のみ、FY限定Cadenceで
+  鮮度が劣る」と判定済み、変わらず優先度低。
+- **ROE**: BPSと同じFY限定Cadence制約、同様に優先度低。
+- **Latest Guidance Selector / Guidance Revision**: 今回Measurementで
+  「1つのCurrent Guidanceに一括りにできない」ことを確認したが、Selector
+  Engine自体はSemantic Safety上まだ時期尚早(Cadence横断でどれを
+  "Latest"とすべきかの定義がPIT/Coverage両面で未確定)。
+- **Disclosure Content / Consensus / Peer / Historical拡張**: D0079/D0082
+  で確認済みのとおり、いずれもより重い新規統合(新規Document取得・新規
+  Provider・新規Fetch)が必要でScope外。
+
+**推奨 = Forward PER(Company Forecast EPS基準)を次のResearch Bottleneck
+候補として評価してよいが、今回は実装しない**(§18 Do Not、§30 Output
+指示どおり自動着手しない)。
+
+### Confidence(§27)
+
+Evidence件数が59(D0082)→71(今回)へ増加したが、`data_confidence`/
+`research_confidence`は自動昇格していない(LOW据え置き)。Source Vintage
+Completenessは引き続きUNVERIFIED。
+
+### Tests(§19-22)
+
+新規: `13_tests/test_fundamentals_guidance_evidence.py`(23件、Converter
+Guard・Forecast Horizon・A-path Real Selection)、`test_fundamentals_
+normalize.py`へGuidance専用Test3件追加、`test_research_artifact.py`へ
+A/B混在Guard Test(Guidance参加確認+単独Reject確認)2件追加(計28件
+新規)。Fixture(`financial_summary_v2.json`)は既存7203行(FY/1Q/2Q)へ
+FSales/FOP/FNP/FEPS追加、6758行へZero/Negative Forecast確認用Field追加
+(既存Assertionに影響する変更なし)。
+
+### Verification(§26)
+
+- Syntax/Compile: 全対象ファイルOK。
+- Targeted(新規28件): 全PASS。
+- Relevant(`-k "fundamental or evidence"`): 282/282 PASS。
+- ResearchArtifact関連(`-k "research_artifact"`): 32/32 PASS。
+- Valuation関連(`-k "valuation"`): 13/13 PASS。
+- Full Regression(`13_tests/`): 1089/1090 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074/D0075/D0077/D0080/D0081と同一の既知Windows Hook
+  Environment Issue(今回のScopeと無関係、修正していない)。
+- `ruff check`: 対象ファイル全てPASS。
+- `ruff format --check`: 初回1ファイルで長い行を検出、`ruff format`で
+  整形して解消(内容の変更なし)。
+- `mypy`(`lib/fundamentals/evidence.py`): Success、0 issues。Test File側は
+  D0080/D0081と同一の既知Windows/numpy/Python 3.14 Environment Issueが
+  再現するため`QUALITY_GATE_ENV_BLOCKED`として記録、修正していない。
+  H0001 Locked Testは実行していない。
+
+### Persistence / Commit対象(§29)
+
+`lib/fundamentals/evidence.py`・`13_tests/test_fundamentals_guidance_
+evidence.py`(新規)・`test_fundamentals_normalize.py`(既存へ追記)・
+`test_research_artifact.py`(既存へ追記)・`13_tests/fixtures/financial_
+summary_v2.json`(既存へ追記)・このDECISIONS.md追記をCommit対象とする。
+Raw Snapshot・`02_company_research/7203_Toyota_Motor/`(今回無変更)・
+Scratch ScriptはいずれもCommit対象外。
+
+### Do Not(§25遵守確認)
+
+Next-Year Guidance Wiring・Forecast Revision Interpretation・Forward PER
+実装・BPS・ROE・PBR・Peer・Consensus・Expectations Engine・新規Provider・
+新規Historical Fetch・Decision Engine・Portfolio Engine・D0057 General
+Fixのいずれにも着手していない。H0001 Locked Testの再実行もしていない。

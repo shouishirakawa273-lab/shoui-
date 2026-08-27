@@ -39,6 +39,7 @@ from lib.evidence.retrieval import ResearchQuestion
 from lib.fundamentals.evidence import (
     disclosure_metric_to_evidence,
     financial_quality_metric_to_evidence_market_public_at,
+    guidance_metric_to_evidence_market_public_at,
     source_version_to_evidence_market_public_at,
 )
 from lib.fundamentals.model import (
@@ -192,6 +193,54 @@ def _market_public_at_stock_evidence(*, published_at: datetime, suffix: str = "T
         published_at=published_at,
     )
     return financial_quality_metric_to_evidence_market_public_at(version, metric=metric, envelope=envelope, entity_code=_ENTITY)
+
+
+def _market_public_at_guidance_evidence(*, published_at: datetime, suffix: str = "G1") -> EvidenceRecord:
+    """Stage 3.9(D0083): Company Guidance(Current Fiscal Year Forecast)のA系統
+    Evidence(Test用)。"""
+    envelope = DisclosureEnvelope(
+        envelope_id=f"ENV_TEST_G_{suffix}",
+        provider_code="72030",
+        internal_code=_ENTITY,
+        disclosure_number="D1",
+        document_type="2QFinancialStatements_Consolidated_IFRS",
+        disclosure_date=published_at.date(),
+        disclosure_time=published_at.strftime("%H:%M"),
+        market_public_at=published_at,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        current_period_type=PeriodType.Q2,
+        current_period_start=date(2024, 4, 1),
+        current_period_end=date(2024, 9, 30),
+        current_fiscal_year_start=date(2024, 4, 1),
+        current_fiscal_year_end=date(2025, 3, 31),
+        accounting_standard="IFRS",
+    )
+    metric = FundamentalMetric(
+        metric_id=f"MET_TEST_G_{suffix}",
+        envelope_id=envelope.envelope_id,
+        series_id=f"{_ENTITY}|sales_current_year_forecast|CURRENT_FISCAL_YEAR|2Q|CONSOLIDATED|IFRS",
+        metric_type="sales_current_year_forecast",
+        raw_value="46000000000000",
+        value=None,
+        value_availability=ValueAvailability.PRESENT,
+        actual_or_forecast=ActualOrForecast.COMPANY_FORECAST,
+        fiscal_year_target=FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        period_type=PeriodType.Q2,
+        period_basis=PeriodBasis.CUMULATIVE,
+        consolidation_scope=ConsolidationScope.CONSOLIDATED,
+        accounting_standard="IFRS",
+        source_field="FSales",
+    )
+    version = SourceVersion(
+        source_record_id=metric.series_id,
+        source_version_id=metric.metric_id,
+        value="46000000000000",
+        available_at=published_at,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        availability_basis=AvailabilityBasis.UNKNOWN,
+        published_at=published_at,
+    )
+    return guidance_metric_to_evidence_market_public_at(version, metric=metric, envelope=envelope, entity_code=_ENTITY)
 
 
 def _disclosure_evidence(*, retrieved_at: datetime) -> EvidenceRecord:
@@ -900,17 +949,20 @@ def test_market_public_at_evidence_before_disclosure_is_pit_excluded() -> None:
 
 
 def test_financial_quality_evidence_coexists_with_pl_evidence_under_a_semantics() -> None:
-    """Stage 3.6/3.7(D0080/D0081): Financial Quality Evidence(Cash Flow=
-    CUMULATIVE、Balance Sheet=POINT_IN_TIME、いずれも`financial_quality_
-    metric_to_evidence_market_public_at()`)は既存P&L A系統Evidence
-    (`source_version_to_evidence_market_public_at()`)と同じsource_type Tagを
-    使うため、A/B混在Guardを壊さずに同一Artifactへ混在できることを確認する。"""
+    """Stage 3.6/3.7/3.9(D0080/D0081/D0083): Financial Quality Evidence
+    (Cash Flow=CUMULATIVE、Balance Sheet=POINT_IN_TIME、いずれも
+    `financial_quality_metric_to_evidence_market_public_at()`)とGuidance
+    Evidence(`guidance_metric_to_evidence_market_public_at()`)は既存P&L
+    A系統Evidence(`source_version_to_evidence_market_public_at()`)と同じ
+    source_type Tagを使うため、A/B混在Guardを壊さずに同一Artifactへ混在
+    できることを確認する。"""
     as_of = datetime(2024, 11, 15, 6, 0, tzinfo=UTC)
     published_at = datetime(2024, 11, 6, 4, 55, tzinfo=UTC)
     pl_evidence = _market_public_at_fundamental_evidence(published_at=published_at)
     fq_evidence = _market_public_at_financial_quality_evidence(published_at=published_at)
     stock_evidence = _market_public_at_stock_evidence(published_at=published_at)
-    pool = [pl_evidence, fq_evidence, stock_evidence]
+    guidance_evidence = _market_public_at_guidance_evidence(published_at=published_at)
+    pool = [pl_evidence, fq_evidence, stock_evidence, guidance_evidence]
 
     artifact, _packet = build_research_artifact(
         artifact_id="ART_TEST_A_FQ_MIX_1",
@@ -920,7 +972,7 @@ def test_financial_quality_evidence_coexists_with_pl_evidence_under_a_semantics(
         relations={e.evidence_id: EvidenceRelation.NEUTRAL for e in pool},
         bull_case=_bull(),
         base_case=NarrativeCase(
-            summary="開示された実績値(P&L + Cash Flow + Balance Sheet)",
+            summary="開示された実績値(P&L + Cash Flow + Balance Sheet + Guidance)",
             supporting_evidence_ids=tuple(e.evidence_id for e in pool),
         ),
         bear_case=_bear(),
@@ -928,12 +980,39 @@ def test_financial_quality_evidence_coexists_with_pl_evidence_under_a_semantics(
         evidence_confidence=ConfidenceLevel.MEDIUM,
         research_confidence=ConfidenceLevel.LOW,
         conclusion=ResearchConclusion.INCONCLUSIVE,
-        conclusion_rationale="A系統Fundamentals(P&L + Cash Flow + Balance Sheet)",
+        conclusion_rationale="A系統Fundamentals(P&L + Cash Flow + Balance Sheet + Guidance)",
         fundamentals_availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
     )
     assert pl_evidence.evidence_id in artifact.included_evidence_ids
     assert fq_evidence.evidence_id in artifact.included_evidence_ids
     assert stock_evidence.evidence_id in artifact.included_evidence_ids
+    assert guidance_evidence.evidence_id in artifact.included_evidence_ids
+
+
+def test_guidance_evidence_rejected_under_default_b_semantics() -> None:
+    """Guidance EvidenceもA系統Tagを持つため、既定(B系統)宣言時は他のA系統
+    Evidence同様fail closedで拒否される(A/B混在防止Guardが新しいEvidence
+    Converterでも維持されることの確認)。"""
+    as_of = datetime(2024, 11, 15, 6, 0, tzinfo=UTC)
+    guidance_evidence = _market_public_at_guidance_evidence(published_at=datetime(2024, 11, 6, 4, 55, tzinfo=UTC))
+
+    with pytest.raises(ValueError, match="fundamentals_availability_semantics"):
+        build_research_artifact(
+            artifact_id="ART_TEST_G_MIXED_1",
+            entity_code=_ENTITY,
+            question=_question(as_of),
+            evidence_pool=[guidance_evidence],
+            relations={guidance_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+            bull_case=_bull(),
+            base_case=_base(),
+            bear_case=_bear(),
+            data_confidence=ConfidenceLevel.MEDIUM,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.MEDIUM,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="test",
+            # fundamentals_availability_semanticsを明示しない(既定=B系統)。
+        )
 
 
 def test_financial_quality_evidence_rejected_under_default_b_semantics() -> None:

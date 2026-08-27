@@ -22,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType, SourceVersion
-from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric, PeriodBasis
+from lib.fundamentals.model import ActualOrForecast, DisclosureEnvelope, FiscalYearTarget, FundamentalMetric, PeriodBasis
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
 # 通貨/単位がRaw Payloadから未確認であることを明示するLabel(推測禁止、D0080)。
@@ -257,5 +257,123 @@ def financial_quality_metric_to_evidence_market_public_at(
         source=source,
         related_codes=(entity_code,),
         value_date=envelope.current_period_end,
+        provenance_id=envelope.provenance_id,
+    )
+
+
+def guidance_metric_to_evidence_market_public_at(
+    version: SourceVersion, *, metric: FundamentalMetric, envelope: DisclosureEnvelope, entity_code: str
+) -> EvidenceRecord:
+    """Company Guidance(Stage 3.9、D0083: Current Fiscal Year Company Forecast
+    のみ)専用のA系統Evidence化。
+
+    `financial_quality_metric_to_evidence_market_public_at()`とA系統PIT
+    Semantics(`published_at <= as_of`のCandidateからas_of時点最新のVersionを
+    選ぶのは呼び出し側の`fundamentals_as_of(availability_semantics=
+    MARKET_PUBLIC_AT)`、この関数自体はas_of選択を行わない。`available_at=
+    version.published_at`、`source_type=MARKET_PUBLIC_AT_SOURCE_TYPE`)は
+    共有するが、**Content Formatは意図的に共有しない**(既存Financial
+    Quality Converterは変更していない、§3参照): CUMULATIVE Branchが出す
+    `period=current_period_start..current_period_end`をそのまま使うと、
+    Company全体のFY Forecastを「この開示のCurrent Period(1Q/2Q/3Q等)の
+    予想」であるかのように誤表現してしまう。
+
+    **Forecast Horizon != Disclosure Current Period(このRoundの核心制約)**:
+    例えば2024-11-06の2Q Disclosureに含まれる`FSales`(Current Year
+    Forecast)は、2024-04-01〜2024-09-30(2Q Cumulative Period)についての
+    予想ではなく、当期(Current Fiscal Year)全体についての会社予想である。
+    したがって`forecast_period_start`/`forecast_period_end`には
+    `envelope.current_fiscal_year_start`/`.current_fiscal_year_end`のみを
+    使う(`current_period_start`/`.current_period_end`は使わない)。
+    `metric.period_type`(1Q/2Q/3Q/FY)は「この予想がどのDisclosure Cadence
+    で開示されたか」を表す`disclosure_period_type`としてのみContentへ含め、
+    Forecast Horizonとしては扱わない。
+
+    **Structural Guards(Stage 3.9 v1、fail closed)**:
+    - `metric.actual_or_forecast != ActualOrForecast.COMPANY_FORECAST`の
+      場合は`ValueError`(ACTUAL Metricを誤ってGuidance化しない)。
+    - `metric.fiscal_year_target != FiscalYearTarget.CURRENT_FISCAL_YEAR`の
+      場合は`ValueError`(v1はCurrent Year Forecastのみ、Next-Year Forecast
+      はSilent Acceptせずfail closed、§25 Do Not)。
+    - `metric.metric_id != version.source_version_id`または
+      `metric.envelope_id != envelope.envelope_id`の場合も`ValueError`
+      (呼び出し側の入力そのものが矛盾、既存Converterと同じDefense-in-depth)。
+
+    **Availability != Forecast Horizon**: `forecast_period_end`が未来でも
+    Evidenceの`available_at`は`version.published_at`のまま(Forecast Target
+    DateとEvidence Available Dateを混同しない、§7)。`EvidenceRecord.
+    value_date`へ`forecast_period_end`を設定することの整合性がActual Repo
+    で明確に確認できていないため、既定の`None`のままとする(安易な代入
+    禁止、§7)。
+
+    **Forecast Revision Boundaryは作らない**: この関数は単一`FundamentalMetric`
+    (1開示時点のForecast Fact)のみを扱い、「上方修正した」等のRevision
+    Relationshipを推論する文言は生成しない(D0043原則、`disclosure_metric_
+    to_evidence()`と同じ制約)。
+
+    Unit/Currencyは`FundamentalMetric.currency`/`.unit`が実際に確認できた
+    場合のみそれを使い、確認できていない場合は`UNIT_STATUS_UNVERIFIED`を
+    明示する(値を推測しない)。
+    """
+    if metric.actual_or_forecast != ActualOrForecast.COMPANY_FORECAST:
+        raise ValueError(
+            f"metric.actual_or_forecast={metric.actual_or_forecast.value}はCOMPANY_FORECASTではありません"
+            "(fail closed、Guidance Evidenceに実績値ACTUALを混入させない)"
+        )
+    if metric.fiscal_year_target != FiscalYearTarget.CURRENT_FISCAL_YEAR:
+        raise ValueError(
+            f"metric.fiscal_year_target={metric.fiscal_year_target.value}はCURRENT_FISCAL_YEARではありません"
+            "(fail closed、Stage 3.9 v1はCurrent Year Forecastのみ対応、Next-Year Forecastはこのバージョンでは未対応)"
+        )
+    if version.published_at is None:
+        raise ValueError(
+            f"source_version_id={version.source_version_id}: published_at(market_public_at)が"
+            "UNKNOWNのVersionはA系統Evidenceにできません(fail closed、値を推測しない)"
+        )
+    if metric.metric_id != version.source_version_id:
+        raise ValueError(
+            f"metric.metric_id({metric.metric_id})がversion.source_version_id({version.source_version_id})と一致しません"
+        )
+    if metric.envelope_id != envelope.envelope_id:
+        raise ValueError(f"metric.envelope_id({metric.envelope_id})がenvelope.envelope_id({envelope.envelope_id})と一致しません")
+
+    forecast_period_start = (
+        envelope.current_fiscal_year_start.isoformat() if envelope.current_fiscal_year_start is not None else "UNKNOWN"
+    )
+    forecast_period_end = (
+        envelope.current_fiscal_year_end.isoformat() if envelope.current_fiscal_year_end is not None else "UNKNOWN"
+    )
+    unit_status = metric.unit if metric.unit is not None else UNIT_STATUS_UNVERIFIED
+    currency_status = metric.currency if metric.currency is not None else UNIT_STATUS_UNVERIFIED
+    content = (
+        f"{entity_code}: {metric.metric_type}(source_field={metric.source_field}, "
+        f"actual_or_forecast={metric.actual_or_forecast.value}, fiscal_year_target={metric.fiscal_year_target.value}, "
+        f"forecast_period={forecast_period_start}..{forecast_period_end}, "
+        f"disclosure_period_type={metric.period_type.value}, consolidation_scope={metric.consolidation_scope.value}, "
+        f"accounting_standard={metric.accounting_standard or 'UNKNOWN'}, "
+        f"currency={currency_status}, unit={unit_status})="
+        f"{version.value}(market_public_at={version.published_at.isoformat()})"
+    )
+    source = SourceMetadata(
+        source_id=version.source_version_id,
+        source_type=MARKET_PUBLIC_AT_SOURCE_TYPE,
+        provider_name="J-Quants",
+        source_authority_class=SourceAuthorityClass.COMPANY_PRIMARY,
+        primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+        retrieved_at=version.retrieved_at,
+        published_at=version.published_at,
+        available_at=version.published_at,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+        provenance_id=envelope.provenance_id,
+    )
+    return EvidenceRecord(
+        evidence_id=f"EVID_A_G_{version.source_version_id}",
+        evidence_type=EvidenceType.FACT,
+        layer=DataLayer.NORMALIZED,
+        capability=DataCapability.FUNDAMENTAL,
+        content=content,
+        source=source,
+        related_codes=(entity_code,),
         provenance_id=envelope.provenance_id,
     )

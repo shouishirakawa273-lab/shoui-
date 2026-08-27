@@ -497,6 +497,46 @@ def test_eqar_validation_against_sheq_over_ta_does_not_overwrite_provider_value(
     assert eqar.value == Decimal("0.385")
 
 
+# --- Stage 3.9(D0083): Company Guidance(Current Fiscal Year Forecast)Wiring v1 ---
+
+
+def test_eps_current_year_forecast_maps_correctly_and_is_cumulative() -> None:
+    """Guidance MetricはStage 3.7以前から既にParse済み(D0043)であり、今回の
+    Wiring RoundでNormalizer自体は変更していない。period_basisも他のFlow系
+    Metricと同じCUMULATIVEのまま(Stock系のみPOINT_IN_TIME、D0081)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20241101001" and x.metric_type == "eps_current_year_forecast")
+    assert m.source_field == "FEPS"
+    assert m.value == Decimal("268.77")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.actual_or_forecast == ActualOrForecast.COMPANY_FORECAST
+    assert m.fiscal_year_target == FiscalYearTarget.CURRENT_FISCAL_YEAR
+    assert m.period_basis == PeriodBasis.CUMULATIVE
+
+
+def test_missing_eps_current_year_forecast_is_missing_or_unspecified_not_evidence() -> None:
+    """FEPS自体がRaw Payloadに存在しないDisclosure(ENV_7203_20240809001)では、
+    NOT_APPLICABLEではなくMISSING_OR_UNSPECIFIEDとして扱う(実績と同じ既存
+    ValueAvailability Semantics、§21「missing forecast not Evidence」の
+    前提条件)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240809001" and x.metric_type == "eps_current_year_forecast")
+    assert m.value_availability == ValueAvailability.MISSING_OR_UNSPECIFIED
+    assert m.value is None
+
+
+def test_guidance_forecast_period_uses_current_fiscal_year_not_current_period() -> None:
+    """2Q Disclosure(ENV_7203_20241101001)のCurrent Period(2024-04-01..
+    2024-09-30)とCurrent Fiscal Year(2024-04-01..2025-03-31)は異なる。
+    Guidance Evidence Converterが正しい方(Fiscal Year)を使えるよう、
+    Envelope側に両方が別Fieldとして保持されていることを確認する(§2)。"""
+    envelopes, _ = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    env = next(e for e in envelopes if e.envelope_id == "ENV_7203_20241101001")
+    assert env.current_period_end == date(2024, 9, 30)
+    assert env.current_fiscal_year_end == date(2025, 3, 31)
+    assert env.current_period_end != env.current_fiscal_year_end
+
+
 # --- 決定性(Reproducibility): 同じRaw Payload -> 同じ結果 ---
 
 
