@@ -89,12 +89,61 @@ def test_consolidated_and_non_consolidated_are_never_the_same_series() -> None:
 # --- Test 6: 2Q cumulativeをQ2 standalone扱いしない ---
 
 
-def test_period_basis_is_always_cumulative_never_derived_standalone() -> None:
+# Stage 3.7(D0081)でPeriodBasis.POINT_IN_TIME(TA/ShEq/EqAR)を追加したため、
+# 「period_basisは常にCUMULATIVE」という旧Invariantはもはや成立しない。
+# 「Flow系はCUMULATIVEのまま、Stock系はPOINT_IN_TIME、STANDALONEは
+# どちらの経路からも自動生成されない」という新Invariantへ置換する。
+_FLOW_METRIC_TYPES = frozenset(
+    {
+        "sales",
+        "operating_profit",
+        "net_profit",
+        "ordinary_profit",
+        "eps",
+        "cash_flow_from_operations",
+        "cash_flow_from_investing",
+        "cash_flow_from_financing",
+    }
+)
+_STOCK_METRIC_TYPES = frozenset({"total_assets", "provider_reported_sheq", "provider_reported_eqar"})
+
+
+def test_flow_metrics_remain_cumulative() -> None:
     """Phase4AはProviderの値をそのまま保持するのみで、2Q累計からQ2単独値を
-    計算する導出は行わない(period_basisは常にCUMULATIVE)。"""
+    計算する導出は行わない(Flow系Metricのperiod_basisは引き続きCUMULATIVE)。"""
     _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
-    assert all(m.period_basis == PeriodBasis.CUMULATIVE for m in metrics)
+    flow_metrics = [m for m in metrics if m.metric_type in _FLOW_METRIC_TYPES]
+    assert flow_metrics
+    assert all(m.period_basis == PeriodBasis.CUMULATIVE for m in flow_metrics)
+
+
+def test_stock_metrics_are_point_in_time() -> None:
+    """Stage 3.7(D0081): Stock系Metric(TA/ShEq/EqAR)のperiod_basisは
+    POINT_IN_TIME(期間累計Flowではなく特定value_date時点のSnapshot)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    stock_metrics = [m for m in metrics if m.metric_type in _STOCK_METRIC_TYPES]
+    assert stock_metrics
+    assert all(m.period_basis == PeriodBasis.POINT_IN_TIME for m in stock_metrics)
+
+
+def test_standalone_is_never_automatically_generated() -> None:
+    """CUMULATIVE(既存Flow)・POINT_IN_TIME(Stage 3.7 Stock)いずれの経路からも
+    STANDALONEを自動導出しない(Phase4Aの既存方針を維持)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
     assert not any(m.period_basis == PeriodBasis.STANDALONE for m in metrics)
+
+
+def test_every_metric_field_map_descriptor_specifies_period_basis() -> None:
+    """`_METRIC_FIELD_MAP`の全DescriptorがPeriodBasisを明示的に持つ(暗黙default
+    禁止、Stage 3.7要件)。5要素Tuple(source_field, actual_or_forecast,
+    fiscal_year_target, consolidation_scope, period_basis)であることを構造的に
+    確認する。"""
+    from lib.fundamentals.normalize import _METRIC_FIELD_MAP
+
+    assert _METRIC_FIELD_MAP
+    for metric_type, descriptor in _METRIC_FIELD_MAP.items():
+        assert len(descriptor) == 5, f"metric_type={metric_type!r}: PeriodBasisが明示されていません({descriptor!r})"
+        assert isinstance(descriptor[4], PeriodBasis), f"metric_type={metric_type!r}: 5番目の要素がPeriodBasisではありません"
 
 
 # --- Test 7: 0とNULLを区別 ---
@@ -354,6 +403,98 @@ def test_missing_cash_flow_field_is_missing_or_unspecified() -> None:
     m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240809001" and x.metric_type == "cash_flow_from_operations")
     assert m.value_availability == ValueAvailability.MISSING_OR_UNSPECIFIED
     assert m.value is None
+
+
+# --- Stage 3.7(D0081): Balance Sheet Point-in-Time(TA/ShEq/EqAR)v1 ---
+
+
+def test_ta_maps_correctly_and_is_point_in_time() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "total_assets")
+    assert m.source_field == "TA"
+    assert m.value == Decimal("90114296000000")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.period_basis == PeriodBasis.POINT_IN_TIME
+
+
+def test_sheq_maps_correctly_and_is_point_in_time() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "provider_reported_sheq")
+    assert m.source_field == "ShEq"
+    assert m.value == Decimal("34220991000000")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.period_basis == PeriodBasis.POINT_IN_TIME
+
+
+def test_eqar_maps_correctly_and_is_point_in_time() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240510001" and x.metric_type == "provider_reported_eqar")
+    assert m.source_field == "EqAR"
+    assert m.value == Decimal("0.38")
+    assert m.value_availability == ValueAvailability.PRESENT
+    assert m.period_basis == PeriodBasis.POINT_IN_TIME
+
+
+def test_stock_metric_period_type_reflects_disclosure_cadence_not_accumulation() -> None:
+    """Stock MetricのPeriodType(1Q/2Q/3Q/FY)は「どのDisclosure cadenceで報告された
+    Snapshotか」を表すのみで、その期間を累積した値という意味ではない(§5)。"""
+    envelopes, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    ta_2q = next(m for m in metrics if m.envelope_id == "ENV_7203_20241101001" and m.metric_type == "total_assets")
+    envelope_2q = next(e for e in envelopes if e.envelope_id == "ENV_7203_20241101001")
+    assert ta_2q.period_type == PeriodType.Q2
+    assert ta_2q.value == Decimal("89169296000000")
+    assert envelope_2q.current_period_end == date(2024, 9, 30)
+
+
+def test_negative_sheq_and_eqar_remain_valid_decimal() -> None:
+    """負のShEq/EqARをInvalid扱いしない(単なる符号付きDecimal、§16 Interpretation
+    Boundaryとは無関係にParse層はFactをそのまま保持する)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    sheq = next(m for m in metrics if m.envelope_id == "ENV_3626_20240525001" and m.metric_type == "provider_reported_sheq")
+    eqar = next(m for m in metrics if m.envelope_id == "ENV_3626_20240525001" and m.metric_type == "provider_reported_eqar")
+    assert sheq.value_availability == ValueAvailability.PRESENT
+    assert sheq.value == Decimal("-1000000")
+    assert eqar.value_availability == ValueAvailability.PRESENT
+    assert eqar.value == Decimal("-0.02")
+
+
+def test_zero_total_assets_remains_present_not_missing() -> None:
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    ta = next(m for m in metrics if m.envelope_id == "ENV_8056_20240520001" and m.metric_type == "total_assets")
+    assert ta.value_availability == ValueAvailability.PRESENT
+    assert ta.value == Decimal("0")
+    assert ta.value is not None
+
+
+def test_missing_stock_metric_field_is_missing_or_unspecified() -> None:
+    """TA/ShEq/EqAR自体がRaw Payloadに存在しないDisclosure(ENV_7203_20240809001)
+    では、NOT_APPLICABLEではなくMISSING_OR_UNSPECIFIEDとして扱う。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    for metric_type in ("total_assets", "provider_reported_sheq", "provider_reported_eqar"):
+        m = next(x for x in metrics if x.envelope_id == "ENV_7203_20240809001" and x.metric_type == metric_type)
+        assert m.value_availability == ValueAvailability.MISSING_OR_UNSPECIFIED
+        assert m.value is None
+
+
+def test_eqar_validation_against_sheq_over_ta_does_not_overwrite_provider_value() -> None:
+    """§10: EqAR ≈ ShEq/TAはValidation目的の確認に限定し、Lab側で計算した値で
+    Provider供給のEqARを上書きしない(Primary ValueはRaw provider EqARのまま)。"""
+    _, metrics = parse_financial_summary_payload(_load_payload(), retrieved_at=_RETRIEVED_AT)
+    ta = next(m for m in metrics if m.envelope_id == "ENV_7203_20241101001" and m.metric_type == "total_assets")
+    sheq = next(m for m in metrics if m.envelope_id == "ENV_7203_20241101001" and m.metric_type == "provider_reported_sheq")
+    eqar = next(m for m in metrics if m.envelope_id == "ENV_7203_20241101001" and m.metric_type == "provider_reported_eqar")
+
+    assert ta.value is not None
+    assert sheq.value is not None
+    assert eqar.value is not None
+    # Validationのみ: ShEq/TAの比率がProvider EqARと概ね丸め整合することを確認する
+    # (実データ2024-11-06 2Qで確認済みのパターン、D0081)。
+    computed_ratio = sheq.value / ta.value
+    assert abs(computed_ratio - eqar.value) < Decimal("0.001")
+    # Provider供給の値そのものがraw_value/valueとして保持されていること(Lab側の
+    # 再計算結果で上書きされていないこと)を確認する。
+    assert eqar.raw_value == "0.385"
+    assert eqar.value == Decimal("0.385")
 
 
 # --- 決定性(Reproducibility): 同じRaw Payload -> 同じ結果 ---

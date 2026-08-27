@@ -8597,3 +8597,182 @@ General Fix・新規Provider・H0001 Locked Testのいずれにも着手して�
 追記をCommit対象とする。Raw Snapshot・`02_company_research/7203_Toyota_
 Motor/`(今回無変更)はいずれもCommit対象外。Historical Valuation Context
 関連(D0079)は今回のScope外、無変更。
+
+## D0081 — Stage 3.7: Balance Sheet Point-in-Time v1(TA/ShEq/EqARのみ、Codex Stock Metric / Point-in-Time Semantics AuditでREADY_WITH_GUARDSと判定された最小Set)
+
+D0080 Cash Flow Financial Quality v1の次Sliceとして、Balance Sheet系Fact
+(TA/ShEq/EqAR)をPIT-safeに追加した。BPS/Eq/ROE/PBRは実装していない。
+
+### Architecture Decision(§1)
+
+`lib/fundamentals/model.py`の`PeriodBasis`へ`POINT_IN_TIME = "POINT_IN_TIME"`
+を追加した(既存`CUMULATIVE`/`STANDALONE`の値は無変更、`{member.value for
+member in PeriodBasis} == {"CUMULATIVE", "STANDALONE", "POINT_IN_TIME"}`を
+Testで確認)。新しい`MetricNature` enum等は作っていない。
+
+### Explicit PeriodBasis Mapping(§2)
+
+`_METRIC_FIELD_MAP`の型を`tuple[str, ActualOrForecast, FiscalYearTarget,
+ConsolidationScope]`から`tuple[str, ActualOrForecast, FiscalYearTarget,
+ConsolidationScope, PeriodBasis]`へ変更し、全23エントリ(既存20 + 新規3)が
+PeriodBasisを明示するようにした。Normalizer末尾の暗黙`period_basis=
+PeriodBasis.CUMULATIVE`一律設定は廃止し、各Descriptorの値をそのまま使う
+方式へ変更した。既存P&L/EPS/Forecast/Cash Flow(20エントリ)は意味を
+再設計せず、全て明示的に`CUMULATIVE`を指定(既存挙動を完全維持)。新規
+Stock Metric(3エントリ)のみ`POINT_IN_TIME`。`_METRIC_FIELD_MAP`の全
+Descriptorが5要素Tupleであることを構造Testで確認した(暗黙defaultが
+残っていないことの確認)。
+
+### Metric追加(§3-4)
+
+3つのみ: `total_assets`(TA)・`provider_reported_sheq`(ShEq)・
+`provider_reported_eqar`(EqAR)。ShEq/EqARの正式Provider長名称が未確認の
+ため、`provider_reported_`接頭辞で意味を過剰確定しない中立的な名称を採用
+(`shareholders_equity`等の確定的な名称は使わない)。Raw Payloadに別Field
+`Eq`が実在し値がShEqと異なることを実データで確認したため、統合していない。
+全て`ActualOrForecast.ACTUAL`・`FiscalYearTarget.CURRENT_FISCAL_YEAR`・
+`ConsolidationScope.CONSOLIDATED`・`PeriodBasis.POINT_IN_TIME`。
+
+### Stock Period Semantics(§5)
+
+Stock MetricのPeriodType(1Q/2Q/3Q/FY)は「どのDisclosure cadenceで報告
+されたSnapshotか」を表すのみで、その期間を累積した値という意味ではない
+ことをTestで明示的に確認した(`current_period_start`を値の期間開始として
+扱わない)。
+
+### Evidence Converter(§6-7)
+
+D0080の`financial_quality_metric_to_evidence_market_public_at()`を再利用し、
+`metric.period_basis`でTyped Branchするよう拡張した:
+`CUMULATIVE`(Cash Flow等)は`period=start..end`を含む既存Content書式を
+Byte-Equivalentに維持(既存`test_fundamentals_financial_quality_evidence.py`
+のCash Flow系Testが無変更でPASSすることを確認)。`POINT_IN_TIME`(Stock)は
+`period_start`を表示せず、代わりに`value_date=current_period_end`を明示。
+それ以外の`PeriodBasis`(将来の`STANDALONE`等)は暗黙のContent生成をせず
+`ValueError`でfail closed(Test確認済み)。Unit/Currencyは引き続き
+`UNIT_STATUS_UNVERIFIED`("JPY"/"yen"/"円"の推測は一切していない)。
+
+### TA/ShEq/EqAR(§8-10)
+
+いずれもProvider供給のRaw Fieldをそのまま使い、Labで再計算・上書きしない。
+実データ(7203、全20件のDisclosure)でTA/ShEq/EqARが全件に実在すること、
+`EqAR ≈ ShEq/TA`が丸め誤差0.001未満で整合すること(2024-11-06 2Q:
+34368513000000/89169296000000≈0.3855 vs Provider EqAR=0.385)を確認した
+うえで、Provider供給のEqAR自体(raw_value="0.385")がそのままMetric.valueと
+して保持され、ShEq/TAの計算結果で上書きされていないことをTestで確認した
+(Validation目的の確認に限定、Primary ValueはRaw provider EqAR)。0.385は
+Percentage表示("38.5%")等へ変換せず、Raw Decimal Representationのまま
+保持している。
+
+### 実データ受け入れ(§13、7203、as_of=2024-11-15 15:00 JST)
+
+`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`でas_of時点の
+最新TA/ShEq/EqAR(2Q cadence)を確認(hard-code無し、Local Snapshotから
+読み取り):
+
+| metric | source_field | value | value_date | period_type | published_at |
+|---|---|---|---|---|---|
+| total_assets | TA | 89169296000000 | 2024-09-30 | 2Q | 2024-11-06 13:55 JST |
+| provider_reported_sheq | ShEq | 34368513000000 | 2024-09-30 | 2Q | 2024-11-06 13:55 JST |
+| provider_reported_eqar | EqAR | 0.385 | 2024-09-30 | 2Q | 2024-11-06 13:55 JST |
+
+想定通り、2024-11-06公表のFY2025 2Q Disclosureがas_of時点で利用可能な最新
+2Q Balance Sheet Snapshotとして選定された。
+
+### 異なるPeriodTypeのSnapshot共存(§12)
+
+TA/ShEq/EqARそれぞれについて、1Q/2Q/3Q/FYのas-of-latest Evidenceが同時に
+存在することを実測で確認した(1Q=2024-06-30、2Q=2024-09-30、3Q=
+2023-12-31[まだFY2025 3Qが未開示のため]、FY=2024-03-31)。これはPIT Leak
+ではなく既存Series Key(PeriodType込み)の設計どおりの挙動。`max(value_date)
+=2024-09-30`が現在の最新Snapshotであることをmeasurementとして報告したのみ
+で、新しい「最新Balance Sheet Selector」はProductionへ追加していない。
+
+### Stage 3.1/ResearchArtifact統合実測(§14、Read-only Scratch、Repo未追加)
+
+A系統Key Metric SetへTA/ShEq/EqARを追加し(既存P&L/Cash Flow Evidenceは
+無変更)、`build_research_artifact()`経由で実測:
+
+| 項目 | 件数 |
+|---|---|
+| Fundamentals series評価対象(P&L 16 + Cash Flow 12 + Balance Sheet 12) | 40 |
+| Fundamentals A系統Evidence usable | 40 |
+| うちCash Flow(D0080から無変更) | 12 |
+| うちBalance Sheet(TA/ShEq/EqAR、1Q/2Q/3Q/FY各1件ずつ) | 12 |
+| Positioning usable | 18 |
+| **Total Artifact Evidence** | **58** |
+
+### Financial Quality再評価(§15)
+
+**Cash Flow Coverage = SUPPORTED_BY_DATA**(D0080から変わらず)。
+**Balance Sheet Coverage = SUPPORTED_BY_DATA**(TA/ShEq/EqARがas_of時点で
+PIT安全に取得できることを実データで確認)。**Overall Financial Quality =
+PARTIAL**(BPS/ROE/PBR/Debt Metrics等の派生比率が未実装のため。TA/ShEq/
+EqARの値だけから健全性・危険性の判断はしていない)。
+
+### Interpretation Boundary(§16)
+
+Evidence Content・DECISIONS本文いずれにも「healthy/unhealthy/strong/weak/
+safe/risky/good/bad/健全/脆弱/安全/危険/良い/悪い/undervalued/overvalued/
+cheap/expensive/割安/割高」等の解釈語を含めていない(禁止語Scanで確認)。
+
+### Do Not(§20遵守確認)
+
+BPS・Eq・ROE・PBR・Forward PER・Guidance wiring・Consensus・
+Expectations・Peer・新規Historical Fetch・新規Provider・`MetricNature`
+enum・Latest Balance Sheet Engine・Decision Engine・Portfolio Engine・
+D0057 General Fix・H0001 Locked Testのいずれにも着手していない。
+
+### Migration / Regression Safety(§19)
+
+`lib/`全体を`grep`し、`PeriodBasis`を参照する箇所が`lib/fundamentals/
+model.py`/`lib/fundamentals/normalize.py`以外に存在しない(Exhaustive
+Match/Set Check相当のコードが無い)ことを確認したうえでEnum追加を行った。
+既存`CUMULATIVE`/`STANDALONE`のTest・値は全てPASSしたまま。
+
+### Tests(§17-18)
+
+新規/置換: `test_fundamentals_model.py`へPeriodBasis後方互換Test2件、
+`test_fundamentals_normalize.py`の旧`test_period_basis_is_always_
+cumulative_never_derived_standalone`を「Flow=CUMULATIVE/Stock=
+POINT_IN_TIME/STANDALONE自動生成なし」の3Test+構造Test1件へ置換し、
+Stock Metric専用Test8件を追加、`test_fundamentals_financial_quality_
+evidence.py`へPOINT_IN_TIME系Test7件(Content分岐・Unit/Currency・A-path
+Tag・Future Disclosure除外・UNKNOWN published_at拒否・Future Revision
+非漏洩・未対応PeriodBasisのFail Closed)を追加、`test_research_artifact.py`
+のA/B混在Guard Testを拡張しStock Evidenceも同一Poolへ混在できることを
+確認(計41件新規/置換)。Fixture(`financial_summary_v2.json`)は既存行へ
+TA/ShEq/EqAR追加(FY/1Q/2Q)+ Zero/Negative値確認用2Field追加(既存Assertion
+に影響する変更なし)。
+
+### Verification(§21)
+
+- Syntax/Compile: 全対象ファイルOK。
+- Targeted(新規/置換41件): 全PASS。
+- Relevant(`-k "fundamental or research_artifact or catalog or
+  evidence"`): 339/339 PASS。
+- Full Regression(`13_tests/`): 1062/1063 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074/D0075/D0077/D0080と同一の既知Windows Hook
+  Environment Issue(今回のScopeと無関係、修正していない)。
+- `ruff check`: 対象ファイル全てPASS。
+- `ruff format --check`: 対象ファイル全てPASS(追加整形不要)。
+- `mypy`(`lib/fundamentals/model.py`・`normalize.py`・`evidence.py`):
+  Success、0 issues。Test File側はD0080と同一の既知Windows/numpy/Python
+  3.14 Environment Issueが再現するため`QUALITY_GATE_ENV_BLOCKED`として
+  記録、修正していない。H0001 Locked Testは実行していない。
+
+### Source Vintage / Confidence(§22)
+
+D0075 Source Vintage Guard(UNVERIFIED)を継続。Balance Sheet Evidence
+追加を理由に`data_confidence`/`research_confidence`を自動昇格しない。
+
+### Persistence / Commit対象(§24)
+
+`lib/fundamentals/model.py`・`normalize.py`・`evidence.py`・
+`13_tests/test_fundamentals_model.py`・`test_fundamentals_normalize.py`
+(既存へ追記)・`test_fundamentals_financial_quality_evidence.py`(既存へ
+追記)・`test_research_artifact.py`(既存へ追記)・`13_tests/fixtures/
+financial_summary_v2.json`(既存へ追記)・このDECISIONS.md追記をCommit
+対象とする。Raw Snapshot・`02_company_research/7203_Toyota_Motor/`(今回
+無変更)はいずれもCommit対象外。

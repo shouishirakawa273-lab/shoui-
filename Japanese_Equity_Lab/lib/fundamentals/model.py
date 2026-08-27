@@ -62,8 +62,15 @@ class PeriodType(StrEnum):
 
 
 class PeriodBasis(StrEnum):
+    """CUMULATIVE: FY開始等から期間末までの累計Flow。STANDALONE: 単独期間Flow
+    (Phase4Aでは自動導出しない、CUMULATIVEからの機械的な差分計算は行わない)。
+    POINT_IN_TIME(Stage 3.7、D0081): 特定`value_date`時点のSnapshot(Balance
+    Sheet Fact等)。累計・単独いずれのFlow概念でもない——`current_period_start`
+    を値の期間開始として扱わない(`lib.fundamentals.evidence`参照)。"""
+
     CUMULATIVE = "CUMULATIVE"
     STANDALONE = "STANDALONE"
+    POINT_IN_TIME = "POINT_IN_TIME"
 
 
 class ConsolidationScope(StrEnum):

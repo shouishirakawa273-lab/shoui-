@@ -149,6 +149,51 @@ def _market_public_at_financial_quality_evidence(*, published_at: datetime, suff
     return financial_quality_metric_to_evidence_market_public_at(version, metric=metric, envelope=envelope, entity_code=_ENTITY)
 
 
+def _market_public_at_stock_evidence(*, published_at: datetime, suffix: str = "TA1") -> EvidenceRecord:
+    """Stage 3.7(D0081): Balance Sheet Point-in-Time(TA)のA系統Evidence(Test用)。"""
+    envelope = DisclosureEnvelope(
+        envelope_id=f"ENV_TEST_TA_{suffix}",
+        provider_code="72030",
+        internal_code=_ENTITY,
+        disclosure_number="D1",
+        document_type="2QFinancialStatements_Consolidated_IFRS",
+        disclosure_date=published_at.date(),
+        disclosure_time=published_at.strftime("%H:%M"),
+        market_public_at=published_at,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        current_period_type=PeriodType.Q2,
+        current_period_start=date(2024, 4, 1),
+        current_period_end=date(2024, 9, 30),
+        accounting_standard="IFRS",
+    )
+    metric = FundamentalMetric(
+        metric_id=f"MET_TEST_TA_{suffix}",
+        envelope_id=envelope.envelope_id,
+        series_id=f"{_ENTITY}|total_assets|CURRENT_FISCAL_YEAR|2Q|CONSOLIDATED|IFRS",
+        metric_type="total_assets",
+        raw_value="89169296000000",
+        value=None,
+        value_availability=ValueAvailability.PRESENT,
+        actual_or_forecast=ActualOrForecast.ACTUAL,
+        fiscal_year_target=FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        period_type=PeriodType.Q2,
+        period_basis=PeriodBasis.POINT_IN_TIME,
+        consolidation_scope=ConsolidationScope.CONSOLIDATED,
+        accounting_standard="IFRS",
+        source_field="TA",
+    )
+    version = SourceVersion(
+        source_record_id=metric.series_id,
+        source_version_id=metric.metric_id,
+        value="89169296000000",
+        available_at=published_at,
+        retrieved_at=datetime(2026, 8, 16, tzinfo=UTC),
+        availability_basis=AvailabilityBasis.UNKNOWN,
+        published_at=published_at,
+    )
+    return financial_quality_metric_to_evidence_market_public_at(version, metric=metric, envelope=envelope, entity_code=_ENTITY)
+
+
 def _disclosure_evidence(*, retrieved_at: datetime) -> EvidenceRecord:
     document = DisclosureDocument(
         internal_document_id="DOC_TEST_1",
@@ -855,36 +900,40 @@ def test_market_public_at_evidence_before_disclosure_is_pit_excluded() -> None:
 
 
 def test_financial_quality_evidence_coexists_with_pl_evidence_under_a_semantics() -> None:
-    """Stage 3.6(D0079): Financial Quality Evidence(`financial_quality_metric_
-    to_evidence_market_public_at()`)は既存P&L A系統Evidence(`source_version_
-    to_evidence_market_public_at()`)と同じsource_type Tagを使うため、
-    A/B混在Guardを壊さずに同一Artifactへ混在できることを確認する。"""
+    """Stage 3.6/3.7(D0080/D0081): Financial Quality Evidence(Cash Flow=
+    CUMULATIVE、Balance Sheet=POINT_IN_TIME、いずれも`financial_quality_
+    metric_to_evidence_market_public_at()`)は既存P&L A系統Evidence
+    (`source_version_to_evidence_market_public_at()`)と同じsource_type Tagを
+    使うため、A/B混在Guardを壊さずに同一Artifactへ混在できることを確認する。"""
     as_of = datetime(2024, 11, 15, 6, 0, tzinfo=UTC)
     published_at = datetime(2024, 11, 6, 4, 55, tzinfo=UTC)
     pl_evidence = _market_public_at_fundamental_evidence(published_at=published_at)
     fq_evidence = _market_public_at_financial_quality_evidence(published_at=published_at)
+    stock_evidence = _market_public_at_stock_evidence(published_at=published_at)
+    pool = [pl_evidence, fq_evidence, stock_evidence]
 
     artifact, _packet = build_research_artifact(
         artifact_id="ART_TEST_A_FQ_MIX_1",
         entity_code=_ENTITY,
         question=_question(as_of),
-        evidence_pool=[pl_evidence, fq_evidence],
-        relations={pl_evidence.evidence_id: EvidenceRelation.NEUTRAL, fq_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+        evidence_pool=pool,
+        relations={e.evidence_id: EvidenceRelation.NEUTRAL for e in pool},
         bull_case=_bull(),
         base_case=NarrativeCase(
-            summary="開示された実績値(P&L + Cash Flow)",
-            supporting_evidence_ids=(pl_evidence.evidence_id, fq_evidence.evidence_id),
+            summary="開示された実績値(P&L + Cash Flow + Balance Sheet)",
+            supporting_evidence_ids=tuple(e.evidence_id for e in pool),
         ),
         bear_case=_bear(),
         data_confidence=ConfidenceLevel.LOW,
         evidence_confidence=ConfidenceLevel.MEDIUM,
         research_confidence=ConfidenceLevel.LOW,
         conclusion=ResearchConclusion.INCONCLUSIVE,
-        conclusion_rationale="A系統Fundamentals(P&L + Cash Flow)",
+        conclusion_rationale="A系統Fundamentals(P&L + Cash Flow + Balance Sheet)",
         fundamentals_availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
     )
     assert pl_evidence.evidence_id in artifact.included_evidence_ids
     assert fq_evidence.evidence_id in artifact.included_evidence_ids
+    assert stock_evidence.evidence_id in artifact.included_evidence_ids
 
 
 def test_financial_quality_evidence_rejected_under_default_b_semantics() -> None:

@@ -6,7 +6,14 @@ from datetime import UTC, datetime
 
 import pytest
 from lib.evidence.model import AvailabilityBasis, ValueAvailability
-from lib.fundamentals.model import ActualOrForecast, ConsolidationScope, DisclosureEnvelope, FiscalYearTarget, PeriodType
+from lib.fundamentals.model import (
+    ActualOrForecast,
+    ConsolidationScope,
+    DisclosureEnvelope,
+    FiscalYearTarget,
+    PeriodBasis,
+    PeriodType,
+)
 
 
 def _envelope(**overrides: object) -> DisclosureEnvelope:
@@ -18,6 +25,20 @@ def _envelope(**overrides: object) -> DisclosureEnvelope:
     )
     defaults.update(overrides)
     return DisclosureEnvelope(**defaults)  # type: ignore[arg-type]
+
+
+# --- Stage 3.7(D0081): PeriodBasis.POINT_IN_TIMEの追加(後方互換確認) ---
+
+
+def test_period_basis_point_in_time_exists() -> None:
+    assert PeriodBasis.POINT_IN_TIME == "POINT_IN_TIME"
+
+
+def test_period_basis_existing_values_unchanged() -> None:
+    """POINT_IN_TIME追加によって既存CUMULATIVE/STANDALONEの値が変わっていないことを確認する。"""
+    assert PeriodBasis.CUMULATIVE == "CUMULATIVE"
+    assert PeriodBasis.STANDALONE == "STANDALONE"
+    assert {member.value for member in PeriodBasis} == {"CUMULATIVE", "STANDALONE", "POINT_IN_TIME"}
 
 
 def test_disclosure_envelope_requires_tz_aware_retrieved_at() -> None:

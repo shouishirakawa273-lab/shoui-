@@ -22,10 +22,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType, SourceVersion
-from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric
+from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric, PeriodBasis
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
-# 通貨/単位がRaw Payloadから未確認であることを明示するLabel(推測禁止、D0079)。
+# 通貨/単位がRaw Payloadから未確認であることを明示するLabel(推測禁止、D0080)。
 UNIT_STATUS_UNVERIFIED = "UNVERIFIED"
 
 # A系統(MARKET_PUBLIC_AT)Bridgeが構築したEvidenceであることを示すTag
@@ -161,7 +161,8 @@ def source_version_to_evidence_market_public_at(version: SourceVersion, *, entit
 def financial_quality_metric_to_evidence_market_public_at(
     version: SourceVersion, *, metric: FundamentalMetric, envelope: DisclosureEnvelope, entity_code: str
 ) -> EvidenceRecord:
-    """Financial Quality系Metric(Stage 3.6: CFO/CFI/CFF)専用のA系統Evidence化。
+    """Financial Quality系Metric(Stage 3.6: CFO/CFI/CFF、Stage 3.7: TA/ShEq/EqAR)
+    専用のA系統Evidence化。
 
     `source_version_to_evidence_market_public_at()`と同じA系統PIT Semantics
     (`published_at <= as_of`のCandidateからas_of時点最新のVersionを選ぶのは
@@ -169,10 +170,17 @@ def financial_quality_metric_to_evidence_market_public_at(
     この関数自体はas_of選択を行わない。`available_at=version.published_at`、
     `source_type=MARKET_PUBLIC_AT_SOURCE_TYPE`)をそのまま再利用しつつ、
     対応する`FundamentalMetric`/`DisclosureEnvelope`を追加で受け取ることで、
-    `content`へperiod_start/period_end/period_type/period_basis/
-    consolidation_scope/accounting_standardを保持する(既存の軽量Bridgeは
-    `source_record_id`=series_id文字列のみで、これらの一部(特にperiod_start/
-    period_end)を保持していなかった)。
+    `content`へPeriod系Metadataを保持する(既存の軽量Bridgeは`source_record_id`
+    =series_id文字列のみで、これらの一部を保持していなかった)。
+
+    **`metric.period_basis`でTyped Branch(Stage 3.7要件)**:
+    - `CUMULATIVE`(D0080 Cash Flow等): `content`は`period=start..end`を含む
+      (D0080から意味論・書式ともに変更していない)。
+    - `POINT_IN_TIME`(Stage 3.7 Balance Sheet Snapshot、D0081): `content`は
+      `current_period_start`を値の期間開始として扱わないため`period_start`を
+      表示せず、代わりに`value_date=current_period_end`を明示する。
+    - それ以外(将来`STANDALONE`が来た場合等)は、暗黙のContent生成をせず
+      `ValueError`でfail closedする(未定義のBranchを黙って通さない)。
 
     **series_id文字列のfree-form parseはしない**: period_type/consolidation_
     scope/accounting_standard等は`metric`/`envelope`の型付きFieldから直接
@@ -180,7 +188,7 @@ def financial_quality_metric_to_evidence_market_public_at(
 
     Unit/Currencyは`FundamentalMetric.currency`/`.unit`が実際に確認できた
     場合のみそれを使い、確認できていない場合は`UNIT_STATUS_UNVERIFIED`を
-    明示する(値を推測しない、D0079要件)。
+    明示する(値を推測しない、D0080要件)。
 
     **Defense-in-depth**: `metric.metric_id != version.source_version_id`
     または`metric.envelope_id != envelope.envelope_id`の場合、呼び出し側の
@@ -199,18 +207,34 @@ def financial_quality_metric_to_evidence_market_public_at(
     if metric.envelope_id != envelope.envelope_id:
         raise ValueError(f"metric.envelope_id({metric.envelope_id})がenvelope.envelope_id({envelope.envelope_id})と一致しません")
 
-    period_start = envelope.current_period_start.isoformat() if envelope.current_period_start is not None else "UNKNOWN"
-    period_end = envelope.current_period_end.isoformat() if envelope.current_period_end is not None else "UNKNOWN"
     unit_status = metric.unit if metric.unit is not None else UNIT_STATUS_UNVERIFIED
     currency_status = metric.currency if metric.currency is not None else UNIT_STATUS_UNVERIFIED
-    content = (
-        f"{entity_code}: {metric.metric_type}(source_field={metric.source_field}, "
-        f"period={period_start}..{period_end}, period_type={metric.period_type.value}, "
-        f"period_basis={metric.period_basis.value}, consolidation_scope={metric.consolidation_scope.value}, "
-        f"accounting_standard={metric.accounting_standard or 'UNKNOWN'}, "
-        f"currency={currency_status}, unit={unit_status})="
-        f"{version.value}(market_public_at={version.published_at.isoformat()})"
-    )
+    period_end = envelope.current_period_end.isoformat() if envelope.current_period_end is not None else "UNKNOWN"
+
+    if metric.period_basis == PeriodBasis.CUMULATIVE:
+        period_start = envelope.current_period_start.isoformat() if envelope.current_period_start is not None else "UNKNOWN"
+        content = (
+            f"{entity_code}: {metric.metric_type}(source_field={metric.source_field}, "
+            f"period={period_start}..{period_end}, period_type={metric.period_type.value}, "
+            f"period_basis={metric.period_basis.value}, consolidation_scope={metric.consolidation_scope.value}, "
+            f"accounting_standard={metric.accounting_standard or 'UNKNOWN'}, "
+            f"currency={currency_status}, unit={unit_status})="
+            f"{version.value}(market_public_at={version.published_at.isoformat()})"
+        )
+    elif metric.period_basis == PeriodBasis.POINT_IN_TIME:
+        content = (
+            f"{entity_code}: {metric.metric_type}(source_field={metric.source_field}, "
+            f"value_date={period_end}, period_type={metric.period_type.value}, "
+            f"period_basis={metric.period_basis.value}, consolidation_scope={metric.consolidation_scope.value}, "
+            f"accounting_standard={metric.accounting_standard or 'UNKNOWN'}, "
+            f"currency={currency_status}, unit={unit_status})="
+            f"{version.value}(market_public_at={version.published_at.isoformat()})"
+        )
+    else:
+        raise ValueError(
+            f"metric.period_basis={metric.period_basis.value}はこの関数でサポートされていません"
+            "(fail closed、未定義のPeriodBasisでContentを暗黙生成しない)"
+        )
     source = SourceMetadata(
         source_id=version.source_version_id,
         source_type=MARKET_PUBLIC_AT_SOURCE_TYPE,

@@ -88,58 +88,89 @@ logger = logging.getLogger(__name__)
 _JST = ZoneInfo("Asia/Tokyo")
 
 # --- Field Mapping(未検証、DECISIONS.md D0043参照) ---
-# metric_type -> (raw field名, Actual/Forecast, 当期/翌期, 連結/非連結)
-_METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, ConsolidationScope]] = {
-    "sales": ("Sales", ActualOrForecast.ACTUAL, FiscalYearTarget.CURRENT_FISCAL_YEAR, ConsolidationScope.CONSOLIDATED),
-    "operating_profit": ("OP", ActualOrForecast.ACTUAL, FiscalYearTarget.CURRENT_FISCAL_YEAR, ConsolidationScope.CONSOLIDATED),
-    "net_profit": ("NP", ActualOrForecast.ACTUAL, FiscalYearTarget.CURRENT_FISCAL_YEAR, ConsolidationScope.CONSOLIDATED),
+# metric_type -> (raw field名, Actual/Forecast, 当期/翌期, 連結/非連結, PeriodBasis)
+#
+# Stage 3.7(D0081): 各DescriptorがPeriodBasisを明示する(暗黙default禁止)。
+# 既存Metric(P&L/EPS/Forecast/Cash Flow)は意味を再設計せず、既存挙動どおり
+# 全てCUMULATIVEを明示指定する。新規Stock Metric(TA/ShEq/EqAR)のみ
+# POINT_IN_TIME(特定value_date時点のSnapshot、期間累計ではない)。
+_METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, ConsolidationScope, PeriodBasis]] = {
+    "sales": (
+        "Sales",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "operating_profit": (
+        "OP",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "net_profit": (
+        "NP",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
     "sales_current_year_forecast": (
         "FSales",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "operating_profit_current_year_forecast": (
         "FOP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "net_profit_current_year_forecast": (
         "FNP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "sales_next_year_forecast": (
         "NxFSales",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "operating_profit_next_year_forecast": (
         "NxFOP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "net_profit_next_year_forecast": (
         "NxFNP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "sales_non_consolidated": (
         "NCSales",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "operating_profit_non_consolidated": (
         "NCOP",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     # "OdP"(経常利益)はLocal Real Data Validationで実在するField名として確認済み
     # (D0043追記、7203実Raw Responseで確認)。IFRS/USGAADでblankになりうることの
@@ -149,59 +180,98 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "ordinary_profit_current_year_forecast": (
         "FOdP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "ordinary_profit_next_year_forecast": (
         "NxFOdP",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     # "EPS"はLocal Real Data ValidationでDecimal文字列("109.28"等)として実在する
     # Field名と確認済み(D0043追記)。
-    "eps": ("EPS", ActualOrForecast.ACTUAL, FiscalYearTarget.CURRENT_FISCAL_YEAR, ConsolidationScope.CONSOLIDATED),
+    "eps": (
+        "EPS",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
     "eps_current_year_forecast": (
         "FEPS",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "eps_next_year_forecast": (
         "NxFEPS",
         ActualOrForecast.COMPANY_FORECAST,
         FiscalYearTarget.NEXT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
-    # Stage 3.6(D0079): CFO/CFI/CFFはLocal Real Data Validation(7203実
+    # Stage 3.6(D0080): CFO/CFI/CFFはLocal Real Data Validation(7203実
     # Snapshot、全20件のDisclosureで確認)でField名が実在し、Sales/OP等と同じ
     # 累計Flow(CurPerSt=FY開始日、CurPerEn=当該期間終了日)であることを確認済み。
-    # 2Q値を2Q単独値として再解釈しない(period_basisは他Metricと同じCUMULATIVE、
-    # DerivationやStandalone化はこのRoundでは行わない)。TA/Eq/ShEq/EqAR/BPS/ROE
-    # (Stock/Point-in-Time系指標)はこのRoundでは追加しない(PeriodBasis.
-    # POINT_IN_TIMEが未実装のため、意味論上のGapを埋めずに追加すると誤った
-    # 累計/時点の混同を招くため、D0079 Do Not参照)。
+    # 2Q値を2Q単独値として再解釈しない(DerivationやStandalone化は行わない)。
     "cash_flow_from_operations": (
         "CFO",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "cash_flow_from_investing": (
         "CFI",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
     ),
     "cash_flow_from_financing": (
         "CFF",
         ActualOrForecast.ACTUAL,
         FiscalYearTarget.CURRENT_FISCAL_YEAR,
         ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    # Stage 3.7(D0081): TA/ShEq/EqARはLocal Real Data Validation(7203実
+    # Snapshot、全20件のDisclosureで確認)でField名が実在するBalance Sheet
+    # Snapshot Fact(特定value_date時点、期間累計ではない)。ShEq/EqARの正式
+    # Provider長名称は未確認のため、metric_typeで意味を過剰確定しない
+    # (`shareholders_equity`等の確定的な名称は使わない、"Eq"という別Fieldも
+    # Raw Payloadに実在し、値がShEqと異なるため統合しない)。EqARはRaw
+    # Provider値をそのまま使い、ShEq/TAからLab側で再計算しない(Validation
+    # Testでの整合確認のみ許容、Provider値は上書きしない)。
+    "total_assets": (
+        "TA",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "provider_reported_sheq": (
+        "ShEq",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "provider_reported_eqar": (
+        "EqAR",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
     ),
 }
 
@@ -464,7 +534,13 @@ def parse_financial_summary_payload(
         )
         envelopes.append(envelope)
 
-        for metric_type, (source_field, actual_or_forecast, fiscal_year_target, scope) in _METRIC_FIELD_MAP.items():
+        for metric_type, (
+            source_field,
+            actual_or_forecast,
+            fiscal_year_target,
+            scope,
+            period_basis,
+        ) in _METRIC_FIELD_MAP.items():
             raw_value = _optional_str(row.get(source_field))
             availability = resolve_value_availability(raw_value, accounting_standard=accounting_standard, metric_type=metric_type)
             value: Decimal | None = None
@@ -495,7 +571,7 @@ def parse_financial_summary_payload(
                     actual_or_forecast=actual_or_forecast,
                     fiscal_year_target=fiscal_year_target,
                     period_type=cur_per_type,
-                    period_basis=PeriodBasis.CUMULATIVE,
+                    period_basis=period_basis,
                     consolidation_scope=scope,
                     accounting_standard=accounting_standard,
                     source_field=source_field,
