@@ -8776,3 +8776,165 @@ D0075 Source Vintage Guard(UNVERIFIED)を継続。Balance Sheet Evidence
 financial_summary_v2.json`(既存へ追記)・このDECISIONS.md追記をCommit
 対象とする。Raw Snapshot・`02_company_research/7203_Toyota_Motor/`(今回
 無変更)はいずれもCommit対象外。
+
+## D0082 — Stage 3.8: Financial Quality Integrated Research Acceptance(D0080 Cash Flow + D0081 Balance Sheet + D0077 ValuationをReal ResearchArtifactへ統合、Measurement Only・Code変更なし)
+
+D0080(Cash Flow)とD0081(Balance Sheet)を、既存P&L(D0075)・Positioning・
+Valuation(D0077)と1つの実ResearchArtifactへ統合し、次のResearch Quality
+Bottleneckを実測した。**新機能は追加していない、Code欠陥も発見されな
+かったため無変更(Read-only Scratch Script、Repoへは追加していない)。**
+
+D0081実装ログのDECISIONS.md D0081節をRead-onlyで確認したが、重複段落は
+存在しなかった(Edit Tool呼び出し表示上の重複はTool UIの差分プレビューに
+起因するもので、実際のCommit済みMarkdownには反映されていなかった)。
+Doc-only Cleanupは不要と判断し、何も変更していない。
+
+### 実行結果(7203、as_of=2024-11-15 15:00 JST、既存Local Snapshotのみ)
+
+| Evidence種別 | usable件数 |
+|---|---|
+| P&L(A系統、sales/OP/NP/EPS等) | 16 |
+| Cash Flow(CFO/CFI/CFF、D0080) | 12 |
+| Balance Sheet(TA/ShEq/EqAR、D0081) | 12 |
+| Positioning(price-derived) | 18 |
+| Valuation(LATEST_REPORTED_FY_PER、D0077) | 1 |
+| **Total** | **59** |
+
+`artifact_id=ART_STAGE3_8_7203_20241115_A_INTEGRATED_V1`(`build_research_
+artifact()`経由、直接構築はしていない、Local登録はしていない)。
+`VALUATION_MULTIPLE=7.2853`(D0077/D0078/D0079と完全一致)。
+`data_confidence=LOW`/`evidence_confidence=MEDIUM`/`research_confidence=
+LOW`/`conclusion=INCONCLUSIVE`(Evidence件数増加を理由に機械的昇格していない)。
+
+### Latest Balance Sheet Snapshot(§5)
+
+`max(value_date)`をMeasurementとして報告: TA/ShEq/EqARのうち最新のvalue_
+dateは`2024-09-30`(2Q cadence、published_at=2024-11-06 13:55 JST)。1Q
+(2024-06-30)・3Q(2023-12-31、FY2025 3Q未開示のため)・FY(2024-03-31)の
+Evidenceも同時に存在するが、いずれも「Current Balance Sheet」と呼んで
+いない。新しいSelector EngineはProductionへ追加していない。
+
+### Research Usefulness再評価(実Evidenceに基づく)
+
+| 項目 | 分類 | 根拠 |
+|---|---|---|
+| Business / Earnings | SUPPORTED_BY_DATA | P&L 16件(sales/OP/NP/EPS等の実績値) |
+| Growth | PARTIAL | D0076/D0078から不変(異なる会計年度の累計値混在、YoY計算未実装) |
+| Cash Flow Coverage | SUPPORTED_BY_DATA | CFO/CFI/CFF 12件、1Q/2Q/3Q/FY全Cadence確認 |
+| Balance Sheet Coverage | SUPPORTED_BY_DATA | TA/ShEq/EqAR 12件、同上 |
+| Overall Financial Quality | PARTIAL | BPS/ROE/PBR/Debt Metrics未実装のため、Cash Flow+Balance Sheetが揃っても総合判断はできない |
+| Guidance | PARTIAL(不変) | 今回実測: 15series中15件がas_of時点で公表済み(Parser Gapではなく引き続きWiring Gap、Evidence Poolへは今回も追加せず) |
+| Valuation Multiple | SUPPORTED_BY_DATA | LATEST_REPORTED_FY_PER=7.2853 |
+| Valuation Interpretation | UNAVAILABLE | D0079測定済み: Historical Context=PARTIAL(単年・実質2 Regime)、Peer=構築不可(Sector不一致0/3) |
+| Catalysts | OUT_OF_SCOPE | Disclosure Document Capability未取得(DEFAULT_ALLOWED_CAPABILITIES外) |
+| Risks | UNAVAILABLE | 同上 |
+| Expectations / Priced-in(Consensus) | OUT_OF_SCOPE | Adapter未実装 |
+
+### Financial Quality Boundary(§8遵守確認)
+
+Evidence Content・Narrative・DECISIONS本文いずれにも「healthy/unhealthy/
+strong/weak/safe/risky/good/bad/健全/脆弱/安全/危険/良い/悪い/
+undervalued/overvalued/cheap/expensive/割安/割高/BUY/SELL」を含めていない
+ことを機械的Scanで確認した(EqAR=0.385等のRatio自体はFactとして保持する
+のみ)。**このRound中に1件、Narrative草稿に「財務健全性」という表現を
+書いてしまい(「健全」を部分文字列として含む)、機械的Scanで検出した。**
+D0078のV1→V2訂正(「割安/割高」がたとえ否定文でも文字列として残ること
+自体を避ける)と同じ原則に従い、Scratch Script内で「個々の値の大小・
+符号だけから、企業や株価の水準についての方向性のある判断はしない」へ
+言い換えて再Scanし、0件であることを確認した(この訂正はScratch Script内
+のみ、Repoへの影響なし)。
+
+### BPS再評価(§9)
+
+**今回の実測で新たに確認**: `BPS`は`TA`/`ShEq`/`EqAR`と同じくProvider
+供給のRaw Fieldとして存在するが、**FY Disclosureでのみ値を持ち、1Q/2Q/3Q
+では空文字列**(実データで確認、`ROE`も同じFY限定Pattern)。したがって
+BPSを追加しても、as_of=2024-11-15時点で得られる最新値は2024-05-08公表の
+FY2024/3実績(半年以上前)に留まり、既存TA/ShEq/EqAR(2024-11-06公表、
+2024-09-30時点)より鮮度が劣る。実装自体はTA/ShEq/EqARと完全に同一Pattern
+(新規Architecture不要)だが、**Research Quality全体への追加寄与は小さい**
+(既にSUPPORTED_BY_DATAのBalance Sheet Coverage軸を補強するのみで、新しい
+Research軸を開かない上、鮮度の面ではむしろ既存Evidenceより劣る)。
+
+### Guidance再評価(§10)
+
+D0078の判定(Parser Gapではなく Wiring Gap)を今回Actual Repoで再確認:
+`sales_current_year_forecast`/`operating_profit_current_year_forecast`/
+`net_profit_current_year_forecast`/`eps_current_year_forecast`(Next-Year
+Forecast含む)は評価対象15 series中15件全てがas_of時点で公表済みと確認
+できた(直近: 2024-11-06公表のCurrent Year Forecast、Sales=46兆円/OP=
+4.3兆円/NP=3.57兆円/EPS=268.77、いずれもLocal Snapshotから読み取り、
+hard-code無し)。Guidanceは四半期ごとに更新される(BPS/ROEのFY限定Pattern
+とは異なる)。今回もEvidence Poolへは追加していない(§10の指示どおり、
+評価のみ)。
+
+### 次のBottleneck判断(§11、実装容易性のみで決めない)
+
+3軸(Research Qualityへの寄与 × 現在のData Surface × Semantic Safety)で
+評価:
+
+- **BPS/ROE**: Data Surface即座に利用可能(Architecture上TA/ShEq/EqARと
+  同一)だが、既にSUPPORTED_BY_DATAのBalance Sheet軸を補強するのみで
+  新しいResearch軸を開かない、かつFY限定Cadenceのため鮮度面で既存
+  Evidenceに劣る(今回実測で判明)。
+- **Guidance Wiring**: Data Surface即座に利用可能(15/15件確認済み、
+  Parser Gapなし)。既存Actual実績とは異なる「会社自身の将来見通し」
+  という**新しいResearch軸**を開く。四半期更新のためBPS/ROEより鮮度が
+  高い。Semantic Safetyも既存`ActualOrForecast.COMPANY_FORECAST`
+  Labelingで担保済み(ルートCLAUDE.md規約1「予想値には必ずラベルと出典日」
+  にも合致)。
+- **Historical/Peer Valuation拡張**: D0079で既にData Surface側がBlocked
+  と確定(Price Snapshotが2024年単年のみ、既存4銘柄はSector不一致)。
+  新規Fetch必須のため今回Scope外(§18 Do Not)。
+- **Disclosure Content(EDINET/TDnet)**: Catalysts/Risks軸を完全に開く
+  大きなResearch Quality寄与があるが、新しいDocument取得経路が必要で
+  Wiringより重い実装。
+- **Consensus/Expectations**: 最大のGapだが、Expectations Engine相当の
+  新規実装が必要(§18 Do Not)。
+- **Source Vintage Reliability**: J-Quants公式仕様への疎通不能という
+  Session固有の制約(D0043以来継続)によりCode変更では解消できない。
+
+**推奨 = Guidance Wiring**。実装容易性(BPS/Guidanceは同程度に軽い)では
+決めず、(1) BPSは既存軸の補強に留まり鮮度面でも劣る、(2) Guidanceは
+新しいResearch軸を開き鮮度も高い、という実測結果の差で選定した。
+
+### Good Company != Good Stock Check(§12)
+
+P&L・Cash Flow・Balance Sheet・Valuation Multiple全てが揃っても、Bull/
+Base/Bear Caseのいずれにも投資期待Return・BUY/SELL判断は含めていない
+ことを確認した(Narrativeは統合されたFactの列挙のみ)。
+
+### Confidence(§13)
+
+Evidence件数が35(D0078)→59(今回)へ増加したが、`data_confidence`/
+`research_confidence`は自動昇格していない(LOW据え置き)。Source Vintage
+Completenessは引き続きUNVERIFIED。
+
+### Code Change Policy(§14)
+
+Production Code変更なし。Read-only Scratch Script
+(`stage3_8_integrated_acceptance_7203.py`、Repo外Scratchpadで実行)による
+統合Measurementのみ。実行上のSemantic Defectは発見されなかった。
+
+### Verification(§15)
+
+Code変更が無いため、Targeted Smokeのみ実施: `test_fundamentals_financial_
+quality_evidence.py`(16件)・`test_valuation_latest_reported_fy_per.py`
+(13件)・`test_research_artifact.py`(24件)、計53件全てPASS。Full
+Regression・`ruff`/`mypy`は本Roundでは再実行していない(Code変更無し、
+D0071/D0074/D0076/D0078/D0079と同じ判断基準)。H0001 Locked Testは実行
+していない。
+
+### Persistence / Commit対象(§16)
+
+Runtime ResearchArtifact(`ART_STAGE3_8_7203_20241115_A_INTEGRATED_V1`)は
+Local Registryへ記録していない(Scratch Script内でのMeasurementのみ、
+`02_company_research/7203_Toyota_Motor/`は今回無変更)。Raw Snapshotも
+無変更。本RoundでCommitするのはこのDECISIONS.md追記(Doc-only)のみ。
+
+### Do Not(§18遵守確認)
+
+BPS実装・ROE・PBR・Guidance実装・Forward PER・Consensus・Expectations
+Engine・Peer・新規Historical Fetch・新規Provider・Decision Engine・
+Portfolio Engine・D0057 General Fixのいずれにも着手していない。H0001
+Locked Testの再実行もしていない。
