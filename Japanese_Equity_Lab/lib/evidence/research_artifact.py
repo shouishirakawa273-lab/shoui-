@@ -80,7 +80,7 @@ from lib.schemas.base import RecordMeta
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 
 DEFAULT_ALLOWED_CAPABILITIES: frozenset[DataCapability] = frozenset(
-    {DataCapability.FUNDAMENTAL, DataCapability.DISCLOSURE, DataCapability.POSITIONING}
+    {DataCapability.FUNDAMENTAL, DataCapability.DISCLOSURE, DataCapability.POSITIONING, DataCapability.VALUATION}
 )
 
 

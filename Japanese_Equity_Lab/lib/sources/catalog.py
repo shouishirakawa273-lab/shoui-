@@ -31,6 +31,13 @@ class DataCapability(StrEnum):
     GLOBAL_MARKET = "GLOBAL_MARKET"
     NEWS = "NEWS"
     IDEA = "IDEA"
+    VALUATION = "VALUATION"
+    """Price + Fundamental Denominatorを組み合わせた決定論的Derived Fact
+    (D0077)。`MARKET_PRICE`単独にも`FUNDAMENTAL`単独にも属さない、2入力を
+    要する専用分類として新設した(既存Capabilityへの無理な押し込みを避ける、
+    `lib.evidence.retrieval.plan_retrieval()`が`DataCapability`を汎用的に
+    列挙するのみのため、この追加によるCatalog全体への副作用は無いことを
+    確認済み)。"""
 
 
 class SourceAuthorityClass(StrEnum):

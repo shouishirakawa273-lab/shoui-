@@ -8002,3 +8002,138 @@ research/7203_Toyota_Motor/research_artifacts.jsonl`、Registry
 Long-term Commit Policy未確定のため今回もCommit対象外)。Raw Snapshot
 も無変更・Commit対象外。本RoundでCommitするのはこのDECISIONS.md追記
 (Doc-only)のみ。
+
+## D0077 — Stage 3.3: LATEST_REPORTED_FY_PER v1(Valuation: Price + Fundamental Denominator → 決定論的Derived Fact)
+
+D0076で特定した残存Gap(「生Close PriceとFY実績EPSはほぼ手元にあるのに、
+Evidence化されていないために計算できない」)へ対応し、新しい`lib.valuation`
+モジュールを新設した。新規Provider・新規Price/Fundamentals取得経路は作らず、
+既存の`session_close_at`(PIT Price Selector)・D0075 Fundamentals A-Path
+Bridge(`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`)・
+`detect_corporate_action_events_from_equity_bars`・`ProvenanceStore`/
+`ProvenanceLink`をそのまま再利用する。
+
+### Metric定義とArchitecture Guard
+
+- Metric名は`LATEST_REPORTED_FY_PER`のみ。「Trailing PER」「TTM PER」とは
+  呼ばない(TTM合算は四半期を合算する新しいDerivation Logicが必要になり、
+  v1のScopeを超えるため今回は構築しない)。
+- `LATEST_REPORTED_FY_PER = 選定Close Price ÷ 市場公表済みの最新FY実績EPS`
+  (会社発表の通期実績値そのまま、四半期累計値ではない)。「割安/割高」
+  「Cheap/Expensive」「BUY/SELL」「target price」等のInterpretationは
+  一切含まない、単なる比率のFact(禁止語チェックをTestで直接確認)。
+- `DataCapability.VALUATION`(`lib.sources.catalog`)を新設し、
+  `DEFAULT_ALLOWED_CAPABILITIES`へ追加した。`MARKET_PRICE`単独にも
+  `FUNDAMENTAL`単独にも属さない、Price+Fundamentalの2入力を要する
+  Derived Fact専用の分類。
+
+### PIT安全性
+
+- Price Selector: `session_close_at(bar.session_date) <= as_of`を満たす
+  最新Barのみを選ぶ(`select_latest_close_bar`)。Intraday Priceは推測
+  しない。7203/as_of=2024-11-15 15:00 JSTで実データ検証: 2024-11-15
+  Close(2704)は当日大引け未確定のため拒否され、2024-11-14 Close(2666、
+  前日大引け確定済み)が選定されることを確認。
+- EPS Denominator: D0075 A-Path(`fundamentals_as_of(availability_
+  semantics=MARKET_PUBLIC_AT)`)が選定した`SourceVersion`を呼び出し側
+  から受け取り、`build_latest_reported_fy_per()`内で`metric_type=eps`・
+  `actual_or_forecast=ACTUAL`・`period_type=FY`・`consolidation_scope=
+  CONSOLIDATED`であることをDefense-in-depthで再検証する(Series選定
+  自体はD0075のBridgeで既に実装済みのため二重実装しない)。`published_at`
+  がUNKNOWN、またはas_ofより後(Future Disclosure Leakage)の場合は
+  fail closed(`ValueError`/`LookAheadBiasError`)。
+- Corporate Action Guard: `fiscal_period_end <= event.effective_date <=
+  price_date`のWindowに、Split/Reverse-Split等のShare Basis変更Event
+  が1件でも検出された場合、Record自体を生成しない(`None`、fail closed、
+  値の推測補正はしない)。v1ではEPS/BPSのSplit Adjustmentは実装しない。
+  7203の今回Snapshotでは`detect_corporate_action_events_from_equity_
+  bars()`によるEvent検出0件を実データで確認した。
+
+### Provenance
+
+`LatestReportedFyPerRecord`はPrice(`price_date`/`price_value`/
+`price_available_at`)とEPS(`eps_value`/`fiscal_period_end`/
+`published_at`/`source_version_id`)の両方のLineage情報を型付きFieldと
+して保持する。既存`ProvenanceStore`/`ProvenanceLink`は`to_id`が同一の
+複数`ProvenanceLink`(`from_type="price_bar"`と`from_type=
+"fundamental_source_version"`)をそのまま許容するため、Dual-Parent
+Provenanceは既存契約内で正直に表現できることを確認した
+(`PROVENANCE_SCHEMA_GAP`には該当しない、Testで2件のParent Linkを直接
+確認)。単一Primary Sourceへの偽装はしていない。
+
+### Evidence / ResearchArtifact統合
+
+`latest_reported_fy_per_to_evidence()`は`EvidenceType.FACT` +
+`DataLayer.DERIVED` + `DataCapability.VALUATION`のEvidenceRecordを生成
+する。`available_at = max(price_available_at, published_at)`(Price/EPS
+両方が実際に公開された時刻のうち遅い方)。D0049(B系統`available_at`
+Fallback禁止)には抵触しない(このEvidence自体がB系統を名乗っていない
+ため)。ResearchArtifactは`EvidenceRelation.NEUTRAL`でVALUATION Evidence
+を受理し、Bull/Bear Caseへ自動反映しない(Confidence自動昇格もしない)
+ことをTestで確認した。
+
+### 実データ検証(7203、既存Local Snapshot、Hard-code無し)
+
+`as_of=2024-11-15 15:00 JST`で`build_latest_reported_fy_per()`を実行
+(Read-onlyの検証Scriptから、`scripts/stage3_1_research_artifact_7203.py`
+と同じLocal Snapshot Loadingパターンを再利用、Repo/`02_company_
+research/7203_Toyota_Motor/`は無変更):
+
+- Price = 2666(price_date=2024-11-14、実データからPIT Selectorが計算)
+- FY実績EPS(連結) = 365.94(envelope=ENV_7203_20240424575411、
+  published_at=2024-05-08 13:55 JST)
+- `LATEST_REPORTED_FY_PER` = 2666 / 365.94 ≈ 7.2853(≈7.29x)
+- Corporate Action Event検出数 = 0
+
+割安/割高等の判断はしていない(「計算可能」の確認に留める)。
+
+### Tests
+
+`13_tests/test_valuation_latest_reported_fy_per.py`(13件、全てPASS):
+Price Selector(同日Close拒否/前日Close選定/未確定時None)、FY実績EPS
+選定、2Q累計EPS拒否、Future Disclosure拒否、UNKNOWN published_at拒否、
+Corporate Action Guard(あり→fail closed/なし→成功)、Entity Mismatch
+拒否、Evidence(DERIVED+VALUATION、禁止語不在)、Dual-Parent Provenance、
+ResearchArtifactのVALUATION受理。Fundamentals A/B Guard・B系統の不変性
+は既存Regression Suiteで確認(専用の新規Testは追加していない、既存
+Testが引き続きPASSすることで確認)。
+
+### Verification
+
+- `ast.parse` + Import解決: 全対象ファイルOK。
+- Targeted(`test_valuation_latest_reported_fy_per.py`): 13/13 PASS。
+- Relevant(`-k "fundamental or research_artifact or catalog or
+  evidence"`): 295/295 PASS。
+- Full Regression(`13_tests/`): 1018/1019 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、今回のScope外(`lib/valuation`等とは無関係な
+  Repo Root Hookスクリプトのテスト)。既存の未修正Test(D0071/D0074/
+  D0075で既出のWindows/Encoding系Environment Issue、`core/models.py`等
+  非Japanese_Equity_Labパスに対するBash Hookの挙動)であることを、
+  無関係な既存Test(`test_fundamentals_view.py`)でも同一のmypy
+  Environment Issueが再現することと合わせて確認した——本Round由来の
+  Regressionではない。
+- `ruff check`: 対象ファイル全てPASS(初回`E501`1件は`__import__`経由の
+  遠回しなImportを通常のTop-level Importへ書き換えて解消)。
+- `ruff format --check`: 対象ファイル全てPASS(`builder.py`の1関数
+  シグネチャを`ruff format`で整形)。
+- `mypy`(`lib/valuation/`・`lib/sources/catalog.py`・`lib/evidence/
+  research_artifact.py`): Success、0 issues。Test File側は既知の
+  Windows/numpy/Python 3.14 Environment Issue(`numpy/__init__.pyi`の
+  `type`文構文、Python 3.12+専用構文が今回のmypyバージョンで誤検出)が
+  Pristine HEADの既存Testファイルでも同一再現するため
+  `QUALITY_GATE_ENV_BLOCKED`として記録、修正はしない。
+
+### Commit対象
+
+`lib/valuation/`(新規)・`lib/sources/catalog.py`・`lib/evidence/
+research_artifact.py`・`13_tests/test_valuation_latest_reported_fy_per.py`
+・このDECISIONS.md追記。`02_company_research/7203_Toyota_Motor/`
+(Runtime JSONL、既存D0075/D0076由来、今回変更なし)とRaw Snapshotは
+今回もCommit対象外(既存方針を継続)。
+
+### Do Not(遵守確認)
+
+Forward PER・PBR・Stage 4のいずれにも着手していない。既存の禁止Hook
+問題(`test_protected_path_hook.py`)・H0001 Locked Testの再実行もして
+いない。
