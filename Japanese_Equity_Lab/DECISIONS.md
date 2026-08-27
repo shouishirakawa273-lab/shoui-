@@ -9660,3 +9660,173 @@ Peer・Consensus・Disclosure Content・Decision Engine・Portfolio Engine
 `13_tests/test_fundamentals_same_period_yoy.py`(新規)・このDECISIONS.md
 追記をCommit対象とする。Raw Snapshot・`02_company_research/7203_Toyota_
 Motor/`(今回無変更)・Scratch ScriptはいずれもCommit対象外。
+
+## D0087 — Stage 3.14: 7203 Multi-Year Price Snapshot拡張(2021-08-30〜
+2024-12-30)+ Historical PER Re-measurement(D0079 Bottleneck解除、
+Local Data Extension + Measurement Only・Production Code変更なし)
+
+### 経緯・前提状態
+
+前回Round(Stage 3.14着手時)はWindows User-scope環境変数に壊れた
+`JQUANTS_API_KEY`が残存しており、これが`.env`の正常な値をShadowして
+J-Quants Authentication前にScriptが停止していた。Decision/commit/push
+いずれも発生しなかったため、Decision番号は消費されていない。今回Round
+開始時、ユーザーが当該User-scope環境変数を削除済みであることを確認した
+上で再開した。
+
+### Pre-flight Secret Hygiene確認(値は非表示)
+
+`.env`の`JQUANTS_API_KEY`について、値そのものを一切表示せずに以下のみ
+確認した: `exists=True`・`length=43`(行末改行・前後空白を除く)・値内部
+への CR/LF混入なし(ファイル自体はCRLF改行だが値自体はクリーン)。
+Windows User-scope / Machine-scope / Process環境変数のいずれにも
+`JQUANTS_API_KEY`は存在せず(前回問題だったShadowingは解消済み)、
+`.env`の値がShadowされずにそのままAdapterへ渡ることを確認してから
+Candidate取得へ進んだ。
+
+### Scope確定(ユーザー指示、推測なし)
+
+- Candidate: `code=7203`のみ(6758/8056/3626は対象外、2025-2026への延長も
+  対象外)。
+- 目的: D0079で「Price Bar Coverageが2024年単年のみ」と実測された
+  Bottleneckの解除(`HISTORICAL_CONTEXT_PARTIAL`の主因の一つ)。
+- Canonical参照: `01_data/raw/jquants_local/SNAP_RUN_20260816T163755994043_
+  equity_bars.json`(既に記録済みのImmutable Raw Snapshot、最後のFull
+  Run)。
+- 比較方式: byte-for-byteではなく、session_date単位でProvider Field
+  (`Code`/`Date`/`O`/`H`/`L`/`C`/`Vo`/`Va`/`AdjFactor`/`AdjO`/`AdjH`/
+  `AdjL`/`AdjC`/`AdjVo`/`ExRT`/`UL`/`LL`/`MktCap`)を1件でも異なれば
+  Mismatchとする、Semantic Canonical Comparison。
+- Failure Policy: 2024 Overlapで意味的差分が1件でもあれば即fail closedで
+  停止し、既存Snapshotは置換しない。H0001 Locked Testは実行しない。
+
+### Candidate取得時の実測境界(要求範囲からの縮小、推測ではなくProvider実測)
+
+要求開始日は当初`2021-01-01`だったが、取引カレンダー疎通確認(`GET
+/v2/markets/calendar`)でJ-Quants自身が以下を返した:
+
+```json
+{"message": "Your subscription covers the following dates: 2021-08-28 ~ . If you want more data, please check other plans:..."}
+```
+
+契約Planの実際のCoverage開始日は`2021-08-28`であることが確認できたため
+(捏造・推測ではなくProvider自身が返したFact)、ユーザー確認の上で
+`start_date=2021-08-28`へ縮小して再実行した。ただし`scripts/fetch_
+jquants_local_snapshot.py`の取引カレンダー取得には`±45日`のBufferが
+既定で入っており(`_CALENDAR_BUFFER_DAYS`)、これをそのまま適用すると
+再度Coverage境界外(`2021-07-14`)を要求してしまうため、同Scriptを編集
+せず(Production Code変更禁止)、`JQuantsAdapter`を直接呼ぶAd-hoc Scratch
+実行でCalendar側のLower BufferのみをCoverage境界(`2021-08-28`)へClamp
+した(Upper側は`+45日`のまま、Coverageが上方Open-endedのため問題なし)。
+
+`2021-08-28`自体は非取引日(土曜)であり、J-Quantsから実際に返った
+Candidate Coverageの最初のSessionは**`2021-08-30`**(月曜)だった。
+これをCandidate Coverageの実際のFirst Sessionとして記録する(Requested
+Start DateとActual First Sessionを区別、推測で埋めない)。取得結果:
+`equity_bars_7203.json`(Candidate)= 820件、`2021-08-30`〜`2024-12-30`。
+
+### 2024 Overlap Canonical Comparison(3方向、Session Date単位Provider
+Field比較)
+
+1. **Canonical(Immutable Raw Snapshot 2024部分)vs 既存local_snapshot_
+   input/equity_bars_7203.json(Fetch前の事前整合性確認)**: 両者とも
+   245 Session、日付集合完全一致、Provider Field Mismatch **0件**。
+2. **Candidate(2024部分)vs Canonical(2024部分)**: 245 Session、日付
+   集合完全一致、Provider Field Mismatch **0件**。
+3. **Candidate(2024部分)vs 既存local_snapshot_input(Fetch前)**: 245
+   Session、日付集合完全一致、Provider Field Mismatch **0件**。
+
+3方向すべてMismatch 0件のため、Fail Closed条件(1件でも意味的差分が
+あれば停止)には該当せず、Snapshot採用条件(完全一致)を満たした。
+
+### Snapshot採用
+
+`local_snapshot_input/equity_bars_7203.json`をCandidate(2021-08-30〜
+2024-12-30、820件)へ置換する前に、置換前の版を`_candidate_stage3_14_
+7203/equity_bars_7203.PRE_STAGE3_14_BACKUP.json`へ複製した(即Overwrite
+はせず、検証完了後のみ置換、Reversibleな手順)。置換後ファイル: count=
+820, first=2021-08-30, last=2024-12-30。Raw Immutable Snapshot(`01_data/
+raw/jquants_local/`)自体は無変更(Read-onlyの比較対象としてのみ使用)。
+
+### Historical PER Monthly Anchors Re-measurement(D0079と同一方法論の
+再実行、Read-only Scratch・Repo未追加)
+
+D0079と同じ組み合わせ(`lib.valuation.builder.build_latest_reported_fy_
+per()` + `lib.fundamentals.view.fundamentals_as_of(availability_
+semantics=MARKET_PUBLIC_AT)` + `lib.market_calendar.session_close_at()`
++ `lib.data_sources.convert.detect_corporate_action_events_from_equity_
+bars()`)を、拡張後のPrice Coverage全体(2021-08-30〜2024-12-30)の
+実データSession集合から機械的に選んだ月末最終取引Session(41か月分)へ
+適用した。新規Metric定義・新規Provider・新規Parsingは追加していない。
+
+```
+ANCHORS_ATTEMPTED=41
+VALID_OBSERVATIONS=32
+UNAVAILABLE_OBSERVATIONS=9
+```
+
+UNAVAILABLE 9件はいずれも`2021-08-31`〜`2022-04-28`のAnchorで、理由は
+全件「as_of時点で公表済みのFY実績・連結EPS Versionがまだ存在しない」
+(`fundamentals_as_of()`が`None`を返した、Fail Closed・値の補完なし)。
+ユーザーが事前に述べた「最初の利用可能なFY Actual EPSはFY2022/3
+(published 2022-05-11)」という実測に一致する。
+
+Corporate Action Guard: `detect_corporate_action_events_from_equity_
+bars()`がCandidate全体で1件検出(`effective_date=2021-09-29`、
+`raw_adj_factor=0.2`)。Event種別(Split/Reverse-Split等)は断定していない
+(`CorporateActionType.ADJUSTMENT_EVENT`のまま、推測しない)。
+VALID_OBSERVATIONSに対するGuard起因の除外は**0件**(全Anchorの
+`fiscal_period_end`が2022-03-31以降であり、Guard Window`[fiscal_period_
+end, price_date]`が2021-09-29を含まないため)。
+
+Confidence(Valid 32点、D0079の12点から拡大):
+
+```
+HISTORICAL_MIN=6.9479
+HISTORICAL_MEDIAN=10.1338
+HISTORICAL_MAX=21.1289
+CURRENT_PERCENTILE=6.2 (n=32、Current以下のHistorical Monthly Point割合)
+```
+
+Current Reference(D0077/D0078/D0079と同一as_of=2024-11-15 15:00 JST):
+`PER=7.2853`(既存Valuation Derived Factと完全一致、Snapshot拡張後も
+不変であることを確認)。
+
+**Denominator Regime**: D0079時点は実質2種類(FY2023/3実績・FY2024/3
+実績)のみだったが、今回はFY2022/3実績(2022-05-11公表)を追加した
+**3種類**(`DISTINCT_DENOMINATOR_REGIMES=3`: 2022-03-31/2023-03-31/
+2024-03-31)へ拡大した。「割安/割高」等の方向性判断は付与していない
+(D0079の§22原則を継続遵守)。
+
+### HISTORICAL_CONTEXT_STATUS再評価
+
+D0079の`HISTORICAL_CONTEXT_PARTIAL`(単年Windowかつ実質2 Denominator
+Regimeのみが理由)について、今回はWindowが約3.3年・Denominator Regimeが
+3種類へ拡大した。ただし依然として「3つの離散的なDenominator切替」という
+構造(Between-regime変化は month-to-monthではなく年1回)であることは
+変わらないため、Statusを`SUPPORTED`へ機械的に格上げはしない
+(`HISTORICAL_CONTEXT_STATUS`は引き続き`PARTIAL`のまま、拡大の事実のみ
+記録する。D0079の§8 Sample Sufficiency原則を継続遵守)。
+
+### 既存Regression確認
+
+`-k "valuation or fundamental"`: 259/259 PASS(Production Code無変更の
+ため予定通り無影響、Data File置換がTest Suiteに一切依存しないことを
+確認)。Full Regressionは未実行(Data Fileのみの変更であり、D0086時点の
+Full Regression結果からの追加変更要因が無いため今回はScope外とした)。
+
+### Do Not(遵守確認)
+
+`scripts/fetch_jquants_local_snapshot.py`・`lib/`配下のいずれも編集して
+いない(Calendar Bufferの回避はAd-hoc Scratch呼び出しで対応、Production
+Code変更禁止を遵守)。6758/8056/3626のFetch・2025-2026への延長・2021-08-28
+以前のデータ補完(別手段含む)・新規Providerの導入はいずれも行っていない。
+H0001 Locked Testの実行もしていない。
+
+### Persistence / Commit対象
+
+このDECISIONS.md追記のみをCommit対象とする。`local_snapshot_input/`
+配下(Data File置換・Backup・Candidate一時ディレクトリ含む)は`.gitignore`
+対象のためCommit対象外。Historical PER Re-measurement Scriptはリポジトリ
+外のScratch Directoryで実行し、Repoへは追加していない(D0079と同じ
+Read-only Scratch Script方針)。
