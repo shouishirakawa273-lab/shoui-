@@ -9362,3 +9362,117 @@ current_fy_company_forecast_per.py`(新規)・`test_valuation_latest_
 reported_fy_per.py`(既存へ追記)・このDECISIONS.md追記をCommit対象と
 する。Raw Snapshot・`02_company_research/7203_Toyota_Motor/`(今回無
 変更)・Scratch ScriptはいずれもCommit対象外。
+
+## D0085 — Stage 3.11: Post-Valuation Research Bottleneck Re-measurement(D0084完了後、Buildせず次候補を再測定、Production Code変更なし)
+
+D0084完了時点の7203 Integrated ResearchArtifact(72 Evidence)を基準に、
+次に追加すべきResearch Capabilityを、実装せずActual Repo調査+実データ
+再確認のみで再測定した。
+
+### 実行結果(D0084 Scratch Scriptを再実行、Repo未変更で再現性確認)
+
+```
+PL=16 CashFlow=12 BalanceSheet=12 Guidance=12 Positioning=18 Valuation=2
+Total=72
+LATEST_REPORTED_FY_PER≈7.2853
+CURRENT_FY_COMPANY_FORECAST_PER≈9.9193
+forbidden_term_hits=[]
+```
+
+D0084から完全に不変(Repo無変更のため当然だが、hard-code再現ではなく
+実行して確認)。
+
+### Actual Repo調査による新規判明事項(推測ではなく確認)
+
+1. **Disclosure Content(EDINET)**: `01_data/raw/EDINET/edinet_document_
+   S100TD9S_type1_smoketest.bin`が実在し、中身は7203(EDINET Filer Code
+   `E02144`)の**実XBRL Document**(`2024-05-08`付、既存FY実績/Guidance
+   Workと同一の開示日)であることを確認した。ただし`EDINET_LOCAL_
+   VALIDATION_GUIDE.md`により、`EdinetAdapter`はRaw HTTP Fetchのみで
+   `DisclosureDocument`へのField Mapping(Title/DocKind/公表時刻等の
+   Metadata)は実施しておらず、そのMetadataは別のEDINET Documents List
+   API呼び出しが必要(ローカルには存在しない、このSessionはEDINET関連
+   Hostへ疎通不可)。したがって「Codeはあるが実データがfixtureのみ」
+   ではなく、**「実Document本体はローカルにあるが、それをEvidence化する
+   ために必要なMetadata取得が新規Fetch相当でBlocked」**という、より
+   精密な状態であることが判明した。さらに`lib/disclosures/model.py`の
+   設計自体が「本文Semantic Extraction(数値抽出・Event分類・Claim
+   抽出)はScope外(将来Phase)」と明記しており、Wiringが完了しても
+   得られるのは「Documentが公開されたというFACT」のみで、Catalysts/
+   Risksの内容そのものは依然埋まらないことも確認した。
+2. **Consensus/Expectations**: `lib/consensus/`(Phase4E-4、`catalog.py`
+   /`evidence.py`/`model.py`/`normalize.py`/`view.py`、計631行)が既に
+   存在し、`RevisionHistory`/`SourceVersion`等Fundamentals既存Primitive
+   を再利用したPIT-safe/Vintage-aware Data Foundationとして設計済みで
+   あることを確認した。ただし実Provider Adapter(Finnhub等)・実7203
+   Consensusデータはいずれも存在しない(`lib/data_sources/`にConsensus
+   系Adapter無し、Local Snapshotにも無し)。したがって「未着手」ではなく
+   「Data Foundationは完成済み、Provider接続のみが無い」状態であることが
+   判明した(既存Round(D0078等)の「Adapter未実装」という表現は正しい
+   が、Data Foundationの完成度についての新情報)。
+3. **Source Vintage Reliability**: D0075 Source Vintage Guardの原文
+   ("J-Quants Financial Summaryが「訂正前値を必ずhistorical rowとして
+   保持する」ことを公式仕様から完全確認できていない")を再確認した。
+   これはCode Gapでも Historical Snapshot Gapでもなく、**Provider
+   Verification Gap**(公式仕様への疎通不能というSession制約に起因、
+   D0043以来継続)であり、今回のSessionでCodeによって解消できるもの
+   ではないことを確認した。
+4. **Historical Valuation Context / Peer Valuation**: Price Snapshot
+   Coverage(`2024-01-04`〜`2024-12-30`、245 Session)を再実行で再確認
+   した。D0079から不変。新規Fetchなしでは拡張不可。
+
+### Capability Comparison Table(§17)
+
+| Capability | Research Impact | Data Availability | PIT Readiness | Semantic Safety | Implementation Cost | What It Unlocks | Current Blocker | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| Actual-vs-Forecast EPS | Medium | High | High | **Low** | Low | 実績/予想の橋渡しFactのみ | なし(Data Ready) | 非推奨(Semantic Risk) |
+| Growth/YoY | **High** | High | High | Medium | Medium | D0076以来のPARTIAL Gapを解消、新Research軸 | なし(Data Ready) | **推奨** |
+| Next-Year Guidance | Low-Medium | High | High | High | Low | 季節的Coverage Gap(年3か月程度)のみ | なし(Data Ready) | 低優先(影響小) |
+| Guidance Revision/Trend | Medium | High | High | **Low** | Medium | Forecast推移の可視化 | なし(Data Ready) | 非推奨(Semantic Risk) |
+| Disclosure Content | High(理論上) | **Blocked** | Unverified | High | Blocked | Document公開FACTのみ(本文内容は別Phase) | 新規Fetch必須(EDINET Host疎通不可) | **Blocked** |
+| Consensus/Expectations | High | **Blocked**(Foundationのみ) | Architecture Ready | Medium-High | High | Valuation Interpretationの比較基準 | NEW_PROVIDER_REQUIRED | **Blocked** |
+| Historical Valuation | High(理論上) | **Blocked** | N/A | N/A | 新規Fetch必須 | 自己Historical比較基準 | Price Snapshot単年のみ | **Blocked**(D0079不変) |
+| Peer Valuation | High(理論上) | **Blocked** | N/A | N/A | 新規Fetch/新規銘柄必須 | Peer比較基準 | Sector不一致0/3 | **Blocked**(D0079不変) |
+| BPS/ROE | Low | High | High | High | Low | 既存Balance Sheet軸の補強のみ | なし | 低優先(D0082判定継続) |
+| Source Vintage Reliability | High(理論上) | N/A | N/A | N/A | **Code非対応** | Confidence昇格 | 公式仕様疎通不可(Session制約) | **Blocked** |
+
+### Verdict Rationale(§18、実装容易性のみで選ばない)
+
+Blocked(Disclosure Content・Consensus・Historical・Peer・Source
+Vintage)を除いた残り5候補のうち、Next-Year Guidance・BPS/ROEは低実装
+コストだが影響が限定的(既存軸の補強、または季節的な狭いGapのみ)。
+Actual-vs-Forecast EPSとGuidance Revision/TrendはいずれもSemantic
+Safetyが低い(前者は異なる会計年度のActual/Forecastを並べることで
+「減益」を暗示しやすく、後者はForecast推移の提示が「上方修正/下方修正」
+という文言の自動生成へ直結しやすい、§9で明示的に禁止)。
+
+Growth/YoYのみが、(1) D0076以来のNamed Gap(Growth=PARTIAL)を直接
+解消する、(2) 既存RevisionHistoryが複数年分の同一Period Type実績を
+既に保持しておりData Surfaceは即座に利用可能、(3) Actual-to-Actualの
+比較でありActual-vs-Forecastより方向性を暗示しにくい、(4) D0084で
+実装したTarget FY Grouping SelectorのPatternがそのまま転用できる、
+という4条件を同時に満たした。
+
+### Good Company != Good Stock(§13遵守確認)
+
+本Round自体はMeasurementのみで、いかなるCapabilityも実装していない。
+Growth/YoYを推奨したこと自体も投資判断ではなく、次のResearch Capability
+選定の優先順位付けに留まる。
+
+### Do Not(§15遵守確認)
+
+Production Code変更なし。Raw Snapshot変更なし。新規Fetchなし。H0001
+Locked Testは実行していない。
+
+### Verification(§16)
+
+Code変更が無いため、D0084のScratch Script(`stage3_10_current_fy_
+forecast_per_acceptance_7203.py`)をRead-onlyで再実行し、既存Evidence
+Countと両Valuation Multipleが再現することのみ確認した(Targeted Smoke
+相当)。Full Regressionは実施していない。
+
+### Persistence / Commit対象
+
+このDECISIONS.md追記(Doc-only)のみCommit対象。Raw Snapshot・
+`02_company_research/7203_Toyota_Motor/`(今回無変更)・Scratch Script
+はいずれもCommit対象外。
