@@ -26,6 +26,13 @@ SOURCE_ID = "LATEST_REPORTED_FY_PER"
 METRIC_LATEST_REPORTED_FY_PER = "LATEST_REPORTED_FY_PER"
 DENOMINATOR_TYPE_FY_ACTUAL_EPS_CONSOLIDATED = "FY_ACTUAL_EPS_CONSOLIDATED"
 
+# Stage 3.10(D0084): Current Fiscal Year Company Forecast EPS基準のPER。
+# 「Forward PER」等の汎用名称は使わない(Consensus Forward EPSではなく、
+# 会社自身のCurrent FY Forecast EPSであることを明示するため)。
+SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER = "CURRENT_FY_COMPANY_FORECAST_PER"
+METRIC_CURRENT_FY_COMPANY_FORECAST_PER = "CURRENT_FY_COMPANY_FORECAST_PER"
+DENOMINATOR_TYPE_CURRENT_FY_COMPANY_FORECAST_EPS_CONSOLIDATED = "CURRENT_FY_COMPANY_FORECAST_EPS_CONSOLIDATED"
+
 
 class CorporateActionBasisStatus(StrEnum):
     """Price/EPSのShare Basis整合性についての確認状態(要件v1-5)。
@@ -81,10 +88,72 @@ class LatestReportedFyPerRecord:
             raise ValueError("published_at はtz-awareである必要があります")
 
 
+@dataclass(kw_only=True, frozen=True)
+class CurrentFyCompanyForecastPerRecord:
+    """1件のCurrent FY Company Forecast PER Derived Fact(Stage 3.10、D0084)。
+
+    `LatestReportedFyPerRecord`(D0077、Actual FY実績Basis)とはDenominator
+    選定・Target Semantics・Corporate Action Windowがいずれも異なるため、
+    別Recordとして独立させた(Genericな共通Builderへは早期に統合しない、
+    `lib.valuation.current_fy_forecast_builder`Docstring参照)。
+
+    `forecast_period_start`/`forecast_period_end`は開示元の`current_fiscal_
+    year_start`/`.current_fiscal_year_end`(その開示のCurrent Period=1Q/2Q/
+    3Q等ではない)。`disclosure_period_type`はその予想が「どのDisclosure
+    Cadenceで開示されたか」を表すのみで、Forecast Horizonではない
+    (`lib.fundamentals.evidence.guidance_metric_to_evidence_market_public_
+    at()`と同じ区別、D0083参照)。
+    """
+
+    entity_code: str
+    metric_type: str = METRIC_CURRENT_FY_COMPANY_FORECAST_PER
+    as_of: datetime
+
+    price_date: date
+    price_value: Decimal
+    price_available_at: datetime
+
+    denominator_type: str
+    eps_value: Decimal
+
+    forecast_period_start: date
+    forecast_period_end: date
+    guidance_published_at: datetime
+
+    source_version_id: str
+    source_field: str
+    fiscal_year_target: str
+    disclosure_period_type: str
+    consolidation_scope: str
+    accounting_standard: str | None
+
+    calculation_expression: str
+    multiple: Decimal
+
+    corporate_action_basis_status: CorporateActionBasisStatus
+
+    def __post_init__(self) -> None:
+        if self.as_of.tzinfo is None:
+            raise ValueError("as_of はtz-awareである必要があります")
+        if self.price_available_at.tzinfo is None:
+            raise ValueError("price_available_at はtz-awareである必要があります")
+        if self.guidance_published_at.tzinfo is None:
+            raise ValueError("guidance_published_at はtz-awareである必要があります")
+        if self.forecast_period_start > self.forecast_period_end:
+            raise ValueError(
+                f"forecast_period_start({self.forecast_period_start.isoformat()})が"
+                f"forecast_period_end({self.forecast_period_end.isoformat()})より後です"
+            )
+
+
 __all__ = [
+    "DENOMINATOR_TYPE_CURRENT_FY_COMPANY_FORECAST_EPS_CONSOLIDATED",
     "DENOMINATOR_TYPE_FY_ACTUAL_EPS_CONSOLIDATED",
+    "METRIC_CURRENT_FY_COMPANY_FORECAST_PER",
     "METRIC_LATEST_REPORTED_FY_PER",
     "SOURCE_ID",
+    "SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER",
     "CorporateActionBasisStatus",
+    "CurrentFyCompanyForecastPerRecord",
     "LatestReportedFyPerRecord",
 ]

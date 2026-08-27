@@ -311,6 +311,136 @@ def test_price_eps_entity_mismatch_is_rejected() -> None:
         )
 
 
+# --- 8b. Non-Positive EPS Hardening(Stage 3.10、D0084 Codex Audit Finding) --------------
+
+
+def test_zero_eps_returns_none_not_zero_division_error() -> None:
+    """旧実装はEPS=0を無条件除算していたためZeroDivisionErrorになっていた。
+    Hardening後はRecordを生成しない(None、fail closed)。"""
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope, value=Decimal("0"))
+    version = _fy_eps_version(envelope, metric)
+    record = build_latest_reported_fy_per(
+        entity_code=_ENTITY,
+        as_of=_AS_OF,
+        raw_bars=_raw_bars(),
+        corporate_action_events=[],
+        eps_version=version,
+        eps_metric=metric,
+        eps_envelope=envelope,
+    )
+    assert record is None
+
+
+def test_negative_eps_returns_none_not_negative_multiple() -> None:
+    """旧実装は負のEPSでもそのままNegative PERを通常のValuation Multiple FACTと
+    して生成していた。Hardening後はRecordを生成しない(None)。"""
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope, value=Decimal("-50.00"))
+    version = _fy_eps_version(envelope, metric)
+    record = build_latest_reported_fy_per(
+        entity_code=_ENTITY,
+        as_of=_AS_OF,
+        raw_bars=_raw_bars(),
+        corporate_action_events=[],
+        eps_version=version,
+        eps_metric=metric,
+        eps_envelope=envelope,
+    )
+    assert record is None
+
+
+def test_positive_eps_path_unchanged_after_hardening() -> None:
+    """Hardening後もPositive EPS経路のBehaviorは完全に維持される(7203実データ
+    相当の365.94、multiple ≈ 7.2853)。"""
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope)
+    version = _fy_eps_version(envelope, metric)
+    record = build_latest_reported_fy_per(
+        entity_code=_ENTITY,
+        as_of=_AS_OF,
+        raw_bars=_raw_bars(),
+        corporate_action_events=[],
+        eps_version=version,
+        eps_metric=metric,
+        eps_envelope=envelope,
+    )
+    assert record is not None
+    assert record.multiple == Decimal("2666") / Decimal("365.94")
+
+
+# --- 8c. 追加Defense-in-Depth(Stage 3.10、D0084 Codex Audit Finding 6) -------------------
+
+
+def test_metric_id_version_source_version_id_mismatch_is_rejected() -> None:
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope)
+    version = SourceVersion(
+        source_record_id=metric.series_id,
+        source_version_id="MISMATCHED_VERSION_ID",
+        value=metric.raw_value or "",
+        available_at=envelope.retrieved_at,
+        retrieved_at=envelope.retrieved_at,
+        published_at=envelope.market_public_at,
+    )
+    with pytest.raises(ValueError, match="metric_id"):
+        build_latest_reported_fy_per(
+            entity_code=_ENTITY,
+            as_of=_AS_OF,
+            raw_bars=_raw_bars(),
+            corporate_action_events=[],
+            eps_version=version,
+            eps_metric=metric,
+            eps_envelope=envelope,
+        )
+
+
+def test_version_source_record_id_series_id_mismatch_is_rejected() -> None:
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope)
+    version = SourceVersion(
+        source_record_id="MISMATCHED_SERIES_ID",
+        source_version_id=metric.metric_id,
+        value=metric.raw_value or "",
+        available_at=envelope.retrieved_at,
+        retrieved_at=envelope.retrieved_at,
+        published_at=envelope.market_public_at,
+    )
+    with pytest.raises(ValueError, match="source_record_id"):
+        build_latest_reported_fy_per(
+            entity_code=_ENTITY,
+            as_of=_AS_OF,
+            raw_bars=_raw_bars(),
+            corporate_action_events=[],
+            eps_version=version,
+            eps_metric=metric,
+            eps_envelope=envelope,
+        )
+
+
+def test_version_value_metric_value_mismatch_is_rejected() -> None:
+    envelope = _fy_eps_envelope()
+    metric = _fy_eps_metric(envelope)
+    version = SourceVersion(
+        source_record_id=metric.series_id,
+        source_version_id=metric.metric_id,
+        value="999.99",  # metric.value(365.94)と食い違う
+        available_at=envelope.retrieved_at,
+        retrieved_at=envelope.retrieved_at,
+        published_at=envelope.market_public_at,
+    )
+    with pytest.raises(ValueError, match="一致しません"):
+        build_latest_reported_fy_per(
+            entity_code=_ENTITY,
+            as_of=_AS_OF,
+            raw_bars=_raw_bars(),
+            corporate_action_events=[],
+            eps_version=version,
+            eps_metric=metric,
+            eps_envelope=envelope,
+        )
+
+
 # --- 9/10. Evidence ------------------------------------------------------------------------
 
 _FORBIDDEN_WORDS = (

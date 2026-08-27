@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from lib.errors import LookAheadBiasError
 from lib.evidence.model import SourceVersion
@@ -34,6 +34,23 @@ from lib.valuation.model import (
 )
 
 _REQUIRED_METRIC_TYPE = "eps"
+
+
+def positive_eps_or_none(value: Decimal) -> Decimal | None:
+    """EPSが厳密に正(> 0)の場合のみ`value`を返し、そうでなければ`None`
+    (Stage 3.10、D0084 Codex Audit Hardening)。
+
+    **背景(既存欠陥)**: `build_latest_reported_fy_per()`は以前、EPSを
+    無条件に除算していた(`eps_value == 0`なら`ZeroDivisionError`、
+    `eps_value < 0`ならNegative PERをそのまま通常のValuation Multiple
+    FACTとして生成してしまう)。EPS<=0がFundamental Factとして`PRESENT`
+    であること自体は正しい(Zero/Negative Forecastも正しいFact)が、それを
+    PERのDenominatorとして使うことは意味を持たない(Valuation Denominator
+    としてはNOT APPLICABLE)——この判定を1箇所へ集約し、`lib.valuation.
+    builder`/`lib.valuation.current_fy_forecast_builder`の両方から再利用
+    する。
+    """
+    return value if value > 0 else None
 
 
 def select_latest_close_bar(raw_bars: Sequence[RawOHLCVBar], *, as_of: datetime) -> RawOHLCVBar | None:
@@ -51,7 +68,7 @@ def select_latest_close_bar(raw_bars: Sequence[RawOHLCVBar], *, as_of: datetime)
     return max(candidates, key=lambda b: b.session_date)
 
 
-def _has_share_basis_action_in_window(events: Sequence[CorporateAction], *, window_start: date, window_end: date) -> bool:
+def has_share_basis_action_in_window(events: Sequence[CorporateAction], *, window_start: date, window_end: date) -> bool:
     """`window_start <= effective_date <= window_end`(両端Inclusive、要件v1-5の
     「fiscal-period end以後 かつ selected price session date以前」という表現通り)に
     該当するCorporate Action Eventが1件でもあるか。
@@ -60,6 +77,16 @@ def _has_share_basis_action_in_window(events: Sequence[CorporateAction], *, wind
     (`CorporateActionType.ADJUSTMENT_EVENT`、Split/Reverse-Splitのどちらかを断定
     しない)だが、v1では種別を問わず「Windowに存在すること」自体でGuardする
     (推測でSplit/Reverse-Splitを断定しない、fail closed優先)。
+
+    **公開関数化(Stage 3.10、D0084)**: 元は`_has_share_basis_action_in_window`
+    (このModule専用のPrivate Helper)だったが、Corporate Action Windowの
+    判定Logic自体(`window_start <= effective_date <= window_end`)はWindowの
+    意味(Actual FYではfiscal_period_end基準、Forecast PERではforecast_
+    period_start基準)に依存しない汎用Predicateであるため、`lib.valuation.
+    current_fy_forecast_builder`からも再利用できるよう公開した。Window境界
+    の意味論(何をwindow_start/window_endに渡すか)は呼び出し側の責務のまま
+    変更していない(Genericな denominator-policy builder は作らない、
+    このPredicate自体は境界の意味を持たないまま)。
     """
     return any(window_start <= e.effective_date <= window_end for e in events)
 
@@ -114,6 +141,24 @@ def build_latest_reported_fy_per(
         )
     if eps_envelope.internal_code != entity_code:
         raise ValueError(f"eps_envelope.internal_code({eps_envelope.internal_code})がentity_code({entity_code})と一致しません")
+    # Codex Audit Finding 6 Hardening(Stage 3.10、D0084): eps_metric/eps_version/
+    # eps_envelopeが実際に同一Disclosureを指しているかのDefense-in-depth。
+    if eps_metric.metric_id != eps_version.source_version_id:
+        raise ValueError(
+            f"eps_metric.metric_id({eps_metric.metric_id})がeps_version.source_version_id"
+            f"({eps_version.source_version_id})と一致しません"
+        )
+    if eps_version.source_record_id != eps_metric.series_id:
+        raise ValueError(
+            f"eps_version.source_record_id({eps_version.source_record_id})がeps_metric.series_id"
+            f"({eps_metric.series_id})と一致しません"
+        )
+    try:
+        version_value = Decimal(eps_version.value)
+    except InvalidOperation as exc:
+        raise ValueError(f"eps_version.value({eps_version.value!r})をDecimalへParseできません") from exc
+    if version_value != eps_metric.value:
+        raise ValueError(f"eps_version.value({version_value})がeps_metric.value({eps_metric.value})と一致しません")
     if eps_version.published_at is None:
         raise ValueError(
             f"source_version_id={eps_version.source_version_id}: published_at(market_public_at)がUNKNOWNのため"
@@ -144,11 +189,18 @@ def build_latest_reported_fy_per(
         # 直接呼び出し等の誤用に備えfail closedにする)。
         return None
 
-    if _has_share_basis_action_in_window(corporate_action_events, window_start=fiscal_period_end, window_end=price_date):
+    if has_share_basis_action_in_window(corporate_action_events, window_start=fiscal_period_end, window_end=price_date):
         return None
 
     price_value = Decimal(str(price_bar.close))
-    eps_value = eps_metric.value
+    eps_value = positive_eps_or_none(eps_metric.value)
+    if eps_value is None:
+        # Codex Audit Hardening(Stage 3.10、D0084): EPS<=0を無条件除算しない
+        # (Zero => 旧実装はZeroDivisionError、Negative => 旧実装はNegative PERを
+        # そのままValuation Multiple FACTとして生成していた)。EPS<=0がFundamental
+        # Factとして開示されていること自体は正しいが、それをPER Denominatorへ
+        # 使うことはfail closedする(Recordを生成しない、値を補正しない)。
+        return None
     multiple = price_value / eps_value
 
     return LatestReportedFyPerRecord(
@@ -173,4 +225,9 @@ def build_latest_reported_fy_per(
     )
 
 
-__all__ = ["build_latest_reported_fy_per", "select_latest_close_bar"]
+__all__ = [
+    "build_latest_reported_fy_per",
+    "has_share_basis_action_in_window",
+    "positive_eps_or_none",
+    "select_latest_close_bar",
+]

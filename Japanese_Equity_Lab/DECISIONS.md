@@ -9144,3 +9144,221 @@ Next-Year Guidance Wiring・Forecast Revision Interpretation・Forward PER
 実装・BPS・ROE・PBR・Peer・Consensus・Expectations Engine・新規Provider・
 新規Historical Fetch・Decision Engine・Portfolio Engine・D0057 General
 Fixのいずれにも着手していない。H0001 Locked Testの再実行もしていない。
+
+## D0084 — Stage 3.10: Current FY Company Forecast PER v1 + D0077 Non-Positive EPS Hardening
+
+D0083でPIT安全にEvidence化されたCurrent Fiscal Year Company Forecast EPS
+(FEPS)とcompleted-session Closeを組み合わせ、`CURRENT_FY_COMPANY_
+FORECAST_PER`という新しいValuation Derived Factを実装した。同時にCodex
+Auditで確認されたD0077既存欠陥(EPS<=0の無条件除算)を狭くHardeningした。
+
+### Architecture Decision(§1)
+
+Codex Audit Verdict = READY_WITH_GUARDS、採用Architecture = Option A
+(新Record + 新Builder)。新Metric名は`CURRENT_FY_COMPANY_FORECAST_PER`
+(genericな`FORWARD_PER`は使わない、Consensus Forward EPSではなく会社
+自身のCurrent FY Forecast EPSであることを明示)。D0077の`LATEST_
+REPORTED_FY_PER`とはDenominator選定・Target Semantics・Corporate Action
+Windowがいずれも異なるため、共通Builderへ早期に統合しなかった(§3)。
+再利用したのは`select_latest_close_bar()`・`session_close_at()`・
+Corporate Action Window Predicate(`has_share_basis_action_in_window()`、
+D0077の`_has_share_basis_action_in_window()`をPublic化して再利用)・
+`positive_eps_or_none()`(新設、D0077/D0084共通)のみ。
+
+### 新Record(§2)
+
+`lib/valuation/model.py`へ`CurrentFyCompanyForecastPerRecord`を追加
+(entity_code/as_of/price系/eps_value/forecast_period_start/forecast_
+period_end/guidance_published_at/source_version_id/source_field/
+fiscal_year_target/disclosure_period_type/consolidation_scope/
+accounting_standard/calculation_expression/multiple/corporate_action_
+basis_statusを型付きFieldとして保持)。`DENOMINATOR_TYPE_CURRENT_FY_
+COMPANY_FORECAST_EPS_CONSOLIDATED`を新設。既存`LatestReportedFyPerRecord`
+のField/意味は変更していない。
+
+### Current FY Forecast EPS Candidate Contract(§4)とTyped Selector(§5)
+
+`lib/valuation/current_fy_forecast_builder.py`(新規Module)へ:
+
+- `select_current_fy_company_forecast_eps_candidate()`: `(SourceVersion,
+  FundamentalMetric, DisclosureEnvelope)`のTuple集合から、§4の全Contract
+  (metric_type=eps_current_year_forecast、source_field=FEPS、
+  COMPANY_FORECAST、CURRENT_FISCAL_YEAR、CONSOLIDATED、PRESENT、value>0、
+  published_at非UNKNOWN・as_of以前、metric/version/envelope相互ID一致、
+  Decimal(version.value)==metric.value、current_fiscal_year_start/end
+  非None・start<=end)を満たす候補だけへ絞り込み、`forecast_period_start
+  <= as_of.date() <= forecast_period_end`でWindow Filterし、`(forecast_
+  period_start, forecast_period_end)`をTarget FY識別子としてGroup化する。
+  異なるTargetが複数残る場合・同一published_atで値/metric_idが異なる
+  Candidateが複数残る場合はいずれも`ValueError`でfail closed(推測で
+  選ばない)。`selected.values()`から適当に1件取ることを禁止した設計を
+  実装で体現した。
+- `build_current_fy_company_forecast_per()`: Selectorを経由しない直接
+  呼び出しにも安全なよう、§4のContractを全てDefense-in-depthで再検証する
+  (D0083 Guidance Converterを代わりのValidatorとして使わない)。
+
+### Forecast Horizon != Disclosure Current Period(§2、D0083から継続)
+
+`forecast_period_start`/`forecast_period_end`は常に`envelope.current_
+fiscal_year_start`/`.current_fiscal_year_end`のみを使い、`current_
+period_start`/`.current_period_end`は一切参照しない。`disclosure_
+period_type`はDisclosure Cadenceを表すのみ。
+
+### Coverage Boundary(§6)
+
+`CURRENT_FISCAL_YEAR`限定。FEPSが空でNxFEPSに新年度予想が存在する期間
+でも、NxFEPSへFallbackしない(D0083で確認済みのFY Cadence Disclosure
+特有の挙動と整合)。Candidateが無ければ`None`(正しいCoverage Gap)。
+Generic`LATEST_COMPANY_FORECAST_FY_PER`は作っていない。
+
+### Forecast-Specific Corporate Action Guard(§9)
+
+D0077 Actual EPS用のWindow(`fiscal_period_end..price_date`)をそのまま
+流用せず、Forecast v1専用のWindow(`forecast_period_start <= action.
+effective_date <= price_date`、両端Inclusive)を使う。1件でもEventが
+Window内にあればRecordを生成しない。Provider FEPSのShare Basisへの
+独自Adjustmentはしていない。
+
+### Non-Positive EPS(§10)とD0077 Hardening(§11-12)
+
+`positive_eps_or_none()`(`lib/valuation/builder.py`新設、D0077/D0084
+共通)を導入し、EPS<=0の場合は`CURRENT_FY_COMPANY_FORECAST_PER`/
+`LATEST_REPORTED_FY_PER`いずれもRecordを生成しない(`None`、fail
+closed)。**D0077の既存欠陥Hardening**: `build_latest_reported_fy_per()`
+は以前EPSを無条件除算していた(EPS=0で`ZeroDivisionError`、EPS<0で
+Negative PERをそのまま通常のValuation Multiple FACTとして生成)。今回
+この2ケースいずれも`None`を返すよう修正した。**既存Positive Path
+(7203、multiple≈7.2853)のBehaviorは完全に維持されていることをTestで
+確認した**(`test_positive_eps_path_unchanged_after_hardening`)。
+
+**Codex Audit Finding 6 Hardening(§12)**: `build_latest_reported_fy_
+per()`へ、`eps_metric.metric_id == eps_version.source_version_id`・
+`eps_version.source_record_id == eps_metric.series_id`・
+`Decimal(eps_version.value) == eps_metric.value`のDefense-in-depth
+Validationを追加した(既存13件のTestが無変更でPASSすることを確認済み、
+既存Test Helperがこれらの不変条件を既に満たしていたため)。
+
+### Provenance(§17)
+
+D0077と同じPattern(Evidence Converter自体は内部でProvenance登録せず、
+呼び出し側/Test側が`ProvenanceStore`へ`price_bar`/`fundamental_source_
+version`の2 Parent Linkを追加する)をそのまま踏襲した。
+
+### 実データ受け入れ(§25、7203、as_of=2024-11-15 15:00 JST)
+
+hard-code無し、Local Snapshotから読み取り:
+
+```
+REAL_PRICE=2666.0 (price_date=2024-11-14)
+REAL_FEPS=268.77
+REAL_FORECAST_PERIOD=2024-04-01..2025-03-31
+REAL_GUIDANCE_PUBLISHED_AT=2024-11-06 13:55:00+09:00
+REAL_CORPORATE_ACTION_EVENTS=0
+CURRENT_FY_COMPANY_FORECAST_PER=9.919261822376009227220299885(≈9.9193x)
+LATEST_REPORTED_FY_PER=7.285347324698037929715253867(≈7.2853x、D0077-D0083と完全一致・不変)
+```
+
+2024-11-15 15:00 JST時点の当日Close(2704)は15:30大引け未確定のため拒否
+され、2024-11-14 Close(2666)が選定されたことを実データで確認した(D0077
+と同一挙動)。
+
+### Stage 3.1/ResearchArtifact統合実測(§26、Read-only Scratch、Repo未追加)
+
+D0083のIntegrated ArtifactへCurrent FY Company Forecast PER Evidenceを
+1件追加し、`build_research_artifact()`経由で実測:
+
+| Evidence種別 | usable件数 |
+|---|---|
+| P&L(D0075、無変更) | 16 |
+| Cash Flow(D0080、無変更) | 12 |
+| Balance Sheet(D0081、無変更) | 12 |
+| Guidance(D0083、無変更) | 12 |
+| Positioning(無変更) | 18 |
+| Valuation(Actual FY PER 1件 + Current FY Company Forecast PER 1件) | 2 |
+| **Total** | **72** |
+
+`artifact_id=ART_STAGE3_10_7203_20241115_A_FORECASTPER_V1`。既存P&L/Cash
+Flow/Balance Sheet/Guidance/Positioning Evidence件数はいずれもD0083から
+不変。Actual FY PER Multipleも不変。禁止語Scan(cheap/expensive/
+undervalued/overvalued/attractive/upside/downside/割安/割高/買い/売り/
+BUY/SELL)は0件。
+
+### Valuation Multiple Coverage再評価(§27)
+
+**Actual FY basis + Current FY Company Forecast basisの両方が
+SUPPORTED_BY_DATAまで言える**(実データで2種類のMultipleを同時に取得・
+Evidence化できることを確認)。**Valuation Interpretationは依然UNAVAILABLE
+/PARTIAL**(D0079で確認済みのHistorical Comparator/Peer不足が未解消の
+まま)。9.9193そのものから「高い/安い」の判断は一切していない。
+
+### Do Not Build Actual-vs-Forecast Delta Yet(§19遵守確認)
+
+`Forecast PER - Actual PER`・`Forecast PER / Actual PER`・Actual EPS vs
+Forecast EPSの比較・Earnings Decline/Growth Interpretation・Priced-in
+Interpretationはいずれも作っていない(2つのMultipleを同一ResearchArtifact
+内へ並べて保持できることを確認したのみ)。
+
+### 次のBottleneck測定(§28)
+
+Actual Resultから評価:
+
+- **Actual-vs-Company-Forecast EPS Derived Fact**: Data Surfaceは既に
+  両方揃っている(Actual FY EPS=365.94、Current FY Forecast EPS=268.77)
+  が、比較Derived Fact自体を作ると即座にGrowth/Decline方向のNarrativeを
+  誘発しやすく、Semantic Safety上最も慎重な設計が必要(単なるDelta表示
+  でも「減益」という含意を持ちうる)。
+- **Generic Latest Published Company Forecast FY PER**: D0083/D0084で
+  「異なるCadenceが異なるTarget FYを指しうる」構造が既に明確になった
+  ため、Genericな「Latest」Selector自体の必要性はまだ低い(Current FY
+  限定Scopeで十分に実用的なCoverageを確認済み)。
+- **Next-Year Guidance Wiring**: 実装コストはCurrent FY版と同程度に
+  低いが、Research Quality上はActual-vs-Forecast同様、まだ比較対象が
+  無い単独のNext-Year Multipleを作ることになり、寄与は限定的。
+- **BPS/ROE・Historical/Peer拡張・Disclosure Content・Consensus**:
+  D0082/D0079で既に評価済みの理由(FY限定Cadenceで鮮度劣化・Data Surface
+  Blocked・より重い新規統合が必要)から変わらず優先度低〜Scope外。
+
+**推奨候補は次回のRoundで評価**(自動実装しない、§25/§18 Do Not
+遵守)。
+
+### Confidence(§29)
+
+Evidence件数が71(D0083)→72(今回)へ増加したが、`data_confidence`/
+`research_confidence`は自動昇格していない(LOW据え置き)。Source Vintage
+Completenessは引き続きUNVERIFIED。
+
+### Tests(§20-24)
+
+新規: `13_tests/test_valuation_current_fy_company_forecast_per.py`
+(38件、Selector 14件・Join/Value 8件・Price/Corporate Action 8件・
+Evidence/Provenance 8件)。`test_valuation_latest_reported_fy_per.py`へ
+D0077 Hardening確認Test6件追加(計44件新規)。
+
+### Verification(§30)
+
+- Syntax/Compile: 全対象ファイルOK。
+- Targeted(新規44件): 全PASS。
+- Fundamentals/Guidance関連(`-k "fundamental or guidance or evidence"`):
+  292/292 PASS。
+- ResearchArtifact/Valuation関連(`-k "research_artifact or valuation"`):
+  88/88 PASS。
+- Full Regression(`13_tests/`): 1133/1134 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074以来の既知Windows Hook Environment Issue(今回の
+  Scopeと無関係、修正していない)。
+- `ruff check`: 対象ファイル全てPASS。
+- `ruff format --check`: 対象ファイル全てPASS(整形適用済み)。
+- `mypy`(`lib/valuation/model.py`・`builder.py`・`evidence.py`・
+  `current_fy_forecast_builder.py`): Success、0 issues。Test File側は
+  既知のWindows/numpy/Python 3.14 Environment Issueが再現するため
+  `QUALITY_GATE_ENV_BLOCKED`として記録、修正していない。H0001 Locked
+  Testは実行していない。
+
+### Persistence / Commit対象(§32)
+
+`lib/valuation/model.py`・`builder.py`・`evidence.py`・
+`current_fy_forecast_builder.py`(新規)・`13_tests/test_valuation_
+current_fy_company_forecast_per.py`(新規)・`test_valuation_latest_
+reported_fy_per.py`(既存へ追記)・このDECISIONS.md追記をCommit対象と
+する。Raw Snapshot・`02_company_research/7203_Toyota_Motor/`(今回無
+変更)・Scratch ScriptはいずれもCommit対象外。
