@@ -9830,3 +9830,119 @@ H0001 Locked Testの実行もしていない。
 対象のためCommit対象外。Historical PER Re-measurement Scriptはリポジトリ
 外のScratch Directoryで実行し、Repoへは追加していない(D0079と同じ
 Read-only Scratch Script方針)。
+
+## D0088 — Stage 3.14.1: Historical Valuation Context PIT Correction
+(D0087 Historical Sample CutoffのAppend-only Correction、Measurement
+Correction Only・Production Code変更なし・Raw/Local Snapshot変更なし)
+
+### 目的とD0087の位置付け
+
+D0087の**Data Acquisition(7203 Multi-Year Price Snapshot取得)・2024
+Overlap Canonical Comparison・Snapshot採用**はいずれも有効なまま維持する
+(Rewriteしない)。今回訂正するのは、D0087のHistorical PER Monthly
+Anchors統計(`HISTORICAL_MIN/MEDIAN/MAX`・`CURRENT_PERCENTILE`)を構成する
+**Sample側のPIT Cutoff**のみである。D0087のAnchor値そのもの(各`per`/
+`price`/`eps`等)は一切改変していない。
+
+### 問題の所在
+
+D0087のCurrent Reference(`as_of=2024-11-15 15:00 JST`、`LATEST_REPORTED_
+FY_PER≈7.2853`)に対し、Historical Monthly Anchors 32件のうち2件は
+`anchor_as_of`がCurrent Referenceより**後**だった:
+
+```
+FUTURE_ANCHOR month=2024-11 anchor_as_of=2024-11-29T15:30:00+09:00 price_date=2024-11-29 PER=6.972454500737825873093949828
+FUTURE_ANCHOR month=2024-12 anchor_as_of=2024-12-30T15:30:00+09:00 price_date=2024-12-30 PER=8.597037765753948734765262065
+```
+
+Actual Trading Calendar(実データ、hard-code無し)から確認した結果、
+`2024-11`の月末最終取引Sessionは`2024-11-29`(Current Reference
+`2024-11-15`より後)であり、`2024-11-15`はまだ11月の月中(月末未確定)
+である。D0087はこの2 AnchorをCurrent Referenceとの前後関係を明示的に
+Filterせずに統計へ含めており、Historical Distributionとして見た場合
+Current Reference時点で未確定だったAnchorが混入していた
+(**個別Anchorの計算自体はPIT安全——`published_at<=as_of`等の既存Guardは
+正しく機能している——だが、Historical Context集計全体としてのCutoffが
+Current Referenceを超えて未来へ伸びていた**)。
+
+### PIT Rule(今回適用)
+
+`anchor_as_of <= current_reference_as_of(2024-11-15 15:00 JST)`を満たす
+Anchorのみを、Current Historical Context集計(min/median/max/percentile)
+の対象とする。この方式変更以外、Percentileの定義自体(Current以下の
+Historical Point割合)はD0079/D0087から変更していない。
+
+### 実測結果(実データ、7203、`lib.valuation.builder.build_latest_
+reported_fy_per()`等をD0087と同一組み合わせで再実行、Read-only Scratch)
+
+```
+D0087_ANCHORS_ATTEMPTED=41
+D0087_VALID_OBSERVATIONS=32
+FUTURE_ANCHORS_FOUND=2
+PIT_SAFE_VALID_OBSERVATIONS=30
+HISTORICAL_FIRST_ANCHOR=2022-05-31T15:00:00+09:00 (price_date=2022-05-31)
+HISTORICAL_LAST_ANCHOR=2024-10-31T15:00:00+09:00 (price_date=2024-10-31)
+```
+
+`LAST_FULLY_COMPLETE_CANDIDATE_MONTH`(Current Referenceの月自体を除いた
+最終月)を実データSession集合から確認した結果`2024-10`であり、事前予想
+(「2024-11月末Anchorは月中Current Referenceでは未確定のはず」)と一致
+した。
+
+Current Observation(Comparison Target、Historical Sampleへ混ぜない):
+
+```
+CURRENT_PER=7.285347324698037929715253867 (as_of=2024-11-15T15:00:00+09:00)
+```
+
+Corrected Historical Statistics(PIT-safe 30点のみ、Decimal優先):
+
+```
+CORRECTED_HISTORICAL_MIN=6.947860304968027545499262174
+CORRECTED_HISTORICAL_MEDIAN=10.23607659698874433562344686
+CORRECTED_HISTORICAL_MAX=21.12887947846436730372764250
+CORRECTED_CURRENT_PERCENTILE=3.333333333333333333333333333 (n=30)
+CORRECTED_DISTANCE_FROM_MEDIAN=-2.950729272290706405908192993
+```
+
+(D0087のUncorrected値: `HISTORICAL_MIN=6.9479`・`HISTORICAL_MEDIAN=
+10.1338`・`HISTORICAL_MAX=21.1289`・`CURRENT_PERCENTILE=6.2(n=32)`との
+差分は、2 Future Anchor除外のみに起因する。`HISTORICAL_MIN`/`MAX`は
+不変——2 Future AnchorはいずれもSample全体のMin/Maxではなかったため。
+`MEDIAN`は10.1338→10.2361、`CURRENT_PERCENTILE`は6.2%→3.3%(n=32→30、
+Current以下だったFuture Anchor 1件を除外したため)へ変化した。方向性
+判断(割安/割高等)はD0079/D0087同様、一切付与していない。)
+
+### Denominator Regimes(PIT-safe Sample内)
+
+`DISTINCT_DENOMINATOR_REGIMES=3`(2022-03-31/2023-03-31/2024-03-31)、
+D0087から不変であることを実データで確認した(除外した2 Future Anchorは
+いずれもFY2024/3 Regimeに属し、同Regime内には他に8件のPIT-safe Anchor
+が残るため、Regime自体は消滅しない)。
+
+### HISTORICAL_CONTEXT_STATUS再評価
+
+`HISTORICAL_CONTEXT_STATUS=PARTIAL`(D0087から不変)。今回のCorrection
+(Sample Cutoffの是正)のみを理由に`SUPPORTED`へ機械的に格上げしない。
+Windowが約2.4年(2022-05〜2024-10)・Denominator Regimeが3種類という
+既存Limitationは今回のCorrection後も変わらないため、D0079の§8 Sample
+Sufficiency原則を継続遵守する。
+
+### Do Not(遵守確認)
+
+Production Codeは一切変更していない(`lib.valuation.builder`等は無変更
+のまま再利用のみ)。Raw Snapshot・`local_snapshot_input/equity_bars_
+7203.json`(D0087で採用済みのMulti-Year版)はいずれも無変更(新規Fetch
+なし)。Peer/Consensus/新規Historical Evidence実装のいずれにも着手して
+いない。H0001 Locked Testは実行していない。
+
+### Verification
+
+`-k "valuation"`: 57/57 PASS(Production Code無変更のため予定通り無影響、
+Measurement CorrectionがTest Suiteに一切依存しないことを確認)。Full
+Regressionは未実行(Scope外、D0087以降のCode変更が無いため)。
+
+### Persistence / Commit対象
+
+このDECISIONS.md追記のみをCommit対象とする。Raw Data・Scratch Script
+（リポジトリ外で実行、Repoへ未追加）はいずれもCommit対象外。
