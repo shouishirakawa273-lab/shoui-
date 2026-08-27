@@ -8273,3 +8273,185 @@ Commit対象外・既存2件は無変更)。Raw Snapshotも無変更・Commit対
 
 Forward PER・PBR・Expectations Engineのいずれにも着手していない。
 H0001 Locked Testの再実行もしていない。
+
+## D0079 — Stage 3.5: Historical Valuation Context Real-Data Acceptance(D0078最大Bottleneckの検証、Measurement Only・Code変更なし)
+
+D0078で確認された最大のResearch Bottleneck「Valuation Interpretation(比較
+基準の不在)」について、既存7203 Local Snapshot(Price + Fundamentals)だけを
+使い、D0077 `build_latest_reported_fy_per()`を2024年の複数PIT時点へ繰り返し
+適用してHistorical Valuation Contextを構築できるかを実測した。新規Metric定義・
+新規Provider・新規Parsingはいずれも追加していない(Read-only Scratch Script、
+Repoへは未追加)。
+
+### 実行方法
+
+`scripts/stage3_1_research_artifact_7203.py`と同じLocal Snapshot Loading
+パターンを再利用。2024年の各月について、実データのSession Date集合から
+機械的に月末最終取引Sessionを選び(手書き日付なし)、`market_calendar.
+session_close_at()`(ハードコードした15:00/15:30ではなく、2024-11-05の
+取引時間延長制度変更を自動反映する既存関数)でas_ofを構築。各as_ofについて
+`fundamentals_as_of(availability_semantics=MARKET_PUBLIC_AT)`でFY実績・連結
+EPS Series(`series_id=7203|eps|CURRENT_FISCAL_YEAR|FY|CONSOLIDATED|IFRS`、
+今回実測で確認: 7203はこのSeries以外にIFRS以外のFY実績連結EPS Seriesを持たず、
+単一Series)を選定し、対応するMetric/Envelopeを取得した上で
+`build_latest_reported_fy_per()`をそのまま呼び出した。Corporate Action Guard
+用のPrice Payloadは、最古のGuard Window開始点(2023-03-31、Jan〜Apr 2024
+AnchorのFY実績EPS基準期)をカバーするため2023-01-01〜2024-12-31を取得した。
+
+### 実行結果(実データ、7203)
+
+```
+ANCHORS_ATTEMPTED=12
+VALID_OBSERVATIONS=12
+UNAVAILABLE_OBSERVATIONS=0
+```
+
+| as_of(月末Session Close) | price_date | price | FY実績EPS(連結) | EPS公表日 | PER |
+|---|---|---|---|---|---|
+| 2024-01-31 15:00 | 2024-01-31 | 3000.0 | 179.47(FY2023/3) | 2023-05-10 | 16.7159 |
+| 2024-02-29 15:00 | 2024-02-29 | 3621.0 | 179.47(FY2023/3) | 2023-05-10 | 20.1761 |
+| 2024-03-29 15:00 | 2024-03-29 | 3792.0 | 179.47(FY2023/3) | 2023-05-10 | 21.1289 |
+| 2024-04-30 15:00 | 2024-04-30 | 3638.0 | 179.47(FY2023/3) | 2023-05-10 | 20.2708 |
+| 2024-05-31 15:00 | 2024-05-31 | 3401.0 | 365.94(FY2024/3) | 2024-05-08 | 9.2939 |
+| 2024-06-28 15:00 | 2024-06-28 | 3290.0 | 365.94(FY2024/3) | 2024-05-08 | 8.9905 |
+| 2024-07-31 15:00 | 2024-07-31 | 2949.0 | 365.94(FY2024/3) | 2024-05-08 | 8.0587 |
+| 2024-08-30 15:00 | 2024-08-30 | 2759.5 | 365.94(FY2024/3) | 2024-05-08 | 7.5409 |
+| 2024-09-30 15:00 | 2024-09-30 | 2542.5 | 365.94(FY2024/3) | 2024-05-08 | 6.9479 |
+| 2024-10-31 15:00 | 2024-10-31 | 2682.5 | 365.94(FY2024/3) | 2024-05-08 | 7.3304 |
+| 2024-11-29 15:30 | 2024-11-29 | 2551.5 | 365.94(FY2024/3) | 2024-05-08 | 6.9725 |
+| 2024-12-30 15:30 | 2024-12-30 | 3146.0 | 365.94(FY2024/3) | 2024-05-08 | 8.5970 |
+
+`as_of`のTime部分が2024-11-05以降で自動的に15:00→15:30へ切り替わっている
+ことを確認した(`session_close_at()`が制度変更を正しく反映、手書きTimeは
+使っていない)。
+
+Current Reference(D0077/D0078と同一as_of=2024-11-15 15:00 JST): `PER=
+7.2853`(≈7.29x、D0077/D0078と完全一致、再計算しても同一値)。
+
+統計(Valid 12点のみ):
+
+```
+HISTORICAL_MIN=6.9479
+HISTORICAL_MEDIAN=8.7938
+HISTORICAL_MAX=21.1289
+CURRENT_PERCENTILE=16.7 (n=12、Current以下のHistorical Monthly Point割合)
+```
+
+「割安/割高」等の方向性判断はしていない。Percentileは12点のうち何点が
+Current値以下かを示すFactとしてのみ記録する。
+
+### PIT安全性 / Corporate Action
+
+全12 Anchorで`published_at <= as_of`(Future Disclosure Leakage無し)、
+`price session_close_at <= as_of`を満たすPrice Barのみ選定。Corporate Action
+Guard(`detect_corporate_action_events_from_equity_bars()`、2023-01-01〜
+2024-12-31のPrice Payload全体をScan)はEvent検出0件(D0077の2024単年結果と
+一致)。全12 AnchorでGuardによる除外は発生していない
+(`UNAVAILABLE_OBSERVATIONS=0`)。EPS Denominator選定は全期間`accounting_
+standard=IFRS`で一貫しており、会計基準変更によるSeries分裂は発生していない
+(実測で確認)。
+
+### Sample Sufficiency(§8の実装確認)
+
+**12点を「長期Historical Valuation」と誇張しない。** 今回のLocal Snapshotの
+Price Bar Coverageは実測の結果`2024-01-04〜2024-12-30`(245 Session)のみで
+あり、**2024年が取得可能な唯一の年**(2024年より前のPrice Barはこの
+Local Snapshotに存在しない)。したがって2024年を超えてAnchorを増やすことは
+今回のLocal Snapshotのままでは不可能(新規Fetchが必要、今回はScope外)。
+
+さらに、12点のうちFY実績EPS Denominatorは実質2種類(Jan〜Apr: FY2023/3実績
+179.47、May〜Dec: FY2024/3実績365.94)にしか分かれない。したがって12点は
+独立した12個のValuation Regimeではなく、「1年間のPrice変動 × 2つの開示
+Denominator」という限定的な構造を持つ。この点を明示せずに「12点のHistorical
+Range」とだけ報告すると実態より豊富に見える誤解を招くため、明記する。
+
+**HISTORICAL_CONTEXT_STATUS = HISTORICAL_CONTEXT_PARTIAL**(SUPPORTEDではなく
+PARTIAL): 実データからPIT安全に計算できた点自体はUNAVAILABLE 0件で完全に
+成功したが、Windowが単年かつDenominator Regimeが実質2種類のみのため、
+Confidenceを機械的にSUPPORTEDへ引き上げない。
+
+### Peer Valuationの実行可能性(D0078の"弱いCandidate"を実測で検証)
+
+D0078では「Local Snapshotに他に6758/8056/3626が存在するが、7203と同業種の
+意味あるPeerかは未検証」と留保していた。今回`01_data/raw/local_snapshot_
+input/equities_master.json`のSector Code(S17=17-Sector、S33=33-Sector)を
+実データで確認した結果:
+
+| Code | S17 | S33 |
+|---|---|---|
+| 7203(トヨタ自動車) | 6 | 3700 |
+| 6758 | 9 | 3650 |
+| 8056 | 10 | 5250 |
+| 3626 | 10 | 5250 |
+
+**7203と同一S17/S33を持つ銘柄は残り3件中0件**(全て異なるSector)。したがって
+既存Local SnapshotだけではPeer Valuationは構築できないことを実測で確定した
+(D0078時点の「未検証の弱いCandidate」を「検証済みかつ現状データでは不成立」
+へ更新)。新しいPeer Universe取得は新規Provider/新規Fetch相当のためScope外。
+
+### ResearchArtifact統合(§9の判断)
+
+今回はMeasurementのみ。既存`ART_STAGE3_4_7203_20241115_A_VALUATION_V2`への
+Historical Context統合は行っていない。Historical Contextを再利用可能な
+Evidence/Derived Factとして正式導入する場合、最小実装候補は「複数as_ofに
+対する`build_latest_reported_fy_per()`のOrchestration Wrapper + 統計Summary
+のEvidence化」であり、新しいCore Metric定義・新しいCorporate Action Logicは
+不要と判断できる(が、本Roundでは実装しない、§9の指示通り)。
+
+### 次のResearch Bottleneck再評価(実測に基づく)
+
+D0078の3候補のうち2つが今回のRoundで実測により評価が変わった:
+
+- **Longer Historical Valuation History**: 実測の結果、既存Local Snapshotの
+  Price Coverageが2024年単年のみであることが判明し、**現状データでは拡張
+  不可**(新規Fetch必須、今回Scope外)。D0078時点で最もTractableと見積もって
+  いたが、実際には既存データの限界に即座に到達した。
+- **Peer Valuation Context**: 上記の通りSector Code実測により**既存4銘柄では
+  0/3が同業種、構築不可**と確定。
+- **Consensus/Analyst Expectations**: 未着手(既存判断を維持、最大の新規実装
+  Gap)。
+
+したがって、既存Local Snapshotの範囲内で新規Provider無しに前進可能な
+Research項目は、D0078で副次的に確認された次の2つに絞られる:
+
+| 項目 | 種別 | 今回の判断 |
+|---|---|---|
+| Financial Quality(BPS/ROE/TA/Eq/CFO/CFI/CFF) | Parser Capability Gap(Raw Fieldは存在、未Parse) | **次点候補として推奨** |
+| Guidance(Company Forecast) | Wiring Gap(Parse済み、Evidence Pool Scope未追加) | 実装コストは最小だが、Valuation Interpretation自体への寄与は間接的 |
+
+**推奨: Financial Quality**。Historical/Peerの両方の比較基準構築が今回の
+実測で行き止まりになったため、「Valuation Multiple単体をどう解釈するか」
+という問いには、比較基準ではなく企業の財務健全性という別軸(高いか低いかの
+判断ではなく、低い倍率が財務的な脆弱性の反映なのか単なる市場評価のズレ
+なのかを区別する材料)からアプローチする以外に、既存Local Snapshotで
+Tractableな経路が残っていない。実装が最小だからではなく、Historical/Peer
+両方が実測でDead Endになったという消去法の結果として選定した。
+
+### Code Change Policy(§13遵守確認)
+
+Production Code変更なし。Read-only Scratch Script
+(`stage3_5_historical_valuation_context_7203.py`、Repo外Scratchpadで実行、
+Repoへは追加していない)による測定のみ。「2024年より前のPrice Barが無い」
+「Peer候補3件が0/3で同業種不一致」はいずれもCode Defectではなくデータの
+限界として記録する(§13どおり)。
+
+### Verification
+
+Code変更が無いため、Targeted Smokeのみ実施
+(`test_valuation_latest_reported_fy_per.py`13/13 PASS)。Full Regression・
+`ruff`/`mypy`は本Roundでは再実行していない(既存判断基準を継続)。H0001
+Locked Testは実行していない。
+
+### Persistence / Commit対象
+
+`02_company_research/7203_Toyota_Motor/`・Raw Snapshotはいずれも今回無変更・
+Commit対象外。Historical Context Scratch Outputも長期保存Policy未決定のため
+Repoへコミットしない(Repo外Scratchpadに保持)。本RoundでCommitするのは
+このDECISIONS.md追記(Doc-only)のみ。
+
+### Do Not(§遵守確認)
+
+Forward PER・PBR・Peer Selection・Consensus・Expectations Engine・DCF・
+target price・BUY/SELL・Decision Engine・Portfolio Engine・新規Providerの
+いずれにも着手していない。D0057 General Fix・H0001 Locked Testの再実行も
+していない。
