@@ -8137,3 +8137,139 @@ research_artifact.py`・`13_tests/test_valuation_latest_reported_fy_per.py`
 Forward PER・PBR・Stage 4のいずれにも着手していない。既存の禁止Hook
 問題(`test_protected_path_hook.py`)・H0001 Locked Testの再実行もして
 いない。
+
+## D0078 — Stage 3.4: Valuation-Integrated Real Research Acceptance(D0077のResearchArtifact統合Dogfood、Measurement Only・Code変更なし)
+
+D0077で完成した`LATEST_REPORTED_FY_PER`を、7203の実データFundamentals
+A-Path(D0075)+ Positioning(D0072)と1つのEvidence Poolへ統合し、
+`build_research_artifact()`経由でReal ResearchArtifactを構築、次の
+Research Bottleneckを実測した。**新機能は追加していない、Code欠陥も
+発見されなかったため無変更(scratch実行のみ、Repo変更なし)。**
+
+### 実行結果(Read-only Scratch Script、既存`scripts/
+stage3_1_research_artifact_7203.py --semantics A`と同じLoadingパターン
++ D0077 Valuation Moduleを追加統合、`build_research_artifact()`のみ
+使用・`ResearchArtifact(...)`直接構築はしていない)
+
+| Evidence種別 | usable件数 |
+|---|---|
+| Fundamentals(A系統、MARKET_PUBLIC_AT) | 16 |
+| Positioning(price-derived) | 18 |
+| Valuation(LATEST_REPORTED_FY_PER) | 1 |
+| **Total** | **35** |
+
+`artifact_id=ART_STAGE3_4_7203_20241115_A_VALUATION_V2`(Local
+`02_company_research/7203_Toyota_Motor/research_artifacts.jsonl`へ記録
+済み、Commit対象外)。`data_confidence=LOW`/`evidence_confidence=
+MEDIUM`/`research_confidence=LOW`/`conclusion=INCONCLUSIVE`——Valuation
+Evidenceが1件増えたことだけを理由に機械的に引き上げていない(D0075/D0076
+と同水準を維持)。
+
+**V1→V2の訂正(Append-Only、V1は削除・上書きせず保持)**: 初回組立てた
+`base_case`のNarrative Summaryに「倍率が割安/割高かは...判断しない」
+という否定文を書いたが、たとえ否定形でも§4で明示的に禁止された語
+(割安/割高)がArtifact内に文字列として残ること自体を避けるため、
+「その水準についての方向性のある判断はしない」という言い換えへ訂正した
+`ART_STAGE3_4_7203_20241115_A_VALUATION_V2`(`supersedes_artifact_id=
+ART_STAGE3_4_7203_20241115_A_VALUATION_V1`)を新規記録した。V1は
+Registryに残したまま(Append-Only、元Artifactを削除・上書きしない
+という要件どおり)。V2のArtifact全体を機械的にScanし、禁止語(Cheap/
+Expensive/Undervalued/Overvalued/Attractive/Bullish/Bearish/BUY/SELL/
+target price/割安/割高/買い/売り/魅力的/目標株価)が0件であることを
+確認した。
+
+### Valuation Interpretation Boundary(§4の実装確認)
+
+`LATEST_REPORTED_FY_PER=7.2853`(≈7.29x)は`SUPPORTED_BY_DATA`として
+Base Caseへ含めたが、これが高いか低いかの判断(Interpretation)は
+Peer/Historical Baselineが無いため`UNAVAILABLE`のまま分離して保持した
+(Bull/Bear Caseへ倍率単独を理由に追加していない)。
+
+### Research Usefulness Re-evaluation(実Evidenceに基づく分類)
+
+| 項目 | 分類 | 根拠 |
+|---|---|---|
+| Business / Earnings | SUPPORTED_BY_DATA | sales/operating_profit/net_profit/eps/ordinary_profitのACTUAL実績値(1Q/2Q/3Q/FY、16 series)を確認 |
+| Growth | PARTIAL | 複数期間の実績値はあるが、D0076で既出のとおり選定された4期が異なる会計年度(2024/3期3Q・FYと2025/3期1Q・2Q)の累計値混在であり、YoY成長率の計算Logic自体が未実装(値の推測補完はしていない) |
+| Financial Quality | UNAVAILABLE | **今回実測**: Raw Local Snapshot(`financial_summary_7203.json`)にはBPS/ROE/TA(総資産)/Eq(純資産)/EqAR/CFO/CFI/CFF等のField自体は存在するが、`lib.fundamentals.normalize.parse_financial_summary_payload()`はP&L項目(sales/operating_profit/net_profit/eps/ordinary_profit)とそのCompany Forecastのみを`FundamentalMetric`化しており、これらはParse対象外(実Parser Capability Gap、単なるRaw Data不足ではない) |
+| Guidance | PARTIAL | **今回実測**: Company Forecast(`sales_current_year_forecast`/`operating_profit_current_year_forecast`/`net_profit_current_year_forecast`/`eps_current_year_forecast`とその`next_year_forecast`版、`ActualOrForecast.COMPANY_FORECAST`で正しくLabel付け済み)は既に`parse_financial_summary_payload()`でParse済みだが、今回のKey Metric Set(Scope選択)には含めなかった。新規Parsing Codeは不要、Evidence Pool Scopeへの追加のみで済む |
+| Valuation Multiple | SUPPORTED_BY_DATA | D0077 `LATEST_REPORTED_FY_PER`=7.2853 |
+| Valuation Interpretation | UNAVAILABLE | Peer/Historical Baseline無し(上記参照) |
+| Catalysts | OUT_OF_SCOPE | News/Disclosure Document Capabilityは`DEFAULT_ALLOWED_CAPABILITIES`に含まれず、7203向けの実Disclosure Documentも未取得 |
+| Risks | UNAVAILABLE | 同上(Disclosure Document Content未取得) |
+| Expectations / Priced-in(Consensus) | OUT_OF_SCOPE | Consensus/Analyst Estimates Adapter未実装(Phase5 v1 Scope外、既定で不使用) |
+
+### Key Measurement: 次のResearch Quality制限要因
+
+「実装が簡単だから」ではなく実Evidenceから判断した結果:
+
+**最大のBottleneck = Valuation Interpretation(比較基準の不在)**。
+D0077でValuation Multiple自体はSUPPORTED_BY_DATAになったが、その直後に
+「高いか低いか判断できない」という壁に直接ぶつかった(今回のRoundで
+実際に観測した制約)。このうち:
+
+- **Historical Valuation Context(自社の過去Multiple推移)**: 既存
+  `01_data/raw/local_snapshot_input/`(7203の2024年通期Bar・20件の
+  開示)だけで、複数のas_of時点について既存`build_latest_reported_fy_
+  per()`をそのまま繰り返し適用すれば計算できる(新規Provider・新規
+  Parsing不要、Orchestrationのみ追加)——最もTractableな解消経路。
+- **Peer Valuation Context**: Local Snapshotには他に6758/8056/3626の
+  実データも存在するが、これらが7203と同業種の意味あるPeerかは未検証
+  (`equities_master.json`のSector情報を今回確認していない)。Data存在
+  ≠ 意味のあるPeer Setであるため、今回は弱いCandidateとして扱う。
+- **Consensus/Analyst Expectations**: 完全に未取得、新規Provider統合
+  相当(最も大きいGap、今回のScope外)。
+
+### 副次的発見(今回実測、次Roundへの参考)
+
+- **Guidance**: Data自体は既にParse済み・Label付け済み(新規Parsing
+  Code不要)。Financial Qualityとは異なる種類のGapである(Wiring Gap
+  であり、Parser Capability Gapではない)。
+- **Financial Quality**: Raw Fieldは存在するが未Parseの実Parser
+  Capability Gap(新しいField Mappingが必要、Guidanceより一段重い作業)。
+
+この区別自体が今回のMeasurementの主要な成果の一つ。
+
+### What Improved From D0076
+
+D0076時点では「生Close PriceとFY実績EPSはほぼ手元にあるのに、Evidence
+化されていないために計算できない」ことが唯一の明示Gapだった。D0077で
+そのGapを解消し、本Round(D0078)で実際にResearchArtifactへ統合・実測
+した結果、Evidence件数はFundamentals16+Positioning18のみ(D0076時点の
+34件)からValuation1件を加えた35件へ増加。Confidence/Conclusionは意図
+的に据え置き(INCONCLUSIVE/LOW、Evidence 1件増加だけを理由に昇格しない)。
+
+### Good Company != Good Stock Check
+
+Business/Earnings Fact(実績P&L)とValuation Fact(倍率そのもの)を
+両方Evidence Poolへ含めたが、Bull/Base/Bear Caseのいずれにも「良い
+企業」「良い株」の判断や、投資期待Returnについての言及を含めていない
+ことを確認した(NarrativeはFactの列挙のみ、方向性のある結論を導いて
+いない)。
+
+### Code Change Policy(遵守確認)
+
+Production Code変更なし。Read-only Scratch Scriptによる統合Acceptance
+のみ(Repo外Scratchpadで実行、Repoへは追加していない)。実行上の
+Semantic Defectは発見されなかった(「新しいResearch項目が足りない」は
+Code Defectとして扱っていない、§10どおり)。
+
+### Verification
+
+Code変更が無いため、Targeted Smokeのみ実施
+(`test_valuation_latest_reported_fy_per.py`13/13 PASS)。Full
+Regression・`ruff`/`mypy`は本Roundでは再実行していない(Code変更無し、
+D0071/D0074/D0076と同じ判断基準)。既知のWindows Hook/mypy Environment
+Issueは本Roundでも未修正。H0001 Locked Testは実行していない。
+
+### Persistence / Commit対象
+
+Runtime ResearchArtifact(3件目、V1+V2両方)はLocal保持のまま
+(`02_company_research/7203_Toyota_Motor/research_artifacts.jsonl`、
+Commit対象外・既存2件は無変更)。Raw Snapshotも無変更・Commit対象外。
+本RoundでCommitするのはこのDECISIONS.md追記(Doc-only)のみ。
+
+### Do Not(§遵守確認)
+
+Forward PER・PBR・Expectations Engineのいずれにも着手していない。
+H0001 Locked Testの再実行もしていない。
