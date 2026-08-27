@@ -9476,3 +9476,187 @@ Countと両Valuation Multipleが再現することのみ確認した(Targeted Sm
 このDECISIONS.md追記(Doc-only)のみCommit対象。Raw Snapshot・
 `02_company_research/7203_Toyota_Motor/`(今回無変更)・Scratch Script
 はいずれもCommit対象外。
+
+## D0086 — Stage 3.12: Same-Period YoY Change v1(D0085で選定されたGrowth/YoYを最小実装)
+
+D0085で最大のnon-blocked Research Gapとして選定されたGrowth/YoYを実装
+した。既存の複数年Actual Fundamentals(RevisionHistoryが既に保持していた
+2021-2026分の同一Period Type実績)を使い、`SAME_PERIOD_YOY_CHANGE_RATIO`
+というDerived Factを構築した。Actual-to-Actualのみ、Company Forecastとの
+比較は行っていない。
+
+### Metric Naming(§2)
+
+`SAME_PERIOD_YOY_CHANGE_RATIO`(Genericな案を採用、`GROWTH_RATE`は使わ
+ない)。負値でも成立するChange Factであるため「成長率」ではなく「変化率」
+として扱う。対象Underlying Metricは`underlying_metric_type`Fieldで型付き
+保持する(`metric_type`自体はこのDerived Fact固有の固定値、D0077/D0084の
+`metric_type`/`denominator_type`分離パターンを踏襲)。
+
+### Architecture(§3、D0084パターンの再利用)
+
+Price/Corporate Actionを扱わない純Fundamentals-to-Fundamentals Derived
+Factのため、`lib.valuation`とは独立させ、`lib/fundamentals/same_period_
+yoy_model.py`(`SamePeriodYoYChangeRecord`)・`same_period_yoy_builder.py`
+(Typed Selector + Defense-in-depth Builder)・`same_period_yoy_evidence.py`
+(Evidence Converter)の3ファイルへ新規実装した。既存`lib.valuation`
+Builderとの共通化はしていない(Denominator選定・Corporate Action Window
+が根本的に異なるため)。再利用したのは`select_latest_close_bar()`等の
+Priceに触れない部分のみ(Typed Selector + Defense-in-depth Builderという
+2層設計そのもの、D0084と同型)。
+
+Capabilityは新設せず、既存`DataCapability.FUNDAMENTAL` + `DataLayer.
+DERIVED`を使った(Opaque Architecture Expansion禁止、§13)。`source_type`
+は既存`MARKET_PUBLIC_AT_SOURCE_TYPE`をそのまま再利用し、Current/Prior
+双方がA系統(`MARKET_PUBLIC_AT`)で選定されたVersionのみを使うことを
+`build_research_artifact()`のA/B混在Guardが正しく検知できるようにした。
+
+### Typed Fiscal-Year Matching(§5)
+
+Series Key自体には絶対Fiscal Yearが含まれない(`series_id`は`entity|
+metric_type|CURRENT_FISCAL_YEAR|period_type|scope|accounting_standard`
+のみ、複数年の同一Period Type実績が同一Seriesへ蓄積される)ため、
+Selector自身が`DisclosureEnvelope`のTyped Dates(`current_fiscal_year_
+start/end`・`current_period_start/end`)から以下を実施する: (1) Contract
+適合Candidateを`(fiscal_year_start, fiscal_year_end, period_type)`で
+Group化(同一Group内の複数Candidateはpublished_at最大のみ残し、値/
+metric_idが異なるTieはAmbiguityとしてfail closed)、(2) `fiscal_year_
+start`最大のGroup群を「Current Fiscal Year」とし、その中でpublished_at
+最大のCandidateをCurrent Cadenceとする(D0084のTarget FY Grouping +
+Max Published Atと同型)、(3) Currentの1年前のFiscal Yearを持ち、かつ
+**同一Period Type**のCandidateのみをPriorとして採用(Cadenceの代用は
+しない)。series_id文字列のFree-form Parseは一切行っていない(Testで
+明示的に確認)。
+
+### Corporate Calendar Mismatch(§5、17)
+
+Prior候補のFiscal Year/Period境界がCurrentのちょうど1年前と一致しない
+場合(`_one_fiscal_year_earlier()`による厳密なTyped Date比較)は`None`
+(Coverage Gap、推測で比較しない)。
+
+### Prior<=0 Safety(§10)
+
+`prior_metric.value <= 0`の場合、`ZeroDivisionError`任せにも、Negative
+DenominatorからのPercentage Change生成にもせず、Record自体を生成しない
+(`None`、fail closed)。Fundamental Factとしてzero/negativeがPRESENTで
+あること自体は正しい(既存D0043以来の原則)——Derived Ratioとしての
+NOT APPLICABLEは別レイヤーとして扱う。
+
+### Current Valueの符号制限(§11の判断)
+
+`current_value`の符号(Positive/Zero/Negative)は制限していない
+(`prior_value>0`であれば全て許容)。Actual Repo上、これをさらに制限
+すべき明確な理由は見つからなかった——既存Fundamentals Evidenceで
+Zero/Negative Actualが既にPRESENTとして扱われている(D0080 Cash Flow
+Evidence等)のと同じ原則を維持しただけであり、新しい制限を追加する
+根拠は無いと判断した。
+
+### 実データ受け入れ(§18、7203、as_of=2024-11-15 15:00 JST)
+
+hard-code無し、Local Snapshotから読み取り(Current/Prior共に2Q Cadence、
+Expected通り):
+
+| Metric | Current(FY2025 2Q) | Prior(FY2024 2Q) | YoY Ratio |
+|---|---|---|---|
+| sales | 23,282,450,000,000 | 21,981,617,000,000 | +0.0592 |
+| operating_profit | 2,464,217,000,000 | 2,559,294,000,000 | -0.0371 |
+| net_profit | 1,907,113,000,000 | 2,589,428,000,000 | -0.2635 |
+| eps | 142.15 | 191.26 | -0.2568 |
+
+全4 Metricとも`published_at`はCurrent=2024-11-06 13:55 JST、Prior=
+2023-11-01 13:55 JST(Current/Prior共にas_of以前に公表済み)。
+`SAFE_COMPARABLE_HISTORY_DEPTH`(2Q Cadence Series内のVersion数)は
+全4 Metricとも5件(2021-2026分の2Q実績、D0085で確認済みの多年History
+保持と一致)。値自体からの「増収/減収」「改善/悪化」等の判断はしていない。
+
+### ResearchArtifact統合実測(§20、Read-only Scratch、Repo未追加)
+
+D0084/D0085の72 EvidenceへSame-Period YoY Evidence 4件(sales/
+operating_profit/net_profit/eps)を追加し、`build_research_artifact()`
+経由で実測:
+
+| Evidence種別 | usable件数 |
+|---|---|
+| P&L(D0075、無変更) | 16 |
+| Cash Flow(D0080、無変更) | 12 |
+| Balance Sheet(D0081、無変更) | 12 |
+| Guidance(D0083、無変更) | 12 |
+| Positioning(無変更) | 18 |
+| Valuation(D0077+D0084、無変更) | 2 |
+| Same-Period YoY(Stage 3.12、新規) | 4 |
+| **Total** | **76** |
+
+`artifact_id=ART_STAGE3_12_7203_20241115_A_YOY_V1`。ordinary_profitは
+§1どおり除外(IFRS NOT_APPLICABLE問題)。禁止語Scan(growth/decline/
+improved/deteriorated/増収/減収/増益/減益/改善/悪化/成長/cheap/
+expensive/割安/割高/BUY/SELL)は0件。
+
+### 既存Regression確認(§27)
+
+P&L 16・Cash Flow 12・Balance Sheet 12・Guidance 12・Positioning 18・
+`LATEST_REPORTED_FY_PER≈7.2853`・`CURRENT_FY_COMPANY_FORECAST_PER≈9.9193`
+はいずれもD0084から完全に不変であることを実行結果で確認した。
+
+### Growth Coverage再評価(§21)
+
+**Growth Coverage = SUPPORTED_BY_DATA**(D0076以来のPARTIALから昇格
+——sales/operating_profit/net_profit/eps全4 Metricについて、PIT安全な
+Same-Period YoY Pairが実データで得られることを確認した)。**Growth
+Interpretation**は依然として扱わない(YoY Ratioが存在すること自体から
+方向性判断を作らない、増収/増益等のLabelは一切付与していない)。
+
+### Good Company != Good Stock(§22遵守確認)
+
+Positive YoY(sales +5.92%)とNegative YoY(operating_profit -3.71%、
+net_profit -26.35%、eps -25.68%)が同一Artifact内に混在するが、いずれも
+Investment Judgment(Good Stock/Bad Stock、BUY/SELL)へは接続していない。
+
+### Confidence(§29)
+
+Evidence件数が72(D0085時点)→76(今回)へ増加したが、`data_confidence`/
+`research_confidence`は自動昇格していない(LOW据え置き)。Source Vintage
+Completenessは引き続きUNVERIFIED。
+
+### Tests(§23-26)
+
+新規: `13_tests/test_fundamentals_same_period_yoy.py`(38件、Matching
+14件・PIT/Revision 8件・Math 9件・Evidence 9件、既存Fileの変更は無し
+——全て新規Fileへの追加)。
+
+### Verification(§29)
+
+- Syntax/Compile: 全対象ファイルOK。
+- Targeted(新規38件): 全PASS。
+- Fundamentals/Same-Period関連(`-k "fundamental or same_period"`):
+  202/202 PASS。
+- ResearchArtifact関連(`-k "research_artifact"`): 34/34 PASS。
+- Valuation Regression(`test_valuation_latest_reported_fy_per.py`+
+  `test_valuation_current_fy_company_forecast_per.py`): 57/57 PASS
+  (無変更ファイル、影響が無いことの確認)。
+- Full Regression(`13_tests/`): 1171/1172 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074以来の既知Windows Hook Environment Issue(今回の
+  Scopeと無関係、修正していない)。
+- `ruff check`: 対象ファイル全てPASS。
+- `ruff format --check`: 対象ファイル全てPASS。
+- `mypy`(`lib/fundamentals/same_period_yoy_model.py`・`_builder.py`・
+  `_evidence.py`): Success、0 issues(Optional Narrowing用に`_require_
+  date()`/`_require_datetime()`Helperを追加し、`# type: ignore`無しで
+  クリーンに解決)。Test File側は既知のWindows/numpy/Python 3.14
+  Environment Issueが再現するため`QUALITY_GATE_ENV_BLOCKED`として記録、
+  修正していない。H0001 Locked Testは実行していない。
+
+### Do Not(§28遵守確認)
+
+Quarter-only Derivation(2Q-1Q)・Forecast比較・Actual-vs-Forecast・
+Guidance Revision・Next-Year Guidance・BPS・ROE・PBR・Historical Fetch・
+Peer・Consensus・Disclosure Content・Decision Engine・Portfolio Engine
+のいずれにも着手していない。H0001 Locked Testの再実行もしていない。
+
+### Persistence / Commit対象(§31)
+
+`lib/fundamentals/same_period_yoy_model.py`・`same_period_yoy_builder.py`
+・`same_period_yoy_evidence.py`(いずれも新規、既存Fileへの変更は無し)・
+`13_tests/test_fundamentals_same_period_yoy.py`(新規)・このDECISIONS.md
+追記をCommit対象とする。Raw Snapshot・`02_company_research/7203_Toyota_
+Motor/`(今回無変更)・Scratch ScriptはいずれもCommit対象外。
