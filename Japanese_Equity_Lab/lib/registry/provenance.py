@@ -58,6 +58,21 @@ class ProvenanceStore:
                 links.append(ProvenanceLink(**data))
         return links
 
+    def parents_of(self, to_type: str, to_id: str) -> list[ProvenanceLink]:
+        """`to_id`(`to_type`)を終点とする直接の親Linkを**全件**返す(Stage 3.15、
+        Multi-Parent Retrieval Hardening)。
+
+        `trace_to_origin()`は内部で`{(to_type, to_id): link}`という辞書を使うため、
+        同一Targetへの複数親Linkのうち最後の1件しか保持できない(複数親を持つ
+        TargetをTraverseすると経路が1本へ潰れてしまう、既知の制約——本Docstring
+        冒頭の「1エンティティにつき直接の親1系統を遡る」という設計そのもの)。
+        `all()`をそのまま`to_type`/`to_id`でFilterするだけの追加であり、
+        `trace_to_origin()`自体の既存挙動は一切変更しない(Breaking Change回避)。
+        Historical Valuation Context(31 direct parents)のような真に複数親を持つ
+        Targetを扱う場合はこちらを使うこと。
+        """
+        return [link for link in self.all() if link.to_type == to_type and link.to_id == to_id]
+
     def trace_to_origin(self, entity_type: str, entity_id: str) -> list[ProvenanceLink]:
         """entity_idを終点(to_id)とするリンクを起点まで遡ってchainを返す(先頭が起源)。"""
         links_by_target = {(link.to_type, link.to_id): link for link in self.all()}

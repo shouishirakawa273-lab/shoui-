@@ -8,6 +8,8 @@ Interpretationであり、この関数からは生成できない・生成すべ
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 from lib.valuation.model import (
@@ -16,6 +18,28 @@ from lib.valuation.model import (
     CurrentFyCompanyForecastPerRecord,
     LatestReportedFyPerRecord,
 )
+
+
+def latest_reported_fy_per_evidence_id(record: LatestReportedFyPerRecord) -> str:
+    """`latest_reported_fy_per_to_evidence()`が生成するevidence_idと同じ形式を返す
+    (Stage 3.15、D0089)。
+
+    Historical Valuation Context Builder(`lib.valuation.historical_context_
+    builder`)がHistorical/Current PER Observationを一意に参照するIDとして
+    このFormatをそのまま再利用する必要があるため、ID文字列組み立てロジックを
+    ここへ1箇所化した(`latest_reported_fy_per_to_evidence()`側もこの関数を
+    呼ぶよう変更し、二重実装しない)。
+    """
+    return f"EVID_{SOURCE_ID}_{record.entity_code}_{record.price_date.isoformat()}"
+
+
+def latest_reported_fy_per_available_at(record: LatestReportedFyPerRecord) -> datetime:
+    """`latest_reported_fy_per_to_evidence()`と同じavailable_at計算(要件v1-9、
+    Price/Fundamentalsの両方が利用可能になった、より遅い方)を返す(Stage 3.15、
+    D0089)。Historical Context Builderが個々のParent Recordから合成
+    available_atを算出する際に、この定義をここへ1箇所化して再利用する。
+    """
+    return max(record.price_available_at, record.published_at)
 
 
 def latest_reported_fy_per_to_evidence(
@@ -43,7 +67,7 @@ def latest_reported_fy_per_to_evidence(
     `available_at`Fallback禁止)には抵触しない——このEvidence自体が
     B系統を名乗っていないため。
     """
-    available_at = max(record.price_available_at, record.published_at)
+    available_at = latest_reported_fy_per_available_at(record)
     content = (
         f"{record.entity_code}: {record.calculation_expression} = {record.multiple}"
         f"({record.metric_type}、{record.denominator_type}、"
@@ -66,7 +90,7 @@ def latest_reported_fy_per_to_evidence(
         delivery_provider=delivery_provider,
     )
     return EvidenceRecord(
-        evidence_id=f"EVID_{SOURCE_ID}_{record.entity_code}_{record.price_date.isoformat()}",
+        evidence_id=latest_reported_fy_per_evidence_id(record),
         evidence_type=EvidenceType.FACT,
         layer=DataLayer.DERIVED,
         capability=DataCapability.VALUATION,
@@ -142,4 +166,9 @@ def current_fy_company_forecast_per_to_evidence(
     )
 
 
-__all__ = ["current_fy_company_forecast_per_to_evidence", "latest_reported_fy_per_to_evidence"]
+__all__ = [
+    "current_fy_company_forecast_per_to_evidence",
+    "latest_reported_fy_per_available_at",
+    "latest_reported_fy_per_evidence_id",
+    "latest_reported_fy_per_to_evidence",
+]

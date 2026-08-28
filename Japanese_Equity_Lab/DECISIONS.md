@@ -9946,3 +9946,244 @@ Regressionは未実行(Scope外、D0087以降のCode変更が無いため)。
 
 このDECISIONS.md追記のみをCommit対象とする。Raw Data・Scratch Script
 （リポジトリ外で実行、Repoへ未追加）はいずれもCommit対象外。
+
+## D0089 — Stage 3.15: LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXT v1
+(Codex Narrow Audit `READY_WITH_GUARDS`判定後のProduction実装、D0088 PIT
+Correctionを恒久的なProduction Codeとして再現可能にする)
+
+D0087(7203 Multi-Year Price Snapshot)+ D0088(Historical Sample PIT
+Correction、Scratch)で確認した「Historical PER Monthly Anchors分布」を、
+Codex Narrow Audit(本Round直前実施、`FINAL_VERDICT=NEEDS_SAMPLE_ARTIFACT`
+だったが、その後ユーザーが`READY_WITH_GUARDS`条件付きでProduction実装を
+指示)の6 FindingsをGuardとして踏まえたProduction Codeへ格上げした。
+Interpretationを一切含まないDerived Valuation FACTとして構築し、既存76
+Evidence ResearchArtifactへ1件のみ追加する。
+
+### Metric Identity(§3)
+
+`LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXT`を採用(Codex推奨B案)。
+Historical/Current Observationのいずれも既存`LATEST_REPORTED_FY_PER`
+(D0077)と同一Metric Semantics(選定Close Price ÷ 市場公表済み最新FY実績
+EPS)を使う。Forward PER(`CURRENT_FY_COMPANY_FORECAST_PER`、D0084)とは
+混ぜていない。
+
+### Local Snapshot Coverage拡張(実装前提、§0関連)
+
+Calendar-backed Completed-Month Helperの実装中、`local_snapshot_input/
+trading_calendar.json`のCoverageが2023-11-17〜2025-02-14しかないことが
+判明した(Section 23 Expected Sample・sample_start=2022-05-31には
+2022-05以降のCalendar Coverageが必要)。D0087のCandidate取得時に既に
+取得済みの広範囲Calendar(2021-08-28〜2025-02-14、`_candidate_stage3_14_
+7203/trading_calendar.json`、新Fetch不要)について、D0087と同じ方式
+(既存Coverage部分456 Session全件についてSession Date単位Provider Field
+比較、Mismatch **0件**)で検証した上で採用した。旧版は`_candidate_
+stage3_14_7203/trading_calendar.PRE_STAGE3_15_BACKUP.json`へ保持
+(即Overwriteせず、検証後のみ置換)。本セクション冒頭でユーザーへ「Raw
+Snapshot変更禁止(§28)はImmutable Raw Snapshot(`01_data/raw/jquants_
+local/`)を指し、`local_snapshot_input/`working copyは対象外か」を確認し、
+「同様の手順で拡張採用」の指示を得た上で実施した。Immutable Raw Snapshot
+自体は無変更。
+
+### Architecture(§1、必要最小限のProduction変更)
+
+新規3ファイル・既存3ファイルへの最小追記のみ:
+
+- `lib/market_calendar.py`: `TradingCalendar.completed_month_end_
+  sessions(*, reference_as_of)`を追加(§5/§6)。「完了した暦月」の判定は
+  `trading_dates`の最後のBarからではなく、`range_end`(Calendar自身の
+  実Coverage)を根拠にする——各月のCalendar Month Endが`range_end`を
+  超える場合は`TradingCalendarResolutionError`(既存Exception再利用)で
+  fail closed(Truncated Coverageを偽Month-End Anchorとして扱わない)。
+  `reference_as_of`と同一暦月は常に除外する。既存`is_trading_session`等の
+  挙動は無変更、新しいCalendar概念・新Fieldは追加していない。
+- `lib/registry/provenance.py`: `ProvenanceStore.parents_of(to_type,
+  to_id)`を追加(§18、Codex PROVENANCE_GAP Finding対応)。`trace_to_
+  origin()`は同一Targetへの複数親Linkを1件へ潰す既知の制約があるため
+  (Docstring記載済み)、`all()`を単純Filterするだけの新規Methodを追加した
+  (`trace_to_origin()`自体はBreaking Changeなし)。
+- `lib/valuation/model.py`: `LatestReportedFyPerHistoricalContextRecord`・
+  `DenominatorRegimeSummary`・`HistoricalContextStatus`(PARTIAL/
+  SUPPORTED、v1のBuilderはPARTIALのみ生成)・`MINIMUM_MONTHLY_
+  OBSERVATIONS=12`・Percentile/Median Method定数を追加。既存`Frequency`
+  Enum(`lib.evidence.model`)を`anchor_frequency`へ再利用し、重複Enumは
+  作っていない。
+- `lib/valuation/evidence.py`: 既存`latest_reported_fy_per_to_evidence()`
+  内のID/available_at計算を`latest_reported_fy_per_evidence_id()`/
+  `latest_reported_fy_per_available_at()`として1箇所化(既存Evidence出力
+  自体は無変更、既存Test全PASSで確認済み)。Historical Context Builderが
+  Historical/Current Observationを一意に参照するIDとして再利用する
+  (ID組み立てロジックの二重実装を回避)。
+- `lib/valuation/historical_context_builder.py`(新規): Anchor生成
+  (どの月を完了とみなすか)・Price/EPS取得はこの関数の責務としない
+  (呼び出し側=Orchestration、既存`build_latest_reported_fy_per()`と同じ
+  責務分担)。受け取った既に選定済みのHistorical/Current PER Record群を
+  Defense-in-depthで再検証し、記述統計をDecimal専用・外部Statistics
+  Library非依存で計算する。
+- `lib/valuation/historical_context_evidence.py`(新規): Evidence変換
+  (`EvidenceType.FACT`/`DataLayer.DERIVED`/`DataCapability.VALUATION`)+
+  `verify_historical_context_provenance()`(Dangling/Missing/Duplicate
+  Parent Guard)。
+
+### PIT Defense-in-depth(§7)
+
+A. Orchestration側: `TradingCalendar.completed_month_end_sessions()`が
+構造的にCurrent Referenceと同一暦月以降のAnchorを生成しない(生成物
+自体にFuture Anchorが含まれ得ない設計)。
+B. Builder側: `build_latest_reported_fy_per_historical_context()`が
+`historical_records`を独立に再検証し、`as_of > current_reference_as_of`
+のRecordが1件でもあれば既存`LookAheadBiasError`(`lib.errors`、新規例外
+追加なし)でSilent Excludeせず即座に失敗する。
+
+Current PER Observation IDがHistorical Observation IDsへ混入した場合も
+`ValueError`でfail closed(Contamination Guard、§7/§19)。Historical
+Observation ID自体の重複も同様に拒否する(Duplicate Parent Guard)。
+
+### 実データ受け入れ(§23、7203、Local Snapshotのみ・新Fetchなし)
+
+`current_reference_as_of=2024-11-15T15:00:00+09:00`、既存D0077
+`build_latest_reported_fy_per()`をそのまま再利用(値のHard-code無し、
+実際にBuilderから取得):
+
+```
+attempted_anchor_count=39(2021-08〜2024-10、completed_month_end_sessions()の実出力)
+excluded_future_anchor_count=0(Calendar Helperの設計上、Future Anchorは構造的に生成されない)
+unavailable_denominator_count=9(2021-08〜2022-04、FY2022/3 EPS公表2022-05-11以前)
+corporate_action_excluded_count=0
+sample_count=30
+```
+
+Bookkeeping Invariant(`attempted_anchor_count == excluded_future_
+anchor_count + unavailable_denominator_count + corporate_action_
+excluded_count + sample_count`、39 == 0+9+0+30)はBuilder自身が検証し
+PASS。
+
+| Field | 実測値 |
+|---|---|
+| historical_sample_start_as_of | 2022-05-31T15:00:00+09:00 |
+| historical_sample_end_as_of | 2024-10-31T15:00:00+09:00 |
+| distinct_denominator_regime_count | 3 |
+| historical_min | 6.947860304968027545499262174 |
+| historical_median | 10.23607659698874433562344686 |
+| historical_max | 21.12887947846436730372764250 |
+| current_per | 7.285347324698037929715253867 |
+| current_percentile | 3.333333333333333333333333333 |
+| current_minus_historical_median | -2.950729272290706405908192993 |
+| context_status | PARTIAL |
+| available_at | 2024-11-14T15:30:00+09:00(current_reference_as_of以前) |
+
+Denominator Regimes(実測): FY2022/3(EPS=205.23、n=12)・FY2023/3
+(EPS=179.47、n=12)・FY2024/3(EPS=365.94、n=6)。D0088のScratch実測値と
+完全一致(推測ではなく、両Round独立にBuilderから再計算した結果が一致)。
+
+### Statistical Definitions(§10/§11)
+
+Percentile: `percentile_method=EMPIRICAL_CDF_LE`・`percentile_scale=
+PERCENT_0_100`。`count(historical_per<=current_per)*100/sample_count`
+をDecimal専用で計算(float/numpy/pandas等の暗黙Method不使用、Tie は
+`<=`によりInclusive)。Median: `median_method=ORDERED_MIDPOINT`
+(奇数nは中央値そのもの、偶数nは中央2値のDecimal平均、n=30のため15番目・
+16番目の平均)。いずれもMethod名をRecordへ型付きで保持する(Codex
+STATISTICAL_DEFINITION_GAP Finding対応)。
+
+### Evidence / ResearchArtifact統合(§21/§24)
+
+Evidence 1件のみ(`EvidenceType.FACT`/`DataLayer.DERIVED`/
+`DataCapability.VALUATION`/`EvidenceRelation.NEUTRAL`)。30件のHistorical
+PER Observationを個別Evidenceとして追加していない。禁止語Scan(cheap/
+expensive/undervalued/overvalued/attractive/bullish/bearish/upside/
+downside/expected return/BUY/SELL/target price/割安/割高/買い/売り)は
+**0件**。Bull/Base/Bearへの自動追加は行っていない。
+
+既存76 Evidence ResearchArtifact(D0086時点、P&L 16・Cash Flow 12・
+Balance Sheet 12・Guidance 12・Positioning 18・Valuation 2・Same-Period
+YoY 4)を独立に実データから再構築し、`build_research_artifact()`経由で
+76 Evidenceを再確認した(Positioning実測は20件Buildされるが、そのうち
+2024-11-15分2件は`available_at=session_close_at(2024-11-15)=15:30`が
+`as_of=15:00`より後のためPIT Filterで除外され18件Usable、D0086と完全
+一致)。Historical Context Evidence 1件を追加して77 Evidenceで再構築し、
+`data_confidence=LOW`・`evidence_confidence=MEDIUM`・`research_
+confidence=LOW`・`conclusion=INCONCLUSIVE`がEvidence追加前後で不変
+であることを明示的なAssertionで確認した(Evidence件数増加のみを理由に
+自動昇格しない、既存原則の継続)。
+
+### Provenance(§17-19)
+
+Historical Context Evidenceへ31件のDirect Parent Link(30 Historical PER
++ 1 Current PER、いずれも`lib.valuation.evidence.latest_reported_fy_
+per_evidence_id()`形式のID)を`ProvenanceStore`へ登録し、新設`parents_
+of()`で31件全件を取得できることを確認した(`trace_to_origin()`は
+複数親Targetを1件へ潰すため使用していない)。`verify_historical_context_
+provenance()`がMissing/Unexpected/Duplicate Parentをいずれも検知する
+ことをSynthetic Testで確認済み(下記Tests参照)、実データでも31件の
+完全一致をPASSで確認した。Raw Price/EPSをContextへ62-parent Flat Link
+していない(各Historical/Current PER自身のPrice/EPS Provenanceは
+既存D0077 Testパターンで別途維持される)。
+
+### Sample Sufficiency Policy(§13)
+
+`MINIMUM_MONTHLY_OBSERVATIONS=12`はOperational Guardのみ(統計的に12件
+が十分という主張ではない、Codex Sample Sufficiency Recommendation Cを
+踏まえたOperational Minimum)。n=0/1〜11ではEvidence生成禁止
+(Builderが`None`を返す)、n=12以上でEvidence生成可能——ただしSample数
+だけでは`context_status`を`SUPPORTED`へ昇格しない(v1のBuilderは常に
+`PARTIAL`のみを生成、`SUPPORTED`昇格基準は本Roundでは未定義のまま)。
+
+### Valuation Interpretation(§25、分離維持)
+
+Valuation Multiple Coverage(Metricそのものが計算できるか)= 引き続き
+SUPPORTED_BY_DATA相当。Historical Valuation Context = PARTIAL。
+Valuation Interpretation(割安/割高等の方向性判断)は本Roundでも一切
+着手していない、別Concern として分離したまま(Historical Percentileの
+追加によって自動的にSUPPORTEDへ格上げしていない)。
+
+### Source Vintage(既存原則の継続)
+
+J-Quants Financial SummaryのSource Vintage Completeness(訂正前値が
+Historical Rowとして必ず保持されるか)は依然UNVERIFIED(D0075以来の
+DataGap、本Roundでも新規検証はしていない)。
+
+### Tests(§26)
+
+新規34件(`test_valuation_historical_context.py`27件・`test_market_
+calendar.py`5件追加・`test_provenance.py`2件追加)、全PASS。PIT
+(Future Anchor拒否・Contamination拒否・Duplicate拒否・Current Reference
+不一致拒否・Bookkeeping不整合拒否・Calendar Coverage不足Fail Closed・
+Truncated Bar偽Month-End防止)、Statistics(n=0/11/12境界・Regime内EPS
+不整合拒否・Even n Median Midpoint・Percentile Tie Inclusion・Percentile
+Method/Scale保持)、Provenance(31 Parent確認・`parents_of()`が
+`trace_to_origin()`と異なり複数親全件返却・Missing/Dangling/Duplicate
+Parent拒否)、Evidence(Layer/Capability・禁止語0件)を各々カバーする。
+
+### Verification(§27)
+
+- `ruff check`/`ruff format --check`(対象10ファイル): 全PASS。
+- `mypy`(Production 7ファイル: `lib/valuation/model.py`・`builder.py`・
+  `evidence.py`・`historical_context_builder.py`・`historical_context_
+  evidence.py`・`lib/market_calendar.py`・`lib/registry/provenance.py`):
+  Success、0 issues。
+- `pytest`(`13_tests/`Full Suite): 1205/1206 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074以来の既知Windows/Japanese Username Hook
+  Environment Issue(今回のScopeと無関係、Production Logicは変更してい
+  ない)。
+
+### Do Not(§28遵守確認)
+
+新Provider・新Fetch・Peer・Consensus・Forward Historical Context・
+Same-Regime Context v2・Valuation Interpretation・Expected Return・
+Decision Engine・Bull/Bear自動反映のいずれにも着手していない。H0001
+Locked Testは実行していない。Immutable Raw Snapshot(`01_data/raw/
+jquants_local/`)は無変更。
+
+### Persistence / Commit対象
+
+`lib/market_calendar.py`・`lib/registry/provenance.py`・`lib/valuation/
+model.py`・`lib/valuation/evidence.py`・`lib/valuation/historical_
+context_builder.py`(新規)・`lib/valuation/historical_context_evidence.py`
+(新規)・`13_tests/test_valuation_historical_context.py`(新規)・
+`13_tests/test_market_calendar.py`・`13_tests/test_provenance.py`・この
+DECISIONS.md追記をCommit対象とする。`local_snapshot_input/`配下
+(trading_calendar.json拡張・Backup・Candidate一時ディレクトリ含む)は
+`.gitignore`対象のためCommit対象外。Real Data Acceptance Scratch
+ScriptはいずれもRepoへ追加していない(D0079/D0087/D0088と同じ
+Read-only Scratch Script方針)。

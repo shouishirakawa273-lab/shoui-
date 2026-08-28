@@ -80,3 +80,55 @@ def test_construction_rejects_trading_dates_outside_declared_range() -> None:
             range_start=date(2026, 1, 1),
             range_end=date(2026, 1, 31),
         )
+
+
+# --- completed_month_end_sessions(Stage 3.15、D0089) ------------------------------------
+
+
+def _three_month_calendar(*, range_end: date = date(2024, 3, 31)) -> TradingCalendar:
+    trading_dates = frozenset(
+        {
+            date(2024, 1, 4),
+            date(2024, 1, 31),
+            date(2024, 2, 1),
+            date(2024, 2, 29),
+            date(2024, 3, 1),
+            date(2024, 3, 15),
+        }
+    )
+    return TradingCalendar(trading_dates=trading_dates, range_start=date(2024, 1, 1), range_end=range_end)
+
+
+def test_completed_month_end_sessions_excludes_reference_own_month() -> None:
+    """Current Referenceが月中(2024-03-15)の場合、2024年3月自体はHistorical
+    Sampleへ含めない(要件v1 §5条件5)。"""
+    calendar = _three_month_calendar()
+    result = calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 3, 15, 15, 0, tzinfo=JST))
+    assert result == (date(2024, 1, 31), date(2024, 2, 29))
+
+
+def test_completed_month_end_sessions_picks_actual_max_trading_date_not_raw_bar_guess() -> None:
+    calendar = _three_month_calendar(range_end=date(2024, 4, 30))
+    result = calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 4, 10, 15, 0, tzinfo=JST))
+    assert result == (date(2024, 1, 31), date(2024, 2, 29), date(2024, 3, 15))
+
+
+def test_completed_month_end_sessions_fails_closed_when_coverage_truncated_mid_month() -> None:
+    """Price/Calendar CoverageがMarch月の途中(2024-03-15)で終わっている場合、
+    Referenceが4月に進んでも「3月は完了した」と推測しない(要件v1 §6、Silent
+    Inference禁止、既存TradingCalendarResolutionErrorを再利用)。"""
+    calendar = _three_month_calendar(range_end=date(2024, 3, 15))
+    with pytest.raises(TradingCalendarResolutionError):
+        calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 4, 10, 15, 0, tzinfo=JST))
+
+
+def test_completed_month_end_sessions_returns_empty_before_calendar_coverage_starts() -> None:
+    calendar = _three_month_calendar()
+    result = calendar.completed_month_end_sessions(reference_as_of=datetime(2023, 12, 1, 15, 0, tzinfo=JST))
+    assert result == ()
+
+
+def test_completed_month_end_sessions_requires_tz_aware_reference() -> None:
+    calendar = _three_month_calendar()
+    with pytest.raises(ValueError, match="tz-aware"):
+        calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 3, 15, 15, 0))

@@ -113,3 +113,57 @@ class TradingCalendar:
         for _ in range(n):
             current = self.next_trading_session(current)
         return current
+
+    def completed_month_end_sessions(self, *, reference_as_of: datetime) -> tuple[date, ...]:
+        """`reference_as_of`より前に完了している暦月について、各月の最終取引Sessionを
+        古い順に返す(Stage 3.15、Historical Valuation Context Monthly Anchor用)。
+
+        「完了した暦月」の判定はRaw Price Barの並び(最後のBarがある日)からは行わない
+        (月後半でPrice Barがtruncateされている場合、それを偽のMonth-End Anchorとして
+        扱ってしまうため)。この関数は`trading_dates`ではなくTrading Calendar自身の
+        `range_end`(実際にこのCalendarがCoverageを持つ範囲)を根拠に、各月のCalendar
+        Month End(例: 2024年10月なら`date(2024, 10, 31)`)が`range_end`以内に収まって
+        いる場合のみ、その月を「完了として判定可能」とみなす。収まっていない場合は
+        `range_end`が単に短いだけなのか、その月がまだ進行中なのかを推測せず、
+        `TradingCalendarResolutionError`でfail closedにする(Silent Inference禁止)。
+
+        `reference_as_of`と同一の暦月は常に除外する(月の途中では、その月自体は
+        まだ完了していない——Calendar Coverageの有無に関わらず)。
+
+        取引日が1件も存在しない月(理論上のみ、通常は起こらない)は単にAnchor無しとして
+        スキップする(Errorにはしない、休場のみの月自体は取引カレンダーとして正常な状態)。
+
+        既存の`is_trading_session`/`next_trading_session`等とは独立した新規Public API
+        だが、`range_start`/`range_end`/`trading_dates`という既存Fieldのみを読むだけで
+        新しいCalendar概念・新しいField・新しいImportは一切追加しない(汎用的すぎる
+        Calendar Refactorを避ける)。
+        """
+        if reference_as_of.tzinfo is None:
+            raise ValueError("reference_as_of はtz-awareである必要があります")
+        reference_date = reference_as_of.date()
+        if self.range_start > reference_date:
+            return ()
+
+        results: list[date] = []
+        year, month = self.range_start.year, self.range_start.month
+        while (year, month) < (reference_date.year, reference_date.month):
+            month_end = _calendar_month_end(year, month)
+            if month_end > self.range_end:
+                raise TradingCalendarResolutionError(
+                    f"{year}-{month:02d}のCalendar Month End({month_end.isoformat()})がTrading "
+                    f"CalendarのCoverage(range_end={self.range_end.isoformat()})を超えています。"
+                    "この月が実際に完了しているかを判断できないため、Truncatedな範囲の最後の"
+                    "Price/取引日を偽のMonth-End Anchorとして扱わず、fail closedにします。"
+                )
+            sessions_in_month = sorted(d for d in self.trading_dates if d.year == year and d.month == month)
+            if sessions_in_month:
+                results.append(sessions_in_month[-1])
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+        return tuple(results)
+
+
+def _calendar_month_end(year: int, month: int) -> date:
+    """指定した年月の暦上の月末日(例: 2024年2月なら2024-02-29)。取引日か否かは問わない。"""
+    if month == 12:
+        return date(year, 12, 31)
+    return date(year, month + 1, 1) - timedelta(days=1)
