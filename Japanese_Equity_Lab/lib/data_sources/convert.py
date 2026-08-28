@@ -16,10 +16,10 @@ announced_at不要)を通す。
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from lib.data_sources.ticker_codes import TickerCodeNormalizationError, normalize_provider_code_to_internal
-from lib.market_calendar import TradingCalendar
+from lib.market_calendar import TradingCalendar, TradingCalendarResolutionError
 from lib.schemas.price_data import CorporateAction, CorporateActionType, RawOHLCVBar
 from lib.universe import ListingRecord
 
@@ -115,6 +115,7 @@ def trading_calendar_payload_to_calendar(
     range_start: date,
     range_end: date,
     trading_hol_div_values: frozenset[str] | None = None,
+    verify_complete_daily_coverage: bool = False,
 ) -> TradingCalendar:
     """``/v2/markets/calendar``ペイロードから``TradingCalendar``を構築する。
 
@@ -122,10 +123,52 @@ def trading_calendar_payload_to_calendar(
     Business day(1) / Half-Day Trading(2)を取引日とする)を使う。半休場日を取引日として
     扱わない、あるいはholiday trading日(3)も取引日として扱うなど、既定と異なる運用を
     したい場合はこの引数で明示的に上書きできる。
+
+    **Verified Complete Daily Coverage(Stage 3.15.1、D0090)**: `verify_
+    complete_daily_coverage=True`を指定した場合のみ、`range_start`〜
+    `range_end`の全暦日(取引日・非取引日を問わず、`HolDiv`の値に関わらず)が
+    `payload`内に1件ずつ実在するかを検証する(実データ確認済み: J-Quants V2
+    `/v2/markets/calendar`は要求範囲の全暦日を返す、DECISIONS.md D0090)。
+    欠落があれば、それがProvider側の部分応答なのか呼び出し側の`range_start`/
+    `range_end`指定ミスなのかを推測せず、`TradingCalendarResolutionError`で
+    fail closedにする(Silent Inference禁止)。検証を通過した場合のみ
+    `TradingCalendar.verified_complete_daily_coverage=True`として構築する
+    (`completed_month_end_sessions()`はこのFlagが`True`のCalendarでのみ
+    動作する、Historical Valuation Context用途で明示的に指定すること)。
+
+    **既定`False`(後方互換)**: 既存の多数の呼び出し元(Backtest Pipeline等)は
+    「営業日だけを列挙した合成Fixture」を使っており、実Providerのような全暦日
+    列挙を前提としていない。既定を`True`にすると、これら既存Fixtureが軒並み
+    Falsely rejectされてしまう(Historical Context以外の既存挙動を壊す)ため、
+    この検証はOpt-inとし、既定では従来通り`range_start`/`range_end`を
+    Caller Assertionとしてそのまま使う(`verified_complete_daily_coverage=
+    False`のまま構築、Backward Compatible)。
     """
     hol_div_values = trading_hol_div_values if trading_hol_div_values is not None else _TRADING_HOL_DIV_DEFAULT
     trading_dates = frozenset(date.fromisoformat(str(row["Date"])) for row in payload if str(row.get("HolDiv")) in hol_div_values)
-    return TradingCalendar(trading_dates=trading_dates, range_start=range_start, range_end=range_end)
+
+    if not verify_complete_daily_coverage:
+        return TradingCalendar(trading_dates=trading_dates, range_start=range_start, range_end=range_end)
+
+    all_payload_dates = frozenset(date.fromisoformat(str(row["Date"])) for row in payload)
+    missing_calendar_days: list[date] = []
+    cursor = range_start
+    while cursor <= range_end:
+        if cursor not in all_payload_dates:
+            missing_calendar_days.append(cursor)
+        cursor += timedelta(days=1)
+    if missing_calendar_days:
+        raise TradingCalendarResolutionError(
+            f"取引カレンダーPayloadにrange_start({range_start.isoformat()})〜range_end"
+            f"({range_end.isoformat()})の暦日が{len(missing_calendar_days)}件欠落しています"
+            f"(HolDivの値を問わない、最初の数件: {missing_calendar_days[:5]})。Providerからの"
+            "部分応答か指定Rangeの誤りかを判断できないため、Verified Complete Daily Coverageと"
+            "して構築しません(fail closed)。"
+        )
+
+    return TradingCalendar(
+        trading_dates=trading_dates, range_start=range_start, range_end=range_end, verified_complete_daily_coverage=True
+    )
 
 
 def detect_corporate_action_events_from_equity_bars(payload: list[dict[str, object]]) -> list[CorporateAction]:

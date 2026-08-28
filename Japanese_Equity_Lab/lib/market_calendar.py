@@ -61,11 +61,35 @@ class TradingCalendar:
     このカレンダーが「解決可能な」範囲を表し、範囲外の問い合わせは
     (取引日か休場日かに関わらず)`TradingCalendarResolutionError`にする
     (データが無い期間を「土日以外は平日として取引日扱い」のように推測しない)。
+
+    `verified_complete_daily_coverage`(Stage 3.15.1、D0090): `range_start`〜
+    `range_end`の**全暦日**(取引日・非取引日を問わず)が、実際にRaw Provider
+    Payloadへ1件ずつ存在していたことを`lib.data_sources.convert.trading_
+    calendar_payload_to_calendar()`が検証済みかどうかを表す(既定`False`
+    =未検証、後方互換のため既定値のまま構築するTest等ではFalseになる)。
+
+    **既知の欠陥への対応**: 以前は`range_end`が「Coverageの上限」という
+    Caller Assertionをそのまま信頼していたため、Providerからの応答が
+    範囲内で部分的に欠落していても(例: 3月前半のRowが応答に含まれず、
+    3月後半のRowだけが返ってきた場合)検出できなかった
+    (`range_endだからComplete`という循環定義、Silent Inference)。
+    `trading_calendar_payload_to_calendar()`はRaw Payload自体が
+    `range_start`〜`range_end`の全暦日を(HolDivの値を問わず)実際に
+    含んでいることを構築時に検証し、欠落があれば`TradingCalendarResolution
+    Error`でfail closedにする(J-Quants V2 `/v2/markets/calendar`は実データ
+    確認の結果、要求範囲の全暦日を1行ずつ返すことを確認済み、DECISIONS.md
+    D0090参照)。この検証を通過した場合のみ`True`を設定する。
+
+    `completed_month_end_sessions()`は`verified_complete_daily_coverage=
+    True`のCalendarでのみ動作する(Direct構築でこのFlagを明示的にTrueへ
+    しない限り、Truncatedな範囲を「完了した月」として誤認するリスクを
+    構造的に排除する)。
     """
 
     trading_dates: frozenset[date]
     range_start: date
     range_end: date
+    verified_complete_daily_coverage: bool = False
 
     def __post_init__(self) -> None:
         if self.range_start > self.range_end:
@@ -116,30 +140,42 @@ class TradingCalendar:
 
     def completed_month_end_sessions(self, *, reference_as_of: datetime) -> tuple[date, ...]:
         """`reference_as_of`より前に完了している暦月について、各月の最終取引Sessionを
-        古い順に返す(Stage 3.15、Historical Valuation Context Monthly Anchor用)。
+                古い順に返す(Stage 3.15、Historical Valuation Context Monthly Anchor用)。
 
-        「完了した暦月」の判定はRaw Price Barの並び(最後のBarがある日)からは行わない
-        (月後半でPrice Barがtruncateされている場合、それを偽のMonth-End Anchorとして
-        扱ってしまうため)。この関数は`trading_dates`ではなくTrading Calendar自身の
-        `range_end`(実際にこのCalendarがCoverageを持つ範囲)を根拠に、各月のCalendar
-        Month End(例: 2024年10月なら`date(2024, 10, 31)`)が`range_end`以内に収まって
-        いる場合のみ、その月を「完了として判定可能」とみなす。収まっていない場合は
-        `range_end`が単に短いだけなのか、その月がまだ進行中なのかを推測せず、
-        `TradingCalendarResolutionError`でfail closedにする(Silent Inference禁止)。
+                「完了した暦月」の判定はRaw Price Barの並び(最後のBarがある日)からは行わない
+                (月後半でPrice Barがtruncateされている場合、それを偽のMonth-End Anchorとして
+                扱ってしまうため)。この関数は`trading_dates`ではなくTrading Calendar自身の
+                `range_end`(実際にこのCalendarがCoverageを持つ範囲)を根拠に、各月のCalendar
+                Month End(例: 2024年10月なら`date(2024, 10, 31)`)が`range_end`以内に収まって
+                いる場合のみ、その月を「完了として判定可能」とみなす。収まっていない場合は
+                `range_end`が単に短いだけなのか、その月がまだ進行中なのかを推測せず、
+                `TradingCalendarResolutionError`でfail closedにする(Silent Inference禁止)。
 
-        `reference_as_of`と同一の暦月は常に除外する(月の途中では、その月自体は
-        まだ完了していない——Calendar Coverageの有無に関わらず)。
+                `reference_as_of`と同一の暦月は常に除外する(月の途中では、その月自体は
+                まだ完了していない——Calendar Coverageの有無に関わらず)。
 
-        取引日が1件も存在しない月(理論上のみ、通常は起こらない)は単にAnchor無しとして
-        スキップする(Errorにはしない、休場のみの月自体は取引カレンダーとして正常な状態)。
+                取引日が1件も存在しない月(理論上のみ、通常は起こらない)は単にAnchor無しとして
+                スキップする(Errorにはしない、休場のみの月自体は取引カレンダーとして正常な状態)。
 
-        既存の`is_trading_session`/`next_trading_session`等とは独立した新規Public API
-        だが、`range_start`/`range_end`/`trading_dates`という既存Fieldのみを読むだけで
-        新しいCalendar概念・新しいField・新しいImportは一切追加しない(汎用的すぎる
-        Calendar Refactorを避ける)。
+        **Stage 3.15.1(D0090)Hardening**: `range_end`だけを根拠にせず、
+                `verified_complete_daily_coverage=True`(Raw Provider Payload自体が
+                `range_start`〜`range_end`の全暦日を欠落なく含んでいたことを`lib.
+                data_sources.convert.trading_calendar_payload_to_calendar()`が
+                検証済み)であることを要求する。`range_end`が単に「Caller Assertion」
+                でしかない場合(Direct構築で明示的にTrueへしていない場合)は、
+                Coverage内に未検出のGapが無いことを保証できないため、月末Anchor
+                判定そのものを拒否する(`TradingCalendarResolutionError`)。
         """
         if reference_as_of.tzinfo is None:
             raise ValueError("reference_as_of はtz-awareである必要があります")
+        if not self.verified_complete_daily_coverage:
+            raise TradingCalendarResolutionError(
+                "このTrading Calendarはverified_complete_daily_coverage=Falseです"
+                "(range_start〜range_endの全暦日がRaw Provider Payloadに欠落なく"
+                "存在することが未検証)。Coverage内部にGapが無いことを保証できないため、"
+                "Month-End Anchor判定をfail closedにします(lib.data_sources.convert."
+                "trading_calendar_payload_to_calendar()で構築したCalendarを使ってください)。"
+            )
         reference_date = reference_as_of.date()
         if self.range_start > reference_date:
             return ()

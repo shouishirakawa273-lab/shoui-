@@ -1,28 +1,29 @@
-"""LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXT v1(Stage 3.15、D0089):
-Historical PER Monthly Anchors分布をInterpretationなしのDerived Valuation
-FACTとして構築できるかを検証する。
+"""LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXT v1(Stage 3.15/3.15.1、D0089/
+D0090): Historical PER Monthly Anchors分布をInterpretationなしのDerived
+Valuation FACTとして構築できるかを検証する。
 
 D0087(Multi-Year Price Snapshot)+ D0088(PIT Correction)で実測した
 「Historical PER観測30件+Current PER観測1件」という実データ構造を、
 Production Codeとして再現可能・PIT-safeに構築できることを、Synthetic
 Fixtureで確認する(実データ受け入れは別途Real 7203 Acceptance Scratch
-Scriptで実施、D0089参照)。
+Scriptで実施、D0089/D0090参照)。
 """
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 from lib.errors import LookAheadBiasError
-from lib.evidence.model import DataLayer, Frequency
+from lib.evidence.model import DataLayer, EvidenceType, Frequency
 from lib.market_calendar import session_close_at
+from lib.registry.evidence_registry import EvidenceRegistry
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore
 from lib.sources.catalog import DataCapability, SourceAuthorityClass
-from lib.valuation.evidence import latest_reported_fy_per_evidence_id
+from lib.valuation.evidence import latest_reported_fy_per_evidence_id_v2, latest_reported_fy_per_to_evidence_v2
 from lib.valuation.historical_context_builder import build_latest_reported_fy_per_historical_context
 from lib.valuation.historical_context_evidence import (
     latest_reported_fy_per_historical_context_to_evidence,
@@ -158,14 +159,23 @@ def test_future_historical_observation_raises_look_ahead_bias_error() -> None:
 
 
 def test_current_observation_id_contaminating_historical_ids_is_rejected() -> None:
+    # Current PERと同一のentity_code/price_date/source_version_id(=v2 ID)を持つが、
+    # as_ofだけを別の(Future/Same-Monthガードに引っかからない)値へずらしたRecordを
+    # 混入させる——PIT Guardより後段のID Contamination Guardを個別に検証するため。
     current = _current_record()
+    contaminating = _per_record(
+        as_of=session_close_at(date(2022, 5, 31)),
+        price_date=current.price_date,
+        price_value=current.price_value,
+        eps_value=current.eps_value,
+        fiscal_period_end=current.fiscal_period_end,
+        published_at=current.published_at,
+        source_version_id=current.source_version_id,
+    )
     historical = _thirty_historical_records()
-    # Current PERとPrice Date/Multipleが完全一致するHistorical Anchorを混入させる
-    # (evidence_idはentity_code + price_dateから決定的に導出されるため、Current自身と
-    # 同じprice_dateのRecordを混ぜるとID衝突=Contaminationになる)。
-    contaminated = [*historical[:-1], current]
+    contaminated = [*historical[:-1], contaminating]
     with pytest.raises(ValueError, match="Contamination"):
-        _build_context(historical_records=contaminated, attempted_anchor_count=len(contaminated) + 9)
+        _build_context(historical_records=contaminated, current_record=current, attempted_anchor_count=len(contaminated) + 9)
 
 
 def test_duplicate_historical_observation_ids_are_rejected() -> None:
@@ -215,6 +225,28 @@ def test_entity_code_mismatch_is_rejected() -> None:
 def test_bookkeeping_mismatch_in_attempted_anchor_count_is_rejected() -> None:
     with pytest.raises(ValueError, match="attempted_anchor_count"):
         _build_context(attempted_anchor_count=999)
+
+
+def test_same_calendar_month_historical_observation_rejected_even_if_timestamp_earlier() -> None:
+    """Stage 3.15.1(D0090)Hardening: Current Referenceと同一暦月(2024-11)の
+    Historical Anchorは、timestampがReferenceより前でもReject(その月自体が
+    未完了のため)。単純な`as_of > current_reference_as_of`比較だけでは
+    見逃すケース。"""
+    historical = _thirty_historical_records()
+    same_month_anchor = _per_record(
+        as_of=datetime(2024, 11, 1, 15, 0, tzinfo=_JST),  # current_reference(2024-11-15)より前だが同一月
+        price_date=date(2024, 11, 1),
+        price_value=Decimal("2600"),
+        eps_value=Decimal("365.94"),
+        fiscal_period_end=date(2024, 3, 31),
+        published_at=datetime(2024, 5, 8, 13, 55, tzinfo=_JST),
+        source_version_id="SV_FY2024",
+    )
+    with pytest.raises(LookAheadBiasError, match="同一暦月"):
+        _build_context(
+            historical_records=[*historical, same_month_anchor],
+            attempted_anchor_count=len(historical) + 1 + 9,
+        )
 
 
 # --- Statistics --------------------------------------------------------------------------
@@ -411,6 +443,24 @@ def test_historical_context_evidence_frequency_is_monthly() -> None:
 # --- Provenance -----------------------------------------------------------------------------
 
 
+def _real_evidence(record: LatestReportedFyPerRecord):
+    return latest_reported_fy_per_to_evidence_v2(
+        record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+
+
+def _register_all_31_parents(
+    historical: list[LatestReportedFyPerRecord], current: LatestReportedFyPerRecord, registry: EvidenceRegistry
+) -> None:
+    """31件(30 Historical + 1 Current)の実PER EvidenceRecordを構築し、EvidenceRegistryへ登録する
+    (Stage 3.15.1、D0090: Parent Evidence Node Existence)。"""
+    for record in [*historical, current]:
+        registry.register(_real_evidence(record))
+
+
 def _wire_full_provenance(context, evidence_id: str, store: ProvenanceStore) -> None:
     for i, oid in enumerate(context.historical_observation_ids):
         store.add_link(
@@ -434,7 +484,9 @@ def _wire_full_provenance(context, evidence_id: str, store: ProvenanceStore) -> 
 
 
 def test_provenance_has_exactly_31_direct_parents(tmp_path: Path) -> None:
-    context = _build_context()
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
     assert context is not None
     evidence = latest_reported_fy_per_historical_context_to_evidence(
         context,
@@ -444,10 +496,14 @@ def test_provenance_has_exactly_31_direct_parents(tmp_path: Path) -> None:
     )
     store = ProvenanceStore(tmp_path / "provenance.jsonl")
     _wire_full_provenance(context, evidence.evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    _register_all_31_parents(historical, current, registry)
 
     parents = store.parents_of("valuation_evidence", evidence.evidence_id)
     assert len(parents) == 31
-    verify_historical_context_provenance(context, context_evidence_id=evidence.evidence_id, provenance_store=store)
+    verify_historical_context_provenance(
+        context, context_evidence_id=evidence.evidence_id, provenance_store=store, evidence_registry=registry
+    )
 
 
 def test_provenance_parents_of_returns_all_branches_unlike_trace_to_origin(tmp_path: Path) -> None:
@@ -467,10 +523,14 @@ def test_provenance_parents_of_returns_all_branches_unlike_trace_to_origin(tmp_p
 
 
 def test_missing_parent_link_is_rejected(tmp_path: Path) -> None:
-    context = _build_context()
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
     assert context is not None
     evidence_id = "EVID_CONTEXT_TEST_MISSING"
     store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    _register_all_31_parents(historical, current, registry)
     # 30件のHistoricalのうち1件だけ登録を忘れる + Currentのみ登録(31件揃わない)
     for i, oid in enumerate(context.historical_observation_ids[:-1]):
         store.add_link(
@@ -492,35 +552,47 @@ def test_missing_parent_link_is_rejected(tmp_path: Path) -> None:
         )
     )
     with pytest.raises(ValueError, match="missing"):
-        verify_historical_context_provenance(context, context_evidence_id=evidence_id, provenance_store=store)
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
 
 
 def test_dangling_unexpected_parent_link_is_rejected(tmp_path: Path) -> None:
-    context = _build_context()
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
     assert context is not None
     evidence_id = "EVID_CONTEXT_TEST_DANGLING"
     store = ProvenanceStore(tmp_path / "provenance.jsonl")
     _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    _register_all_31_parents(historical, current, registry)
     # Fake Lineage: Recordが知らないIDを追加登録
     store.add_link(
         ProvenanceLink(
             link_id="L_FAKE",
             from_type="valuation_evidence",
-            from_id="EVID_LATEST_REPORTED_FY_PER_7203_1999-01-01",
+            from_id="EVID_LATEST_REPORTED_FY_PER_V2_7203_1999-01-01_SV_FAKE",
             to_type="valuation_evidence",
             to_id=evidence_id,
         )
     )
     with pytest.raises(ValueError, match="unexpected"):
-        verify_historical_context_provenance(context, context_evidence_id=evidence_id, provenance_store=store)
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
 
 
 def test_duplicate_registered_parent_link_is_rejected(tmp_path: Path) -> None:
-    context = _build_context()
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
     assert context is not None
     evidence_id = "EVID_CONTEXT_TEST_DUP"
     store = ProvenanceStore(tmp_path / "provenance.jsonl")
     _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    _register_all_31_parents(historical, current, registry)
     store.add_link(
         ProvenanceLink(
             link_id="L_DUP",
@@ -531,14 +603,213 @@ def test_duplicate_registered_parent_link_is_rejected(tmp_path: Path) -> None:
         )
     )
     with pytest.raises(ValueError, match="重複"):
-        verify_historical_context_provenance(context, context_evidence_id=evidence_id, provenance_store=store)
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
 
 
-def test_each_historical_observation_id_matches_evidence_id_format() -> None:
-    """Historical Observation IDが`latest_reported_fy_per_evidence_id()`と同一Formatで
-    あることを確認する(D0077既存PER Evidenceとして独立にlineageを追跡可能な形式)。"""
+def test_parent_missing_from_registry_is_rejected(tmp_path: Path) -> None:
+    """expected ID集合とLink ID集合はSet Equalityで一致していても、そのIDが実際に
+    EvidenceRegistryへ登録されていなければfail closed(Stage 3.15.1、D0090)。"""
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_UNREGISTERED"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    # わざと1件だけ登録しない
+    for record in [*historical[1:], current]:
+        registry.register(_real_evidence(record))
+    with pytest.raises(ValueError, match="EvidenceRegistryに存在しません"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_parent_with_wrong_entity_code_is_rejected(tmp_path: Path) -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_WRONG_ENTITY"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    for record in historical[1:]:
+        registry.register(_real_evidence(record))
+    registry.register(_real_evidence(current))
+    # historical[0]だけentity_codeを差し替えたEvidenceを登録(evidence_idは同一のまま)
+    tampered_evidence = _real_evidence(historical[0])
+    from dataclasses import replace
+
+    registry.register(replace(tampered_evidence, related_codes=("9999",)))
+    with pytest.raises(ValueError, match="related_codes"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_parent_with_wrong_capability_is_rejected(tmp_path: Path) -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_WRONG_CAPABILITY"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    for record in historical[1:]:
+        registry.register(_real_evidence(record))
+    registry.register(_real_evidence(current))
+    from dataclasses import replace
+
+    tampered_evidence = _real_evidence(historical[0])
+    registry.register(replace(tampered_evidence, capability=DataCapability.FUNDAMENTAL))
+    with pytest.raises(ValueError, match="capability"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_parent_with_wrong_layer_is_rejected(tmp_path: Path) -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_WRONG_LAYER"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    for record in historical[1:]:
+        registry.register(_real_evidence(record))
+    registry.register(_real_evidence(current))
+    from dataclasses import replace
+
+    tampered_evidence = _real_evidence(historical[0])
+    registry.register(replace(tampered_evidence, layer=DataLayer.RAW))
+    with pytest.raises(ValueError, match="layer"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_parent_with_wrong_evidence_type_is_rejected(tmp_path: Path) -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_WRONG_TYPE"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    for record in historical[1:]:
+        registry.register(_real_evidence(record))
+    registry.register(_real_evidence(current))
+    from dataclasses import replace
+
+    tampered_evidence = _real_evidence(historical[0])
+    registry.register(replace(tampered_evidence, evidence_type=EvidenceType.CLAIM))
+    with pytest.raises(ValueError, match="evidence_type"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_parent_with_future_available_at_is_rejected(tmp_path: Path) -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    context = _build_context(historical_records=historical, current_record=current)
+    assert context is not None
+    evidence_id = "EVID_CONTEXT_TEST_FUTURE_AVAILABLE_AT"
+    store = ProvenanceStore(tmp_path / "provenance.jsonl")
+    _wire_full_provenance(context, evidence_id, store)
+    registry = EvidenceRegistry(tmp_path / "evidence.jsonl")
+    for record in historical[1:]:
+        registry.register(_real_evidence(record))
+    registry.register(_real_evidence(current))
+    from dataclasses import replace
+
+    tampered_evidence = _real_evidence(historical[0])
+    future_source = replace(tampered_evidence.source, available_at=context.current_reference_as_of + timedelta(days=1))
+    registry.register(replace(tampered_evidence, source=future_source))
+    with pytest.raises(ValueError, match="available_at"):
+        verify_historical_context_provenance(
+            context, context_evidence_id=evidence_id, provenance_store=store, evidence_registry=registry
+        )
+
+
+def test_each_historical_observation_id_matches_evidence_id_v2_format() -> None:
+    """Historical Observation IDが`latest_reported_fy_per_evidence_id_v2()`
+    (Collision-Safe Identity、Stage 3.15.1)と同一Formatであることを確認する。"""
     context = _build_context()
     assert context is not None
     historical = _thirty_historical_records()
-    expected_ids = {latest_reported_fy_per_evidence_id(r) for r in historical}
+    expected_ids = {latest_reported_fy_per_evidence_id_v2(r) for r in historical}
     assert set(context.historical_observation_ids) == expected_ids
+
+
+# --- Identity(Collision-Safe Evidence ID v2、Stage 3.15.1、D0090) ------------------------
+
+
+def test_same_price_date_different_source_version_id_produces_distinct_ids() -> None:
+    """v1 ID(entity_code + price_date)は同一price_dateで異なるsource_version_id
+    (例: 異なるFY Denominatorへの切替)を持つ2つのDistinct Factを衝突させ得た。
+    v2はsource_version_idをIdentityへ含めるため、これらは区別される。"""
+    shared_price_date = date(2024, 6, 28)
+    record_a = _per_record(
+        as_of=session_close_at(shared_price_date),
+        price_date=shared_price_date,
+        price_value=Decimal("3000"),
+        eps_value=Decimal("365.94"),
+        fiscal_period_end=date(2024, 3, 31),
+        published_at=datetime(2024, 5, 8, 13, 55, tzinfo=_JST),
+        source_version_id="SV_FY2024",
+    )
+    record_b = _per_record(
+        as_of=session_close_at(shared_price_date),
+        price_date=shared_price_date,
+        price_value=Decimal("3000"),
+        eps_value=Decimal("179.47"),
+        fiscal_period_end=date(2023, 3, 31),
+        published_at=datetime(2023, 5, 10, 13, 55, tzinfo=_JST),
+        source_version_id="SV_FY2023_CORRECTED",
+    )
+    id_a = latest_reported_fy_per_evidence_id_v2(record_a)
+    id_b = latest_reported_fy_per_evidence_id_v2(record_b)
+    assert id_a != id_b
+
+
+def test_identical_fact_produces_deterministic_same_id() -> None:
+    record_1 = _current_record()
+    record_2 = _current_record()  # 別Object、同一内容
+    assert latest_reported_fy_per_evidence_id_v2(record_1) == latest_reported_fy_per_evidence_id_v2(record_2)
+
+
+def test_current_parent_id_differs_from_all_historical_parent_ids() -> None:
+    historical = _thirty_historical_records()
+    current = _current_record()
+    current_id = latest_reported_fy_per_evidence_id_v2(current)
+    historical_ids = {latest_reported_fy_per_evidence_id_v2(r) for r in historical}
+    assert current_id not in historical_ids
+
+
+def test_no_accidental_collision_across_thirty_sample_records() -> None:
+    historical = _thirty_historical_records()
+    ids = [latest_reported_fy_per_evidence_id_v2(r) for r in historical]
+    assert len(ids) == len(set(ids)) == 30
+
+
+def test_v1_and_v2_ids_differ_and_v1_output_unchanged() -> None:
+    """既存v1 ID(D0077以来、`02_company_research/7203_Toyota_Motor/
+    research_artifacts.jsonl`から既に参照されている)はSilentに変更しない
+    (D0090要件v1 §13)。"""
+    from lib.valuation.evidence import latest_reported_fy_per_evidence_id
+
+    record = _current_record()
+    v1_id = latest_reported_fy_per_evidence_id(record)
+    v2_id = latest_reported_fy_per_evidence_id_v2(record)
+    assert v1_id == "EVID_LATEST_REPORTED_FY_PER_7203_2024-11-14"
+    assert v2_id != v1_id
+    assert v2_id.startswith("EVID_LATEST_REPORTED_FY_PER_V2_")

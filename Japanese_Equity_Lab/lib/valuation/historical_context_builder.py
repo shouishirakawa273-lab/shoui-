@@ -1,4 +1,5 @@
-"""LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXTの選定・計算(Stage 3.15、D0089)。
+"""LATEST_REPORTED_FY_PER_HISTORICAL_CONTEXTの選定・計算(Stage 3.15/3.15.1、
+D0089/D0090)。
 
 D0087(7203 Multi-Year Price Snapshot)+ D0088(Historical Sample PIT
 Correction Scratch)で確認した「Historical PER Monthly Anchors分布」を、
@@ -24,6 +25,15 @@ Statistics Library非依存で計算する。
 (Orchestration側、通常は`TradingCalendar.completed_month_end_sessions()`
 が構造的にCurrent Referenceと同一暦月以降を生成しない)に不具合があっても、
 この層で必ず食い止める。
+
+**Stage 3.15.1(D0090)Hardening**: (1) 単純な`as_of > current_reference_
+as_of`比較だけでは、Current Referenceと同一暦月内でtimestampがReference
+より前のHistorical Observationを見逃すため、同一`(year, month)`のRecordも
+`LookAheadBiasError`でReject(同一暦月ガード)。(2) Historical/Current
+Observation IDは`lib.valuation.evidence.latest_reported_fy_per_evidence_
+id_v2()`(entity_code + price_date + source_version_id、Collision-Safe
+Identity)を使う——既存v1 ID(entity_code + price_dateのみ)はSilentに
+意味変更していない。
 """
 
 from __future__ import annotations
@@ -34,7 +44,7 @@ from decimal import Decimal
 
 from lib.errors import LookAheadBiasError
 from lib.evidence.model import Frequency
-from lib.valuation.evidence import latest_reported_fy_per_available_at, latest_reported_fy_per_evidence_id
+from lib.valuation.evidence import latest_reported_fy_per_available_at, latest_reported_fy_per_evidence_id_v2
 from lib.valuation.model import (
     MEDIAN_METHOD_ORDERED_MIDPOINT,
     MINIMUM_MONTHLY_OBSERVATIONS,
@@ -125,8 +135,26 @@ def build_latest_reported_fy_per_historical_context(
             f"fail closed): {offending}"
         )
 
-    current_per_observation_id = latest_reported_fy_per_evidence_id(current_record)
-    historical_observation_ids = tuple(latest_reported_fy_per_evidence_id(h) for h in historical_records)
+    # Stage 3.15.1(D0090)Hardening: 単純な`as_of > current_reference_as_of`比較だけでは、
+    # Current Referenceと同一暦月内でtimestampがReferenceより前のHistorical Observation
+    # (例: Current Referenceが2024-11-15、Historical Anchorが2024-11-01)を見逃す——
+    # その月自体はまだ完了しておらず、Historical Sampleへ含めるべきではない
+    # (`lib.market_calendar.TradingCalendar.completed_month_end_sessions()`が
+    # Orchestration側でCurrent Referenceと同一暦月を構造的に除外しているのと同じ原則を、
+    # Builder側でもDefense-in-depthとして再検証する)。
+    current_reference_month = (current_reference_as_of.year, current_reference_as_of.month)
+    same_month_anchors = [h for h in historical_records if (h.as_of.year, h.as_of.month) == current_reference_month]
+    if same_month_anchors:
+        offending_same_month = sorted(f"{h.entity_code}@{h.as_of.isoformat()}" for h in same_month_anchors)
+        raise LookAheadBiasError(
+            f"current_reference_as_of({current_reference_as_of.isoformat()})と同一暦月"
+            f"({current_reference_month[0]}-{current_reference_month[1]:02d})のHistorical PER "
+            f"Observationが{len(same_month_anchors)}件含まれています(timestampがReferenceより前でも、"
+            f"その月自体が未完了のためReject、fail closed): {offending_same_month}"
+        )
+
+    current_per_observation_id = latest_reported_fy_per_evidence_id_v2(current_record)
+    historical_observation_ids = tuple(latest_reported_fy_per_evidence_id_v2(h) for h in historical_records)
     if len(set(historical_observation_ids)) != len(historical_observation_ids):
         duplicates = sorted({oid for oid in historical_observation_ids if historical_observation_ids.count(oid) > 1})
         raise ValueError(f"historical_observation_idsに重複があります(Duplicate Parent Guard): {duplicates}")

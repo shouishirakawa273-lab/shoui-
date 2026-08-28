@@ -1,4 +1,5 @@
-"""`LatestReportedFyPerHistoricalContextRecord`をEvidence化する(Stage 3.15、D0089)。
+"""`LatestReportedFyPerHistoricalContextRecord`をEvidence化する(Stage
+3.15/3.15.1、D0089/D0090)。
 
 `lib.valuation.evidence.latest_reported_fy_per_to_evidence()`(D0077)と同じ
 原則: FACTのみを記述し、Interpretationを一切加えない。「Current PERが
@@ -9,12 +10,16 @@ Testで直接確認する)。
 30件のHistorical PER Observationを30件のEvidenceとしてResearchArtifactへ
 個別追加しない(要件v1 §21)。Historical Contextは常に1件のEvidenceとして
 表現する——個々のHistorical/Current PER Observationとのlineageは
-`verify_historical_context_provenance()`がProvenanceStore経由で検証する。
+`verify_historical_context_provenance()`がProvenanceStore + EvidenceRegistry
+経由で検証する(D0090: 単なるID集合の一致だけでなく、実際にEvidence Nodeが
+Registryに存在し、期待するType/Layer/Capability/Entity/PITを満たすことまで
+確認する)。
 """
 
 from __future__ import annotations
 
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType
+from lib.registry.evidence_registry import EvidenceRegistry
 from lib.registry.provenance import ProvenanceStore
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 from lib.valuation.model import (
@@ -104,6 +109,7 @@ def verify_historical_context_provenance(
     *,
     context_evidence_id: str,
     provenance_store: ProvenanceStore,
+    evidence_registry: EvidenceRegistry,
 ) -> None:
     """Context Evidenceへ登録済みのProvenanceLinkが、Recordが保持する31件の
     Parent Observation ID(30 Historical + 1 Current)と過不足なく一致するかを
@@ -114,6 +120,16 @@ def verify_historical_context_provenance(
     使わない。Fake String Lineage(Recordが持つIDと無関係な文字列をLinkへ
     登録すること)・Missing Parent・Duplicate Parentをいずれも`ValueError`で
     fail closedにする。
+
+    **Parent Node Existence検証(Stage 3.15.1、D0090)**: 従来はExpected ID
+    集合とLink ID集合のSet Equalityのみを確認しており、それらのIDが実際に
+    Evidence Nodeとして存在するかは検証していなかった(架空IDでもLinkさえ
+    貼れば通ってしまう)。`evidence_registry`を必須Inputとし、31件全ての
+    `from_id`について、対応する`EvidenceRecord`が実在し、かつ以下を満たす
+    ことを検証する: `EvidenceType.FACT`・`DataLayer.DERIVED`・
+    `DataCapability.VALUATION`・`entity_code`が`record.entity_code`と一致
+    (`related_codes`に含まれる)・`available_at <= record.current_reference_
+    as_of`。いずれか1件でも満たさなければ`ValueError`でfail closedにする。
     """
     expected_parent_ids = set(record.historical_observation_ids) | {record.current_per_observation_id}
 
@@ -135,6 +151,33 @@ def verify_historical_context_provenance(
             f"Observation IDと一致しません(fail closed、Fake/Dangling Lineage防止): "
             f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
         )
+
+    for parent_id in sorted(registered_set):
+        parent_evidence = evidence_registry.get(parent_id)
+        if parent_evidence is None:
+            raise ValueError(
+                f"context_evidence_id={context_evidence_id}: Parent evidence_id={parent_id}が"
+                "EvidenceRegistryに存在しません(fail closed、架空/未登録IDへのLineageを許可しない)"
+            )
+        problems: list[str] = []
+        if parent_evidence.evidence_type != EvidenceType.FACT:
+            problems.append(f"evidence_type={parent_evidence.evidence_type.value}(FACTが必要)")
+        if parent_evidence.layer != DataLayer.DERIVED:
+            problems.append(f"layer={parent_evidence.layer.value}(DERIVEDが必要)")
+        if parent_evidence.capability != DataCapability.VALUATION:
+            problems.append(f"capability={parent_evidence.capability.value}(VALUATIONが必要)")
+        if record.entity_code not in parent_evidence.related_codes:
+            problems.append(f"related_codes={parent_evidence.related_codes}(entity_code={record.entity_code}を含まない)")
+        if parent_evidence.source.available_at > record.current_reference_as_of:
+            problems.append(
+                f"available_at={parent_evidence.source.available_at.isoformat()}"
+                f"(current_reference_as_of={record.current_reference_as_of.isoformat()}より後)"
+            )
+        if problems:
+            raise ValueError(
+                f"context_evidence_id={context_evidence_id}: Parent evidence_id={parent_id}が"
+                f"Historical Context Parentとして不適格です(fail closed): {'; '.join(problems)}"
+            )
 
 
 __all__ = ["latest_reported_fy_per_historical_context_to_evidence", "verify_historical_context_provenance"]

@@ -251,6 +251,45 @@ def test_trading_calendar_payload_to_calendar_uses_official_hol_div_semantics() 
     assert calendar.is_trading_session(date(2026, 1, 8)) is False  # HolDiv=3 -> 現物Pipelineでは非trading
 
 
+def test_trading_calendar_payload_to_calendar_defaults_to_unverified_for_backward_compat() -> None:
+    """Stage 3.15.1(D0090): 既定(`verify_complete_daily_coverage`省略)では、
+    営業日のみの合成Fixture(既存の多数のCallerが使う)を壊さないよう検証しない
+    (`verified_complete_daily_coverage=False`のまま構築)。"""
+    calendar = trading_calendar_payload_to_calendar(
+        _FIXTURE_PAYLOAD["trading_calendar"], range_start=date(2026, 1, 4), range_end=date(2026, 1, 6)
+    )
+    assert calendar.verified_complete_daily_coverage is False
+
+
+def test_trading_calendar_payload_to_calendar_sets_verified_complete_daily_coverage_when_requested() -> None:
+    """Stage 3.15.1(D0090): Payloadがrange_start〜range_endの全暦日を欠落なく
+    含む場合、`verify_complete_daily_coverage=True`を指定すると
+    `verified_complete_daily_coverage=True`となる。"""
+    calendar = trading_calendar_payload_to_calendar(
+        _FIXTURE_PAYLOAD["trading_calendar"],
+        range_start=date(2026, 1, 4),
+        range_end=date(2026, 1, 6),
+        verify_complete_daily_coverage=True,
+    )
+    assert calendar.verified_complete_daily_coverage is True
+
+
+def test_trading_calendar_payload_to_calendar_fails_closed_on_internal_gap_when_verification_requested() -> None:
+    """Stage 3.15.1(D0090)既知の欠陥修正: `verify_complete_daily_coverage=True`
+    指定時、`range_end`が妥当に見えても、Payload内部で暦日がGapしている
+    (3/2〜3/14が丸ごと欠落)場合はConstruction自体をfail closedにする(以前は
+    `range_end`だけを信頼しており、この種のGapを検出できなかった)。"""
+    payload = [
+        {"Date": "2026-03-01", "HolDiv": "1"},
+        {"Date": "2026-03-15", "HolDiv": "1"},
+        {"Date": "2026-03-31", "HolDiv": "1"},
+    ]
+    with pytest.raises(TradingCalendarResolutionError, match="欠落"):
+        trading_calendar_payload_to_calendar(
+            payload, range_start=date(2026, 3, 1), range_end=date(2026, 3, 31), verify_complete_daily_coverage=True
+        )
+
+
 def test_jquants_adapter_auth_failure_does_not_leak_api_key_in_exception() -> None:
     """認証・通信失敗時の例外メッセージにAPIキーの値が含まれないことを確認する。"""
     secret_key = "super-secret-api-key-xyz"

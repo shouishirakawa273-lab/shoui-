@@ -82,10 +82,12 @@ def test_construction_rejects_trading_dates_outside_declared_range() -> None:
         )
 
 
-# --- completed_month_end_sessions(Stage 3.15、D0089) ------------------------------------
+# --- completed_month_end_sessions(Stage 3.15/3.15.1、D0089/D0090) -----------------------
 
 
-def _three_month_calendar(*, range_end: date = date(2024, 3, 31)) -> TradingCalendar:
+def _three_month_calendar(
+    *, range_end: date = date(2024, 3, 31), verified_complete_daily_coverage: bool = True
+) -> TradingCalendar:
     trading_dates = frozenset(
         {
             date(2024, 1, 4),
@@ -96,7 +98,12 @@ def _three_month_calendar(*, range_end: date = date(2024, 3, 31)) -> TradingCale
             date(2024, 3, 15),
         }
     )
-    return TradingCalendar(trading_dates=trading_dates, range_start=date(2024, 1, 1), range_end=range_end)
+    return TradingCalendar(
+        trading_dates=trading_dates,
+        range_start=date(2024, 1, 1),
+        range_end=range_end,
+        verified_complete_daily_coverage=verified_complete_daily_coverage,
+    )
 
 
 def test_completed_month_end_sessions_excludes_reference_own_month() -> None:
@@ -132,3 +139,14 @@ def test_completed_month_end_sessions_requires_tz_aware_reference() -> None:
     calendar = _three_month_calendar()
     with pytest.raises(ValueError, match="tz-aware"):
         calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 3, 15, 15, 0))
+
+
+def test_completed_month_end_sessions_rejects_unverified_calendar() -> None:
+    """Stage 3.15.1(D0090)Hardening: `verified_complete_daily_coverage=False`
+    (既定値、Direct構築でCallerがCompletenessを検証していないCalendar)では、
+    `range_end`が一見妥当に見えても`completed_month_end_sessions()`自体を拒否する
+    (以前のD0089実装は`range_end`だけを根拠にしており、Coverage内部のGapを
+    検出できなかった——このTestはその旧Behaviorが今後再現しないことを固定する)。"""
+    calendar = _three_month_calendar(range_end=date(2024, 4, 30), verified_complete_daily_coverage=False)
+    with pytest.raises(TradingCalendarResolutionError, match="verified_complete_daily_coverage"):
+        calendar.completed_month_end_sessions(reference_as_of=datetime(2024, 4, 10, 15, 0, tzinfo=JST))

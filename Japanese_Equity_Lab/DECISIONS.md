@@ -10187,3 +10187,277 @@ DECISIONS.md追記をCommit対象とする。`local_snapshot_input/`配下
 `.gitignore`対象のためCommit対象外。Real Data Acceptance Scratch
 ScriptはいずれもRepoへ追加していない(D0079/D0087/D0088と同じ
 Read-only Scratch Script方針)。
+
+## D0090 — Stage 3.15.1: Historical Valuation Context Evidence Persistence
++ Lineage Integrity + PIT Hardening(D0089 End-to-End未完部分のClosure)
+
+D0089(Stage 3.15)の計算ロジック・`LatestReportedFyPerHistoricalContext
+Record`・Evidence Converterは維持したまま、実装完了後のReviewで指摘された
+10件のEnd-to-End Gapを最小構成で修正した。Peer/Consensus/Valuation
+Interpretationへは進んでいない。
+
+### D0089記載の訂正(§30、Rewriteではなくappend-only correction)
+
+D0089は「Codex Narrow Audit」の`FINAL_VERDICT=NEEDS_SAMPLE_ARTIFACT`を
+正確に記録していた(誤記ではない)。`READY_WITH_GUARDS`はその後ユーザーが
+Stage 3.15着手を指示したメッセージ内で明示した言葉であり、当該Auditの
+結果ではない。今回のRound冒頭でユーザーへこの点を確認し、「事実通り正確に
+記載する」方針が確定した。したがってD0089本文はRewriteせず、そのまま
+正確な記録として維持する——本Roundで指摘された10件のGapは、別途「実装後の
+Review」で見つかったものであり(このSession内で自動化されたCodex Audit
+Toolを再実行した記録は無い)、それ自体を実行済みAuditの成果物として偽装
+しない。
+
+### Relation Documentation訂正(§31)
+
+誤: 「`EvidenceRecord`が`FACT`/`DERIVED`/`VALUATION`/`NEUTRAL`を全て属性
+として持つ」という誤解を招く記述がD0089の報告文にあった。
+
+正: `EvidenceRecord`自体は`EvidenceType.FACT`・`DataLayer.DERIVED`・
+`DataCapability.VALUATION`のみを持つ(`EvidenceRelation`Fieldは存在
+しない、`lib.evidence.model`で既に構造的に分離されている)。`NEUTRAL`は
+`build_research_artifact()`呼び出し時に`relations`Mapping(`{evidence_id:
+EvidenceRelation.NEUTRAL}`)として渡すHypothesis/Evidence間の関係であり、
+Evidence自体のFieldではない。Converter(`latest_reported_fy_per_
+historical_context_to_evidence()`)へRelation Fieldは追加していない。
+
+### Closed Findings(§2、10件)
+
+1. **Parent Evidence Node Existence**: `lib/registry/evidence_registry.py`
+   (新規、EvidenceRegistry)。
+2. **Evidence Persistence / Fresh-Process解決**: 同上、実データ受け入れで
+   Genuine Subprocess境界により実証。
+3. **Context→31 PER Parents→Price/EPS Upstream Lineage**: 下記実測参照、
+   31/31 Priceおよび31/31 EPSが解決。
+4. **Historical Coverage DataGap**: `DataGapStatus.MISSING`を77-Evidence
+   Artifactへ追加。
+5. **Source Vintage DataGap Persistence**: 既存`UNVERIFIED`DataGapが
+   77-Evidence Artifactへ継承されていることをFresh Processで確認。
+6. **Calendar Internal Completeness Boundary**: `TradingCalendar.
+   verified_complete_daily_coverage`(新規Field)+
+   `trading_calendar_payload_to_calendar(..., verify_complete_daily_
+   coverage=True)`(Opt-in、既存呼び出し元への影響なし)。
+7. **Builder Same-Month PIT Guard**: `build_latest_reported_fy_per_
+   historical_context()`に同一暦月Reject追加。
+8. **PER Evidence ID Revision Collision**: `latest_reported_fy_per_
+   evidence_id_v2()`/`latest_reported_fy_per_to_evidence_v2()`(新規、
+   Collision-Safe Identity)、既存v1は無変更。
+9. **D0089 Decision Documentation訂正**: 上記参照。
+10. **EvidenceRelation Semantics訂正**: 上記参照。
+
+### Architecture(§3、最小構成)
+
+- `lib/registry/evidence_registry.py`(新規): `EvidenceRegistry`
+  (Append-only JSONL、既存`ProvenanceStore`/`ResearchArtifactRegistry`と
+  同じStorage Pattern)。`register()`/`get()`/`all()`/`require()`のみ、
+  DB/Framework化はしていない。`EvidenceRecord`(Nested`SourceMetadata`・
+  Optional`AiDerivedProvenance`含む)をLosslessにRound-Tripする。
+  同一`evidence_id`の再登録はPayloadの同異を問わず無条件で
+  `AppendOnlyViolationError`(既存2 Registryと同じ設計、Upsert Semantics
+  を作らない)。
+- `lib/registry/provenance.py`: `parents_of()`(D0089で追加済み、本Round
+  変更なし)。
+- `lib/valuation/evidence.py`: `latest_reported_fy_per_evidence_id_v2()`
+  (entity_code + price_date + source_version_id)・
+  `latest_reported_fy_per_to_evidence_v2()`(新規)。既存v1 Function
+  (`latest_reported_fy_per_evidence_id()`/`latest_reported_fy_per_to_
+  evidence()`)は出力を含め無変更——`02_company_research/7203_Toyota_
+  Motor/research_artifacts.jsonl`に既にv1 ID(`EVID_LATEST_REPORTED_FY_
+  PER_7203_2024-11-14`)が実際に永続化・参照されていることを確認した上で、
+  Silentな意味変更を避けた(要件v1 §13)。共通のEvidence構築ロジックは
+  `_build_latest_reported_fy_per_evidence()`へ1箇所化し、v1/v2はどの
+  `evidence_id`を使うかだけが異なる(二重実装しない)。
+- `lib/valuation/historical_context_builder.py`: Historical/Current
+  Observation IDの導出をv1からv2へ切替(Historical Context自体はD0089
+  当日導入されたばかりで、他に永続化済みの参照が無いことを確認済み、
+  Breaking Changeにならない)。同一暦月Guardを追加(`(h.as_of.year, h.
+  as_of.month) == (current_reference_as_of.year, current_reference_as_
+  of.month)`のRecordを`LookAheadBiasError`でReject、timestampがReference
+  より前でも同様)。
+- `lib/valuation/historical_context_evidence.py`:
+  `verify_historical_context_provenance()`に`evidence_registry`引数を
+  追加(必須)。ID集合のSet Equalityだけでなく、各Parent IDが実際に
+  Registryへ存在し、`EvidenceType.FACT`・`DataLayer.DERIVED`・
+  `DataCapability.VALUATION`・`entity_code`一致・`available_at<=current_
+  reference_as_of`を満たすことまで検証する。
+- `lib/market_calendar.py`: `TradingCalendar.verified_complete_daily_
+  coverage: bool = False`(新規Field)。`completed_month_end_sessions()`
+  はこのFlagが`True`でなければ`TradingCalendarResolutionError`(既存
+  Exception再利用)。
+- `lib/data_sources/convert.py`:
+  `trading_calendar_payload_to_calendar(..., verify_complete_daily_
+  coverage: bool = False)`(新規Opt-in引数)。`True`の場合のみ、
+  `range_start`〜`range_end`の全暦日(HolDivの値を問わず)がRaw Payload
+  内に1件ずつ実在するかを検証し、欠落があれば`TradingCalendarResolution
+  Error`。既定`False`は既存の多数の呼び出し元(営業日のみの合成Fixtureを
+  使うBacktest Pipeline Test等)を壊さないための後方互換(実測で確認:
+  既定`True`にすると既存5 Test Fileが規約通りFailすることを確認した上で
+  Opt-inへ変更した)。
+
+### Calendar Completeness Source Audit(§17、推測禁止)
+
+変更前に実データで確認した(推測していない): `local_snapshot_input/
+trading_calendar.json`(1267件、2021-08-28〜2025-02-14)は、この範囲の
+**全暦日**(取引日・休場日・週末を問わず)を1件ずつ含んでいた(欠落0件、
+`HolDiv`分布: `0`(非営業日)392件・`1`(営業日)848件・`3`(Holiday
+Trading付き非営業日)27件、`2`(半休場日)は今回の実データ範囲に0件)。
+これによりJ-Quants V2 `/v2/markets/calendar`が要求範囲の全暦日を返す
+Provider Payload Semantics(Option A、Provider Payload自体からComplete
+Session Setを検証できる)であることを確認済み事実として採用した。
+
+### PER Evidence ID Collision実例(§12、実際に発見した具体的リスク)
+
+v1 ID(`entity_code`+`price_date`のみ)は、同一`price_date`だが異なる
+`source_version_id`(異なるFY Denominatorへの切替、EPS訂正等)を持つ
+2つのDistinct Factを区別できない。`as_of`はQuery Context(Fact自体の
+内容を決めない、同一`price_date`・`source_version_id`のRecordはどの
+`as_of`から`build_latest_reported_fy_per()`を呼んでもDeterministicに
+同一`multiple`を返す)であり、`corporate_action_basis_status`も現行
+Schemaでは実質`CONFIRMED_NO_ACTION`唯一のためIdentity不要と判断した
+(いずれもTestで確認、`entity_code`+`price_date`+`source_version_id`の
+3要素のみをv2 Identityとして採用)。
+
+### Real 7203 Evidence Persistence + Fresh Process Round Trip(§24-29、41、
+Fork実行 + 追加検証)
+
+Isolated Runtime Directory(Repo外、`02_company_research/7203_Toyota_
+Motor/`は無変更)で実施。Process A(構築・永続化)とProcess B(Genuine
+Subprocess、真にProcess境界を跨いだ再読込)は別々の`python.exe`
+呼び出し。
+
+**Historical Context数値回帰**: attempted_anchor_count=39・unavailable_
+denominator_count=9・corporate_action_excluded_count=0・sample_count=30・
+historical_sample_start_as_of=2022-05-31T15:00:00+09:00・end_as_of=
+2024-10-31T15:00:00+09:00・Regime(FY2022/3 eps=205.23 n=12、FY2023/3
+eps=179.47 n=12、FY2024/3 eps=365.94 n=6)・historical_min=
+6.947860304968027545499262174・historical_median=10.2360765969887443356
+2344686・historical_max=21.12887947846436730372764250・current_per=
+7.285347324698037929715253867・current_percentile=3.33333333333333333
+3333333333・current_minus_historical_median=-2.950729272290706405908
+192993・context_status=PARTIAL——D0089実測値とゼロ差分で完全一致
+(Identity/Persistence/PIT Hardeningを変更してもNumeric Valuation
+Outputは変わらないことを確認)。
+
+同一暦月Guardの実動作: `2024-11-01`(Current Reference `2024-11-15`と
+同一暦月)のHistorical Anchorを実際に混入させたところ`LookAheadBiasError`
+が発生することを確認した(実30件のSampleへは混入させていない)。
+
+**76→77 + DataGap**: P&L 16・Cash Flow 12・Balance Sheet 12・Guidance
+12・Positioning 20構築(2件がavailable_at=15:30 > as_of=15:00でPIT
+Filter除外、18 Usable)・Valuation 2(v1 ID、`LATEST_REPORTED_FY_PER≈
+7.2853473`・`CURRENT_FY_COMPANY_FORECAST_PER≈9.9192618`)・Same-Period
+YoY 4 = 76(D0086/D0089と完全一致)。Historical Context Evidence追加で
+77。新規`DataGap(topic="Historical Valuation Context Coverage", status=
+MISSING)`(Historical Contextは存在するが約2.4年のみで、より長い
+Historyが不足していることを明示、Negative Evidenceへは変換していない)と
+既存`DataGap(topic="...Source Vintage Completeness...", status=
+UNVERIFIED)`(重複追加せず、既存分がそのまま継承されていることを確認)の
+両方が77-Evidence Artifactの`data_gaps`に存在する。`data_confidence=
+LOW`・`evidence_confidence=MEDIUM`・`research_confidence=LOW`・
+`conclusion=INCONCLUSIVE`はEvidence追加前後で不変。
+
+**Persistence**: `artifact_included_evidence_count=77`。`lineage_only_
+evidence_count=31`(30 Historical + 1 Current、いずれもv2 Identity——
+既存77件のうちの2件(v1 IDのLATEST_REPORTED_FY_PER/CURRENT_FY_COMPANY_
+FORECAST_PER)とはID体系が異なるため重複しない、設計通り)。`total_
+unique_evidence_registry_nodes=108`(77+31、実測。当初の見積り「概ね
+107」は誤りだった前提(v1/v2 IDの一部重複)によるもので、実際には
+重複が存在しないため108が正しい実測値。107をHard-codeして成功扱いに
+していない)。
+
+**Fresh Process(Process B、真のSubprocess境界)検証結果(§26、全8項目
+確認)**:
+1. Artifactが解決し、`included_evidence_ids`が77件。
+2. 77件全てが`EvidenceRegistry.get()`で解決(失敗0件)。
+3. Historical Context Evidenceは77件に含まれ、解決可能。
+4. `parents_of()`が31 Linkを返し、31件全ての`from_id`が解決。
+5. `verify_historical_context_provenance()`本体をFresh Process内で
+   Read-only Snapshotから同一Recordを再導出した上で実行し、PASS
+   (構造的な手動再検証に加え、Production関数自体の実行で二重確認)。
+6. Historical Coverage MISSING・Source Vintage UNVERIFIED、両DataGapが
+   `data_gaps`にTopic一致で存在。
+7. `data_confidence`/`evidence_confidence`/`research_confidence`/
+   `conclusion`がPersisted JSONLからの再読込でLOW/MEDIUM/LOW/
+   INCONCLUSIVEのまま一致。
+8. **`RESEARCH_ARTIFACT_RELATION_PERSISTENCE_GAP`(正直な報告、回避せず)**:
+   `ResearchArtifact`Dataclass自体には`relations`Fieldが存在せず(実装
+   確認済み、`hasattr(artifact, "relations")`は`False`)、
+   `evidence_packet_id`もID参照文字列のみでPacket内容自体は永続化されない
+   ため、Relation Mapping(誰が`NEUTRAL`/`SUPPORTS`等か)はFresh Process
+   からの再構築では直接得られない。代替検証として、Historical Context
+   Evidence IDがBull/Base/Bear Caseいずれの`supporting_evidence_ids`にも
+   含まれないこと(NEUTRAL Evidenceが方向性Caseの根拠として引用されない、
+   D0086のValuation Evidenceと同じPattern)を確認し、かつ同一Relations
+   規則(Valuation Capability由来のParent-Lineage EvidenceはNEUTRAL)で
+   Fresh Process内でArtifactを再構築すると`included_evidence_ids`/
+   Confidence/Conclusionが完全に一致することを確認した。`ResearchArtifact`
+   Schemaの拡張(`relations`Fieldの追加)は本Roundでは行っていない
+   (既存Coreスキーマへの不要な拡張を避け、Gapとして正直に報告する方を
+   選択、要件v1 §42)。
+
+**Upstream(Price/EPS)Lineage Addressability(§10-11、29、当初Fork報告は
+代表4件のSampleのみだったため、Repo外の永続化済みRegistryを本Session側で
+再読込し全31件を追加検証、Production Code変更なし)**: 31件全ての`value_
+date`(Structured Field)からLocal Snapshotの該当日Price Barへ再照会し
+31/31成功。31件全ての`source.source_id`末尾から`source_version_id`を
+復元し、実際のLocal Snapshot Fundamentals(`parse_financial_summary_
+payload()`)から得た460件の実`FundamentalMetric.metric_id`集合との
+一致を確認し31/31成功(検証Script自身の初回実装ミス——`source.source_id`
+にv2マーカーが付くという誤った仮定——を修正した上での結果、Production
+Code自体に問題は無かった)。`UPSTREAM_RAW_ADDRESSABILITY_GAP`には該当
+しない。
+
+### Tests(§36-40)
+
+新規: `13_tests/test_evidence_registry.py`(16件、Register/Get/All/
+Fresh Instance Reload/Datetime Timezone/Enum/Date/Tuple/SourceMetadata
+Round-Trip・Duplicate ID Reject・Malformed JSON Fail Closed)。既存
+`13_tests/test_valuation_historical_context.py`拡張(Same-Month PIT
+Guard・ID Collision(同一price_date異なるsource_version_id→ID相違、
+同一Fact→Deterministic同一ID、Current/Historical非衝突)・Parent
+Existence Hardening(Missing Registry Node/Wrong Entity/Wrong
+Capability/Wrong Layer/Wrong Type/Future available_at、各々Reject)、
+既存`13_tests/test_market_calendar.py`(`verified_complete_daily_
+coverage=False`Reject)・`13_tests/test_data_sources.py`(Verify Opt-in
+Default/Internal Gap Fail Closed)へ追加。
+
+### Verification(§43)
+
+- `ruff check`/`ruff format --check`(対象10ファイル): 全PASS。
+- `mypy`(Production 9ファイル: `lib/market_calendar.py`・`lib/registry/
+  evidence_registry.py`・`lib/registry/provenance.py`・`lib/data_
+  sources/convert.py`・`lib/valuation/model.py`・`builder.py`・
+  `evidence.py`・`historical_context_builder.py`・`historical_context_
+  evidence.py`): Success、0 issues。
+- `pytest`(`13_tests/`Full Suite): 1237/1238 PASS。唯一の失敗は
+  `test_protected_path_hook.py::test_hook_warns_on_protected_screening_
+  tool_paths`で、D0074以来の既知Windows/Japanese Username Hook
+  Environment Issue(今回のScopeと無関係)。
+
+### Existing Valuation Regression(§33)
+
+D0077 Actual PER(≈7.2853473)・D0084 Current FY Forecast PER
+(≈9.9192618)・D0086 Same-period YoY・D0089 Historical Statisticsの
+いずれも本Round実測でD0089時点から不変であることを確認した。
+
+### Do Not(§44遵守確認)
+
+Peer・Consensus・Valuation Interpretation・Expected Return・Decision
+Engine・Forward Historical Context・Same-Regime Context v2・新Provider・
+新Fetchのいずれにも着手していない。H0001 Locked Testは実行していない。
+Immutable Raw Snapshotは無変更、既存`02_company_research/7203_Toyota_
+Motor/`Runtime Directoryも無変更。
+
+### Persistence / Commit対象
+
+`lib/registry/evidence_registry.py`(新規)・`lib/registry/provenance.py`
+(D0089から無変更、Import一覧確認のみ)・`lib/data_sources/convert.py`・
+`lib/market_calendar.py`・`lib/valuation/evidence.py`・`lib/valuation/
+historical_context_builder.py`・`lib/valuation/historical_context_
+evidence.py`・`13_tests/test_evidence_registry.py`(新規)・`13_tests/
+test_valuation_historical_context.py`・`13_tests/test_market_calendar.py`
+・`13_tests/test_data_sources.py`・このDECISIONS.md追記をCommit対象と
+する。Acceptance用EvidenceRegistry/ProvenanceStore/ResearchArtifact
+Registry JSONL(Isolated Runtime Directory、Repo外)・Scratch Script・
+Local Snapshot・`02_company_research/7203_Toyota_Motor/`はいずれも
+Commit対象外。
