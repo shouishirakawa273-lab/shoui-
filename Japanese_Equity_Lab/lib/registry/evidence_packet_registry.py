@@ -45,6 +45,7 @@ def _packet_to_dict(packet: EvidencePacket) -> dict[str, Any]:
         "relation_assignments": [
             {"evidence_id": a.evidence_id, "relation": a.relation.value} for a in packet.relation_assignments
         ],
+        "relation_assignments_tracked": packet.relation_assignments_tracked,
     }
 
 
@@ -68,6 +69,9 @@ def _packet_from_dict(data: dict[str, Any]) -> EvidencePacket:
             EvidenceRelationAssignment(evidence_id=a["evidence_id"], relation=EvidenceRelation(a["relation"]))
             for a in (d.get("relation_assignments") or ())
         ),
+        # Stage 3.15.3(D0092): 旧JSON(Field自体が存在しない、D0091以前に永続化された
+        # Packet)はFalseとしてRestoreする(Legacy後方互換、要件v1 §5)。
+        relation_assignments_tracked=bool(d.get("relation_assignments_tracked", False)),
     )
 
 

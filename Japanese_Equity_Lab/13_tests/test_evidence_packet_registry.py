@@ -39,6 +39,7 @@ def _full_packet(packet_id: str = "P1") -> EvidencePacket:
             EvidenceRelationAssignment(evidence_id="D", relation=EvidenceRelation.SUPPORTS),
             # Cは意図的にOmitted(relation_assignmentsに含めない)
         ),
+        relation_assignments_tracked=True,
     )
 
 

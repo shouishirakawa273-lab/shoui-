@@ -67,6 +67,34 @@ def latest_reported_fy_per_evidence_id_v2(record: LatestReportedFyPerRecord) -> 
     return f"EVID_{SOURCE_ID}_V2_{record.entity_code}_{record.price_date.isoformat()}_{record.source_version_id}"
 
 
+_V2_EVIDENCE_ID_PREFIX = f"EVID_{SOURCE_ID}_V2_"
+
+
+def is_latest_reported_fy_per_evidence(evidence: EvidenceRecord) -> bool:
+    """`evidence`がLATEST_REPORTED_FY_PER(Current Actual PER)由来か(v1/v2を
+    問わない)を、`source.source_type`で判定する(Stage 3.15.3、D0092)。
+
+    `CURRENT_FY_COMPANY_FORECAST_PER`(別のsource_type)や`LATEST_REPORTED_
+    FY_PER_HISTORICAL_CONTEXT`(同じく別のsource_type)はいずれも対象外
+    ——このFactが「解決済みCloseとFY実績EPSの比率そのもの」であることを
+    確認するのみで、値の解釈は一切行わない。
+    """
+    return evidence.source.source_type == SOURCE_ID
+
+
+def is_latest_reported_fy_per_v2_evidence(evidence: EvidenceRecord) -> bool:
+    """`evidence`がv2(Collision-Safe Identity、`latest_reported_fy_per_
+    evidence_id_v2()`)由来かを判定する(Stage 3.15.3、D0092)。
+
+    `evidence_id`のPrefix(`latest_reported_fy_per_evidence_id_v2()`が
+    生成する形式そのもの)で判定する——Free-form Parsingではなく、ID
+    生成関数自身が採用しているPrefixとの一致確認のみ(推測しない)。
+    v1(`latest_reported_fy_per_evidence_id()`)はこのPrefixを持たない
+    ため`False`を返す。
+    """
+    return is_latest_reported_fy_per_evidence(evidence) and evidence.evidence_id.startswith(_V2_EVIDENCE_ID_PREFIX)
+
+
 def latest_reported_fy_per_available_at(record: LatestReportedFyPerRecord) -> datetime:
     """`latest_reported_fy_per_to_evidence()`と同じavailable_at計算(要件v1-9、
     Price/Fundamentalsの両方が利用可能になった、より遅い方)を返す(Stage 3.15、
@@ -254,6 +282,8 @@ def current_fy_company_forecast_per_to_evidence(
 
 __all__ = [
     "current_fy_company_forecast_per_to_evidence",
+    "is_latest_reported_fy_per_evidence",
+    "is_latest_reported_fy_per_v2_evidence",
     "latest_reported_fy_per_available_at",
     "latest_reported_fy_per_evidence_id",
     "latest_reported_fy_per_evidence_id_v2",

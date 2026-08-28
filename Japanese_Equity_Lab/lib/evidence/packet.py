@@ -80,21 +80,42 @@ class EvidencePacket:
     unknowns: tuple[str, ...] = field(default_factory=tuple)
     provenance_id: str | None = None
     relation_assignments: tuple[EvidenceRelationAssignment, ...] = field(default_factory=tuple)
-    """Exact Relation Assignment(Stage 3.15.2、D0091)。空Tuple(既定)は
-    「Assignment自体をTrackしていないLegacy Packet」を表し、Consistency
-    Guardを一切実行しない(既存呼び出し・既存Testとの後方互換)。1件でも
-    含む場合、以下を全てfail closedで検証する: (1) `evidence_id`重複無し、
-    (2) 各`evidence_id`が`included_evidence_ids`に存在、(3) 各Assignmentの
-    `relation`に対応するBucket(`_RELATION_TO_FIELD`)へその`evidence_id`が
-    実際に含まれている、(4) Assignmentが無い`included_evidence_id`は
-    `unknowns`以外のBucketに存在しない(Omitted Evidenceが勝手にPositive/
-    Negative等へ紛れ込むことを防ぐ)。"""
+    """Exact Relation Assignment(Stage 3.15.2、D0091)。`relation_
+    assignments_tracked`参照。"""
+    relation_assignments_tracked: bool = False
+    """Exact Relation TrackingのMarker(Stage 3.15.3、D0092)。
+
+    **既知の欠陥への対応**: `relation_assignments == ()`だけでは、(A)
+    Legacy Packet(Relation Trackingという概念自体が存在しなかった)と
+    (B) Trackされているが全EvidenceがOmitted、の2状態がFresh Process後に
+    区別不能だった。このFieldを明示的なMarkerとして追加する。
+
+    `False`(既定、後方互換): Legacy——Exact Relation Mapping自体を
+    Trackしていない。この場合、`relation_assignments`は必ず空Tupleで
+    なければならず(そうでなければfail closed)、Consistency Guardは
+    実行しない(既存呼び出し・既存Testとの後方互換)。
+
+    `True`: Exact Relation Mappingを実際にTrackした——空Tupleであっても
+    「Trackした結果、全EvidenceがOmittedだった」ことを意味する(Legacyの
+    「そもそもTrackしていない」とは異なる)。この場合、Strong Final
+    Bucket Partition Contract(下記)を全てfail closedで検証する。
+    """
 
     def __post_init__(self) -> None:
         if self.as_of.tzinfo is None:
             raise ValueError("as_of はtz-awareである必要があります")
-        if not self.relation_assignments:
-            return
+
+        if not self.relation_assignments_tracked:
+            if self.relation_assignments:
+                raise ValueError(
+                    f"packet_id={self.packet_id}: relation_assignments_tracked=Falseですが"
+                    "relation_assignmentsが空ではありません(fail closed、Tracking Marker不整合。"
+                    "Trackする場合はrelation_assignments_tracked=Trueを明示してください)"
+                )
+            return  # Legacy Packet: Strong Partition Contractは実行しない(後方互換)
+
+        # --- 以下、relation_assignments_tracked=True の場合のみ実行 ---
+        # (Stage 3.15.3、D0092、Strong Final Bucket Partition Contract、要件v1 §8/§9)
 
         assigned_ids = [a.evidence_id for a in self.relation_assignments]
         if len(set(assigned_ids)) != len(assigned_ids):
@@ -102,15 +123,47 @@ class EvidencePacket:
             raise ValueError(f"packet_id={self.packet_id}: relation_assignmentsに重複したevidence_idがあります: {duplicates}")
 
         included = set(self.included_evidence_ids)
-        # `contradictory_evidence`は`_RELATION_TO_FIELD`のいかなる値からも到達しない
-        # (`conflicting_evidence_ids`専用の別経路、`EvidenceRelation`とは直交する概念)。
-        # したがってこのBucketへのMembershipはAssignment Omission Checkの対象外とする
-        # (Conflicting Sourcesの側は元々Relation Assignmentを持たない場合がある、要件v1 §4)。
-        non_unknown_buckets: dict[str, tuple[str, ...]] = {
+        all_buckets: dict[str, tuple[str, ...]] = {
             "positive_evidence": self.positive_evidence,
             "negative_evidence": self.negative_evidence,
             "alternative_explanation_evidence": self.alternative_explanation_evidence,
+            "contradictory_evidence": self.contradictory_evidence,
+            "unknowns": self.unknowns,
         }
+
+        # (1) Bucket内Duplicate禁止 + (2) 全Bucket ID ⊆ included_evidence_ids(Ghost ID Reject)
+        # + Membership Countの集計(→ (3) exactly one final bucket判定に使う)
+        membership_count: dict[str, int] = {}
+        for bucket_name, bucket_values in all_buckets.items():
+            if len(set(bucket_values)) != len(bucket_values):
+                dup = sorted({eid for eid in bucket_values if bucket_values.count(eid) > 1})
+                raise ValueError(f"packet_id={self.packet_id}: {bucket_name}に重複したevidence_idがあります: {dup}")
+            for evidence_id in bucket_values:
+                if evidence_id not in included:
+                    raise ValueError(
+                        f"packet_id={self.packet_id}: {bucket_name}のevidence_id={evidence_id}が"
+                        "included_evidence_idsに存在しません(Ghost Bucket ID、fail closed)"
+                    )
+                membership_count[evidence_id] = membership_count.get(evidence_id, 0) + 1
+
+        # (3) 1 Evidence IDはexactly one final bucketにのみ存在
+        multi_bucket = sorted(eid for eid, count in membership_count.items() if count > 1)
+        if multi_bucket:
+            raise ValueError(
+                f"packet_id={self.packet_id}: 複数のFinal Bucketに同時に存在するevidence_idがあります"
+                f"(fail closed、Exact Partition違反): {multi_bucket}"
+            )
+
+        # (4) union(all buckets) == set(included_evidence_ids)(未分類Evidence禁止)
+        unclassified = sorted(included - set(membership_count))
+        if unclassified:
+            raise ValueError(
+                f"packet_id={self.packet_id}: いずれのFinal Bucketにも分類されていないEvidenceが"
+                f"あります(fail closed、tracked Packetでは全Included Evidenceを分類する必要が"
+                f"あります): {unclassified}"
+            )
+
+        # Relation / Final Bucket Contract(要件v1 §9)
         for assignment in self.relation_assignments:
             if assignment.evidence_id not in included:
                 raise ValueError(
@@ -118,10 +171,10 @@ class EvidencePacket:
                     f"{assignment.evidence_id}がincluded_evidence_idsに存在しません"
                 )
             if assignment.evidence_id in self.contradictory_evidence:
-                # Conflict Override(要件v1 §2): Callerが元々指定したExact Relationは
-                # そのままAssignmentへ保持するが、最終的なBucketはConflict Overrideにより
-                # `contradictory_evidence`が優先されるため、Relationの自然なBucket
-                # (`_RELATION_TO_FIELD`)との一致は要求しない。
+                # Conflict Override(D0091 Critical Fix): Callerが元々指定したExact
+                # Relationはそのまま保持するが、最終的なBucketはConflict Overrideにより
+                # contradictory_evidenceが優先されるため、Relationの自然なBucket
+                # (_RELATION_TO_FIELD)との一致は要求しない。
                 continue
             expected_bucket = _RELATION_TO_FIELD[assignment.relation]
             if assignment.evidence_id not in getattr(self, expected_bucket):
@@ -131,9 +184,19 @@ class EvidencePacket:
                     "存在しません(Assignment/Bucket不整合、fail closed)"
                 )
 
+        # Assignmentが無く、かつcontradictory_evidenceにも無いEvidenceは
+        # unknowns以外のBucketに存在してはならない(Omitted Evidenceの
+        # 勝手なPositive/Negative等への紛れ込みを防ぐ)。
         unassigned = included - set(assigned_ids)
+        directional_buckets = {
+            "positive_evidence": self.positive_evidence,
+            "negative_evidence": self.negative_evidence,
+            "alternative_explanation_evidence": self.alternative_explanation_evidence,
+        }
         for evidence_id in unassigned:
-            for bucket_name, bucket_values in non_unknown_buckets.items():
+            if evidence_id in self.contradictory_evidence:
+                continue
+            for bucket_name, bucket_values in directional_buckets.items():
                 if evidence_id in bucket_values:
                     raise ValueError(
                         f"packet_id={self.packet_id}: evidence_id={evidence_id}はrelation_assignments"
@@ -250,4 +313,5 @@ def build_evidence_packet(
         contradictory_evidence=tuple(buckets["contradictory_evidence"]),
         unknowns=tuple(buckets["unknowns"]),
         relation_assignments=tuple(assignments),
+        relation_assignments_tracked=True,
     )

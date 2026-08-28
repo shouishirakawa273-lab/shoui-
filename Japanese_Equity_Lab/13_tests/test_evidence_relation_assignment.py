@@ -148,6 +148,7 @@ def test_inconsistent_assignment_and_bucket_is_rejected() -> None:
             included_evidence_ids=("E1",),
             negative_evidence=("E1",),
             relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
         )
 
 
@@ -160,6 +161,7 @@ def test_omitted_evidence_present_in_non_unknowns_bucket_is_rejected() -> None:
             included_evidence_ids=("E1", "E2"),
             positive_evidence=("E1", "E2"),
             relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
         )
 
 
@@ -175,6 +177,7 @@ def test_duplicate_evidence_id_in_relation_assignments_is_rejected() -> None:
                 EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),
                 EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),
             ),
+            relation_assignments_tracked=True,
         )
 
 
@@ -185,7 +188,9 @@ def test_relation_assignment_for_evidence_id_not_in_included_is_rejected() -> No
             research_question="q",
             as_of=_AS_OF,
             included_evidence_ids=("E1",),
+            unknowns=("E1",),
             relation_assignments=(EvidenceRelationAssignment(evidence_id="E_GHOST", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
         )
 
 
@@ -201,8 +206,231 @@ def test_conflicting_evidence_in_contradictory_bucket_without_assignment_is_allo
         contradictory_evidence=("E1",),
         positive_evidence=("E2",),
         relation_assignments=(EvidenceRelationAssignment(evidence_id="E2", relation=EvidenceRelation.SUPPORTS),),
+        relation_assignments_tracked=True,
     )
     assert "E1" not in {a.evidence_id for a in packet.relation_assignments}
+
+
+# --- §8/§9/§11: Strong Final Bucket Partition Contract(Stage 3.15.3、D0092) -----------------
+
+
+def test_ghost_id_in_bucket_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Ghost"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1", "E_GHOST"),
+            unknowns=(),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_same_id_in_positive_and_negative_is_rejected() -> None:
+    with pytest.raises(ValueError, match="複数のFinal Bucket"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1",),
+            negative_evidence=("E1",),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_same_id_in_contradictory_and_positive_is_rejected() -> None:
+    with pytest.raises(ValueError, match="複数のFinal Bucket"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            contradictory_evidence=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_bucket_internal_duplicate_is_rejected() -> None:
+    with pytest.raises(ValueError, match="重複"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1", "E1"),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_included_id_absent_from_all_buckets_is_rejected() -> None:
+    with pytest.raises(ValueError, match="いずれのFinal Bucketにも分類"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1", "E2"),
+            positive_evidence=("E1",),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_supports_assignment_but_in_negative_bucket_is_rejected() -> None:
+    with pytest.raises(ValueError, match="不整合"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            negative_evidence=("E1",),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_neutral_assignment_but_in_positive_bucket_is_rejected() -> None:
+    with pytest.raises(ValueError, match="不整合"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.NEUTRAL),),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_omitted_but_in_positive_bucket_is_rejected() -> None:
+    with pytest.raises(ValueError, match="紛れ込んで"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_supports_plus_conflicting_final_bucket_contradictory_only_passes() -> None:
+    packet = EvidencePacket(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        contradictory_evidence=("E1",),
+        relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+        relation_assignments_tracked=True,
+    )
+    assert packet.contradictory_evidence == ("E1",)
+    assert packet.positive_evidence == ()
+
+
+def test_neutral_plus_conflicting_final_bucket_contradictory_only_passes() -> None:
+    packet = EvidencePacket(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        contradictory_evidence=("E1",),
+        relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.NEUTRAL),),
+        relation_assignments_tracked=True,
+    )
+    assert packet.contradictory_evidence == ("E1",)
+    assert packet.unknowns == ()
+
+
+def test_omitted_plus_conflicting_final_bucket_contradictory_only_passes() -> None:
+    packet = EvidencePacket(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        contradictory_evidence=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=True,
+    )
+    assert packet.contradictory_evidence == ("E1",)
+
+
+# --- §2-6: Tracking Marker(Stage 3.15.3、D0092、Finding A) ---------------------------------
+
+
+def test_tracked_false_with_nonempty_assignments_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Tracking Marker不整合"):
+        EvidencePacket(
+            packet_id="P1",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(EvidenceRelationAssignment(evidence_id="E1", relation=EvidenceRelation.SUPPORTS),),
+            relation_assignments_tracked=False,
+        )
+
+
+def test_legacy_tracked_false_empty_assignments_is_allowed() -> None:
+    packet = EvidencePacket(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        positive_evidence=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=False,
+    )
+    assert packet.relation_assignments_tracked is False
+    assert packet.relation_assignments == ()
+
+
+def test_tracked_true_all_omitted_is_allowed_and_distinguishable_from_legacy() -> None:
+    """tracked=True + assignments=()(全EvidenceがOmitted)と、tracked=False +
+    assignments=()(Legacy、Trackingという概念自体が無い)は、両方とも
+    `relation_assignments == ()`だがMarkerで区別できる(Finding A)。"""
+    tracked_all_omitted = EvidencePacket(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        unknowns=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=True,
+    )
+    legacy = EvidencePacket(
+        packet_id="P2",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        positive_evidence=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=False,
+    )
+    assert tracked_all_omitted.relation_assignments == legacy.relation_assignments == ()
+    assert tracked_all_omitted.relation_assignments_tracked is True
+    assert legacy.relation_assignments_tracked is False
+
+
+def test_build_evidence_packet_always_sets_tracked_true() -> None:
+    e1 = _evidence("E1")
+    packet = build_evidence_packet(
+        packet_id="P1",
+        research_question="q",
+        as_of=_AS_OF,
+        evidence_pool=[e1],
+        relations={},
+    )
+    assert packet.relation_assignments_tracked is True
+    assert packet.relation_assignments == ()
+    assert packet.unknowns == ("E1",)
 
 
 # --- §32: Backward Compatibility(Legacy Packet) --------------------------------------------

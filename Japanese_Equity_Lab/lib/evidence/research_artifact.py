@@ -78,6 +78,7 @@ from lib.positioning.derived.price_derived import resolve_available_at
 from lib.positioning.model import PositioningRecord
 from lib.schemas.base import RecordMeta
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
+from lib.valuation.evidence import is_latest_reported_fy_per_evidence, is_latest_reported_fy_per_v2_evidence
 
 DEFAULT_ALLOWED_CAPABILITIES: frozenset[DataCapability] = frozenset(
     {DataCapability.FUNDAMENTAL, DataCapability.DISCLOSURE, DataCapability.POSITIONING, DataCapability.VALUATION}
@@ -432,6 +433,27 @@ def build_research_artifact(
             f"fundamentals_availability_semantics={fundamentals_availability_semantics.value}と"
             "実際の構築元(source.source_type)が一致しません(fail closed、A/B混在防止): "
             f"{sorted(e.evidence_id for e in mismatched_fundamentals)}"
+        )
+
+    # Stage 3.15.3(D0092): 新規構築するResearchArtifactでは、LATEST_REPORTED_
+    # FY_PER(Current Actual PER)Evidenceについてv1(Identity Collision Risk
+    # あり、D0090で特定)を許可せず、Collision-Safe Identityであるv2
+    # (`latest_reported_fy_per_evidence_id_v2()`)のみを受理する(fail
+    # closed)。**この検証は新規構築(この関数)のみに適用され、既に永続化
+    # 済みのv1 Artifact(`ResearchArtifactRegistry`によるReload)には一切
+    # 影響しない**(ReloadはこのFunctionを経由しないため構造的に無関係)。
+    # 既存v1 Converter API(`latest_reported_fy_per_to_evidence()`)自体は
+    # 削除しない、この構築時Guardのみが新規追加。
+    v1_latest_reported_fy_per = [
+        e for e in evidence_pool if is_latest_reported_fy_per_evidence(e) and not is_latest_reported_fy_per_v2_evidence(e)
+    ]
+    if v1_latest_reported_fy_per:
+        raise ValueError(
+            "evidence_poolにLATEST_REPORTED_FY_PER(Current Actual PER)のv1 Evidenceが含まれています"
+            "(fail closed、D0092: 新規構築ArtifactはCollision-Safe Identity(v2、latest_reported_fy_"
+            "per_to_evidence_v2())のみを許可します)。既に永続化済みのv1 Artifactを"
+            "ResearchArtifactRegistry経由でReloadする場合はこの関数を経由しないため無関係です: "
+            f"{sorted(e.evidence_id for e in v1_latest_reported_fy_per)}"
         )
 
     usable_evidence = filter_usable_at(evidence_pool, question.as_of)

@@ -10676,3 +10676,250 @@ Toyota_Motor/`Runtime Directoryはいずれも無変更。
 追記をCommit対象とする。Isolated Runtime DirectoryのRegistry JSONL・
 Scratch Script・Local Snapshot・`02_company_research/7203_Toyota_
 Motor/`はいずれもCommit対象外。
+
+## D0092 — Stage 3.15.3: Repository-Verifiable Closure(D0091 Runtime
+Acceptanceの4件Findingsをrepository自身で再現・独立検証可能な形へ固定、
+Stage 3.15完了)
+
+D0091でRuntime Acceptanceとして確認できたStage 3.15 Semanticsを、
+Repository自身が再現・独立検証できるProduction Code + Committed Tests +
+Reproducible Acceptance Harnessとして固定した。**本Roundもmain自身が
+同期実行した(fork/Agent Tool不使用、D0091からの継続方針)。**新しい
+Research Capabilityは追加していない。
+
+### 監査来歴についての訂正(継続方針)
+
+D0091と同じ理由により、今回の4 Findings(§2-25)も「実行済みCodex Final
+Closure Audit」の成果物としては記録しない(このSession内で該当する自動
+Audit Toolを実行した記録は無い)。実装後Reviewで指摘された事項として
+正直に記録する。D0089/D0090はRewriteせず、そのまま維持する。
+
+### Closed Findings(4件)
+
+**A. Tracking State Ambiguity**: `relation_assignments == ()`が
+「Legacy(Tracking概念自体が無い)」と「Tracked済み・全Evidence Omitted」
+の両方を意味していた問題。`EvidencePacket.relation_assignments_tracked:
+bool = False`(新規Field)で解消。
+
+**B. Packet Schema Integrity**: Tracked Packetを直接構築した場合、
+Ghost Bucket ID・同一IDの複数Bucket出現・Conflict Bucketと通常Bucketの
+二重登録等の矛盾状態を防ぐ機構が無かった問題。Strong Final Bucket
+Partition Contract(§8/§9)で解消。
+
+**C. Persisted Upstream Edge Wiring**: D0091 Real AcceptanceではPER→
+Price/PER→EPSのProvenance EdgeをOrchestration Scratchが直接手書き
+していた問題。`lib/valuation/provenance.py`(新規、Production Helper)
+で解消。
+
+**D. Current PER v2 Structural Policy**: 将来Callerが誤ってv1 Current
+PER EvidenceをNew ResearchArtifactへ混入させても検出できなかった問題。
+`build_research_artifact()`自身のGuardで解消。
+
+### Finding A: Relation Tracking Marker(§2-6)
+
+`lib/evidence/packet.py`: `EvidencePacket.relation_assignments_tracked:
+bool = False`(既定、後方互換)。
+
+- `False`かつ`relation_assignments`が非空: fail closed(Tracking Marker
+  不整合)。
+- `False`かつ`relation_assignments`が空: 許容(Legacy Packet、既存
+  Consistency Guardを一切実行しない)。
+- `True`かつ`relation_assignments`が空: 許容(「Trackした結果、全
+  EvidenceがOmittedだった」、Legacyとは意味的に区別される)。
+- `True`かつ非空: Strong Final Bucket Partition Contract(下記)を全て
+  検証。
+
+`build_evidence_packet()`は常に`relation_assignments_tracked=True`を
+設定する(新規構築されるPacketは全てExact Relationを追跡する)。
+`EvidencePacketRegistry`は`relation_assignments_tracked`Fieldを永続化し、
+旧JSON(Field自体が無い、D0091以前に永続化されたPacket)は`False`として
+Restoreする(後方互換)。
+
+### Finding B: Strong Final Bucket Partition Contract(§7-11)
+
+`relation_assignments_tracked=True`のPacketについて、`EvidencePacket.
+__post_init__`が以下を全てfail closedで検証する(`tracked=False`の
+Legacy Packetでは実行しない、後方互換維持):
+
+1. Bucket内Duplicate禁止。
+2. 全Bucket ID ⊆ `included_evidence_ids`(Ghost Bucket ID Reject)。
+3. 1 Evidence IDはExactly One Final Bucketにのみ存在(複数Bucket同時
+   所属をReject)。
+4. `union(全5 Bucket) == set(included_evidence_ids)`(未分類Evidence
+   禁止)。
+5. Relation/Final Bucket対応(`SUPPORTS→positive`等)——ただし
+   `contradictory_evidence`所属のEvidenceはConflict Overrideにより
+   この対応検証を免除する(`EvidenceRelation`のいかなる値からも
+   `contradictory_evidence`へは到達しないため、直交する別概念として
+   扱う、D0091 Critical Fixからの継続)。
+6. Assignment無しかつ`contradictory_evidence`にも無いEvidenceは
+   `unknowns`以外のBucketに存在しない。
+
+`build_evidence_packet()`はBucket決定とAssignment決定を同一Logicから
+Deterministicに導出するため、この関数経由で構築されたPacketは常に
+Partition Contractを満たす(直接構築(Direct Dataclass Construction)を
+迂回した誤用のみを検知する設計)。
+
+### Finding C: Production Upstream Provenance Helper(§12-24)
+
+`lib/valuation/provenance.py`(新規):
+
+- `register_latest_reported_fy_per_upstream_provenance(*, record,
+  evidence, provenance_store)`: 1件のv2 PER Evidenceについて、Price
+  Parent(`from_type="price_bar"`、`from_id=f"{entity_code}:
+  {price_date}"`)・EPS Parent(`from_type="fundamental_source_
+  version"`、`from_id=source_version_id`)のEdgeを`ProvenanceStore`へ
+  永続化する。書き込み前に`_validate_latest_reported_fy_per_evidence()`
+  (FACT/DERIVED/VALUATION/Entity一致/v2 Identity一致/Available_at一致)
+  をfail closedで検証。既存D0077 Natural-Key Pattern(`test_valuation_
+  evidence_traces_to_both_price_and_eps_parents`)をそのまま再利用、
+  新規Raw Registry・新規ID体系は追加していない。
+- `register_historical_context_provenance_bundle(*, context_record,
+  context_evidence, current_record, current_evidence, historical_
+  records, historical_evidences, evidence_registry, provenance_
+  store)`: 31件(Context→PER 30 Historical + 1 Current)のFull Wiringを
+  1回で行う薄いBundle Helper。書き込み開始前に件数・ID対応・Entity
+  一致・EvidenceRegistry実在を全て検証してからLinkを書き込む
+  (Provenance StoreはAppend-only・Rollback不可のため、Partial Writeを
+  最小化する設計)。書き込み後、既存`verify_historical_context_
+  provenance()`を実行して最終確認する。
+
+Duplicate Upstream登録は、`link_id`が`evidence.evidence_id`から
+Deterministicに導出されるため、既存`ProvenanceStore.add_link()`の
+`AppendOnlyViolationError`がそのまま伝播する(新しいException型は
+追加していない)。
+
+### Finding D: New Artifact v1 Current PER Guard(§20-24)
+
+`lib/valuation/evidence.py`: `is_latest_reported_fy_per_evidence()`/
+`is_latest_reported_fy_per_v2_evidence()`(新規Helper、`source.source_
+type`・`evidence_id` Prefixで判定、Free-form Parsingではない)。
+
+`lib/evidence/research_artifact.py::build_research_artifact()`:
+`evidence_pool`にLATEST_REPORTED_FY_PER(Current Actual PER)のv1
+Evidenceが含まれる場合、fail closedで`ValueError`(新規構築Guard)。
+
+**既存v1 Artifactへの非影響を構造的に保証**: `ResearchArtifactRegistry`
+によるReloadは`ResearchArtifact`Dataclassを直接復元するのみで
+`build_research_artifact()`を一切経由しない——したがってこのGuardは
+NEW CONSTRUCTIONのみに適用され、既に永続化済みのv1 Artifact
+(`02_company_research/7203_Toyota_Motor/research_artifacts.jsonl`)の
+Reloadには一切影響しない(構造的に無関係、Codeパスが完全に分離)。
+既存v1 Converter API(`latest_reported_fy_per_to_evidence()`)自体は
+削除していない。既存Test 1件(`test_research_artifact_accepts_
+valuation_evidence_neutral_relation`)がv1経由で`build_research_
+artifact()`を呼んでいたため、v2へ更新した(このGuard導入により
+必然的に必要になった最小限の変更)。
+
+### Reproducible Acceptance Harness(§26-35)
+
+`scripts/verify_stage3_15_7203_closure.py`(新規、Repository Commit):
+既存Local Snapshotが存在する環境であればNetwork Fetchなしに、D0090/
+D0091のReal 7203 Acceptanceを再現できる正式なRead-only Harness。
+Scratchからのlogic Copy-Pasteは行わず、既存Production API(Parser・
+A-Path Fundamentals Converter・Valuation Builder・v2 Evidence
+Converter・Historical Context Builder・`lib.valuation.provenance`・
+`EvidenceRegistry`・`EvidencePacketRegistry`・`ProvenanceStore`・
+`ResearchArtifactRegistry`・`build_research_artifact()`)を呼ぶ薄い
+Orchestrationのみで構成した。`--mode build`(Process A相当)/`--mode
+verify`(Process B相当)の2モード、`--snapshot-root`/`--output-dir`を
+明示指定可能(既定は安全なTemp Directory、`02_company_research/`等の
+危険なProduction Runtime Pathへは既定で書き込まない)。`as_of=2024-
+11-15T15:00 JST`固定、H0001 Locked Testには一切触れない。Machine-
+readable JSON SummaryをStdoutへ出力し、全項目PASS時のみExit Code 0。
+
+**main自身によるReal 7203実行結果(§35、`--mode build`→`--mode
+verify`を別々のPython Process呼び出しとして実行)**:
+
+```json
+{
+  "status": "PASS",
+  "artifact_evidence_count": 77,
+  "lineage_only_count": 30,
+  "unique_evidence_count": 107,
+  "context_to_per_edges": 31,
+  "per_to_price_edges": 31,
+  "per_to_eps_edges": 31,
+  "price_raw_resolved": 31,
+  "eps_raw_resolved": 31,
+  "context_relation": "NEUTRAL",
+  "relation_assignments_tracked": true,
+  "current_per_artifact_id": "EVID_LATEST_REPORTED_FY_PER_V2_7203_2024-11-14_ENV_7203_20240424575411_eps",
+  "context_current_parent_id": "EVID_LATEST_REPORTED_FY_PER_V2_7203_2024-11-14_ENV_7203_20240424575411_eps",
+  "v1_current_present": false,
+  "historical_sample_count": 30,
+  "numeric_regression": "ZERO_DIFF",
+  "confidence": {"data": "LOW", "evidence": "MEDIUM", "research": "LOW"},
+  "conclusion": "INCONCLUSIVE",
+  "failures": []
+}
+```
+
+`current_per_artifact_id == context_current_parent_id`(Current PER
+Shared Node、実測で確認)。`unique_evidence_count=107`(77+30、実測、
+Hard-code無し)。Historical数値回帰はD0089/D0090実測値とゼロ差分
+(`historical_min/median/max`・`current_percentile`・`current_minus_
+historical_median`いずれも完全一致)。
+
+### 標準Test Suiteとの分離(§34)
+
+`scripts/verify_stage3_15_7203_closure.py`は`13_tests/`配下に存在せず、
+既存標準Test Suite(`pytest 13_tests/`)から一切参照されない——したがって
+「標準Test SuiteがUser Local Snapshotへ依存しない」という要件は構造的に
+既に満たされている(新規に追加すべきSynthetic Fixture Testは無いと
+判断した、Harnessを構成する個々のProduction関数自体は既存Test群で
+別途Coverage済み)。
+
+### Tests(§11、§17-18)
+
+新規: `13_tests/test_valuation_provenance.py`(9件、31/31/31 Committed
+Deterministic Integration Test・Historical Count Mismatch・Wrong PER
+Evidence ID・Wrong Entity・Wrong Capability・Duplicate Historical
+Evidence・Fake Parent Evidence・Duplicate Upstream Registration・v1
+Evidence Reject、各々Fail Closed確認)。既存`13_tests/test_evidence_
+relation_assignment.py`拡張(Ghost Bucket ID・Multi-Bucket・Bucket内
+Duplicate・未分類Evidence・Relation/Bucket不整合・Tracking Marker
+不整合、各々Reject。Conflict+SUPPORTS/NEUTRAL/Omitted、各々Final
+Bucket=Contradictory OnlyでPass)。既存`13_tests/test_evidence_packet_
+registry.py`・`13_tests/test_valuation_latest_reported_fy_per.py`
+(v1/v2 Guard追加分)へも追加。全てPASS。
+
+### Verification(§38)
+
+- `ruff check`/`ruff format --check`(対象10ファイル): 全PASS。
+- `mypy`(Production 6ファイル: `lib/evidence/packet.py`・`lib/
+  registry/evidence_packet_registry.py`・`lib/evidence/research_
+  artifact.py`・`lib/valuation/evidence.py`・`lib/valuation/
+  provenance.py`・`scripts/verify_stage3_15_7203_closure.py`):
+  Success、0 issues。
+- `pytest`(`13_tests/`Full Suite): 1291/1292 PASS。唯一の失敗は
+  D0074以来の既知Windows/Japanese Username Hook Environment Issue
+  (今回のScopeと無関係)。
+
+### Historical Numeric / PIT Regression(§36-37)
+
+sample_count=30・Regime 12/12/6・historical_min/median/max・current_
+percentile・current_minus_historical_medianの全てがD0089/D0090実測値と
+ゼロ差分。Same-Month PIT Guard・Calendar Completeness Hardening・
+Available_at Semantics・Future Anchor Exclusion・DataGap Semanticsも
+全て不変であることを確認した。
+
+### Do Not(§40遵守確認)
+
+Peer・Consensus・Valuation Interpretation・Expected Return・Decision
+Engine・Same-Regime Context v2・Forward Historical Context・新
+Provider・新Fetchのいずれにも着手していない。H0001 Locked Testは実行
+していない。Immutable Raw Snapshot・既存`02_company_research/7203_
+Toyota_Motor/`はいずれも無変更。
+
+### Persistence / Commit対象
+
+`lib/evidence/packet.py`・`lib/registry/evidence_packet_registry.py`・
+`lib/evidence/research_artifact.py`・`lib/valuation/evidence.py`・
+`lib/valuation/provenance.py`(新規)・`scripts/verify_stage3_15_7203_
+closure.py`(新規)・`13_tests/test_evidence_relation_assignment.py`・
+`13_tests/test_evidence_packet_registry.py`・`13_tests/test_valuation_
+latest_reported_fy_per.py`・`13_tests/test_valuation_provenance.py`
+(新規)・このDECISIONS.md追記をCommit対象とする。Raw Data・Isolated
+Runtime DirectoryのRegistry JSONL・Acceptance Temp Output・`02_
+company_research/7203_Toyota_Motor/`はいずれもCommit対象外。

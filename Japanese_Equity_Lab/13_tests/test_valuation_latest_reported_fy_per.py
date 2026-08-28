@@ -14,7 +14,15 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from lib.errors import LookAheadBiasError
-from lib.evidence.model import AvailabilitySemantics, DataLayer, EvidenceRelation, SourceVersion, ValueAvailability
+from lib.evidence.model import (
+    AvailabilitySemantics,
+    DataLayer,
+    EvidenceRecord,
+    EvidenceRelation,
+    EvidenceType,
+    SourceVersion,
+    ValueAvailability,
+)
 from lib.evidence.research_artifact import (
     ConfidenceLevel,
     DataGap,
@@ -36,9 +44,14 @@ from lib.fundamentals.model import (
 from lib.fundamentals.view import fundamentals_as_of
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore
 from lib.schemas.price_data import CorporateAction, CorporateActionType, RawOHLCVBar
-from lib.sources.catalog import DataCapability, SourceAuthorityClass
+from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
 from lib.valuation.builder import build_latest_reported_fy_per, select_latest_close_bar
-from lib.valuation.evidence import latest_reported_fy_per_to_evidence
+from lib.valuation.evidence import (
+    is_latest_reported_fy_per_evidence,
+    is_latest_reported_fy_per_v2_evidence,
+    latest_reported_fy_per_to_evidence,
+    latest_reported_fy_per_to_evidence_v2,
+)
 from lib.valuation.model import CorporateActionBasisStatus
 
 _JST = ZoneInfo("Asia/Tokyo")
@@ -542,8 +555,11 @@ def test_valuation_evidence_traces_to_both_price_and_eps_parents(tmp_path: Path)
 
 
 def test_research_artifact_accepts_valuation_evidence_neutral_relation() -> None:
+    """Stage 3.15.3(D0092): 新規構築ArtifactはCollision-Safe Identity(v2)の
+    LATEST_REPORTED_FY_PER Evidenceのみを受理する(v1は`build_research_
+    artifact()`自体がfail closedで拒否する、下のTest参照)。"""
     record, _version = _build_record()
-    evidence = latest_reported_fy_per_to_evidence(
+    evidence = latest_reported_fy_per_to_evidence_v2(
         record,
         source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
         originating_source="JQUANTS_SOURCE_DATA",
@@ -567,3 +583,77 @@ def test_research_artifact_accepts_valuation_evidence_neutral_relation() -> None
     )
     assert evidence.evidence_id in artifact.included_evidence_ids
     assert evidence.evidence_id in packet.unknowns or evidence.evidence_id in packet.positive_evidence  # NEUTRALはunknownsへ
+
+
+def test_research_artifact_rejects_v1_latest_reported_fy_per_evidence() -> None:
+    """Stage 3.15.3(D0092): 新規構築ArtifactへのLATEST_REPORTED_FY_PER v1
+    Evidenceの混入をfail closedで拒否する(Identity Collision Risk、D0090)。
+    既に永続化済みのv1 Artifactを`ResearchArtifactRegistry`経由でReloadする
+    ことはこの関数を経由しないため無関係(§21確認)。"""
+    record, _version = _build_record()
+    v1_evidence = latest_reported_fy_per_to_evidence(
+        record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+    with pytest.raises(ValueError, match="v1 Evidence"):
+        build_research_artifact(
+            artifact_id="ART_TEST_VALUATION_V1_REJECT",
+            entity_code=_ENTITY,
+            question=ResearchQuestion(question_id="RQ_VAL_2", text="q", as_of=_AS_OF, related_codes=(_ENTITY,)),
+            evidence_pool=[v1_evidence],
+            relations={v1_evidence.evidence_id: EvidenceRelation.NEUTRAL},
+            bull_case=NarrativeCase(summary="Bull Caseは主張しない"),
+            base_case=NarrativeCase(summary="q", supporting_evidence_ids=(v1_evidence.evidence_id,)),
+            bear_case=NarrativeCase(summary="Bear Caseも主張しない"),
+            data_confidence=ConfidenceLevel.LOW,
+            evidence_confidence=ConfidenceLevel.MEDIUM,
+            research_confidence=ConfidenceLevel.LOW,
+            conclusion=ResearchConclusion.INCONCLUSIVE,
+            conclusion_rationale="v1 Reject Test",
+        )
+
+
+def test_is_latest_reported_fy_per_evidence_helpers_distinguish_v1_v2_and_other() -> None:
+    """Stage 3.15.3(D0092): `is_latest_reported_fy_per_evidence()`/`is_latest_
+    reported_fy_per_v2_evidence()`がv1/v2/その他(例: Forecast PER、別
+    source_type)を正しく区別することを確認する(Free-form Parsingではなく
+    source_type/evidence_id Prefixによる判定)。"""
+    record, _version = _build_record()
+    v1_evidence = latest_reported_fy_per_to_evidence(
+        record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+    v2_evidence = latest_reported_fy_per_to_evidence_v2(
+        record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+    assert is_latest_reported_fy_per_evidence(v1_evidence) is True
+    assert is_latest_reported_fy_per_v2_evidence(v1_evidence) is False
+    assert is_latest_reported_fy_per_evidence(v2_evidence) is True
+    assert is_latest_reported_fy_per_v2_evidence(v2_evidence) is True
+
+    other_evidence = EvidenceRecord(
+        evidence_id="EVID_OTHER_1",
+        evidence_type=EvidenceType.FACT,
+        layer=DataLayer.DERIVED,
+        capability=DataCapability.VALUATION,
+        content="不関係のEvidence",
+        source=SourceMetadata(
+            source_id="OTHER_1",
+            source_type="CURRENT_FY_COMPANY_FORECAST_PER",
+            provider_name="test",
+            source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+            primary_or_secondary=PrimaryOrSecondary.PRIMARY,
+            retrieved_at=_AS_OF,
+            published_at=_AS_OF,
+            available_at=_AS_OF,
+        ),
+    )
+    assert is_latest_reported_fy_per_evidence(other_evidence) is False
+    assert is_latest_reported_fy_per_v2_evidence(other_evidence) is False
