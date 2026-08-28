@@ -10884,6 +10884,31 @@ Bucket=Contradictory OnlyでPass)。既存`13_tests/test_evidence_packet_
 registry.py`・`13_tests/test_valuation_latest_reported_fy_per.py`
 (v1/v2 Guard追加分)へも追加。全てPASS。
 
+### Post-Commit Control Flow再検証(Early-Return Semantics)
+
+D0092 Commit後、`EvidencePacket.__post_init__()`のEarly-Return条件が
+`relation_assignments`(Tupleの中身)ではなく`relation_assignments_
+tracked`(Marker)で判定されているかを実ファイルで直接再確認する依頼を
+受けた。確認の結果、実装(`if not self.relation_assignments_tracked:
+... return`)は既に要求通り正しく、`relation_assignments_tracked=True`
+かつ`relation_assignments=()`(Tracked All-Omitted)のPacketは正しく
+Early Returnを迂回し、Strong Final Bucket Partition Contractを必ず
+通過することを実行時にも確認した(疑われたBugは実在しなかった)。
+
+念のため、`13_tests/test_evidence_relation_assignment.py`へ以下5件の
+明示的なA-E Regression Testを追加した(既存Testでも同じCode Pathは
+Cover済みだったが、Early-Return Semanticsそのものを直接固定する目的):
+
+- A: `tracked=True`・`assignments=()`・`unknowns=(E1,)` → PASS
+- B: `tracked=True`・`assignments=()`・`positive=(E1,)`のみ → REJECT
+- C: `tracked=True`・`assignments=()`・全Bucket空 → REJECT
+- D: `tracked=True`・`assignments=()`・同一IDが`unknowns`と`positive`両方
+  → REJECT
+- E: `tracked=False`・`assignments=()`・Legacy `positive=(E1,)` → PASS
+
+全5件PASS(§34参照、既存26件と合わせて`test_evidence_relation_
+assignment.py`は31件)。
+
 ### Verification(§38)
 
 - `ruff check`/`ruff format --check`(対象10ファイル): 全PASS。

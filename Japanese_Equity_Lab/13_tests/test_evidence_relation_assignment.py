@@ -448,3 +448,77 @@ def test_legacy_packet_with_empty_relation_assignments_skips_consistency_guard()
     )
     assert packet.relation_assignments == ()
     assert packet.positive_evidence == ("E1",)
+
+
+# --- Explicit A-E Regression(Tracked All-Omitted Early-Return Verification) ----------------
+#
+# `__post_init__`のEarly Returnは`relation_assignments_tracked`(§Finding A)で判定しており、
+# `relation_assignments`(Tupleの中身)では判定していない。したがって
+# tracked=True + assignments=() の「全EvidenceがOmitted」状態はEarly Returnをbypassし、
+# 必ずStrong Final Bucket Partition Contract(§Finding B)を通過する。以下A-Eで直接確認する。
+
+
+def test_regression_a_tracked_true_all_omitted_unknowns_only_passes() -> None:
+    packet = EvidencePacket(
+        packet_id="A",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        unknowns=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=True,
+    )
+    assert packet.relation_assignments_tracked is True
+    assert packet.relation_assignments == ()
+
+
+def test_regression_b_tracked_true_all_omitted_but_in_positive_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        EvidencePacket(
+            packet_id="B",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_regression_c_tracked_true_all_buckets_empty_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        EvidencePacket(
+            packet_id="C",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            relation_assignments=(),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_regression_d_tracked_true_same_id_in_two_buckets_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        EvidencePacket(
+            packet_id="D",
+            research_question="q",
+            as_of=_AS_OF,
+            included_evidence_ids=("E1",),
+            unknowns=("E1",),
+            positive_evidence=("E1",),
+            relation_assignments=(),
+            relation_assignments_tracked=True,
+        )
+
+
+def test_regression_e_tracked_false_legacy_positive_passes() -> None:
+    packet = EvidencePacket(
+        packet_id="E",
+        research_question="q",
+        as_of=_AS_OF,
+        included_evidence_ids=("E1",),
+        positive_evidence=("E1",),
+        relation_assignments=(),
+        relation_assignments_tracked=False,
+    )
+    assert packet.relation_assignments_tracked is False
