@@ -125,6 +125,18 @@ _EXPECTED_HISTORICAL_MEDIAN = Decimal("10.23607659698874433562344686")
 _EXPECTED_HISTORICAL_MAX = Decimal("21.12887947846436730372764250")
 _EXPECTED_CURRENT_PERCENTILE = Decimal("3.333333333333333333333333333")
 _EXPECTED_CURRENT_MINUS_MEDIAN = Decimal("-2.950729272290706405908192993")
+_EXPECTED_CURRENT_PER = Decimal("7.285347324698037929715253867")
+
+# Stage 3.15 Acceptance Contractとしてのみ使用するExpected Test Values(Stage 3.15.4、
+# D0093)。Production Business Logic(Historical Context Builder等)へこれらの値を
+# 埋め込むことはしない——あくまでこのHarness自身のVerify-Side Assertion専用。
+_EXPECTED_LINEAGE_ONLY_HISTORICAL_PER_COUNT = 30
+_EXPECTED_TOTAL_UNIQUE_EVIDENCE_NODES = 107
+_EXPECTED_REGIME_OBSERVATION_COUNTS: dict[date, int] = {
+    date(2022, 3, 31): 12,
+    date(2023, 3, 31): 12,
+    date(2024, 3, 31): 6,
+}
 
 
 def _build_and_persist(*, snapshot_root: Path, output_dir: Path) -> dict[str, object]:
@@ -460,6 +472,10 @@ def _verify(*, snapshot_root: Path, output_dir: Path) -> dict[str, object]:
 
     all_evidence = evidence_registry.all()
     total_unique_evidence_nodes = len(all_evidence)
+    # Stage 3.15.4(D0093): 実測Set(EvidenceRegistry.all())から求めたUnique Node数を
+    # Acceptance Contract上のExpected値(107、Production Magic Constantではない)と
+    # 実際にcheck()する(以前はSummaryへ書き出すのみだった、Codex Finding)。
+    check("total_unique_evidence_nodes", total_unique_evidence_nodes == _EXPECTED_TOTAL_UNIQUE_EVIDENCE_NODES)
     resolved_included = sum(1 for eid in artifact.included_evidence_ids if evidence_registry.get(eid) is not None)
     check("all_included_evidence_resolve", resolved_included == artifact_included_evidence_count)
 
@@ -477,6 +493,9 @@ def _verify(*, snapshot_root: Path, output_dir: Path) -> dict[str, object]:
     per_ids = [link.from_id for link in context_to_per_links]
     lineage_only_ids = [pid for pid in per_ids if pid not in set(artifact.included_evidence_ids)]
     lineage_only_historical_per = len(lineage_only_ids)
+    # Stage 3.15.4(D0093): 従来はSummaryへ書き出すのみでPASS/FAIL判定に使っていなかった
+    # (Codex Finding、Acceptance Harness Assertion Gap)。ここで実際にcheck()する。
+    check("lineage_only_historical_per_count", lineage_only_historical_per == _EXPECTED_LINEAGE_ONLY_HISTORICAL_PER_COUNT)
 
     from lib.valuation.model import SOURCE_ID as PER_SOURCE_ID  # noqa: N811
 
@@ -652,6 +671,30 @@ def _verify(*, snapshot_root: Path, output_dir: Path) -> dict[str, object]:
         )
     check("numeric_zero_regression", numeric_regression_ok)
 
+    # Stage 3.15.4(D0093): 以下3件はSummaryへ書き出すだけでPASS/FAIL判定に使っていな
+    # かった(Codex FINAL Stage 3.15 Acceptance Audit、NEEDS_TINY_FIXの唯一のFinding)。
+    # Summary値の自己比較ではなく、Fresh Processでreload/rederiveした実測値同士を
+    # 比較する。Production Semantics(Historical Context Builder/Model)は無変更。
+    regime_counts: dict[date, int] | None = None
+    if rederived_context is not None:
+        # Current PER Shared Node: Artifact内のCurrent PER Evidence IDと、
+        # Fresh Processで再導出したContextのcurrent_per_observation_idが厳密に
+        # 同一Evidence IDであることを検証する(§15要件)。
+        check("current_per_shared_node", current_per_artifact_id == rederived_context.current_per_observation_id)
+
+        # Exact Current PER: Decimal同士のExact Comparison(floatへ変換しない)。
+        check("current_per_exact_regression", rederived_context.current_per == _EXPECTED_CURRENT_PER)
+
+        # Regime Observation Counts: Production Context Recordが保持する型付き
+        # `denominator_regimes`(`DenominatorRegimeSummary.fiscal_period_end`/
+        # `.observation_count`)から直接算出する(文字列Parseや推測はしない)。
+        regime_counts = {r.fiscal_period_end: r.observation_count for r in rederived_context.denominator_regimes}
+        check("regime_observation_counts_12_12_6", regime_counts == _EXPECTED_REGIME_OBSERVATION_COUNTS)
+    else:
+        check("current_per_shared_node", False)
+        check("current_per_exact_regression", False)
+        check("regime_observation_counts_12_12_6", False)
+
     if rederived_context is not None:
         try:
             verify_historical_context_provenance(
@@ -679,8 +722,13 @@ def _verify(*, snapshot_root: Path, output_dir: Path) -> dict[str, object]:
         "relation_assignments_tracked": relation_assignments_tracked,
         "current_per_artifact_id": current_per_artifact_id,
         "context_current_parent_id": rederived_context.current_per_observation_id if rederived_context is not None else None,
+        "current_per_shared_node": current_per_artifact_id == rederived_context.current_per_observation_id
+        if rederived_context is not None
+        else False,
         "v1_current_present": v1_current_present,
         "historical_sample_count": historical_sample_count,
+        "current_per": str(rederived_context.current_per) if rederived_context is not None else None,
+        "regime_counts": {d.isoformat(): c for d, c in regime_counts.items()} if regime_counts is not None else None,
         "numeric_regression": "ZERO_DIFF" if numeric_regression_ok else "MISMATCH",
         "confidence": {
             "data": artifact.data_confidence.value,

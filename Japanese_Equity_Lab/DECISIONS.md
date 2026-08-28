@@ -10948,3 +10948,148 @@ latest_reported_fy_per.py`・`13_tests/test_valuation_provenance.py`
 (新規)・このDECISIONS.md追記をCommit対象とする。Raw Data・Isolated
 Runtime DirectoryのRegistry JSONL・Acceptance Temp Output・`02_
 company_research/7203_Toyota_Motor/`はいずれもCommit対象外。
+
+## D0093 — Stage 3.15.4: Final Acceptance Harness Assertion Closure
+(D0092 Harnessの唯一の残存Gap——実測はしていたがPASS/FAIL判定に使って
+いなかった5項目——をVerify-Side Assertionとして閉じる、Stage 3.15
+Repository-Verifiable Acceptance Contract完成)
+
+D0092で構築した`scripts/verify_stage3_15_7203_closure.py`は、
+`lineage_only_count`・`unique_evidence_count`・Current PER Shared
+Node・Current PER Exact Value・Regime Observation Countsの5項目を
+Machine-readable Summaryへ実測値として出力していたが、いずれも
+`check()`(PASS/FAIL判定)には使っていなかった——将来これらの値が
+崩れても`status="PASS"`のままになり得るというGapを、実装後Review
+(D0089以降と同じ理由により、本Sessionで実行した特定のAudit Toolの
+成果物としてではなく、指摘事項として記録する)で特定した。**Production
+Semantics(`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・
+Historical Context Model/Builder・PIT Logic・Calendar Logic・Evidence
+ID・Artifact Schema・Provenance Semantics)は一切変更していない**——
+対象は`scripts/verify_stage3_15_7203_closure.py`の`_verify()`関数のみ。
+
+### 追加したVerify-Side Assertion(5件)
+
+いずれも「Summaryへ既に書き出された値の自己比較」ではなく、Fresh
+Processで`EvidenceRegistry`/`ProvenanceStore`からReloadした値、または
+Read-only Local SnapshotからRederiveした`LatestReportedFyPerHistorical
+ContextRecord`の実測値を、Stage 3.15 Acceptance Contract上のExpected
+Test Value(Production Business Logicへは埋め込まない、Harness専用の
+Module-level定数)と比較する:
+
+1. `lineage_only_historical_per_count`: `lineage_only_historical_per
+   == 30`(実測Count、`_EXPECTED_LINEAGE_ONLY_HISTORICAL_PER_COUNT`)。
+2. `total_unique_evidence_nodes`: `EvidenceRegistry.all()`から求めた
+   実測Unique Node数 `== 107`(`_EXPECTED_TOTAL_UNIQUE_EVIDENCE_NODES`)。
+3. `current_per_shared_node`: Artifact内のCurrent PER Evidence ID
+   (`current_per_artifact_id`、Fresh Reload由来)と、Rederiveした
+   `rederived_context.current_per_observation_id`が厳密に同一Evidence
+   IDであることを`==`で検証(Summary表示のみだった状態から、実際の
+   Fail Closed判定へ格上げ)。
+4. `current_per_exact_regression`: `rederived_context.current_per ==
+   Decimal("7.285347324698037929715253867")`(`_EXPECTED_CURRENT_PER`、
+   Decimal同士のExact Comparison、floatへの変換は一切行わない)。
+5. `regime_observation_counts_12_12_6`: `rederived_context.
+   denominator_regimes`(Production Model、`DenominatorRegimeSummary.
+   fiscal_period_end`/`.observation_count`)から直接算出したDictが
+   `{date(2022,3,31):12, date(2023,3,31):12, date(2024,3,31):6}`
+   (`_EXPECTED_REGIME_OBSERVATION_COUNTS`)と一致することを検証
+   (文字列のFree-form Parseはしていない、型付きFieldから直接算出)。
+
+`rederived_context`が`None`の場合(Historical Contextの再導出自体が
+失敗した場合)は、上記3-5すべてを無条件でFail Closedにする(`else`分岐、
+Silent Skipしない)。
+
+### Machine-readable Summary拡張
+
+既存Fieldは削除せず、`current_per`(Decimalの文字列表現)・
+`regime_counts`(ISO日付文字列→件数のDict)・`current_per_shared_node`
+(bool)を追加した。`status`は全`check()`結果(既存+今回追加5件)の
+論理積に依存する——1件でも失敗すれば`status="FAIL"`・Exit Code非0。
+
+### Negative Assertion Sanity(§12、実データ改変なしのCode Review確認)
+
+各Assertionは固定Expected値との厳密な`==`比較であるため、以下は
+構造的に保証される(実データを意図的に壊すNegative Testは実施して
+いない、Section 10の指示通りHarness Code自体のInspectionと実際の
+Build/Verify実行でAcceptanceとした):
+
+- `unique_evidence_count`が108等107以外の値であれば
+  `total_unique_evidence_nodes` Check が必ずFailする。
+- `current_per_artifact_id`と`rederived_context.current_per_
+  observation_id`が1文字でも異なれば`current_per_shared_node`が
+  必ずFailする。
+- `current_per`がDecimalとして1桁でも異なれば(1 ulp相当)
+  `current_per_exact_regression`が必ずFailする。
+- Regime件数が12/12/6以外(例: 12/11/7)であれば、Dict Equality
+  比較により`regime_observation_counts_12_12_6`が必ずFailする。
+
+### Real 7203 Harness Acceptance(main自身が同期実行、fork/subagent
+不使用、Process A→別Python Process起動のProcess B)
+
+```json
+{
+  "status": "PASS",
+  "artifact_evidence_count": 77,
+  "lineage_only_count": 30,
+  "unique_evidence_count": 107,
+  "context_to_per_edges": 31,
+  "per_to_price_edges": 31,
+  "per_to_eps_edges": 31,
+  "price_raw_resolved": 31,
+  "eps_raw_resolved": 31,
+  "context_relation": "NEUTRAL",
+  "relation_assignments_tracked": true,
+  "current_per_artifact_id": "EVID_LATEST_REPORTED_FY_PER_V2_7203_2024-11-14_ENV_7203_20240424575411_eps",
+  "context_current_parent_id": "EVID_LATEST_REPORTED_FY_PER_V2_7203_2024-11-14_ENV_7203_20240424575411_eps",
+  "current_per_shared_node": true,
+  "v1_current_present": false,
+  "historical_sample_count": 30,
+  "current_per": "7.285347324698037929715253867",
+  "regime_counts": {"2022-03-31": 12, "2023-03-31": 12, "2024-03-31": 6},
+  "numeric_regression": "ZERO_DIFF",
+  "confidence": {"data": "LOW", "evidence": "MEDIUM", "research": "LOW"},
+  "conclusion": "INCONCLUSIVE",
+  "failures": []
+}
+```
+
+Exit Code=0を実測で確認した。5件の新規Assertion全てが実際にPASSした
+上でのGreen(以前のようにSummary値の存在だけでPASSしているのではない
+ことを確認済み)。
+
+### Tests
+
+Harness Assertion Logic自体は`_verify()`内にInlineされたCheck Collector
+であり、既存Test構造から独立してTargeted Unit Test化するにはHarness
+全体のRefactorが必要になる(要件v1 §10で明示的に「このためだけに大規模
+Refactorしない」と指定されたため、実施していない)。Section 10の代替
+条件(「Production Harness Code Inspection + Real Build/Verify
+Execution」)に従い、Code ReviewとReal 7203 Real Executionの両方で
+Acceptanceを行った(上記Negative Assertion Sanity参照)。既存
+`13_tests/`側の変更は無い(Production Semantics無変更のため、既存Test
+群への影響も無い)。
+
+### Verification
+
+- `ruff check`/`ruff format --check`(`scripts/verify_stage3_15_7203_
+  closure.py`): 全PASS。
+- `mypy`(同ファイル): Success、0 issues。
+- `pytest`(`13_tests/`Full Suite): 1296/1297 PASS。唯一の失敗は
+  D0074以来の既知Windows/Japanese Username Hook Environment Issue
+  (今回のScopeと無関係)。
+
+### Do Not(遵守確認)
+
+`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・Historical
+Context Model/Builder・PIT Logic・Calendar Logic・Evidence ID・
+Artifact Schema・Provenance Semanticsはいずれも無変更(D0092
+Production実装のFreezeを維持)。Peer・Consensus・Valuation
+Interpretationへは着手していない。H0001 Locked Testは実行していない。
+D0089/D0090/D0091/D0092はRewriteしていない。
+
+### Persistence / Commit対象
+
+`scripts/verify_stage3_15_7203_closure.py`・このDECISIONS.md追記のみを
+Commit対象とする。Isolated Runtime DirectoryのRegistry JSONL・
+Acceptance Temp Output・`02_company_research/7203_Toyota_Motor/`は
+いずれもCommit対象外。
