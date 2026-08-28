@@ -10461,3 +10461,218 @@ test_valuation_historical_context.py`・`13_tests/test_market_calendar.py`
 Registry JSONL(Isolated Runtime Directory、Repo外)・Scratch Script・
 Local Snapshot・`02_company_research/7203_Toyota_Motor/`はいずれも
 Commit対象外。
+
+## D0091 — Stage 3.15.2: Exact Relation Persistence + Full Upstream
+Provenance Closure(D0090残存4件のClosure、Stage 3.15 End-to-End完了)
+
+D0090の有効な成果(Historical Sample n=30・Regime 12/12/6・統計値・
+EvidenceRegistry・Calendar Completeness Hardening・Same-Month PIT
+Guard・DataGap群・Confidence/Conclusion)は全て維持したまま、実装後
+Reviewで残っていた4件を最小変更で閉じた。**本Roundはmain自身が同期実行
+した(fork/Agent Tool不使用)。**
+
+### 監査来歴についての訂正(§25-27、事実通り正確に記載)
+
+このSession内で「Codex Residual Audit」という名の自動化Auditツールを
+実行した記録は無い(D0089時点で確認したのと同じ制約)。したがって今回の
+指示文が挙げた4件のFindingsは「実行済みAuditの成果物」としてではなく、
+実装完了後のReviewで指摘された事項として記録する。
+
+先行Auditの正確な`FINAL_VERDICT`(D0089見出しの`READY_WITH_GUARDS`と
+D0089本文中の`NEEDS_SAMPLE_ARTIFACT`が相互に矛盾している点)についても、
+Repository内に原本またはImmutable Referenceが存在しないため、
+**`UNRESOLVABLE_FROM_REPO`**として記録する(どちらか一方をRepository
+Verified Factとして断定しない)。
+
+D0090の`STATUS=SUCCESS`/`FINAL_STAGE_3_15_STATUS=Production化完了`は、
+`RESEARCH_ARTIFACT_RELATION_PERSISTENCE_GAP`を認識した状態での表現として
+Overstatedだったため、**`D0090_SUCCESS_STATUS=SUCCESS_OVERSTATED`**、
+「Stage 3.15はD0091まで未完了だった」として記録する。D0089/D0090自体は
+Rewriteしない。
+
+### Closed Findings(4件)
+
+1. **Exact EvidenceRelation Persistence**: `EvidencePacket.relation_
+   assignments`(新規Field)+ `lib/registry/evidence_packet_registry.py`
+   (新規)。
+2. **New Production ArtifactのCurrent PER v2統一**: 新規77-Evidence
+   Artifactでは`latest_reported_fy_per_to_evidence_v2()`を使用。
+3. **PER → Price / EPS persisted Provenance edges**: 31+31件を実際に
+   `ProvenanceStore`へ永続化(以前は再照会による解決可能性の確認のみで、
+   Edge自体は永続化されていなかった)。
+4. **D0089/D0090 Audit Verdict Provenance訂正**: 上記参照。
+
+### Architecture(§2-9、Relation Persistence)
+
+- `lib/evidence/packet.py`: `EvidenceRelationAssignment`(`evidence_id`+
+  `relation`の最小Immutable Pair、Codex Option C——Relationを
+  `EvidenceRecord`の属性にもせず、`ResearchArtifact`への直接埋め込みも
+  せず、`EvidencePacket`とEvidenceの関係として保持)。`EvidencePacket.
+  relation_assignments: tuple[EvidenceRelationAssignment, ...]`(既定
+  空Tuple、Legacy Packet後方互換)。
+- **Critical Fix(実装中に発見・訂正)**: 当初実装は`conflicting_
+  evidence_ids`で上書きされたEvidenceについてAssignmentを一切作らない
+  設計にしてしまい、Callerが`relations`へ明示指定したExact Relation
+  (例: `SUPPORTS`)を消失させていた。修正後は、Conflict Overrideは
+  最終的な**Bucket**だけを`contradictory_evidence`へ強制し、Assignment
+  自体はCallerが指定したExact Relationをそのまま保持する
+  (`relations`にもConflictingにも一切現れないEvidenceのみ、真にAssignment
+  を持たない)。
+- `EvidencePacket.__post_init__` Consistency Guard: `relation_
+  assignments`が空でない場合のみ実行(Legacy Packet後方互換)。(1)
+  `evidence_id`重複無し、(2)`included_evidence_ids`に存在、(3)
+  `contradictory_evidence`に存在するEvidenceはBucket一致検証を免除
+  (Conflict Overrideにより通常の`_RELATION_TO_FIELD`対応Bucketとは
+  異なる場所へ配置されるため)、(4)非`contradictory_evidence`の場合は
+  Relationに対応するBucketへの実在を検証、(5)Assignmentが無い
+  `included_evidence_id`は`unknowns`以外のBucket(`contradictory_
+  evidence`を除く)に存在しないことを検証。
+- `build_evidence_packet()`: `relation_assignments`をBucket決定と同時に
+  Deterministicに導出(既存Bucket振り分けLogicと1箇所で同期、不整合が
+  構造的に起こり得ない)。
+- `lib/registry/evidence_packet_registry.py`(新規): `EvidencePacket
+  Registry`(Append-only JSONL、既存3 Registryと同じPattern)。
+  `record()`/`get()`/`all()`/`require()`のみ。`relation_assignments`
+  含め全FieldをLosslessにRound-Trip(Enum復元・Tuple復元・Datetime
+  Timezone保持)。
+
+### Current PER v2 Policy(§13-17)
+
+既存v1 API(`latest_reported_fy_per_evidence_id()`/`latest_reported_fy_
+per_to_evidence()`)は無変更(Production Code変更なし、既存Persisted
+Artifact`research_artifacts.jsonl`の参照を壊さない)。新規に構築する
+77-Evidence Artifactでは、Current Actual PER Evidenceに
+`latest_reported_fy_per_to_evidence_v2()`を使用し、Historical Context
+BuilderがInternal生成する`current_per_observation_id`(既にv2形式)と
+同一の`evidence_id`(`EVID_LATEST_REPORTED_FY_PER_V2_7203_2024-11-14_
+ENV_7203_20240424575411_eps`)を共有することを実測で確認した(§15の
+「Current PER included Evidence == Context current parent」要件)。
+新規EvidenceRegistryにはv1形式のCurrent PER Evidenceを一切登録して
+いない(実測で確認、`V1_CURRENT_PRESENT_IN_NEW_REGISTRY=False`)。
+
+### PER → Price/EPS Provenance Edges(§18-24)
+
+既存D0077 Natural-Key Pattern(`test_valuation_evidence_traces_to_
+both_price_and_eps_parents`)をそのまま再利用。新規Production Code
+追加は不要だった(Orchestration側で`ProvenanceStore.add_link()`を
+呼ぶだけで足りた)。
+
+```
+from_type="price_bar", from_id=f"{entity_code}:{price_date.isoformat()}",
+to_type="valuation_evidence", to_id=<v2 PER evidence_id>
+
+from_type="fundamental_source_version", from_id=source_version_id,
+to_type="valuation_evidence", to_id=<v2 PER evidence_id>
+```
+
+31件のv2 PER(30 Historical + 1 Current)全件について実際にEdgeを
+`ProvenanceStore`へ永続化した(以前のD0090は再照会による解決可能性の
+確認のみで、Edge自体を永続化していなかった)。
+
+### Real 7203 Acceptance(main自身が同期実行、fork不使用)
+
+Isolated Runtime Directory(Repo外、`02_company_research/7203_Toyota_
+Motor/`は無変更)。Process A(構築・永続化)とProcess B(別`python.exe`
+呼び出し、Genuine Subprocess境界)はBash Toolから直接起動した。
+
+**実測構成(既存Production Converterをそのまま使用、新規実装なし)**:
+P&L 16(`source_version_to_evidence_market_public_at()`、sales/
+operating_profit/net_profit/ordinary_profit/eps)・Cash Flow 12・
+Balance Sheet 12(いずれも`financial_quality_metric_to_evidence_
+market_public_at()`)・Guidance 12(`guidance_metric_to_evidence_
+market_public_at()`)・Positioning 20構築(2024-11-15分2件が
+`available_at=15:30 > as_of=15:00`でPIT Filter除外、18 Usable)・
+Valuation 2(Current FY Company Forecast PER≈9.919261822376009227220
+299885、v1無変更 + Current Actual PER≈7.285347324698037929715253867、
+v2使用)・Same-Period YoY 4・Historical Context 1 = **77 Included
+Evidence**(D0086/D0090と完全一致)。
+
+**EvidenceRegistry**: `ARTIFACT_INCLUDED_EVIDENCE_COUNT=77`・
+`LINEAGE_ONLY_HISTORICAL_PER_COUNT=30`(v2 Identity、77側とID重複
+無し)・`TOTAL_UNIQUE_EVIDENCE_REGISTRY_NODES=107`(77+30、実測。107を
+Hard-codeせず実際のUnique Evidence IDsから算出した結果が107と一致
+した)。
+
+**Provenance**: `CONTEXT_TO_PER_EDGES=31`・`PER_TO_PRICE_EDGES=31`・
+`PER_TO_EPS_EDGES=31`(全てPersisted、実測)。
+
+**Historical数値回帰(ゼロ差分)**: sample_count=30、Regime 12/12/6、
+historical_min=6.947860304968027545499262174、historical_median=
+10.23607659698874433562344686、historical_max=21.128879478464367303
+72764250、current_percentile=3.333333333333333333333333333、
+current_minus_historical_median=-2.950729272290706405908192993。
+D0077 Actual PER・D0084 Forecast PER・D0086 YoY・D0090 EvidenceRegistry
+Semantics・Calendar/PIT Hardeningのいずれも不変であることを実測で確認。
+
+### Fresh Process Acceptance(Process B、全項目PASS)
+
+1. Artifact解決、`included_evidence_ids`=77件。
+2. 77/77がEvidenceRegistry経由で解決(失敗0件)。
+3. Historical Context Evidenceは77件に含まれ、解決可能。
+4. `parents_of()`が31 Linkを返し、31件全ての`from_id`が解決。
+5. 手動構造再検証(FACT/DERIVED/VALUATION/entity/PIT、31件全て適合)
+   に加え、**Production関数`verify_historical_context_provenance()`
+   本体をFresh Process内で、Read-only Snapshotから再導出した同一
+   Recordに対して実行しPASS**(D0090の「再照会成功だけでPASS扱い」を
+   避け、実際のProduction Verificationロジックを通した)。
+6. Historical Coverage MISSING・Source Vintage UNVERIFIED、両DataGapが
+   `data_gaps`にTopic一致で存在。
+7. `data_confidence=LOW`・`evidence_confidence=MEDIUM`・`research_
+   confidence=LOW`・`conclusion=INCONCLUSIVE`がPersisted JSONLから
+   一致。
+8. **Exact Relation Recovery**: `ResearchArtifact.evidence_packet_id`
+   → `EvidencePacketRegistry`→`relation_assignments`という経路で、
+   Historical Context Evidenceの正確なRelationを直接復元し
+   `EvidenceRelation.NEUTRAL`であることを確認した(Bull/Base/Bear
+   Absenceからの推論ではなく、`EvidencePacketRegistry`からの直接
+   取得)。D0090の`RESEARCH_ARTIFACT_RELATION_PERSISTENCE_GAP`はこれで
+   解消。
+9. `PER_TO_PRICE_EDGES`/`PER_TO_EPS_EDGES`ともに31件全てが実際に
+   `ProvenanceStore`から取得でき(Persisted Edgeそのものの確認)、かつ
+   各Edgeの`from_id`(Price: `entity:date`、EPS: `source_version_id`)を
+   Local Snapshotへ再照会し31/31・31/31で実在を確認した(Persisted
+   Edge + Raw Addressabilityの両方を確認、`UPSTREAM_RAW_ADDRESSABILITY_
+   GAP`には該当しない)。
+10. Historical数値回帰、全項目ゼロ差分で再確認。
+
+**Explicit UNKNOWN/Omittedの区別(§12/§33)**: 実データの77-Evidence
+Artifactでは全EvidenceがNEUTRAL(このRoundはMeasurement Onlyであり
+Hypothesisに対するSUPPORTS/CONTRADICTS等の判定を一切行っていないため、
+自然にNEUTRAL以外の状態が発生しない)。Explicit UNKNOWN/Omittedの区別
+そのものはSynthetic Test(下記)で個別に検証済みであり、実データ
+Acceptanceでの発生有無とは独立して機能を確認している。
+
+### Tests(§33-36)
+
+新規: `13_tests/test_evidence_relation_assignment.py`(11件、NEUTRAL/
+UNKNOWN/Omitted区別・SUPPORTS/CONTRADICTS/ALTERNATIVE_EXPLANATION
+Round-Trip・Conflict Override時のExact Relation保持・Consistency
+Guard各種Reject)・`13_tests/test_evidence_packet_registry.py`(17件、
+Register/Get/All/Fresh Instance Reload・Datetime/Enum/Tuple Round-
+Trip・Legacy Packet後方互換・Duplicate Reject・Malformed JSON Fail
+Closed・Required Regression A/B/C/D全件)。全てPASS。
+
+### Verification(§39)
+
+- `ruff check`/`ruff format --check`: 全PASS。
+- `mypy`(`lib/evidence/packet.py`・`lib/registry/evidence_packet_
+  registry.py`): Success、0 issues。
+- `pytest`(`13_tests/`Full Suite): 1265/1266 PASS。唯一の失敗は既知の
+  Windows/Japanese Username Hook Environment Issue(Scope外)。
+
+### Do Not(§40遵守確認)
+
+Peer・Consensus・Valuation Interpretation・Expected Return・Decision
+Engine・Same-Regime Context v2・Forward Historical Context・新
+Provider・新Fetchのいずれにも着手していない。H0001 Locked Testは実行
+していない。Immutable Raw Snapshot・既存`02_company_research/7203_
+Toyota_Motor/`Runtime Directoryはいずれも無変更。
+
+### Persistence / Commit対象
+
+`lib/evidence/packet.py`・`lib/registry/evidence_packet_registry.py`
+(新規)・`13_tests/test_evidence_relation_assignment.py`(新規)・
+`13_tests/test_evidence_packet_registry.py`(新規)・このDECISIONS.md
+追記をCommit対象とする。Isolated Runtime DirectoryのRegistry JSONL・
+Scratch Script・Local Snapshot・`02_company_research/7203_Toyota_
+Motor/`はいずれもCommit対象外。
