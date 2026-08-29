@@ -26,6 +26,7 @@ from lib.peer.builder import (
 )
 from lib.peer.model import (
     MINIMUM_PEER_SAMPLE_COUNT,
+    AcceptedPeer,
     PeerComparisonRecord,
     PeerExclusionReason,
     PeerMetricAvailability,
@@ -38,6 +39,12 @@ from lib.valuation.model import CorporateActionBasisStatus, CurrentFyCompanyFore
 
 _JST = ZoneInfo("Asia/Tokyo")
 _AS_OF = datetime(2024, 11, 15, 15, 0, tzinfo=_JST)
+
+
+def _accepted_peer(entity_code: str, *, as_of: datetime = _AS_OF, classification_code: str = "3700") -> AcceptedPeer:
+    return AcceptedPeer(
+        entity_code=entity_code, classification_system="TSE_SECTOR_33", classification_code=classification_code, as_of=as_of
+    )
 
 
 def _per_record(
@@ -158,7 +165,7 @@ def test_comparison_record_metric_unavailable_when_peer_missing() -> None:
     )
     record = build_peer_comparison_record(
         target_entity_code="7203",
-        peer_entity_code="7267",
+        accepted_peer=_accepted_peer("7267"),
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
         comparison_as_of=_AS_OF,
         target_observation=target_obs,
@@ -173,7 +180,7 @@ def test_comparison_record_computes_difference_when_comparable() -> None:
     peer_obs = _per_observation("7267", multiple=Decimal("8"), source_version_id="SV_P")
     record = build_peer_comparison_record(
         target_entity_code="7203",
-        peer_entity_code="7267",
+        accepted_peer=_accepted_peer("7267"),
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
         comparison_as_of=_AS_OF,
         target_observation=target_obs,
@@ -190,7 +197,7 @@ def _comparison(peer_code: str, multiple: Decimal, target_obs: PeerMetricObserva
     peer_obs = _per_observation(peer_code, multiple=multiple, source_version_id=f"SV_{peer_code}")
     return build_peer_comparison_record(
         target_entity_code="7203",
-        peer_entity_code=peer_code,
+        accepted_peer=_accepted_peer(peer_code),
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
         comparison_as_of=_AS_OF,
         target_observation=target_obs,
@@ -249,7 +256,7 @@ def test_excluded_peer_not_counted_toward_sample() -> None:
     )
     excluded_record = build_peer_comparison_record(
         target_entity_code="7203",
-        peer_entity_code="2004",
+        accepted_peer=_accepted_peer("2004"),
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
         comparison_as_of=_AS_OF,
         target_observation=target_obs,
@@ -306,3 +313,111 @@ def test_target_unavailable_yields_no_aggregate() -> None:
         comparison_records=[],
     )
     assert ctx is None
+
+
+# --- D0096 Finding 1: AcceptedPeer Contract Enforcement (regressions A-D) ------
+
+
+def test_regression_a_comparison_builder_requires_accepted_peer_keyword() -> None:
+    """要件v1 §16-A: `build_peer_comparison_record()`はもはや生の
+    `peer_entity_code`を受け付けない(TypeError、Bypass Path撤去)。"""
+    target_obs = _per_observation("7203", multiple=Decimal("10"), source_version_id="SV_T")
+    peer_obs = _per_observation("7267", multiple=Decimal("8"), source_version_id="SV_P")
+    with pytest.raises(TypeError):
+        build_peer_comparison_record(
+            target_entity_code="7203",
+            peer_entity_code="7267",
+            metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+            comparison_as_of=_AS_OF,
+            target_observation=target_obs,
+            peer_observation=peer_obs,
+        )
+
+
+def test_regression_b_accepted_peer_entity_code_mismatch_fails_closed() -> None:
+    """要件v1 §16-B: `accepted_peer.entity_code != peer_observation.entity_code`
+    はfail closed。"""
+    target_obs = _per_observation("7203", multiple=Decimal("10"), source_version_id="SV_T")
+    peer_obs = _per_observation("7267", multiple=Decimal("8"), source_version_id="SV_P")
+    with pytest.raises(ValueError, match="peer_observation.entity_code"):
+        build_peer_comparison_record(
+            target_entity_code="7203",
+            accepted_peer=_accepted_peer("9999"),  # mismatched entity_code
+            metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+            comparison_as_of=_AS_OF,
+            target_observation=target_obs,
+            peer_observation=peer_obs,
+        )
+
+
+def test_regression_c_accepted_peer_as_of_mismatch_fails_closed() -> None:
+    """要件v1 §16-C: `accepted_peer.as_of != comparison_as_of`はfail closed。"""
+    target_obs = _per_observation("7203", multiple=Decimal("10"), source_version_id="SV_T")
+    peer_obs = _per_observation("7267", multiple=Decimal("8"), source_version_id="SV_P")
+    other_as_of = _AS_OF.replace(hour=10)
+    with pytest.raises(ValueError, match="comparison_as_of"):
+        build_peer_comparison_record(
+            target_entity_code="7203",
+            accepted_peer=_accepted_peer("7267", as_of=other_as_of),
+            metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+            comparison_as_of=_AS_OF,
+            target_observation=target_obs,
+            peer_observation=peer_obs,
+        )
+
+
+def test_regression_d_target_observation_entity_mismatch_fails_closed() -> None:
+    """要件v1 §16-D: `target_observation.entity_code != target_entity_code`
+    はfail closed。"""
+    target_obs = _per_observation("9999", multiple=Decimal("10"), source_version_id="SV_T")  # wrong entity
+    peer_obs = _per_observation("7267", multiple=Decimal("8"), source_version_id="SV_P")
+    with pytest.raises(ValueError, match="target_entity_code"):
+        build_peer_comparison_record(
+            target_entity_code="7203",
+            accepted_peer=_accepted_peer("7267"),
+            metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+            comparison_as_of=_AS_OF,
+            target_observation=target_obs,
+            peer_observation=peer_obs,
+        )
+
+
+# --- D0096 Finding 5: Wrong Metric Family Parent (regression K) ----------------
+
+
+def test_regression_k_wrong_metric_family_evidence_rejected() -> None:
+    """要件v1 §16-K: 同一Entity・PIT-Compatibleでも、Metric Familyが
+    異なるEvidence(CURRENT_FY_COMPANY_FORECAST_PER)を`latest_reported_
+    fy_per_record_to_peer_observation()`(LATEST_REPORTED_FY_PER専用)へ
+    渡すとfail closedで拒否される。"""
+    per_record = _per_record("7203", price_value=Decimal("1000"), eps_value=Decimal("100"), source_version_id="SV_A")
+    forecast_record = CurrentFyCompanyForecastPerRecord(
+        entity_code="7203",
+        as_of=_AS_OF,
+        price_date=date(2024, 11, 14),
+        price_value=Decimal("1000"),
+        price_available_at=session_close_at(date(2024, 11, 14)),
+        denominator_type="CURRENT_FY_COMPANY_FORECAST_EPS_CONSOLIDATED",
+        eps_value=Decimal("100"),
+        forecast_period_start=date(2024, 4, 1),
+        forecast_period_end=date(2025, 3, 31),
+        guidance_published_at=datetime(2024, 11, 6, 15, 30, tzinfo=_JST),
+        source_version_id="SV_A",
+        source_field="FEPS",
+        fiscal_year_target="NEXT",
+        disclosure_period_type="2Q",
+        consolidation_scope="CONSOLIDATED",
+        accounting_standard="IFRS",
+        calculation_expression="price_close=1000 / forecast_eps=100",
+        multiple=Decimal("10"),
+        corporate_action_basis_status=CorporateActionBasisStatus.CONFIRMED_NO_ACTION,
+    )
+    wrong_family_evidence = current_fy_company_forecast_per_to_evidence(
+        forecast_record,
+        source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+        originating_source="JQUANTS_SOURCE_DATA",
+        delivery_provider="JQUANTS",
+    )
+    # related_codes/value_dateだけを揃えても、Metric Family検証で拒否される。
+    with pytest.raises(ValueError, match="不適格|一致しません"):
+        latest_reported_fy_per_record_to_peer_observation(per_record, evidence=wrong_family_evidence, as_of=_AS_OF)

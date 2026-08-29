@@ -24,15 +24,18 @@ from decimal import Decimal
 
 from lib.evidence.model import EvidenceRecord
 from lib.peer.comparability import evaluate_peer_metric_comparability
+from lib.peer.evidence import verify_observation_parent_identity
 from lib.peer.model import (
     MINIMUM_PEER_SAMPLE_COUNT,
     SELECTION_VERSION_V1,
+    AcceptedPeer,
     PeerAggregateContext,
     PeerComparisonRecord,
     PeerMetricAvailability,
     PeerMetricObservation,
     PeerMetricType,
 )
+from lib.valuation.evidence import latest_reported_fy_per_evidence_id_v2
 from lib.valuation.model import (
     MEDIAN_METHOD_ORDERED_MIDPOINT,
     PERCENTILE_METHOD_EMPIRICAL_CDF_LE,
@@ -50,12 +53,30 @@ def latest_reported_fy_per_record_to_peer_observation(
     `lib.valuation.evidence.latest_reported_fy_per_to_evidence_v2()`で
     構築済みのものを渡す(このAdapter自身はEvidence ID採番Logicを持たない、
     二重実装しない)。
+
+    **Semantic Identity検証(Stage 3.17.1、D0096 Finding 5)**: `evidence`
+    が本当に`record`から構築されたものかを、`related_codes`一致だけでなく
+    (1)`lib.valuation.evidence.latest_reported_fy_per_evidence_id_v2()`
+    から導出される期待Evidence IDとの完全一致、(2)`verify_observation_
+    parent_identity()`によるMetric Family(`is_latest_reported_fy_per_
+    v2_evidence()`)・FACT/DERIVED/VALUATION・PIT検証、(3)`value_date`と
+    `record.price_date`の一致で検証する。これにより、`CURRENT_FY_
+    COMPANY_FORECAST_PER`Evidence等、意味的に誤ったParentが渡されても
+    fail closedで拒否する。
     """
-    if evidence.evidence_id is None or evidence.related_codes != (record.entity_code,):
-        raise ValueError(
-            f"evidence(evidence_id={evidence.evidence_id})がrecord(entity_code={record.entity_code})に"
-            "対応していません(related_codes不一致)"
-        )
+    expected_evidence_id = latest_reported_fy_per_evidence_id_v2(record)
+    problems: list[str] = []
+    if evidence.evidence_id != expected_evidence_id:
+        problems.append(f"evidence_id={evidence.evidence_id}が期待Evidence ID({expected_evidence_id})と一致しません")
+    if evidence.related_codes != (record.entity_code,):
+        problems.append(f"related_codes={evidence.related_codes}がrecord.entity_code({record.entity_code})と一致しません")
+    if evidence.value_date != record.price_date:
+        problems.append(f"value_date={evidence.value_date}がrecord.price_date({record.price_date})と一致しません")
+    if problems:
+        raise ValueError(f"evidence(evidence_id={evidence.evidence_id})がrecordに対応していません: {'; '.join(problems)}")
+    verify_observation_parent_identity(
+        evidence, entity_code=record.entity_code, metric_type=PeerMetricType.LATEST_REPORTED_FY_PER, as_of_ceiling=as_of
+    )
     return PeerMetricObservation(
         entity_code=record.entity_code,
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
@@ -76,12 +97,28 @@ def current_fy_company_forecast_per_record_to_peer_observation(
     出力)を`PeerMetricObservation`へ変換する。`forecast_period_end`を
     `fiscal_period_end`相当としてComparability Guard(`lib.peer.
     comparability.evaluate_peer_metric_comparability()`)へ渡す。
+
+    **Semantic Identity検証(Stage 3.17.1、D0096 Finding 5)**: この
+    Metric Familyには`lib.valuation.evidence`に公開Canonical Evidence ID
+    Helperが存在しない(Stage 3.15 Frozen、新設しない)ため、`related_
+    codes`一致・`value_date`(=`record.price_date`)一致に加え、
+    `verify_observation_parent_identity()`が`evidence.source.source_
+    type`(既存Export定数`SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER`)で
+    Metric Familyを検証する。
     """
-    if evidence.evidence_id is None or evidence.related_codes != (record.entity_code,):
-        raise ValueError(
-            f"evidence(evidence_id={evidence.evidence_id})がrecord(entity_code={record.entity_code})に"
-            "対応していません(related_codes不一致)"
-        )
+    problems: list[str] = []
+    if evidence.related_codes != (record.entity_code,):
+        problems.append(f"related_codes={evidence.related_codes}がrecord.entity_code({record.entity_code})と一致しません")
+    if evidence.value_date != record.price_date:
+        problems.append(f"value_date={evidence.value_date}がrecord.price_date({record.price_date})と一致しません")
+    if problems:
+        raise ValueError(f"evidence(evidence_id={evidence.evidence_id})がrecordに対応していません: {'; '.join(problems)}")
+    verify_observation_parent_identity(
+        evidence,
+        entity_code=record.entity_code,
+        metric_type=PeerMetricType.CURRENT_FY_COMPANY_FORECAST_PER,
+        as_of_ceiling=as_of,
+    )
     return PeerMetricObservation(
         entity_code=record.entity_code,
         metric_type=PeerMetricType.CURRENT_FY_COMPANY_FORECAST_PER,
@@ -120,7 +157,7 @@ def missing_peer_metric_observation(
 def build_peer_comparison_record(
     *,
     target_entity_code: str,
-    peer_entity_code: str,
+    accepted_peer: AcceptedPeer,
     metric_type: PeerMetricType,
     comparison_as_of: datetime,
     target_observation: PeerMetricObservation,
@@ -129,7 +166,50 @@ def build_peer_comparison_record(
     """1 Target × 1 Peer × 1 MetricのComparisonを、Comparability Guardを
     適用した上で構築する(要件v1 §10 Same-As-Of Rule + §12 Comparison
     Record)。Interpretationは一切含まない(単なる数値の差分のみ)。
+
+    **AcceptedPeer必須(Stage 3.17.1、D0096 Finding 1)**: 以前は生の
+    `peer_entity_code: str`を直接受け取れたため、`PeerCandidate` →
+    `evaluate_peer_entity_eligibility()` → `AcceptedPeer` → Comparison
+    というContractをProduction API自体が強制していなかった(Eligibility
+    Bypass、D0095 Codex Finding 1)。`accepted_peer`を必須Inputにし、
+    以下をfail closedで再検証することで、通常のProduction Comparison
+    PathがAcceptedPeer無しには進めないようにする(Test Fixture内で
+    `AcceptedPeer`を直接構築すること自体は許容、Production APIに
+    Bypass Pathを残さないことが目的):
+
+    - `accepted_peer.entity_code == peer_observation.entity_code`
+    - `accepted_peer.as_of == comparison_as_of`
+    - `target_observation.entity_code == target_entity_code`
+    - `target_observation.as_of == comparison_as_of`
+    - `peer_observation.as_of == comparison_as_of`
     """
+    if accepted_peer.entity_code != peer_observation.entity_code:
+        raise ValueError(
+            f"accepted_peer.entity_code({accepted_peer.entity_code})がpeer_observation.entity_code"
+            f"({peer_observation.entity_code})と一致しません(fail closed、Eligibility Bypass防止)"
+        )
+    if accepted_peer.as_of != comparison_as_of:
+        raise ValueError(
+            f"accepted_peer.as_of({accepted_peer.as_of.isoformat()})がcomparison_as_of"
+            f"({comparison_as_of.isoformat()})と一致しません(fail closed)"
+        )
+    if target_observation.entity_code != target_entity_code:
+        raise ValueError(
+            f"target_observation.entity_code({target_observation.entity_code})がtarget_entity_code"
+            f"({target_entity_code})と一致しません(fail closed)"
+        )
+    if target_observation.as_of != comparison_as_of:
+        raise ValueError(
+            f"target_observation.as_of({target_observation.as_of.isoformat()})がcomparison_as_of"
+            f"({comparison_as_of.isoformat()})と一致しません(Same-As-Of Rule違反、fail closed)"
+        )
+    if peer_observation.as_of != comparison_as_of:
+        raise ValueError(
+            f"peer_observation.as_of({peer_observation.as_of.isoformat()})がcomparison_as_of"
+            f"({comparison_as_of.isoformat()})と一致しません(Same-As-Of Rule違反、fail closed)"
+        )
+
+    peer_entity_code = accepted_peer.entity_code
     reasons = evaluate_peer_metric_comparability(
         metric_type, target_observation=target_observation, peer_observation=peer_observation
     )

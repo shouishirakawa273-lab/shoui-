@@ -100,9 +100,16 @@ def resolve_peer_candidate_universe(
 
     snapshot_dates: set[date] = set()
     entity_rows: dict[str, list[dict[str, str | None]]] = {}
+    # Stage 3.17.1(D0096 Finding 2): Dateが欠損した行を`snapshot_dates`から
+    # 静かに除外するだけでは、「Dateが無い行が存在する」という事実自体が
+    # 失われる(Codex reproduction: Target行のみDate=as_ofでPeer候補行の
+    # Date=Noneの場合、Peer候補行を無視してTarget行だけからRESOLVEDと
+    # 誤判定できてしまう)。正規化に成功した行ごとにDate有無を記録する。
+    missing_date_entity_codes: set[str] = set()
     for row in classification_rows:
         raw_date = row.get(snapshot_date_field)
-        if raw_date is not None and raw_date != "":
+        has_date = raw_date is not None and raw_date != ""
+        if has_date:
             snapshot_dates.add(date.fromisoformat(str(raw_date)))
         provider_code = row.get(code_field)
         if provider_code is None:
@@ -111,6 +118,8 @@ def resolve_peer_candidate_universe(
             internal_code = normalize_provider_code_to_internal(str(provider_code))
         except TickerCodeNormalizationError:
             continue
+        if not has_date:
+            missing_date_entity_codes.add(internal_code)
         entity_rows.setdefault(internal_code, []).append(
             {
                 "provider_code": str(provider_code),
@@ -126,12 +135,12 @@ def resolve_peer_candidate_universe(
         )
     classification_snapshot_as_of = next(iter(snapshot_dates), None)
 
-    ambiguous_count = 0
+    ambiguous_entity_codes: list[str] = []
     resolved_rows: dict[str, dict[str, str | None]] = {}
     for internal_code, rows in entity_rows.items():
         distinct = {(r["classification_code"], r["company_name"], r["provider_code"]) for r in rows}
         if len(distinct) > 1:
-            ambiguous_count += 1
+            ambiguous_entity_codes.append(internal_code)
             continue
         resolved_rows[internal_code] = rows[0]
 
@@ -192,8 +201,24 @@ def resolve_peer_candidate_universe(
             "という保証は無く(今日の分類を過去へ無条件に遡らせない、要件v1 §6)、Membership自体はPIT未証明です"
             "(fail closed、resolution=PARTIAL)。"
         )
-    if ambiguous_count:
-        pit_note += f" 注: {ambiguous_count}件のInternal CodeがEntity Identity Ambiguousのため除外しました。"
+
+    incomplete_entity_codes = tuple(sorted(missing_date_entity_codes))
+    ambiguous_entity_codes_tuple = tuple(sorted(ambiguous_entity_codes))
+
+    # Stage 3.17.1(D0096 Finding 2): Date欠損行・Entity Identity Ambiguous行が
+    # 1件でも存在すれば、Snapshot Completenessを証明できないため、たとえ
+    # Date一致でも`RESOLVED`を主張しない(fail closed、`PeerUniverseSnapshot.
+    # __post_init__`が同じ制約を型としても強制する、Defense-in-depth)。
+    if (incomplete_entity_codes or ambiguous_entity_codes_tuple) and resolution == UniverseResolution.RESOLVED:
+        resolution = UniverseResolution.PARTIAL
+        pit_note = (
+            "classification_snapshot_as_ofはas_ofと一致していますが、Snapshot Completenessを"
+            "保証できないEntityが存在するためRESOLVEDにしません(fail closed、要件v1 §4 Finding 2): "
+            f"incomplete_entity_codes={list(incomplete_entity_codes)}、"
+            f"ambiguous_entity_codes={list(ambiguous_entity_codes_tuple)}"
+        )
+    elif ambiguous_entity_codes_tuple:
+        pit_note += f" 注: {len(ambiguous_entity_codes_tuple)}件のInternal CodeがEntity Identity Ambiguousのため除外しました。"
 
     return PeerUniverseSnapshot(
         target_entity_code=target_entity_code,
@@ -204,6 +229,8 @@ def resolve_peer_candidate_universe(
         resolution=resolution,
         classification_snapshot_as_of=classification_snapshot_as_of,
         pit_note=pit_note,
+        incomplete_entity_codes=incomplete_entity_codes,
+        ambiguous_entity_codes=ambiguous_entity_codes_tuple,
     )
 
 

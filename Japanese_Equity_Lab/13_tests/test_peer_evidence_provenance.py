@@ -9,11 +9,12 @@ Peer Metric Observationとのlineageを検証可能にする(要件v1 §3/§4)�
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
 from lib.evidence.model import DataLayer, EvidenceType
 from lib.market_calendar import session_close_at
 from lib.peer.builder import (
@@ -26,7 +27,7 @@ from lib.peer.evidence import (
     peer_valuation_context_to_evidence,
     verify_peer_context_provenance,
 )
-from lib.peer.model import PeerMetricType
+from lib.peer.model import AcceptedPeer, PeerMetricType
 from lib.peer.provenance import register_peer_context_provenance_bundle
 from lib.registry.evidence_registry import EvidenceRegistry
 from lib.registry.provenance import ProvenanceStore
@@ -39,6 +40,10 @@ _AS_OF = datetime(2024, 11, 15, 15, 0, tzinfo=_JST)
 _AUTH = SourceAuthorityClass.PRIMARY_OFFICIAL
 _ORIG = "JQUANTS_SOURCE_DATA"
 _DELIV = "JQUANTS"
+
+
+def _accepted_peer(entity_code: str, *, as_of: datetime = _AS_OF) -> AcceptedPeer:
+    return AcceptedPeer(entity_code=entity_code, classification_system="TSE_SECTOR_33", classification_code="3700", as_of=as_of)
 
 
 def _per_record(entity_code: str, *, multiple: Decimal, source_version_id: str) -> LatestReportedFyPerRecord:
@@ -84,7 +89,7 @@ def _build_full_context(registry: EvidenceRegistry):
         comparison_records.append(
             build_peer_comparison_record(
                 target_entity_code="7203",
-                peer_entity_code=code,
+                accepted_peer=_accepted_peer(code),
                 metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
                 comparison_as_of=_AS_OF,
                 target_observation=target_obs,
@@ -125,7 +130,7 @@ def test_evidence_id_changes_when_peer_set_changes(tmp_path: Path) -> None:
         comparisons.append(
             build_peer_comparison_record(
                 target_entity_code="7203",
-                peer_entity_code=code,
+                accepted_peer=_accepted_peer(code),
                 metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
                 comparison_as_of=_AS_OF,
                 target_observation=target_obs2,
@@ -250,7 +255,7 @@ def test_excluded_peer_not_a_provenance_parent(tmp_path: Path) -> None:
         comparisons.append(
             build_peer_comparison_record(
                 target_entity_code="7203",
-                peer_entity_code=code,
+                accepted_peer=_accepted_peer(code),
                 metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
                 comparison_as_of=_AS_OF,
                 target_observation=target_obs,
@@ -264,7 +269,7 @@ def test_excluded_peer_not_a_provenance_parent(tmp_path: Path) -> None:
     )
     excluded_comparison = build_peer_comparison_record(
         target_entity_code="7203",
-        peer_entity_code="4999",
+        accepted_peer=_accepted_peer("4999"),
         metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
         comparison_as_of=_AS_OF,
         target_observation=target_obs,
@@ -294,3 +299,156 @@ def test_excluded_peer_not_a_provenance_parent(tmp_path: Path) -> None:
     parents = provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id)
     parent_ids = {p.from_id for p in parents}
     assert excluded_evidence.evidence_id not in parent_ids
+
+
+# --- D0096 Finding 4: Full Timestamp Evidence Identity (regressions I, J) ------
+
+
+def _register_entity_at(entity_code: str, multiple: Decimal, registry: EvidenceRegistry, *, as_of: datetime):
+    record = _per_record(entity_code, multiple=multiple, source_version_id=f"SV_{entity_code}")
+    evidence = latest_reported_fy_per_to_evidence_v2(
+        record, source_authority_class=_AUTH, originating_source=_ORIG, delivery_provider=_DELIV
+    )
+    registry.register(evidence)
+    observation = latest_reported_fy_per_record_to_peer_observation(record, evidence=evidence, as_of=as_of)
+    return record, evidence, observation
+
+
+def _build_full_context_at(registry: EvidenceRegistry, *, as_of: datetime):
+    _t_rec, _t_ev, target_obs = _register_entity_at("7203", Decimal("10"), registry, as_of=as_of)
+    comparison_records = []
+    for code, multiple in (("2001", Decimal("7")), ("2002", Decimal("8")), ("2003", Decimal("9"))):
+        _rec, _ev, obs = _register_entity_at(code, multiple, registry, as_of=as_of)
+        comparison_records.append(
+            build_peer_comparison_record(
+                target_entity_code="7203",
+                accepted_peer=_accepted_peer(code, as_of=as_of),
+                metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+                comparison_as_of=as_of,
+                target_observation=target_obs,
+                peer_observation=obs,
+            )
+        )
+    context = build_peer_aggregate_context(
+        target_entity_code="7203",
+        metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
+        as_of=as_of,
+        target_observation=target_obs,
+        comparison_records=comparison_records,
+    )
+    assert context is not None
+    return context
+
+
+def test_regression_i_same_day_different_timestamp_ids_differ(tmp_path: Path) -> None:
+    """要件v1 §16-I: 同日でも時刻が異なればPeer Context Evidence IDが
+    異なる(以前は`as_of.date()`のみで日付が同じなら衝突していた)。"""
+    morning = datetime(2024, 11, 15, 10, 0, tzinfo=_JST)
+    afternoon = datetime(2024, 11, 15, 15, 0, tzinfo=_JST)
+    ctx_morning = _build_full_context_at(EvidenceRegistry(tmp_path / "morning.jsonl"), as_of=morning)
+    ctx_afternoon = _build_full_context_at(EvidenceRegistry(tmp_path / "afternoon.jsonl"), as_of=afternoon)
+    assert peer_valuation_context_evidence_id(ctx_morning) != peer_valuation_context_evidence_id(ctx_afternoon)
+
+
+def test_regression_j_same_instant_different_tz_offset_same_id(tmp_path: Path) -> None:
+    """要件v1 §16-J: 同一Instantを指す異なるTimezone Offset表記の
+    as_ofは、Canonical UTC Normalizeにより同一Evidence IDになる。"""
+    jst_repr = datetime(2024, 11, 15, 15, 0, tzinfo=_JST)
+    utc_repr = jst_repr.astimezone(UTC)
+    assert jst_repr == utc_repr  # same instant, different tzinfo object
+    ctx_jst = _build_full_context_at(EvidenceRegistry(tmp_path / "jst.jsonl"), as_of=jst_repr)
+    ctx_utc = _build_full_context_at(EvidenceRegistry(tmp_path / "utc.jsonl"), as_of=utc_repr)
+    assert peer_valuation_context_evidence_id(ctx_jst) == peer_valuation_context_evidence_id(ctx_utc)
+
+
+# --- D0096 Finding 6: Validate Optional Upstream Mapping Before Write (L, M) ---
+
+
+def test_regression_l_extra_entity_in_upstream_mapping_raises_before_write(tmp_path: Path) -> None:
+    """要件v1 §16-L: `latest_reported_fy_per_records_by_entity`に
+    Context外の余分なEntityが含まれる場合、Context->Observation第1階層
+    Linkすら1件も書き込まれる前にfail closedする。"""
+    evidence_path = tmp_path / "evidence_registry.jsonl"
+    provenance_path = tmp_path / "provenance.jsonl"
+    registry = EvidenceRegistry(evidence_path)
+    ctx, peer_recs = _build_full_context(registry)
+    context_evidence = peer_valuation_context_to_evidence(
+        ctx, source_authority_class=_AUTH, originating_source=_ORIG, delivery_provider=_DELIV
+    )
+    registry.register(context_evidence)
+    provenance_store = ProvenanceStore(provenance_path)
+
+    target_record = _per_record("7203", multiple=Decimal("10"), source_version_id="SV_7203")
+    extra_record = _per_record("9999", multiple=Decimal("5"), source_version_id="SV_9999")  # not a target/included peer
+    records_by_entity = {"7203": target_record, **peer_recs, "9999": extra_record}
+
+    with pytest.raises(ValueError, match="余分なEntity"):
+        register_peer_context_provenance_bundle(
+            context_record=ctx,
+            context_evidence=context_evidence,
+            evidence_registry=registry,
+            provenance_store=provenance_store,
+            latest_reported_fy_per_records_by_entity=records_by_entity,
+        )
+    # No first-tier Context -> Observation link was written despite the failure.
+    assert provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id) == []
+
+
+def test_regression_m_mismatched_record_entity_in_upstream_mapping_raises_before_write(tmp_path: Path) -> None:
+    """要件v1 §16-M: `latest_reported_fy_per_records_by_entity`のMapping
+    KeyとRecord.entity_codeが食い違う場合も、第1階層Write前にfail closed
+    する。"""
+    evidence_path = tmp_path / "evidence_registry.jsonl"
+    provenance_path = tmp_path / "provenance.jsonl"
+    registry = EvidenceRegistry(evidence_path)
+    ctx, peer_recs = _build_full_context(registry)
+    context_evidence = peer_valuation_context_to_evidence(
+        ctx, source_authority_class=_AUTH, originating_source=_ORIG, delivery_provider=_DELIV
+    )
+    registry.register(context_evidence)
+    provenance_store = ProvenanceStore(provenance_path)
+
+    target_record = _per_record("7203", multiple=Decimal("10"), source_version_id="SV_7203")
+    # Mapping key "2001" but the record itself claims entity_code "2002" (mismatch).
+    mismatched_record = _per_record("2002", multiple=Decimal("7"), source_version_id="SV_MISMATCH")
+    records_by_entity = {"7203": target_record, "2001": mismatched_record, "2002": peer_recs["2002"], "2003": peer_recs["2003"]}
+
+    with pytest.raises(ValueError, match="Mapping Key"):
+        register_peer_context_provenance_bundle(
+            context_record=ctx,
+            context_evidence=context_evidence,
+            evidence_registry=registry,
+            provenance_store=provenance_store,
+            latest_reported_fy_per_records_by_entity=records_by_entity,
+        )
+    assert provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id) == []
+
+
+def test_regression_n_all_included_peer_upstream_lineage_reloadable(tmp_path: Path) -> None:
+    """要件v1 §16-N: Targetだけでなく、Includeされた全PeerについてもFresh
+    Reload後にPrice/EPS Upstream Lineageが解決できる。"""
+    evidence_path = tmp_path / "evidence_registry.jsonl"
+    provenance_path = tmp_path / "provenance.jsonl"
+    registry = EvidenceRegistry(evidence_path)
+    ctx, peer_recs = _build_full_context(registry)
+    context_evidence = peer_valuation_context_to_evidence(
+        ctx, source_authority_class=_AUTH, originating_source=_ORIG, delivery_provider=_DELIV
+    )
+    registry.register(context_evidence)
+    provenance_store = ProvenanceStore(provenance_path)
+    target_record = _per_record("7203", multiple=Decimal("10"), source_version_id="SV_7203")
+    records_by_entity = {"7203": target_record, **peer_recs}
+    register_peer_context_provenance_bundle(
+        context_record=ctx,
+        context_evidence=context_evidence,
+        evidence_registry=registry,
+        provenance_store=provenance_store,
+        latest_reported_fy_per_records_by_entity=records_by_entity,
+    )
+
+    fresh_store = ProvenanceStore(provenance_path)
+    for peer_evidence_id in ctx.included_peer_observation_evidence_ids:
+        parents = fresh_store.parents_of("valuation_evidence", peer_evidence_id)
+        parent_types = {p.from_type for p in parents}
+        assert "price_bar" in parent_types
+        assert "fundamental_source_version" in parent_types

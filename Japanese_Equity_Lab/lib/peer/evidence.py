@@ -17,12 +17,15 @@ EvidenceRegistry経由で検証する。
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 
 from lib.evidence.model import DataLayer, EvidenceRecord, EvidenceType
-from lib.peer.model import PeerAggregateContext
+from lib.peer.model import PeerAggregateContext, PeerMetricType
 from lib.registry.evidence_registry import EvidenceRegistry
 from lib.registry.provenance import ProvenanceStore
 from lib.sources.catalog import DataCapability, PrimaryOrSecondary, SourceAuthorityClass, SourceMetadata
+from lib.valuation.evidence import is_latest_reported_fy_per_v2_evidence
+from lib.valuation.model import SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER
 
 SOURCE_ID_PEER_VALUATION_CONTEXT = "PEER_VALUATION_CONTEXT"
 
@@ -46,19 +49,38 @@ def _peer_set_fingerprint(included_peer_entity_codes: tuple[str, ...]) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:_PEER_SET_FINGERPRINT_LENGTH]
 
 
+def _canonical_as_of_token(as_of: datetime) -> str:
+    """`as_of`をUTCへCanonical Normalizeし、Date・Time・Microsecondまで
+    失わないOS非依存のStable Tokenへ変換する(Stage 3.17.1、D0096
+    Finding 4)。
+
+    以前の実装は`record.as_of.date()`(日付のみ)をIdentityへ使っており、
+    同日異時刻のContext(例: 2024-11-15 10:00 JSTと2024-11-15 15:00 JST)
+    が衝突していた。`astimezone(UTC)`によって同一Instantは(元のTimezone
+    Offset表記に関わらず)常に同一Tokenへ正規化される一方、異なるIntraday
+    Instantは異なるTokenになる。コロン等ID中で扱いにくい文字を避けるため
+    `%Y%m%dT%H%M%S.%fZ`(ISO 8601 Basic形式相当)を使う。
+    """
+    return as_of.astimezone(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+
+
 def peer_valuation_context_evidence_id(record: PeerAggregateContext) -> str:
     """`PeerAggregateContext`のEvidence IDをDeterministicかつCollision-
-    Safeに導出する(要件v1 §6)。
+    Safeに導出する(要件v1 §6、Stage 3.17.1 D0096 Finding 4で日付のみ
+    からTimezone-Aware Full Timestampへ強化)。
 
-    Identityへ反映する要素: target entity・metric・comparison as_of・
-    Peer Universe Selection Version・実際にIncludeされたPeer Set
-    (Fingerprint経由)。同一target/as_ofでもPeer Setが異なるContextは
-    異なるEvidence IDになる(`_peer_set_fingerprint()`参照)。
+    Identityへ反映する要素: target entity・metric・comparison as_of
+    (Full Timestamp、Canonical UTC Token)・Peer Universe Selection
+    Version・実際にIncludeされたPeer Set(Fingerprint経由)。同一target/
+    as_ofでもPeer Setが異なるContextは異なるEvidence IDになる
+    (`_peer_set_fingerprint()`参照)。同一Instantを指す異なるTimezone
+    Offset表記のas_ofは同一Identityになる(`_canonical_as_of_token()`)。
     """
     fingerprint = _peer_set_fingerprint(record.included_peer_entity_codes)
+    as_of_token = _canonical_as_of_token(record.as_of)
     return (
         f"EVID_{SOURCE_ID_PEER_VALUATION_CONTEXT}_{record.target_entity_code}_{record.metric_type.value}_"
-        f"{record.as_of.date().isoformat()}_{record.selection_version}_{fingerprint}"
+        f"{as_of_token}_{record.selection_version}_{fingerprint}"
     )
 
 
@@ -122,6 +144,61 @@ def peer_valuation_context_to_evidence(
 _PARENT_LINK_TYPE = "valuation_evidence"
 
 
+def _metric_family_matches(evidence: EvidenceRecord, metric_type: PeerMetricType) -> bool:
+    """`evidence`が実際に`metric_type`のValuation Metric Familyに由来する
+    かを、既存Canonical Identity Helper/Constantで判定する(Stage 3.17.1、
+    D0096 Finding 5)。文字列Contentの脆弱なParseはしない。"""
+    if metric_type == PeerMetricType.LATEST_REPORTED_FY_PER:
+        return is_latest_reported_fy_per_v2_evidence(evidence)
+    if metric_type == PeerMetricType.CURRENT_FY_COMPANY_FORECAST_PER:
+        return evidence.source.source_type == SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER
+    raise ValueError(f"未知のPeerMetricTypeです(fail closed): {metric_type!r}")  # pragma: no cover - Enum網羅
+
+
+def verify_observation_parent_identity(
+    evidence: EvidenceRecord, *, entity_code: str, metric_type: PeerMetricType, as_of_ceiling: datetime
+) -> None:
+    """1件のPeer Metric Observation Parent Evidenceが、期待する
+    Entity・Metric Family・構造(FACT/DERIVED/VALUATION)・PITを満たすかを
+    検証する(Stage 3.17.1、D0096 Finding 5)。
+
+    `lib.peer.builder`のAdapter・`lib.peer.provenance.register_peer_
+    context_provenance_bundle()`・本Module自身の`verify_peer_context_
+    provenance()`の3箇所が同じCheckをCopy-Pasteしないよう、この1箇所へ
+    集約する(D0096要件v1 §11「同じvalidation logicを3箇所へコピペ
+    しない」)。**Wrong Valuation Metric Family Parent**(例:
+    `LATEST_REPORTED_FY_PER` ObservationへCURRENT_FY_COMPANY_FORECAST_
+    PER Evidenceが紐づく等)を、`entity`/`FACT`/`DERIVED`/`VALUATION`
+    一致だけでは検出できなかった既存欠陥(D0095 Codex Finding 5)を
+    ここで閉じる。
+    """
+    if as_of_ceiling.tzinfo is None:
+        raise ValueError("as_of_ceiling はtz-awareである必要があります")
+    problems: list[str] = []
+    if evidence.evidence_type != EvidenceType.FACT:
+        problems.append(f"evidence_type={evidence.evidence_type.value}(FACTが必要)")
+    if evidence.layer != DataLayer.DERIVED:
+        problems.append(f"layer={evidence.layer.value}(DERIVEDが必要)")
+    if evidence.capability != DataCapability.VALUATION:
+        problems.append(f"capability={evidence.capability.value}(VALUATIONが必要)")
+    if entity_code not in evidence.related_codes:
+        problems.append(f"related_codes={evidence.related_codes}(entity_code={entity_code}を含まない)")
+    if not _metric_family_matches(evidence, metric_type):
+        problems.append(
+            f"source.source_type={evidence.source.source_type!r}がmetric_type={metric_type.value}の"
+            "Canonical Source Typeと一致しません(Wrong Valuation Metric Family Parent、fail closed)"
+        )
+    if evidence.source.available_at > as_of_ceiling:
+        problems.append(
+            f"available_at={evidence.source.available_at.isoformat()}(as_of_ceiling={as_of_ceiling.isoformat()}より後)"
+        )
+    if problems:
+        raise ValueError(
+            f"evidence_id={evidence.evidence_id}: entity_code={entity_code}/metric_type={metric_type.value}の"
+            f"Observation Parentとして不適格です(fail closed): {'; '.join(problems)}"
+        )
+
+
 def verify_peer_context_provenance(
     record: PeerAggregateContext,
     *,
@@ -141,11 +218,11 @@ def verify_peer_context_provenance(
     (`PeerAggregateContext.__post_init__`のDuplicate/Contamination
     Guard)がそれを保証する。
 
-    **Parent Node Existence検証**: 全Parent IDについて、対応する
-    `EvidenceRecord`がEvidenceRegistryに実在し、`EvidenceType.FACT`・
-    `DataLayer.DERIVED`・`DataCapability.VALUATION`(Peer Metric
-    Observationは常に既存Valuation Family、`lib.valuation.evidence`由来)・
-    `available_at <= record.as_of`を満たすことを検証する。
+    **Parent Node Existence + Semantic Identity検証(Stage 3.17.1、D0096
+    Finding 5)**: 全Parent IDについて、対応する`EvidenceRecord`が
+    EvidenceRegistryに実在し、`verify_observation_parent_identity()`
+    (Entity・Metric Family・FACT/DERIVED/VALUATION・PIT)を満たすことを
+    検証する。
     """
     expected_parent_ids = {record.target_observation_evidence_id, *record.included_peer_observation_evidence_ids}
 
@@ -168,6 +245,11 @@ def verify_peer_context_provenance(
             f"missing={sorted(missing)} unexpected={sorted(unexpected)}"
         )
 
+    entity_by_evidence_id = {record.target_observation_evidence_id: record.target_entity_code}
+    entity_by_evidence_id.update(
+        zip(record.included_peer_observation_evidence_ids, record.included_peer_entity_codes, strict=True)
+    )
+
     for parent_id in sorted(registered_set):
         parent_evidence = evidence_registry.get(parent_id)
         if parent_evidence is None:
@@ -175,27 +257,18 @@ def verify_peer_context_provenance(
                 f"context_evidence_id={context_evidence_id}: Parent evidence_id={parent_id}が"
                 "EvidenceRegistryに存在しません(fail closed、架空/未登録IDへのLineageを許可しない)"
             )
-        problems: list[str] = []
-        if parent_evidence.evidence_type != EvidenceType.FACT:
-            problems.append(f"evidence_type={parent_evidence.evidence_type.value}(FACTが必要)")
-        if parent_evidence.layer != DataLayer.DERIVED:
-            problems.append(f"layer={parent_evidence.layer.value}(DERIVEDが必要)")
-        if parent_evidence.capability != DataCapability.VALUATION:
-            problems.append(f"capability={parent_evidence.capability.value}(VALUATIONが必要)")
-        if parent_evidence.source.available_at > record.as_of:
-            problems.append(
-                f"available_at={parent_evidence.source.available_at.isoformat()}(as_of={record.as_of.isoformat()}より後)"
-            )
-        if problems:
-            raise ValueError(
-                f"context_evidence_id={context_evidence_id}: Parent evidence_id={parent_id}が"
-                f"Peer Context Parentとして不適格です(fail closed): {'; '.join(problems)}"
-            )
+        verify_observation_parent_identity(
+            parent_evidence,
+            entity_code=entity_by_evidence_id[parent_id],
+            metric_type=record.metric_type,
+            as_of_ceiling=record.as_of,
+        )
 
 
 __all__ = [
     "SOURCE_ID_PEER_VALUATION_CONTEXT",
     "peer_valuation_context_evidence_id",
     "peer_valuation_context_to_evidence",
+    "verify_observation_parent_identity",
     "verify_peer_context_provenance",
 ]

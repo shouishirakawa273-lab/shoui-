@@ -94,13 +94,24 @@ class PeerMetricAvailability(StrEnum):
 
 
 class PeerExclusionReason(StrEnum):
-    """Comparability Guardの排除理由(要件v1 §8、最低限8種類を型で保持)。"""
+    """Comparability Guardの排除理由(要件v1 §8、最低限8種類を型で保持)。
+
+    Stage 3.17.1(D0096 Finding 3)で`FISCAL_PERIOD_METADATA_UNAVAILABLE`/
+    `ACCOUNTING_STANDARD_UNVERIFIED`を追加した。両Observationが
+    `AVAILABLE`でも、比較可能性判定に必要なMetadata(`fiscal_period_end`/
+    `accounting_standard`)自体が欠損している場合はComparableとみなさない
+    (Missing != Mismatch、Fail-Openを禁止)。既存の`FISCAL_PERIOD_
+    INCOMPARABLE`(値が両方存在し、月が不一致)/`ACCOUNTING_STANDARD_
+    MISMATCH`(値が両方存在し、確定的に不一致)とは意味を混ぜない。
+    """
 
     SELF_PEER = "SELF_PEER"
     SECTOR_MISMATCH = "SECTOR_MISMATCH"
     CLASSIFICATION_UNAVAILABLE_PIT_SAFE = "CLASSIFICATION_UNAVAILABLE_PIT_SAFE"
     FISCAL_PERIOD_INCOMPARABLE = "FISCAL_PERIOD_INCOMPARABLE"
+    FISCAL_PERIOD_METADATA_UNAVAILABLE = "FISCAL_PERIOD_METADATA_UNAVAILABLE"
     ACCOUNTING_STANDARD_MISMATCH = "ACCOUNTING_STANDARD_MISMATCH"
+    ACCOUNTING_STANDARD_UNVERIFIED = "ACCOUNTING_STANDARD_UNVERIFIED"
     METRIC_UNAVAILABLE = "METRIC_UNAVAILABLE"
     STALE_FINANCIAL_DATA = "STALE_FINANCIAL_DATA"
     PRICE_UNAVAILABLE_AT_AS_OF = "PRICE_UNAVAILABLE_AT_AS_OF"
@@ -146,6 +157,14 @@ class PeerUniverseSnapshot:
     resolution: UniverseResolution = UniverseResolution.DATA_UNAVAILABLE
     classification_snapshot_as_of: date | None = None
     pit_note: str = ""
+    # Stage 3.17.1(D0096 Finding 2/§5): RESOLVEDではない理由をHuman-
+    # readableなpit_noteだけでなく、Repositoryから機械的に追跡可能な
+    # Typed Fieldとしても保持する。どちらも空でなければ、Snapshot
+    # Completenessが保証できないEntityが存在したことを示す
+    # (`resolve_peer_candidate_universe()`は、いずれかが非空の場合
+    # `resolution`を`RESOLVED`にしない、fail closed)。
+    incomplete_entity_codes: tuple[str, ...] = field(default_factory=tuple)
+    ambiguous_entity_codes: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if self.as_of.tzinfo is None:
@@ -161,6 +180,19 @@ class PeerUniverseSnapshot:
             raise ValueError(f"candidatesにentity_codeの重複があります(Deterministic Membership違反): {duplicates}")
         if codes != sorted(codes):
             raise ValueError("candidatesはentity_code昇順でソートされている必要があります(Deterministic Ordering)")
+        for field_name, values in (
+            ("incomplete_entity_codes", self.incomplete_entity_codes),
+            ("ambiguous_entity_codes", self.ambiguous_entity_codes),
+        ):
+            if len(set(values)) != len(values):
+                raise ValueError(f"{field_name}に重複があります(Deterministic Tracking違反)")
+            if tuple(values) != tuple(sorted(values)):
+                raise ValueError(f"{field_name}は昇順でソートされている必要があります(Deterministic Ordering)")
+        if (self.incomplete_entity_codes or self.ambiguous_entity_codes) and self.resolution == UniverseResolution.RESOLVED:
+            raise ValueError(
+                "incomplete_entity_codes/ambiguous_entity_codesが非空にもかかわらずresolution=RESOLVEDです"
+                "(Snapshot Completeness未証明、fail closed、要件v1 §4 Finding 2)"
+            )
 
 
 @dataclass(kw_only=True, frozen=True)

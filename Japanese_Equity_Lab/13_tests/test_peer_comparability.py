@@ -158,13 +158,17 @@ def test_accounting_standard_mismatch_excludes() -> None:
 
 
 def test_unknown_accounting_standard_not_flagged_as_mismatch() -> None:
-    """片側がUnknown(None)の場合はConfirmed Mismatchとして扱わない(推測しない)。"""
+    """片側がUnknown(None)の場合はConfirmed Mismatchとして扱わない(推測しない)。
+    D0096 Finding 3: ただしFail-Openでもない(ACCOUNTING_STANDARD_UNVERIFIEDで
+    Excludeされる、`test_regression_h_missing_accounting_standard_excluded`参照)。
+    """
     reasons = evaluate_peer_metric_comparability(
         PeerMetricType.LATEST_REPORTED_FY_PER,
         target_observation=_obs(_TARGET, accounting_standard="IFRS"),
         peer_observation=_obs("7267", accounting_standard=None),
     )
     assert PeerExclusionReason.ACCOUNTING_STANDARD_MISMATCH not in reasons
+    assert PeerExclusionReason.ACCOUNTING_STANDARD_UNVERIFIED in reasons
 
 
 def test_stale_financial_data_beyond_threshold_excludes() -> None:
@@ -192,3 +196,53 @@ def test_metric_type_mismatch_raises() -> None:
             target_observation=_obs(_TARGET),
             peer_observation=_obs("7267"),
         )
+
+
+# --- D0096 Finding 3: Missing Comparability Metadata Fails Closed (G, H) ------
+
+
+def test_regression_g_missing_fiscal_period_end_excluded() -> None:
+    """要件v1 §16-G: 両ObservationがAVAILABLEでもfiscal_period_endが
+    片側欠損なら、Comparableとみなさない(Fail-Open禁止)。"""
+    reasons = evaluate_peer_metric_comparability(
+        PeerMetricType.LATEST_REPORTED_FY_PER,
+        target_observation=_obs(_TARGET, fiscal_period_end=date(2024, 3, 31)),
+        peer_observation=_obs("7267", fiscal_period_end=None),
+    )
+    assert PeerExclusionReason.FISCAL_PERIOD_METADATA_UNAVAILABLE in reasons
+    assert PeerExclusionReason.FISCAL_PERIOD_INCOMPARABLE not in reasons
+
+
+def test_regression_g_both_missing_fiscal_period_end_excluded() -> None:
+    reasons = evaluate_peer_metric_comparability(
+        PeerMetricType.LATEST_REPORTED_FY_PER,
+        target_observation=_obs(_TARGET, fiscal_period_end=None),
+        peer_observation=_obs("7267", fiscal_period_end=None),
+    )
+    assert PeerExclusionReason.FISCAL_PERIOD_METADATA_UNAVAILABLE in reasons
+
+
+def test_regression_h_missing_accounting_standard_excluded() -> None:
+    """要件v1 §16-H: 両ObservationがAVAILABLEでもaccounting_standardが
+    片側欠損なら、Comparableとみなさない(Fail-Open禁止)。"""
+    reasons = evaluate_peer_metric_comparability(
+        PeerMetricType.LATEST_REPORTED_FY_PER,
+        target_observation=_obs(_TARGET, accounting_standard="IFRS"),
+        peer_observation=_obs("7267", accounting_standard=None),
+    )
+    assert PeerExclusionReason.ACCOUNTING_STANDARD_UNVERIFIED in reasons
+    assert reasons != ()  # 以前はFail-Openで空Tupleになっていた
+
+
+def test_regression_missing_metadata_does_not_yield_comparable_result() -> None:
+    """G/Hを組み合わせ、両Metadataが欠損した場合でもComparableな(空の)
+    Reasonsにならないことを確認する(Codex Adversarial Reproduction
+    `missing_metadata_reasons`の直接検証)。"""
+    reasons = evaluate_peer_metric_comparability(
+        PeerMetricType.LATEST_REPORTED_FY_PER,
+        target_observation=_obs(_TARGET, fiscal_period_end=None, accounting_standard=None),
+        peer_observation=_obs("7267", fiscal_period_end=None, accounting_standard=None),
+    )
+    assert reasons != ()
+    assert PeerExclusionReason.FISCAL_PERIOD_METADATA_UNAVAILABLE in reasons
+    assert PeerExclusionReason.ACCOUNTING_STANDARD_UNVERIFIED in reasons

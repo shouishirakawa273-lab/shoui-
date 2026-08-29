@@ -90,7 +90,9 @@ def test_entity_identity_ambiguous_row_excluded_not_crashed() -> None:
     ]
     snapshot = resolve_peer_candidate_universe(target_entity_code=_TARGET, as_of=_AS_OF, classification_rows=rows)
     assert "7267" not in [c.entity_code for c in snapshot.candidates]
-    assert "Ambiguous" in snapshot.pit_note
+    assert snapshot.ambiguous_entity_codes == ("7267",)
+    # D0096 Finding 2: Ambiguous行が存在する場合、Date一致でもRESOLVEDにしない。
+    assert snapshot.resolution != UniverseResolution.RESOLVED
 
 
 def test_deterministic_ordering_independent_of_input_order() -> None:
@@ -122,3 +124,32 @@ def test_no_hardcoded_toyota_peers_in_production_logic() -> None:
     snapshot = resolve_peer_candidate_universe(target_entity_code="1001", as_of=_AS_OF, classification_rows=rows)
     assert snapshot.resolution == UniverseResolution.RESOLVED
     assert [c.entity_code for c in snapshot.candidates] == ["1002"]
+
+
+# --- D0096 Finding 2: Classification Snapshot Completeness (regression E) -----
+
+
+def test_regression_e_mixed_date_resolution_not_resolved() -> None:
+    """要件v1 §16-E / Codex Adversarial Reproduction `mixed_date_
+    resolution`: Target行のみDate=as_ofで、Peer候補行(7267)がDate=None
+    の場合、Peer候補行の存在によりSnapshot Completenessが証明できず、
+    resolution=RESOLVEDにならない(以前は`mixed_date_resolution RESOLVED
+    ['7267']`という誤判定が再現した)。"""
+    rows = [
+        {"Code": "72030", "S33": "3700", "CoNameEn": "TOYOTA", "Date": "2024-11-15"},
+        {"Code": "72670", "S33": "3700", "CoNameEn": "HONDA", "Date": None},  # missing Date
+    ]
+    snapshot = resolve_peer_candidate_universe(target_entity_code=_TARGET, as_of=_AS_OF, classification_rows=rows)
+    assert snapshot.resolution != UniverseResolution.RESOLVED
+    assert "7267" in snapshot.incomplete_entity_codes
+    assert [c.entity_code for c in snapshot.candidates] == ["7267"]  # still surfaced as a Candidate, just not RESOLVED
+
+
+def test_regression_e_all_rows_with_matching_date_still_resolves() -> None:
+    """Regression Eの対照Test: 全行にDateがあり一致していればRESOLVEDの
+    まま(Over-Correctionしていないことの確認)。"""
+    rows = _base_rows("2024-11-15")
+    snapshot = resolve_peer_candidate_universe(target_entity_code=_TARGET, as_of=_AS_OF, classification_rows=rows)
+    assert snapshot.resolution == UniverseResolution.RESOLVED
+    assert snapshot.incomplete_entity_codes == ()
+    assert snapshot.ambiguous_entity_codes == ()

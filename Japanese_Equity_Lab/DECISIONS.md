@@ -11694,3 +11694,238 @@ Engineへは着手していない。BUY/SELL/HOLD/Target Price/Position Size
 `13_tests/test_peer_*.py`(新規7ファイル)・このDECISIONS.md追記を
 Commit対象とする。`02_company_research/7203_Toyota_Motor/`はいずれも
 Commit対象外(既存の無関係なUntracked Directory)。
+
+## D0096 — Stage 3.17.1: Peer Foundation PIT/Eligibility/Provenance Audit Closure
+
+D0095 Peer Comparison FoundationについてのCodex Independent Adversarial
+Review、**FINAL_VERDICT = NEEDS_FIX**を受け、指摘された6件のFindingsの
+みをTargeted Corrective Implementationとして閉じた。新機能追加は行って
+いない(Architectureを広げず、D0095が意図した契約をProduction上でも
+実際に強制できる状態へ閉じることのみが目的)。Stage 3.15は無変更。
+H0001は実行していない。
+
+### Finding 1(BLOCKING)— AcceptedPeer Eligibility Bypass
+
+**欠陥**: `build_peer_comparison_record()`が生の`peer_entity_code: str`
+を直接受け付けており、`PeerCandidate` → `evaluate_peer_entity_
+eligibility()` → `AcceptedPeer` → Comparisonという契約をProduction API
+自体が構造的に強制していなかった。
+
+**修正**: `build_peer_comparison_record()`のSignatureを
+`peer_entity_code: str` → `accepted_peer: AcceptedPeer`(必須)へ変更し、
+以下をfail closedで検証する: `accepted_peer.entity_code ==
+peer_observation.entity_code`・`accepted_peer.as_of == comparison_
+as_of`・`target_observation.entity_code == target_entity_code`・
+`target_observation.as_of == comparison_as_of`・`peer_observation.as_of
+== comparison_as_of`。Test Fixture内で`AcceptedPeer`を直接構築すること
+自体は許容するが(要件通り)、通常のProduction Comparison PathはAccepted
+Peerなしには一切進めない(Regression A-D、`13_tests/test_peer_builder.
+py`)。
+
+### Finding 2(BLOCKING)— Incomplete Classification Snapshot → RESOLVED
+
+**欠陥**: `resolve_peer_candidate_universe()`が、Date欠損行を`snapshot_
+dates`集合から静かに除外していたため、Target行のみDate=as_ofでPeer
+候補行がDate=Noneの場合でも`RESOLVED`と誤判定できた(Codex Reproduction
+`mixed_date_resolution RESOLVED ['7267']`)。また、Entity Identity
+Ambiguous行をDropした後もResolutionへ反映されなかった。
+
+**修正**: 正規化に成功した行ごとにDate有無を`missing_date_entity_codes`
+として追跡し、Ambiguous行も`ambiguous_entity_codes`として追跡する。
+いずれかが非空であれば、Date一致でも`resolution`を`RESOLVED`にせず
+`PARTIAL`へDowngradeする。加えて`PeerUniverseSnapshot.__post_init__`
+自身にも「`incomplete_entity_codes`/`ambiguous_entity_codes`が非空
+なのに`resolution=RESOLVED`」を拒否するDataclass-Level Invariantを
+追加し、Builder関数のBugだけに依存しないDefense-in-depthとした
+(Regression E、F、`13_tests/test_peer_universe.py`)。
+
+### Structured Universe Incompleteness Tracking(要件v1 §5)
+
+`PeerUniverseSnapshot`へ`incomplete_entity_codes: tuple[str, ...]`・
+`ambiguous_entity_codes: tuple[str, ...]`(いずれも昇順・重複無し)を
+追加した。RESOLVEDでない理由を、Human-readableな`pit_note`だけでなく
+Repositoryから機械的に追跡可能にする(大規模Schema Redesignはせず、
+最小限のTyped Field追加のみ)。
+
+### Finding 3(HIGH)— Missing Comparability Metadata Fail-Open
+
+**欠陥**: 両ObservationがAVAILABLEでも`fiscal_period_end`/
+`accounting_standard`が片側(または両側)欠損の場合、`evaluate_peer_
+metric_comparability()`のIf分岐が素通りし、Comparability Reasonsが
+空になり得た(Fail-Open)。
+
+**修正**: `PeerExclusionReason`へ`FISCAL_PERIOD_METADATA_UNAVAILABLE`・
+`ACCOUNTING_STANDARD_UNVERIFIED`を新設した(既存`FISCAL_PERIOD_
+INCOMPARABLE`/`ACCOUNTING_STANDARD_MISMATCH`とは意味を混ぜない、
+Missing != Mismatch)。Metadataが片側でも欠損していれば、必ずいずれかの
+Reasonが付与され、Comparableとみなされない(Aggregate Sampleへ入らない、
+Regression G、H、`13_tests/test_peer_comparability.py`)。Fiscal Month
+完全一致Policy自体は変更していない(Codex Nonblocking Note通り、v1
+明示Policyのまま)。
+
+### Finding 4(HIGH)— Full Timestamp Evidence Identity
+
+**欠陥**: `peer_valuation_context_evidence_id()`が`record.as_of.date()`
+(日付のみ)をIdentityへ使っており、同日異時刻のContextが衝突しえた。
+
+**修正**: `_canonical_as_of_token()`を新設し、`as_of.astimezone(UTC)`で
+Timezone-Aware Full Timestampへ正規化してからIdentityへ組み込む
+(`%Y%m%dT%H%M%S.%fZ`、コロン等ID中で扱いにくい文字を避ける)。同一
+Instantを指す異なるTimezone Offset表記のas_ofは同一Identityになり
+(Canonical化)、異なるIntraday Instantは異なるIdentityになる
+(Regression I、J、`13_tests/test_peer_evidence_provenance.py`)。
+
+**Evidence ID Immutability注記**: D0095 CommitのPeer Context Evidence
+はFixtureのみで、Real 7203 Persisted Production Artifactは未完成の
+ため、既存Persisted Evidence IDへの影響は無い。ただしEvidence ID
+Semantic自体の変更であることをここに明示する。過去のD0095 Commitは
+Rewriteしていない。Stage 3.15既存Evidence ID(Historical Context等)
+には一切触れていない。
+
+### Finding 5(HIGH)— Observation Parent Semantic Identity
+
+**欠陥**: `PeerMetricObservation`の`source_evidence_id`が指すParent
+Evidenceについて、`related_codes`(Entity)・`FACT`/`DERIVED`/
+`VALUATION`程度しか確認しておらず、`LATEST_REPORTED_FY_PER`
+Observationへ`CURRENT_FY_COMPANY_FORECAST_PER`Evidence等、意味的に
+誤ったParentを結び得た。
+
+**修正**: `lib.peer.evidence.verify_observation_parent_identity()`を
+新設し、Entity・Metric Family・FACT/DERIVED/VALUATION・PITを1箇所で
+検証する(`lib.peer.builder`のAdapter・`lib.peer.provenance.register_
+peer_context_provenance_bundle()`・`lib.peer.evidence.verify_peer_
+context_provenance()`の3箇所が同じLogicをCopy-Pasteしないよう集約、
+要件v1 §11)。Metric Family判定は既存Canonical Helper/定数を再利用する
+(`LATEST_REPORTED_FY_PER`は`is_latest_reported_fy_per_v2_evidence()`、
+`CURRENT_FY_COMPANY_FORECAST_PER`は`SOURCE_ID_CURRENT_FY_COMPANY_
+FORECAST_PER`定数、いずれも既存`lib.valuation.evidence`/`lib.
+valuation.model`のExport、新設なし)。Adapter(`latest_reported_fy_per_
+record_to_peer_observation()`)はさらに`latest_reported_fy_per_
+evidence_id_v2()`によるCanonical ID完全一致・`value_date`一致も検証
+する(Regression K、`13_tests/test_peer_builder.py`)。
+
+### Finding 6(MEDIUM)— Validate Before Write
+
+**欠陥**: `register_peer_context_provenance_bundle()`が、Context →
+Observation第1階層Linkを書き込んだ「後」に`latest_reported_fy_per_
+records_by_entity`(Optional Upstream Mapping)の整合性(余分なEntity・
+`record.entity_code`とMapping Keyの不一致)を検証しており、後段
+Validation失敗時にPartial Provenance Bundleが残り得た。
+
+**修正**: 予見可能な全Validation(Context Evidence Identity・Registry
+実在・target/included peer Parent実在・Duplicate Parent・Parent
+Semantic Identity(Finding 5)・Optional Upstream Mapping Entity集合・
+Mapping Keyと`record.entity_code`の一致)を、最初の`provenance_store.
+add_link()`より前の単一Phaseへ集約した。ProvenanceStore自体への
+Transaction機構は新設せず(Scope外)、既存Upstream Helper内部の予期
+不能I/O Failureまでの完全Rollbackも導入しない——このHelper自身が
+事前に判定可能な事項のみを前倒しした(Regression L、M、`13_tests/
+test_peer_evidence_provenance.py`)。
+
+### Upstream Provenance Scope(維持)
+
+D0095の正直な制限をそのまま維持する: `LATEST_REPORTED_FY_PER`は
+既存`register_latest_reported_fy_per_upstream_provenance()`を再利用
+して2nd-tier Upstream Wiring可能。`CURRENT_FY_COMPANY_FORECAST_PER`
+向けの同等Helperは現状Repositoryに存在せず、D0096でも新設していない
+(架空のFull Upstream Provenanceは主張しない)。
+
+### Fresh Reload Strengthening
+
+D0096でLATEST_REPORTED_FY_PER Provenanceを直接触ったため、既存Target
+中心のFresh Reload Testに加え、**Included全Peerについても2nd-tier
+Upstream Links(price_bar・fundamental_source_version)がFresh Reload後
+に解決できること**を新規Regression化した(Regression N、`13_tests/
+test_peer_evidence_provenance.py::test_regression_n_all_included_
+peer_upstream_lineage_reloadable`)。Forecast PERには2nd-tierを要求
+していない。
+
+### Adversarial Reproduction結果
+
+Codex Reproductionと同等のケースを全て再現・修正確認した:
+
+| Reproduction | 修正前 | 修正後 |
+|---|---|---|
+| `mixed_date_resolution` | RESOLVED(誤り) | PARTIAL(fail closed) |
+| `eligibility_bypass_difference` | 生peer_entity_codeでComparison可能 | TypeError(AcceptedPeer必須) |
+| `missing_metadata_reasons` | Reasons=()(Fail-Open) | FISCAL_PERIOD_METADATA_UNAVAILABLE/ACCOUNTING_STANDARD_UNVERIFIED |
+| `intraday_ids_equal` | 同日なら同一ID | 時刻まで含め区別 |
+| `wrong_metric_parent` | 受理される | ValueError(fail closed) |
+| `partial_write_on_invalid_optional_upstream` | 第1階層Write後に失敗 | 全Write前に失敗、Link 0件 |
+
+### D0095 Documentation Clarification(非破壊的訂正、履歴書き換えなし)
+
+Codex Nonblocking Noteの通り、D0095 DECISIONS記述には「Real 7203
+Candidate 0件時のResolver結果=DATA_UNAVAILABLE」という記述があったが、
+これはTarget自身のClassification Code自体が解決できない場合の挙動
+であり、**Target Classificationが解決できているがCandidateが0件(該当
+Peerが存在しない)というケースとは区別する**必要がある——後者は
+Production Semantics上、`RESOLVED`(Complete)または`PARTIAL`
+(Snapshot Completeness未証明)になりうり、`DATA_UNAVAILABLE`固定では
+ない。D0096実装後の実際のProduction Semantics: Target Classification
+自体が解決不能→`DATA_UNAVAILABLE`、Target解決済みだがCandidate=0件→
+`RESOLVED`(Snapshot Completeness証明済みの場合)または`PARTIAL`
+(未証明の場合)。D0095自体は書き換えていない(Append-onlyのままこの
+訂正を記録する)。
+
+### Real 7203 Status(維持、変更なし)
+
+`REAL_7203_PEER_CONTEXT_STATUS = BLOCKED_BY_PEER_DATA`。
+`PEER_DATA_ACQUISITION_STATUS = PEER_DATA_FETCH_APPROVAL_REQUIRED`。
+本Roundでも実Network Fetchは一切実行していない。D0094が確認した
+「Local Snapshotに7203のValid Same-Sector Peerが0件」という事実、
+D0095が確認した「このSession自体はNetwork Egressが構造的にBlocked
+されている」という事実は、いずれも変わっていない。
+
+### ResearchArtifact / Confidence(維持、変更なし)
+
+`DATA_CONFIDENCE=LOW`・`EVIDENCE_CONFIDENCE=MEDIUM`・`RESEARCH_
+CONFIDENCE=LOW`・`CONCLUSION=INCONCLUSIVE`。D0096はCorrectness
+Hardeningであり、新しいReal Cross-Sectional Evidenceを追加していない
+ため、Confidenceを変更する理由も無い。
+
+### Evidence Semantics(維持、変更なし)
+
+`EvidenceType.FACT`・`DataLayer.DERIVED`・`DataCapability.PEER_
+COMPARISON`・Default Relation=`NEUTRAL`。"cheap"/"expensive"/
+"undervalued"/"overvalued"/"attractive"/BUY/SELL/HOLD/rerating等の
+Interpretive語は一切含めていない(既存Test`test_evidence_content_
+has_no_interpretive_words`が引き続きPASS)。
+
+### Quality Gates
+
+- `ruff check`(`lib/peer/*`・`13_tests/test_peer_*.py`): All Pass。
+- `ruff format --check`: All Pass。
+- `mypy`(`lib/peer/*`・`lib/sources/catalog.py`、Project既定
+  `python_version=3.11`): Success, no issues(8 files)。
+- `mypy`(`13_tests/test_peer_*.py`): D0095と同じ既知環境問題
+  (`numpy/__init__.pyi`、`import pytest`単体で再現、D0096とは無関係)
+  によりProject既定Configではblockされる。Diagnostic目的のみ
+  `--python-version 3.12`で迂回した結果、7 File全てSuccess(no
+  issues)を確認済み(D0096固有のType Errorが隠れていないことを実測で
+  確認、途中1件のUnused type: ignoreを発見・削除した)。
+- Targeted Peer Tests(`13_tests/test_peer_*.py`): **83 passed**
+  (D0095の67件 + D0096新規Regression 16件)。
+- Full `pytest Japanese_Equity_Lab/13_tests/`: **1379 passed, 1
+  failed, 0 skipped**。唯一の失敗は`test_protected_path_hook.py::
+  test_hook_warns_on_protected_screening_tool_paths`——D0074以来の
+  既知Windows/Japanese Username Hook環境問題であり、今回のScope・
+  変更と無関係(Pre-existing、Regressionではない)。
+
+### Repository変更・Stage 3.15 Freeze遵守
+
+`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・Stage 3.15
+Acceptance Harness・PIT Logic・Calendar Logicはいずれも無変更。
+`lib/sources/catalog.py`も本Roundでは変更不要だった(既存`DataCapability.
+PEER_COMPARISON`のみで6 Findings全てを閉じられた)。H0001 Locked Test
+は実行していない。Consensus・Disclosure Semantic Extraction・
+Expected Return・Decision Engine・Portfolio Engine・Real Peer Network
+Fetchへは着手していない。D0089-D0095はRewriteしていない。
+
+### Persistence / Commit対象
+
+`lib/peer/*`(既存6ファイルへの修正のみ、新規ファイル無し)・
+`13_tests/test_peer_*.py`(既存5ファイルへの修正のみ)・このDECISIONS.md
+追記をCommit対象とする。`lib/sources/catalog.py`は本Roundでは変更して
+いない(Commit対象外)。`02_company_research/7203_Toyota_Motor/`は
+いずれもCommit対象外(既存の無関係なUntracked Directory)。

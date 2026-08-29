@@ -108,15 +108,26 @@ def evaluate_peer_metric_comparability(
 
     target_fpe = target_observation.fiscal_period_end
     peer_fpe = peer_observation.fiscal_period_end
-    if target_fpe is not None and peer_fpe is not None:
-        if target_fpe.month != peer_fpe.month:
-            reasons.append(PeerExclusionReason.FISCAL_PERIOD_INCOMPARABLE)
-        elif target_fpe.year - peer_fpe.year > STALE_FISCAL_CYCLE_THRESHOLD:
-            reasons.append(PeerExclusionReason.STALE_FINANCIAL_DATA)
+    if target_fpe is None or peer_fpe is None:
+        # Stage 3.17.1(D0096 Finding 3): 両ObservationがAVAILABLEでも、
+        # 比較可能性判定に必要なMetadata(fiscal_period_end)自体が欠損して
+        # いれば、Comparableとみなさない(Missing != Mismatch、Fail-Open
+        # 禁止)。既存FISCAL_PERIOD_INCOMPARABLE(両方存在し月が不一致)とは
+        # 意味を混ぜない専用Reasonを使う。
+        reasons.append(PeerExclusionReason.FISCAL_PERIOD_METADATA_UNAVAILABLE)
+    elif target_fpe.month != peer_fpe.month:
+        reasons.append(PeerExclusionReason.FISCAL_PERIOD_INCOMPARABLE)
+    elif target_fpe.year - peer_fpe.year > STALE_FISCAL_CYCLE_THRESHOLD:
+        reasons.append(PeerExclusionReason.STALE_FINANCIAL_DATA)
 
     target_std = target_observation.accounting_standard
     peer_std = peer_observation.accounting_standard
-    if target_std is not None and peer_std is not None and target_std != peer_std:
+    if target_std is None or peer_std is None:
+        # 同上(D0096 Finding 3): Accounting Standardが片側でも不明なら、
+        # 確定的なMismatch判定はできないが、Comparableとも断定しない
+        # (Fail-Open禁止、既存ACCOUNTING_STANDARD_MISMATCHとは別Reason)。
+        reasons.append(PeerExclusionReason.ACCOUNTING_STANDARD_UNVERIFIED)
+    elif target_std != peer_std:
         reasons.append(PeerExclusionReason.ACCOUNTING_STANDARD_MISMATCH)
 
     return tuple(reasons)

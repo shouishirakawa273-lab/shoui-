@@ -17,6 +17,7 @@ from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
 from lib.evidence.model import EvidenceRelation
 from lib.evidence.research_artifact import (
     DEFAULT_ALLOWED_CAPABILITIES,
@@ -33,7 +34,7 @@ from lib.peer.builder import (
     latest_reported_fy_per_record_to_peer_observation,
 )
 from lib.peer.evidence import peer_valuation_context_to_evidence
-from lib.peer.model import PeerMetricType
+from lib.peer.model import AcceptedPeer, PeerMetricType
 from lib.registry.evidence_registry import EvidenceRegistry
 from lib.sources.catalog import DataCapability, SourceAuthorityClass
 from lib.valuation.evidence import latest_reported_fy_per_to_evidence_v2
@@ -45,6 +46,10 @@ _AUTH = SourceAuthorityClass.PRIMARY_OFFICIAL
 _ORIG = "JQUANTS_SOURCE_DATA"
 _DELIV = "JQUANTS"
 _ALLOWED = DEFAULT_ALLOWED_CAPABILITIES | frozenset({DataCapability.PEER_COMPARISON})
+
+
+def _accepted_peer(entity_code: str) -> AcceptedPeer:
+    return AcceptedPeer(entity_code=entity_code, classification_system="TSE_SECTOR_33", classification_code="3700", as_of=_AS_OF)
 
 
 def _per_record(entity_code: str, *, multiple: Decimal, source_version_id: str) -> LatestReportedFyPerRecord:
@@ -90,7 +95,7 @@ def _build_context_evidence(tmp_path: Path):
         comparisons.append(
             build_peer_comparison_record(
                 target_entity_code="7203",
-                peer_entity_code=code,
+                accepted_peer=_accepted_peer(code),
                 metric_type=PeerMetricType.LATEST_REPORTED_FY_PER,
                 comparison_as_of=_AS_OF,
                 target_observation=target_obs,
@@ -158,7 +163,6 @@ def test_peer_evidence_rejected_without_capability_allowlist(tmp_path: Path) -> 
     既存Guardがfail closedで拒否することを確認する(Production Semantics
     無変更の直接証拠)。"""
     _target_evidence, context_evidence = _build_context_evidence(tmp_path)
-    import pytest
 
     with pytest.raises(ValueError):
         build_research_artifact(
