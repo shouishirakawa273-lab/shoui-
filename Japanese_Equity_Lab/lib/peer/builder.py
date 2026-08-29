@@ -35,7 +35,7 @@ from lib.peer.model import (
     PeerMetricObservation,
     PeerMetricType,
 )
-from lib.valuation.evidence import latest_reported_fy_per_evidence_id_v2
+from lib.valuation.evidence import current_fy_company_forecast_per_to_evidence, latest_reported_fy_per_evidence_id_v2
 from lib.valuation.model import (
     MEDIAN_METHOD_ORDERED_MIDPOINT,
     PERCENTILE_METHOD_EMPIRICAL_CDF_LE,
@@ -98,15 +98,51 @@ def current_fy_company_forecast_per_record_to_peer_observation(
     `fiscal_period_end`相当としてComparability Guard(`lib.peer.
     comparability.evaluate_peer_metric_comparability()`)へ渡す。
 
-    **Semantic Identity検証(Stage 3.17.1、D0096 Finding 5)**: この
-    Metric Familyには`lib.valuation.evidence`に公開Canonical Evidence ID
-    Helperが存在しない(Stage 3.15 Frozen、新設しない)ため、`related_
-    codes`一致・`value_date`(=`record.price_date`)一致に加え、
-    `verify_observation_parent_identity()`が`evidence.source.source_
-    type`(既存Export定数`SOURCE_ID_CURRENT_FY_COMPANY_FORECAST_PER`)で
-    Metric Familyを検証する。
+    **Exact Record/Evidence Canonical Identity検証(Stage 3.17.2、D0097
+    Finding 5)**: この Metric Familyには`lib.valuation.evidence`に
+    公開Canonical Evidence ID Helper(`latest_reported_fy_per_evidence_
+    id_v2()`相当)が存在しない(Stage 3.15 Frozen、新設しない)。D0096の
+    Check(`related_codes`/`value_date`一致、`verify_observation_parent_
+    identity()`)だけでは、**同一Entity・同一Price Date・同一Metric
+    Family**だが**異なる`source_version_id`(=異なるDisclosure、異なる
+    FEPS)**を持つ別RecordのEvidenceが誤って受理されてしまう欠陥が残って
+    いた(D0096 Codex Re-Audit Finding 5、`forecast_wrong_record_
+    accepted`)。
+
+    独自のEvidence Identity Algorithmを新設せず、`evidence`自身が申告する
+    `source_authority_class`/`originating_source`/`delivery_provider`を
+    使って、既存Production Builder`current_fy_company_forecast_per_to_
+    evidence()`を`record`から**実際に呼び出し**、その結果(Canonical
+    Expected Evidence)と`evidence`の`evidence_id`/`source.source_id`/
+    `source.available_at`を比較する。`source.source_id`には`record.
+    source_version_id`が含まれる(既存Production Builderの既存Format、
+    ここでは再現していない)ため、`source_version_id`が異なるRecordの
+    Evidenceは必ず不一致になりfail closedする。
     """
+    if evidence.source.originating_source is None or evidence.source.delivery_provider is None:
+        raise ValueError(
+            f"evidence(evidence_id={evidence.evidence_id})のoriginating_source/delivery_providerがNoneのため、"
+            "Canonical Evidenceを再構築できません(fail closed)"
+        )
+    expected_evidence = current_fy_company_forecast_per_to_evidence(
+        record,
+        source_authority_class=evidence.source.source_authority_class,
+        originating_source=evidence.source.originating_source,
+        delivery_provider=evidence.source.delivery_provider,
+    )
     problems: list[str] = []
+    if evidence.evidence_id != expected_evidence.evidence_id:
+        problems.append(f"evidence_id={evidence.evidence_id}が期待Evidence ID({expected_evidence.evidence_id})と一致しません")
+    if evidence.source.source_id != expected_evidence.source.source_id:
+        problems.append(
+            f"source.source_id={evidence.source.source_id}が期待source_id({expected_evidence.source.source_id})と"
+            "一致しません(source_version_id不一致の可能性)"
+        )
+    if evidence.source.available_at != expected_evidence.source.available_at:
+        problems.append(
+            f"source.available_at={evidence.source.available_at.isoformat()}が期待値"
+            f"({expected_evidence.source.available_at.isoformat()})と一致しません"
+        )
     if evidence.related_codes != (record.entity_code,):
         problems.append(f"related_codes={evidence.related_codes}がrecord.entity_code({record.entity_code})と一致しません")
     if evidence.value_date != record.price_date:

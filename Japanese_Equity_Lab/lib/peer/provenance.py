@@ -38,6 +38,7 @@ from lib.peer.evidence import peer_valuation_context_evidence_id, verify_observa
 from lib.peer.model import PeerAggregateContext, PeerMetricType
 from lib.registry.evidence_registry import EvidenceRegistry
 from lib.registry.provenance import ProvenanceLink, ProvenanceStore
+from lib.valuation.evidence import latest_reported_fy_per_available_at, latest_reported_fy_per_evidence_id_v2
 from lib.valuation.model import LatestReportedFyPerRecord
 from lib.valuation.provenance import register_latest_reported_fy_per_upstream_provenance
 
@@ -83,6 +84,20 @@ def register_peer_context_provenance_bundle(
     に集約、Adapter・本関数・`verify_peer_context_provenance()`で共有)
     により、Entity・Metric Family(`context_record.metric_type`)・
     FACT/DERIVED/VALUATION・PITを検証する。
+
+    **Optional Upstream Recordの Canonical Record/Evidence一致(Stage
+    3.17.2、D0097 Finding 6)**: D0096時点では、`latest_reported_fy_
+    per_records_by_entity`の各`record`が「登録済みObservation Evidence
+    と実際に対応するSource Version(Disclosure)か」までは、Phase 1では
+    検証していなかった(Entity一致のみ)。そのため、同一Entityでも
+    `source_version_id`が異なるRecord(=別Disclosure)が渡されても、
+    既存Upstream Helper内部のCheckがPhase 2(Write後)で走るまで検出
+    できなかった(D0096 Codex Re-Audit Finding 6)。D0097では、既存
+    Canonical ID Helper(`latest_reported_fy_per_evidence_id_v2()`)と
+    `latest_reported_fy_per_available_at()`をそのまま再利用し、この
+    `record`から導出される期待Evidence ID/available_atが、登録済み
+    Observation Evidenceと完全一致することをPhase 1(Writeより前)で
+    検証する(新しいIdentity Algorithmは作らない)。
     """
     # ---- Phase 1: Writeなしで判定可能な全Validation ----
     expected_evidence_id = peer_valuation_context_evidence_id(context_record)
@@ -144,6 +159,33 @@ def register_peer_context_provenance_bundle(
                     f"latest_reported_fy_per_records_by_entity[{entity_code!r}].entity_code({record.entity_code})が"
                     f"Mapping Key({entity_code})と一致しません(fail closed)"
                 )
+            # Stage 3.17.2(D0097 Finding 6): 「record.entity_codeがMapping Keyと一致する」
+            # だけでは、同一EntityでもSource Version(=Disclosure)が異なるRecordが渡され、
+            # 既に登録済みのObservation Evidenceと実際には対応していないケースを検出でき
+            # ない(既存Upstream Helper内部のCheckはPhase 2=Write後にしか走らなかった、
+            # D0096 Codex Re-Audit Finding 6)。既存Canonical ID Helper(`latest_reported_
+            # fy_per_evidence_id_v2()`)をそのまま再利用し、この`record`から導出される
+            # 期待Evidence IDが、Context側が実際に保持するObservation Evidence IDと
+            # 完全一致することをWriteより前に検証する(新しいIdentity Algorithmは作らない)。
+            if context_record.metric_type == PeerMetricType.LATEST_REPORTED_FY_PER:
+                expected_observation_evidence_id = latest_reported_fy_per_evidence_id_v2(record)
+                registered_observation_evidence_id = entity_to_evidence_id[entity_code]
+                if expected_observation_evidence_id != registered_observation_evidence_id:
+                    raise ValueError(
+                        f"entity_code={entity_code}: latest_reported_fy_per_records_by_entityのrecordから"
+                        f"導出される期待Evidence ID({expected_observation_evidence_id})が、登録済み"
+                        f"Observation Evidence ID({registered_observation_evidence_id})と一致しません"
+                        "(Canonical Record/Evidence Mismatch、fail closed、Write前に検出)"
+                    )
+                registered_observation_evidence = parent_evidence_by_id[registered_observation_evidence_id]
+                expected_available_at = latest_reported_fy_per_available_at(record)
+                if registered_observation_evidence.source.available_at != expected_available_at:
+                    raise ValueError(
+                        f"entity_code={entity_code}: recordから導出される期待available_at"
+                        f"({expected_available_at.isoformat()})が、登録済みObservation Evidenceのavailable_at"
+                        f"({registered_observation_evidence.source.available_at.isoformat()})と一致しません"
+                        "(fail closed、Write前に検出)"
+                    )
 
     # ---- Phase 2: Write ----
     for evidence_id in all_observation_evidence_ids:

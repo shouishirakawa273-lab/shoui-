@@ -424,6 +424,52 @@ def test_regression_m_mismatched_record_entity_in_upstream_mapping_raises_before
     assert provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id) == []
 
 
+# --- D0097 Finding 6: Upstream Record/Evidence Canonical Mismatch Prewrite ------
+
+
+def test_regression_d0097_upstream_source_version_mismatch_raises_before_any_write(tmp_path: Path) -> None:
+    """要件v1 §7-8 / D0097 Finding 6 Adversarial Reproduction
+    `upstream_mismatch_raised`: `latest_reported_fy_per_records_by_
+    entity`のMapping Keyは正しいIncluded Entityで、`record.entity_code`
+    もMapping Keyと一致するが、`record.source_version_id`が実際に登録
+    済みのObservation Evidenceと異なる(=別Disclosureを指す)場合、
+    Context->Observation第1階層Linkが1件も書き込まれる前にfail closed
+    する(以前は既存Upstream Helper内部でPhase 2=Write後にしか検出
+    できなかった、D0096 Codex Re-Audit Finding 6)。"""
+    evidence_path = tmp_path / "evidence_registry.jsonl"
+    provenance_path = tmp_path / "provenance.jsonl"
+    registry = EvidenceRegistry(evidence_path)
+    ctx, peer_recs = _build_full_context(registry)
+    context_evidence = peer_valuation_context_to_evidence(
+        ctx, source_authority_class=_AUTH, originating_source=_ORIG, delivery_provider=_DELIV
+    )
+    registry.register(context_evidence)
+    provenance_store = ProvenanceStore(provenance_path)
+
+    # Registered target Observation Evidence was built from source_version_id="SV_7203"
+    # (see _register_entity()/_build_full_context()). Supply a DIFFERENT source_version_id
+    # for the same entity_code -> canonical mismatch, otherwise-valid same entity/metric.
+    mismatched_target_record = _per_record("7203", multiple=Decimal("10"), source_version_id="SV_7203_WRONG")
+    records_by_entity = {"7203": mismatched_target_record, **peer_recs}
+
+    links_before = provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id)
+    assert links_before == []
+
+    with pytest.raises(ValueError, match="Canonical Record/Evidence Mismatch"):
+        register_peer_context_provenance_bundle(
+            context_record=ctx,
+            context_evidence=context_evidence,
+            evidence_registry=registry,
+            provenance_store=provenance_store,
+            latest_reported_fy_per_records_by_entity=records_by_entity,
+        )
+
+    # No Context -> Observation first-tier link was written despite the failure (zero partial write).
+    links_after = provenance_store.parents_of("valuation_evidence", context_evidence.evidence_id)
+    assert links_after == []
+    assert len(links_after) == len(links_before) == 0
+
+
 def test_regression_n_all_included_peer_upstream_lineage_reloadable(tmp_path: Path) -> None:
     """要件v1 §16-N: Targetだけでなく、Includeされた全PeerについてもFresh
     Reload後にPrice/EPS Upstream Lineageが解決できる。"""

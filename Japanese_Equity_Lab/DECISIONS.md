@@ -11929,3 +11929,158 @@ Fetchへは着手していない。D0089-D0095はRewriteしていない。
 追記をCommit対象とする。`lib/sources/catalog.py`は本Roundでは変更して
 いない(Commit対象外)。`02_company_research/7203_Toyota_Motor/`は
 いずれもCommit対象外(既存の無関係なUntracked Directory)。
+
+## D0097 — Stage 3.17.2: Peer Provenance Canonical Identity Final Closure
+
+D0096 Codex Re-Audit、**FINAL_VERDICT = NEEDS_TINY_FIX**を受け、残存
+していたFinding 5(HIGH)・Finding 6(MEDIUM)の2経路のみをMinimal
+Corrective Fixとして閉じた。新機能追加・Architecture変更は行っていない。
+Finding 1〜4(D0096でCLOSED済み)は再設計・修正していない。Stage 3.15は
+無変更。H0001は実行していない。Real Peer Network Fetchも実行していない。
+
+### Finding 5(HIGH残存)— Forecast Record Identity
+
+**欠陥**: D0096時点の`current_fy_company_forecast_per_record_to_peer_
+observation()`は`related_codes`一致・`value_date`一致・`verify_
+observation_parent_identity()`(Entity・Metric Family・FACT/DERIVED/
+VALUATION・PIT)のみを検証しており、**同一Entity・同一Price Date・同一
+Metric Family**だが**異なる`source_version_id`(=異なるDisclosure、
+異なるFEPS)**を持つ別RecordのEvidenceが誤って受理され得た(D0096 Codex
+Re-Audit Reproduction `forecast_wrong_record_accepted`)。
+
+**修正**: 独自のEvidence Identity Algorithmを新設せず、`evidence`自身が
+申告する`source_authority_class`/`originating_source`/`delivery_
+provider`(originating_source/delivery_providerがNoneの場合はfail
+closed)を使って、既存Production Builder`current_fy_company_forecast_
+per_to_evidence()`(Stage 3.15、D0084、Frozen)を`record`から**実際に
+呼び出し**、その結果(Canonical Expected Evidence)と`evidence`の
+`evidence_id`・`source.source_id`・`source.available_at`を比較する。
+`source.source_id`には`record.source_version_id`が含まれる(既存
+Production Builderの既存Format、ここでは再現していない)ため、
+`source_version_id`が異なるRecordのEvidenceは`source.source_id`不一致
+により必ずfail closedする(`evidence_id`自体は`entity_code`+`price_
+date`のみで`source_version_id`を含まないため、単独では区別できない
+——`source.source_id`のCheckが本質的にFinding 5を閉じる)。
+
+### Finding 6(MEDIUM残存)— Upstream Prewrite Canonical Validation
+
+**欠陥**: D0096時点の`register_peer_context_provenance_bundle()`
+Phase 1は、`latest_reported_fy_per_records_by_entity`について
+「Mapping Keyが有効なIncluded Entityか」「`record.entity_code`が
+Mapping Keyと一致するか」のみを検証しており、「その`record`が実際に
+**登録済みのObservation Evidenceと同一Source Version(Disclosure)を
+指しているか**」までは検証していなかった。そのため、同一EntityでもFor
+`source_version_id`が異なるRecord(=別Disclosure)が渡された場合、
+既存Upstream Helper(`register_latest_reported_fy_per_upstream_
+provenance()`)内部のCheckがPhase 2(=Context→Observation第1階層Write
+の**後**)で走るまで検出できず、Partial Provenance Bundleが残り得た
+(D0096 Codex Re-Audit Reproduction `upstream_mismatch_raised`、
+`links_after_upstream_mismatch = 4`)。
+
+**修正**: 既存Canonical ID Helper(`latest_reported_fy_per_evidence_
+id_v2()`)と`latest_reported_fy_per_available_at()`(いずれもStage
+3.15、D0090/D0089、Frozen、そのまま再利用)を使い、Phase 1(Write前)で
+各Optional Upstream Recordについて: (1)`record`から導出される期待
+Evidence IDが、登録済みObservation Evidence IDと完全一致すること、
+(2)`record`から導出される期待`available_at`が、登録済みObservation
+Evidenceの`available_at`と一致すること、をMapping Key/Entity一致
+Checkに続けて検証する。いずれかが不一致ならばContext→Observation第1
+階層Linkを1件も書き込む前に`ValueError`でfail closedする。新しい
+Identity Algorithmは作らず、既存Helperをそのまま呼び出しているのみ。
+
+### No Partial Write(実測確認)
+
+Regression Test(`test_regression_d0097_upstream_source_version_
+mismatch_raises_before_any_write`)で、意図的にSource Version不一致の
+Recordを渡した際、`provenance_store.parents_of(...)`がCall前後とも
+0件(空)のままであることを実測確認した——Context→Observation第1階層
+Linkが部分的にも一切書き込まれていない。
+
+### Validation / Write Phase構造(維持)
+
+D0096で導入したPhase 1(全予見可能Validation)/ Phase 2(Write)という
+明示的な構造をそのまま維持し、ProvenanceStore自体へのTransaction/
+Rollback機構は新設していない(Scope外のまま)。今回追加したのは
+「予見可能だがD0096時点では未実施だったCheckをPhase 1へ追加する」
+ことのみ。
+
+### Adversarial Reproduction結果
+
+| Reproduction | 修正前 | 修正後 |
+|---|---|---|
+| `forecast_wrong_record_accepted` | True(誤受理) | ValueError(fail closed) |
+| `upstream_mismatch_raised` + `links_after_upstream_mismatch` | ValueErrorはPhase 2で発生、Link 4件残存 | ValueErrorはPhase 1(Write前)で発生、Link 0件 |
+
+### Existing Contracts(Regression確認、維持)
+
+Full Peer Test Suite・Full Repository Test Suiteの両方で以下が引き続き
+PASSすることを確認した: AcceptedPeer必須・PIT Universe Completeness・
+Missing Fiscal/Accounting Metadata Fail Closed・UTC Full Timestamp
+Context Evidence ID・Peer Ordering Invariance・Peer Set Sensitivity・
+Default Relation=NEUTRAL・LATEST_REPORTED_FY_PER第2階層Provenance。
+`CURRENT_FY_COMPANY_FORECAST_PER`の第2階層(Observation→Price/EPS Raw
+Lineage)は本Roundでも新設していない(D0095/D0096からの既知の限界を
+維持、架空のFull Upstream Provenanceは主張しない)。
+
+### Fresh Reload(Regression確認)
+
+既存`test_provenance_bundle_and_fresh_process_reload`・`test_
+regression_n_all_included_peer_upstream_lineage_reloadable`が引き続き
+PASSし、Context・Target Observation・全Peer Observation・第1階層
+Link・LATEST_REPORTED_FY_PER第2階層LinkがFresh Registry/Store
+Instance経由で問題なく解決できることを確認した。
+
+### Real 7203 Status / Research Semantics(維持、変更なし)
+
+`REAL_7203_PEER_CONTEXT_STATUS = BLOCKED_BY_PEER_DATA`。
+`PEER_DATA_ACQUISITION_STATUS = PEER_DATA_FETCH_APPROVAL_REQUIRED`。
+`DATA_CONFIDENCE=LOW`・`EVIDENCE_CONFIDENCE=MEDIUM`・`RESEARCH_
+CONFIDENCE=LOW`・`CONCLUSION=INCONCLUSIVE`。Real Peer Dataは追加して
+いない。
+
+### Quality Gates
+
+- `ruff check`(`lib/peer/*`・`13_tests/test_peer_*.py`): All Pass。
+- `ruff format --check`: All Pass。
+- `mypy`(`lib/peer/*`・`lib/sources/catalog.py`、Project既定
+  `python_version=3.11`): Success, no issues(8 files)。実装過程で
+  `originating_source`/`delivery_provider`が`str | None`型であることに
+  起因する2件のmypy Errorを発見し、明示的なNone Checkとfail closedを
+  追加して解消した(具体的なD0097 Implementation Necessityに基づく
+  修正、Opportunisticではない)。
+- `mypy`(`13_tests/test_peer_*.py`): D0095/D0096と同じ既知環境問題
+  (`numpy/__init__.pyi`、`import pytest`単体で再現、D0097とは無関係、
+  未修正のPre-existing Pre-D0097 Fileで再現確認済み)によりProject
+  既定Configではblockされる。Diagnostic目的のみ`--python-version 3.12`
+  で迂回した結果、7 File全てSuccess(no issues)を確認済み。
+- Targeted Peer Tests(`13_tests/test_peer_*.py`): **87 passed**
+  (D0096の83件 + D0097新規Regression 4件: Forecast Exact Match
+  Positive Test 1件 + Forecast Wrong Record Reject 2件 + Upstream
+  Source Version Mismatch Prewrite Reject 1件)。
+- Full `pytest Japanese_Equity_Lab/13_tests/`: **1383 passed, 1
+  failed, 0 skipped**。唯一の失敗は`test_protected_path_hook.py::
+  test_hook_warns_on_protected_screening_tool_paths`——D0074以来の
+  既知Windows/Japanese Username Hook環境問題であり、今回のScope・
+  変更と無関係(Pre-existing、Regressionではない)。
+
+### Repository変更・Stage 3.15 Freeze遵守
+
+`lib/peer/universe.py`・`lib/peer/comparability.py`・`lib/peer/
+model.py`・`lib/peer/evidence.py`・`lib/sources/catalog.py`はいずれも
+本Roundでは変更していない(Finding 5/6の修正に必要ではなかった)。
+`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・Stage 3.15
+Acceptance Harnessもいずれも無変更。H0001 Locked Testは実行していない。
+Consensus・Disclosure Semantic Extraction・Expected Return・Decision
+Engine・Portfolio Engine・Real Peer Network Fetch・新規Providerへは
+着手していない。D0089-D0096はRewriteしていない。
+
+### Persistence / Commit対象
+
+`lib/peer/builder.py`・`lib/peer/provenance.py`(既存Fileへの修正の
+み)・`13_tests/test_peer_builder.py`・`13_tests/test_peer_evidence_
+provenance.py`(既存Fileへの修正のみ)・このDECISIONS.md追記を
+Commit対象とする。`lib/peer/universe.py`・`lib/peer/comparability.py`・
+`lib/peer/model.py`・`lib/peer/evidence.py`・`lib/sources/catalog.py`
+はCommit対象外(本Roundでは変更していない)。`02_company_research/
+7203_Toyota_Motor/`はいずれもCommit対象外(既存の無関係なUntracked
+Directory)。

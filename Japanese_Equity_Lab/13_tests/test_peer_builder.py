@@ -16,6 +16,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
+from lib.evidence.model import EvidenceRecord
 from lib.market_calendar import session_close_at
 from lib.peer.builder import (
     build_peer_aggregate_context,
@@ -106,37 +107,88 @@ def test_latest_reported_fy_per_adapter_rejects_mismatched_evidence() -> None:
         latest_reported_fy_per_record_to_peer_observation(record, evidence=wrong_evidence, as_of=_AS_OF)
 
 
-def test_current_fy_company_forecast_per_adapter_produces_available_observation() -> None:
-    record = CurrentFyCompanyForecastPerRecord(
-        entity_code="7203",
+def _forecast_record(
+    *,
+    entity_code: str = "7203",
+    source_version_id: str,
+    eps_value: Decimal = Decimal("250"),
+    price_value: Decimal = Decimal("2500"),
+) -> CurrentFyCompanyForecastPerRecord:
+    return CurrentFyCompanyForecastPerRecord(
+        entity_code=entity_code,
         as_of=_AS_OF,
         price_date=date(2024, 11, 14),
-        price_value=Decimal("2500"),
+        price_value=price_value,
         price_available_at=session_close_at(date(2024, 11, 14)),
         denominator_type="CURRENT_FY_COMPANY_FORECAST_EPS_CONSOLIDATED",
-        eps_value=Decimal("250"),
+        eps_value=eps_value,
         forecast_period_start=date(2024, 4, 1),
         forecast_period_end=date(2025, 3, 31),
         guidance_published_at=datetime(2024, 11, 6, 15, 30, tzinfo=_JST),
-        source_version_id="SV_FORECAST",
+        source_version_id=source_version_id,
         source_field="FEPS",
         fiscal_year_target="NEXT",
         disclosure_period_type="2Q",
         consolidation_scope="CONSOLIDATED",
         accounting_standard="IFRS",
-        calculation_expression="price_close=2500 / forecast_eps=250",
-        multiple=Decimal("10"),
+        calculation_expression=f"price_close={price_value} / forecast_eps={eps_value}",
+        multiple=price_value / eps_value,
         corporate_action_basis_status=CorporateActionBasisStatus.CONFIRMED_NO_ACTION,
     )
-    evidence = current_fy_company_forecast_per_to_evidence(
+
+
+def _forecast_evidence(record: CurrentFyCompanyForecastPerRecord) -> EvidenceRecord:
+    return current_fy_company_forecast_per_to_evidence(
         record,
         source_authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
         originating_source="JQUANTS_SOURCE_DATA",
         delivery_provider="JQUANTS",
     )
+
+
+def test_current_fy_company_forecast_per_adapter_produces_available_observation() -> None:
+    record = _forecast_record(source_version_id="SV_FORECAST")
+    evidence = _forecast_evidence(record)
     obs = current_fy_company_forecast_per_record_to_peer_observation(record, evidence=evidence, as_of=_AS_OF)
     assert obs.metric_type == PeerMetricType.CURRENT_FY_COMPANY_FORECAST_PER
     assert obs.fiscal_period_end == date(2025, 3, 31)
+
+
+# --- D0097 Finding 5: Forecast Exact Record/Evidence Canonical Identity --------
+
+
+def test_regression_forecast_exact_matching_record_evidence_is_valid() -> None:
+    """要件v1 §5 Positive Test: 正しく対応するRecord/Evidenceの組は
+    引き続きValid Observationを生成する。"""
+    record = _forecast_record(source_version_id="SV_A", eps_value=Decimal("250"))
+    evidence = _forecast_evidence(record)
+    obs = current_fy_company_forecast_per_record_to_peer_observation(record, evidence=evidence, as_of=_AS_OF)
+    assert obs.value == record.multiple
+
+
+def test_regression_forecast_wrong_record_rejected_different_source_version_id() -> None:
+    """要件v1 §5 / D0097 Finding 5 Adversarial Reproduction
+    `forecast_wrong_record_accepted`: 同一Entity・同一Price Date・同一
+    Metric Familyだが`source_version_id`(=FEPS/Disclosureそのもの)が
+    異なるRecord Bから構築されたEvidenceを、Record Aへ渡すとfail closed
+    で拒否される(以前はrelated_codes/value_date一致のみでAcceptされて
+    いた)。"""
+    record_a = _forecast_record(source_version_id="SV_A", eps_value=Decimal("250"))
+    record_b = _forecast_record(source_version_id="SV_B", eps_value=Decimal("300"))  # different disclosure/FEPS
+    evidence_from_b = _forecast_evidence(record_b)
+    with pytest.raises(ValueError, match="対応していません"):
+        current_fy_company_forecast_per_record_to_peer_observation(record_a, evidence=evidence_from_b, as_of=_AS_OF)
+
+
+def test_regression_forecast_wrong_record_rejected_even_with_matching_price_and_eps_value() -> None:
+    """FEPS/Multiple自体が偶然同じでも、`source_version_id`が異なれば
+    別Disclosureとして拒否される(Canonical Identityはsource_version_id
+    に依存し、値の偶然の一致に依存しない)。"""
+    record_a = _forecast_record(source_version_id="SV_A")
+    record_b = _forecast_record(source_version_id="SV_B")  # same eps/price, different source_version_id
+    evidence_from_b = _forecast_evidence(record_b)
+    with pytest.raises(ValueError, match="対応していません"):
+        current_fy_company_forecast_per_record_to_peer_observation(record_a, evidence=evidence_from_b, as_of=_AS_OF)
 
 
 def test_missing_observation_rejects_available() -> None:
