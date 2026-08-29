@@ -11435,3 +11435,262 @@ D0089/D0090/D0091/D0092/D0093はRewriteしていない。
 
 このDECISIONS.md追記のみをCommit対象とする。他のTracked Fileの
 変更は無い。
+
+## D0095 — Stage 3.17: PIT-Safe Peer Comparison Foundation
+
+D0094で特定したDominant Research Bottleneck(Missing Cross-Sectional
+Peer Context)を解消するためのPeer Comparison **Architecture/Production
+Foundation**を構築した。恣意的なPeer選定・投資判断・Consensus・
+Disclosure Semanticsへは進んでいない。Stage 3.15はFrozenのまま変更して
+いない(Concrete Reproducible Defectは発見していない)。H0001は実行して
+いない。
+
+### PEER_COMPARISON Capability Rationale
+
+`lib.sources.catalog.DataCapability.PEER_COMPARISON`を新設した。単一
+企業の`VALUATION`(Price + Fundamental Denominatorという2入力はあるが、
+あくまで単一EntityについてのDerived Fact)と、複数企業を横断する
+Cross-Sectional Peer Comparisonは、研究上異なる情報次元を表すため、
+別分類とした。**Entity Identity自体はこのCapability Enumでは表現しない**
+——`lib.peer.model`のTyped Field(`PeerAggregateContext.target_entity_
+code`/`included_peer_entity_codes`等)が保持する。既定の`DEFAULT_
+ALLOWED_CAPABILITIES`(`lib/evidence/research_artifact.py`、Stage 3.15
+Frozen)には含めていない——呼び出し側が既存Escape Hatch(`build_research_
+artifact()`の`allowed_capabilities`引数)を明示的に拡張して渡す設計とし、
+Stage 3.15 Production Fileそのものは無変更のまま統合できることを実測
+確認した。
+
+### Typed Peer Universe / Candidate vs Accepted Peer
+
+`lib.peer.model.PeerUniverseSnapshot`(target_entity_code・as_of・
+classification_system・classification_code・candidate_peer_entity_
+codes相当・selection_method・selection_version・resolution・pit_note
+を保持)。**Candidate(`PeerCandidate`、First Eligibility Layer=公式
+Classification一致のみ)とAccepted Peer(`AcceptedPeer`、全Comparability
+Guard通過後)を型として明確に分離**し、崩落させない。Guardに落ちた
+Candidateは`ExcludedPeerCandidate`として理由付きで可視のまま残す
+(Silent Drop禁止)。
+
+### PIT Membership Semantics(最重要)
+
+`lib.peer.universe.resolve_peer_candidate_universe()`は、実際に
+Local Snapshot(`equities_master.json`)を実測して確認済みのField名
+(`Code`/`S33`/`CoNameEn`/`Date`)を既定値として使う(既存`lib.data_
+sources.convert.equities_master_payload_to_listing_records()`の
+`Sector33Code`/`CompanyName`という未検証Field名Assumptionとは異なる
+——ただし当該既存関数自体はStage 3.15 Scope外につき変更していない)。
+
+Classification Snapshot自身の基準日(`Date`)とResearch as_ofが一致
+しない場合、`lib.universe.UniverseResolution.RESOLVED`にはしない
+(`RESOLVED`は完全一致時のみ)。基準日がas_ofの前後いずれであっても
+`PARTIAL`とし、理由を`pit_note`へ明示する——**今日の分類を過去へ無条件
+に遡らせない**(要件通り)。空データ・Target未検出・Classification
+Code不明の場合は`DATA_UNAVAILABLE`。Entity Identity Ambiguous(複数
+Provider Codeが同一Internal Codeへ正規化される等)な行はCandidateから
+除外し、件数を`pit_note`へ明記する。
+
+### Comparability Guards
+
+`lib.peer.model.PeerExclusionReason`(9種): `SELF_PEER`・
+`SECTOR_MISMATCH`・`CLASSIFICATION_UNAVAILABLE_PIT_SAFE`・
+`FISCAL_PERIOD_INCOMPARABLE`・`ACCOUNTING_STANDARD_MISMATCH`・
+`METRIC_UNAVAILABLE`・`STALE_FINANCIAL_DATA`・`PRICE_UNAVAILABLE_
+AT_AS_OF`・`ENTITY_IDENTITY_AMBIGUOUS`。
+
+Entity単位Guard(`lib.peer.comparability.evaluate_peer_entity_
+eligibility()`): Self-Peerは構造的に混入不可(3層で二重三重に
+Guard: `PeerUniverseSnapshot.__post_init__`・本関数・
+`PeerComparisonRecord.__post_init__`)。**同一Sector Codeでも
+`universe_resolution != RESOLVED`ならAcceptedにしない**(fail closed、
+PIT未確認のClassificationでは経済的比較可能性を主張しない)。
+
+Metric単位Guard(`lib.peer.comparability.evaluate_peer_metric_
+comparability()`): Metric欠損(`METRIC_UNAVAILABLE`)、Fiscal Period End
+の月不一致(`FISCAL_PERIOD_INCOMPARABLE`)、Accounting Standard確定
+不一致のみ(`ACCOUNTING_STANDARD_MISMATCH`、片側Unknownは推測して
+Mismatch扱いしない)、`STALE_FISCAL_CYCLE_THRESHOLD=1`超過の遅れ
+(`STALE_FINANCIAL_DATA`、Operational Guardであり統計的主張ではない)。
+
+### Compact v1 Metric Contract
+
+`lib.peer.model.PeerMetricType`はv1では2種類のみ実装(`LATEST_
+REPORTED_FY_PER`・`CURRENT_FY_COMPANY_FORECAST_PER`)。Sales/Operating
+Profit/Net Income/EPS YoY(要件が許可する候補6種のうち残り4種)は、
+Builder自体は既存(`lib.fundamentals.same_period_yoy_builder`)だが、
+本Comparison Layerへの結線・Fixtureはこのラウンドでは行っていない
+(架空のReadinessを主張しない、将来拡張の余地としてEnumには追加して
+いない)。新しいValuation計算Logicは一切作らず、既存Production Builder
+(`build_latest_reported_fy_per()`/`build_current_fy_company_forecast_
+per()`)の出力をAdapterで変換するのみ。
+
+### Same-As-Of Rule / Missing Semantics
+
+`PeerMetricObservation.__post_init__`が、`AVAILABLE`の場合は
+`value_available_at <= as_of`を強制Fail Closed(未来公表Metricは
+Reject)。Missing系(`MISSING`/`UNAVAILABLE`/`UNVERIFIED`)は`value`
+必ずNone(0への暗黙変換禁止)。`PeerComparisonRecord`/`build_peer_
+aggregate_context()`双方でTarget/PeerのComparison as_of一致を再検証
+する(Defense-in-depth)。
+
+### Aggregate Statistical Contract
+
+`MINIMUM_PEER_SAMPLE_COUNT = 3`(Operational Minimum、Historical
+Context の`MINIMUM_MONTHLY_OBSERVATIONS`とは独立管理)。Comparable
+Peer数がこれ未満なら`build_peer_aggregate_context()`は`None`を返す
+(Fail Closed、`SUPPORTED`格上げ等は無い)。min/median/max/Percentileは
+`lib.valuation.model`のHistorical Valuation Contextと**同一の統計定義**
+(Empirical CDF Percentile・Ordered Midpoint Median、定数を再利用)を
+そのまま踏襲し、独自定義を作っていない。
+
+### Evidence Integration(D0094の教訓を維持)
+
+D0094が示した「77 Evidence ≠ 77 independent confirmations」という
+教訓を踏まえ、Peer比較結果を1件ずつEvidence化せず、常に**1件の集約
+Peer Context Evidence**として表現する(`lib.peer.evidence.peer_
+valuation_context_to_evidence()`)。`DataCapability.PEER_COMPARISON`・
+`DataLayer.DERIVED`・`EvidenceType.FACT`。Content は実測値のみ
+(target_value・peer_count・included/excluded peers・min/median/max・
+target_percentile)で構成し、"cheap"/"expensive"/"undervalued"/
+"overvalued"/"attractive"/BUY/SELL/rerating等のInterpretive語は一切
+含まない(Test`test_evidence_content_has_no_interpretive_words`で
+機械的に確認)。**Default Relation = NEUTRAL**(低PER→SUPPORTS等の
+自動Mapping禁止、Good Company != Good Stock)。
+
+### Context Evidence Identity(Collision-Safe)
+
+`lib.peer.evidence.peer_valuation_context_evidence_id()`は
+target_entity_code・metric・comparison as_of・selection_version・
+実際にIncludeされたPeer SetのSHA-256 Fingerprint(先頭16桁、`",".join
+(sorted(codes))`の計算式を明示、Peer名の雑なConcatは避ける)からID
+を導出する。同一target/as_ofでもPeer Setが1件でも異なれば別Identity
+になることをTest(`test_evidence_id_changes_when_peer_set_changes`)
+で確認済み。
+
+### Provenance DAG
+
+`lib.peer.provenance.register_peer_context_provenance_bundle()`が
+Context → Target Observation Evidence + 全Included Peer Observation
+Evidenceを配線する(全Parent実在検証を書き込み前に完了、Fake Parent
+禁止)。**Excluded Peerは構造的にSupporting Parentになり得ない**
+(`PeerAggregateContext.included_peer_observation_evidence_ids`に
+含まれないため、Test`test_excluded_peer_not_a_provenance_parent`で
+確認)。第2階層(Observation Evidence → Price/EPS Raw Lineage)は、
+`LATEST_REPORTED_FY_PER`のみ既存`lib.valuation.provenance.register_
+latest_reported_fy_per_upstream_provenance()`をそのまま再利用して
+配線する——`CURRENT_FY_COMPANY_FORECAST_PER`向けの同等Upstream
+Helperは現状Repositoryに存在せず、新設はScope外のため、その場合は
+第1階層のみ配線し架空のProvenanceを主張しない(明示的な既知の限界)。
+
+Fresh-Process Reload(別`EvidenceRegistry`/`ProvenanceStore`インスタンス
+を同一File Pathへ向けて再生成)後もContext Evidence解決・Target/Peer
+Observation解決・Context→Observation Provenance解決・Observation→
+Price/EPS Provenance解決の全てが機能することを実測確認済み
+(`test_provenance_bundle_and_fresh_process_reload`)。
+
+### ResearchArtifact Integration
+
+`build_research_artifact()`へPeer Context Evidenceを含めるには、
+`allowed_capabilities`引数を呼び出し側で明示的に`DEFAULT_ALLOWED_
+CAPABILITIES | {DataCapability.PEER_COMPARISON}`へ拡張する必要がある
+ことをTestで確認(Stage 3.15既存Guardは無変更のまま機能する)。Peer
+Evidence追加のみでは、明示的に渡したData/Evidence/Research Confidence
+・Conclusionを一切自動変更しないことを固定Test
+(`test_peer_context_evidence_included_confidence_unchanged`)で確認
+済み。
+
+### Real 7203 Peer Data Acquisition Diagnosis
+
+既存J-Quants取得経路を実装Code直接確認した:
+
+- `lib.data_sources.jquants.JQuantsAdapter.fetch_equity_bars()`/
+  `.fetch_financial_statements()`はいずれも`codes: Sequence[str]`を
+  受け取る汎用Interfaceであり、`lib.data_sources.local_snapshot.
+  LocalSnapshotAdapter`と完全に同じShape。
+- `scripts/fetch_jquants_local_snapshot.py`の`--codes`引数は
+  `nargs="+"`(任意銘柄リスト、既定は現在の4銘柄だが構造上固定されて
+  いない)。
+
+→ **新規Provider・新規Endpoint Architecture・新規Fetch抽象化は不要**
+(既存経路がArbitrary Entity Codeを既に汎用的にサポートしている)。
+
+一方、`lib/data_sources/jquants.py`自身のModule Docstringと
+DECISIONS.md全体(D0012以降、20件以上の`EGRESS_BLOCKED`記録)が明示
+する通り、**このClaude Codeセッション自体はNetwork Policyにより外部
+API(J-Quants含む)へ一切疎通できない環境である**ことを確認した。した
+がって仮に「実行してよい」という許可があったとしても、このSession自身
+がLive Fetchを直接実行することは構造的にできない(過去のRoundで実際に
+取得されたSnapshotは、いずれもこのSession外——利用者自身の環境——で
+実行された結果を読み込んだものと考えられる)。
+
+`PEER_DATA_ACQUISITION_STATUS = PEER_DATA_FETCH_APPROVAL_REQUIRED`
+とし、Live Fetchは実行していない(Raw Overwriteなし、新規Provider
+実装なし)。
+
+### Real 7203 Peer Universe(Diagnosis、実装外)
+
+D0094が既に実測確認した通り、Local Snapshotに存在する7203以外の3銘柄
+(3626=TIS/5250・6758=Sony/3650・8056=BIPROGY/5250)はいずれも7203の
+S33=3700(輸送用機器)と異なるSectorであり、**Toyotaの有効なSame-Sector
+Peerは現在のLocal Snapshotに1件も存在しない**。したがってCandidate
+Universe自体を構築するデータが無く、`resolve_peer_candidate_universe()`
+の実行結果は`DATA_UNAVAILABLE`(Peer Data不在)に留まる。既存3銘柄を
+Toyota Peerとして代用していない(要件通り、Eligibilityを弱めていない)。
+
+### Real 7203 Peer Context Status
+
+`REAL_7203_PEER_CONTEXT_STATUS = BLOCKED_BY_PEER_DATA`(Peer Data
+Acquisition Approval待ち、上記参照)。`PEER_FOUNDATION_STATUS =
+COMPLETE`とは明確に分離して記録する——Fixture Testのみで実Toyota Peer
+Context完成を主張しない。
+
+### Deterministic Tests
+
+7 Test File・67 Testで以下を機械的に固定: Candidate≠Accepted、Self-Peer
+Reject、Sector Mismatch Exclude、Classification PIT Fail Closed、
+Metric Missing != Zero、Future-Published Metric Reject、Fiscal/
+Accounting Guard、Stale Data Guard、Deterministic Ordering、
+Minimum Sample=3 Boundary(2 peers→None、3 peers→Aggregate)、
+Aggregate統計値の厳密一致、Evidence ID決定性・Peer Set変化での
+Identity変化、Interpretive語不在、Provenance全階層+Fresh Reload、
+ResearchArtifact統合+Confidence不変。Real 7203 Runtimeには依存しない
+(全てSynthetic Fixture)。
+
+### Quality Gates
+
+- `ruff check`(`lib/peer/*`・`lib/sources/catalog.py`・
+  `13_tests/test_peer_*.py`): All Pass。
+- `ruff format --check`: All Pass。
+- `mypy`(`lib/peer/*`・`lib/sources/catalog.py`、Project既定
+  `python_version=3.11`): Success, no issues(8 files)。
+- `mypy`(`13_tests/test_peer_*.py`、Project既定`python_version=3.11`):
+  `import pytest`単体でも再現する既知の環境問題
+  (`numpy/__init__.pyi:737: Type statement is only supported in
+  Python 3.12 and greater`、pytestのStub Chainが`numpy`を引き込む
+  ことに起因、D0095とは無関係)によりBlockされる。Diagnostic目的の
+  み`--python-version 3.12`でNumPy Stub問題を迂回した結果、7 File
+  全てSuccess(no issues)を確認済み(D0095固有のType Errorが隠れて
+  いないことを実測で確認)。Project既定Configは変更していない
+  (Numpy/mypy Environment自体はD0095のScope外、修正していない)。
+- Full `pytest Japanese_Equity_Lab/13_tests/`: **1363 passed, 1 failed,
+  0 skipped**。唯一の失敗は`test_protected_path_hook.py::test_hook_
+  warns_on_protected_screening_tool_paths`——D0074以来の既知Windows/
+  Japanese Username Hook環境問題であり、今回のScope・変更と無関係
+  (Pre-existing、Regressionではない)。
+
+### Repository変更・Stage 3.15 Freeze遵守
+
+`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・Historical
+Context Model/Builder・PIT Logic・Calendar Logic・Evidence ID・
+Artifact Schema・Provenance Semantics・Stage 3.15 Acceptance Harnessは
+いずれも無変更(Concrete Reproducible Defect未発見のためFreeze解除
+不要)。H0001 Locked Testは実行していない。Consensus・Disclosure
+Semantic Extraction・Expected Return・Decision Engine・Portfolio
+Engineへは着手していない。BUY/SELL/HOLD/Target Price/Position Size
+への言及は一切ない。
+
+### Persistence / Commit対象
+
+`lib/sources/catalog.py`・`lib/peer/`(新規6ファイル)・
+`13_tests/test_peer_*.py`(新規7ファイル)・このDECISIONS.md追記を
+Commit対象とする。`02_company_research/7203_Toyota_Motor/`はいずれも
+Commit対象外(既存の無関係なUntracked Directory)。

@@ -38,6 +38,16 @@ class DataCapability(StrEnum):
     `lib.evidence.retrieval.plan_retrieval()`が`DataCapability`を汎用的に
     列挙するのみのため、この追加によるCatalog全体への副作用は無いことを
     確認済み)。"""
+    PEER_COMPARISON = "PEER_COMPARISON"
+    """複数Entity(Target + Peer群)を横断するCross-Sectional Derived Fact
+    (Stage 3.17、D0095)。単一企業の`VALUATION`(Price + Fundamental
+    Denominatorという2入力はあるが、あくまで単一EntityについてのDerived
+    Fact)と、複数企業を横断するCross-Sectional Peer Comparisonは、
+    研究上異なる情報次元を表すため、別分類とする——Entity Identity自体は
+    このCapability Enumでは表現せず、`lib.peer.model`のTyped Field
+    (`PeerAggregateContext.target_entity_code`/`included_peer_entity_
+    codes`等)が保持する(既存Capabilityへの無理な押し込みを避ける、
+    `VALUATION`追加時と同じ判断、D0077)。"""
 
 
 class SourceAuthorityClass(StrEnum):
