@@ -11093,3 +11093,345 @@ D0089/D0090/D0091/D0092はRewriteしていない。
 Commit対象とする。Isolated Runtime DirectoryのRegistry JSONL・
 Acceptance Temp Output・`02_company_research/7203_Toyota_Motor/`は
 いずれもCommit対象外。
+
+## D0094 — Stage 3.16: Research Bottleneck Remeasurement
+(実装なし、Measurement/Prioritization専用ラウンド。Stage 3.15は
+Frozen——変更していない。H0001は実行していない)
+
+### 目的とMode
+
+Real 7203 Research Artifact(as_of=2024-11-15 15:00 JST)は
+Data Confidence=LOW / Evidence Confidence=MEDIUM / Research
+Confidence=LOW / Conclusion=INCONCLUSIVEのまま。「次にPeer/Consensusへ
+進む」ことを前提とせず、現在のDominant Research Bottleneckが実際に
+何であるかを、既存Repository状態(Production Code・既存Local
+Snapshot・既存Catalog Registration)の実測のみから診断した。**新機能は
+一切実装していない**(Peer Comparison・Consensus・Disclosure Semantic
+Extraction・Valuation Enhancement・新Provider・新Fetchのいずれも未実装)。
+
+### Baseline(Real Harness、main自身がFresh Process Build→別Process
+Verifyを同期実行、Network無し、Stage 3.15 Harnessは無変更のまま使用)
+
+```json
+{
+  "status": "PASS",
+  "artifact_evidence_count": 77,
+  "lineage_only_count": 30,
+  "unique_evidence_count": 107,
+  "confidence": {"data": "LOW", "evidence": "MEDIUM", "research": "LOW"},
+  "conclusion": "INCONCLUSIVE",
+  "failures": []
+}
+```
+
+Baseline Expected(77/30/107、LOW/MEDIUM/LOW、INCONCLUSIVE)と完全一致。
+Regressionなし。
+
+### Evidence Inventory(77件、実測)
+
+Capability別: FUNDAMENTAL 56 / POSITIONING 18 / VALUATION 3。
+Evidence Type別: 全77件がFACT(CLAIM/INTERPRETATION/OPINION/IDEAは0件)。
+Layer別: NORMALIZED 52 / DERIVED 25。
+Source Authority Class別: COMPANY_PRIMARY 52 / PRIMARY_OFFICIAL 25。
+Originating Source: 全77件がJQUANTS_SOURCE_DATA(単一Provider)。
+Relation(Packet実測): 全77件がNEUTRAL(`unknowns`バケット、
+`relation_assignments_tracked=True`)——SUPPORTS/CONTRADICTS/
+ALTERNATIVE_EXPLANATIONは1件も無い(Hypothesis自体をこのRoundでは
+持たないAcceptance用Packetのため、これは既知の設計、regressionではない)。
+Available_at範囲: 2024-02-06 13:25〜2024-11-14 15:30 JST。
+
+FUNDAMENTAL 56件の内訳(Content文字列から実測、推測なし): P&L 16 /
+CashFlow 12 / BalanceSheet 12 / Guidance 12 / Same-Period YoY Change 4。
+
+### Evidence Independence Analysis(実測ベース)
+
+FUNDAMENTAL 56件は、実際には**わずか4件の開示Envelope**
+(ENV_7203_20241101509817・ENV_7203_20240130521611・
+ENV_7203_20240724553908・ENV_7203_20240424575411、それぞれ2Q/3Q/1Q/FY
+開示)から導出された行項目の集合であることを、`fundamentals_as_of()`の
+実際の選択結果とEnvelope IDを突き合わせて確認した(14+14+14+10=52件、
+Same-Period YoY 4件を除く)。**56件のEvidenceは56件の独立した確認ではなく、
+実質4回の開示Event(独立情報源としてはC区分「同一開示からの反復測定」に
+分類する)**。Same-Period YoY 4件はこの4件のうち2件の開示(当期・前期
+同期間)を比較演算しただけであり、新しい情報源ではない(B区分「既存情報の
+変換ビュー」)。
+
+POSITIONING 18件(Turnover Value + Volume Moving Average、直近10営業日
+Window)は、FUNDAMENTAL群とは異なる独立Source Family(市場Price Data、
+D区分「市場由来のEvidence」)だが、18件自体は同一Price Seriesの
+Rolling Window変換であり、隣接日同士は強く自己相関している(実質的な
+独立情報量は18件よりはるかに少ない)。
+
+VALUATION 3件(Current Actual PER・Current FY Company Forecast PER・
+Historical Context)は、いずれもPrice(D区分)× 既にFUNDAMENTAL側で
+数えたEPS(A/C区分)の組み合わせによるDerived Fact(B区分「既存情報の
+変換ビュー」)であり、新しいSource Familyを追加しない。Historical
+Contextは30件のLineage-only Historical PER(Registry内、Artifact
+非包含)を持つが、これらも全て同じPrice Family × Fundamental Family
+の再結合であり、独立した新情報源(E区分「外部比較情報」)ではない。
+
+**結論**: 77件のEvidenceは、真に独立した情報源としては
+「Company Disclosure(4開示Event)」と「Market Price(1 Series)」の
+**2つの情報源Family**にほぼ集約される。E区分(外部比較情報、Peer/
+Consensus等)は0件、F区分(不在)がPeer/Consensus/Disclosure Semantics
+の3方向で該当する。
+
+### DataGap Inventory(Artifactに実際に persisted された2件、実測)
+
+1. topic="Historical Valuation Context Coverage (7203, ...)"、
+   status=MISSING。制限対象: Historical Valuation Context次元。
+   分類: MATERIAL(Historical Context自体はStrongに機能しているが、
+   約2.4年という短いWindowはValuation次元の信頼性を制限する)。
+2. topic="J-Quants Financial Summary Source Vintage Completeness"、
+   status=UNVERIFIED。制限対象: Data Confidence(全FUNDAMENTAL Evidence
+   の完全性の前提)。分類: BLOCKING(Data Confidence=LOWの直接的な
+   原因の一つ、下記参照)。
+
+Artifactに存在しないDataGap(Peer/Consensus/Disclosure Semantics
+そのものについてのDataGapレコードは無い——これらはそもそも
+Evidence Pool自体に一切含まれておらず、「取得したが不確実」ではなく
+「取得を試みてすらいない」次元であるため、DataGapとしての表現対象
+外だったと解釈する。Artifactに存在しないDataGapを新設してはいない、
+実測結果のみ記録)。
+
+### Confidence Bottleneck Decomposition
+
+**DATA_CONFIDENCE=LOW**: 強み: FUNDAMENTAL 52件はCOMPANY_PRIMARY・
+FACT・NORMALIZEDで、出典・時刻ともにPIT安全に追跡可能。弱み: Source
+Vintage DataGap(UNVERIFIED)——「訂正前値が必ずHistorical Rowとして
+残るか」を確認できていないため、このLabのRevision Historyが本当に
+完全か(訂正が発生した場合に見落とさないか)を保証できない。実際に
+現在ローカルにある4銘柄(7203/3626/6758/8056)のFinancial Summary
+20行ずつを実測したが、いずれも訂正Row(重複Period Key)が1件も無く、
+既存Local Dataからこの疑問を経験的に検証することも出来なかった。
+これはData Diversityの不足ではなく、**Infrastructure Reliability
+(検証未了)**が原因。
+
+**EVIDENCE_CONFIDENCE=MEDIUM**: 強み: 77件全てがFACT(推測混入なし)、
+Layer/Authority Classの分離が一貫している。弱み: 上記Independence
+Analysisの通り、実質2 Source Family(Company Disclosure・Market
+Price)にほぼ集約され、E区分(外部比較Evidence)が皆無。件数の多さ
+(77件)がそのまま情報の多様性を意味しない、という本Round自身の
+Independence Analysisの結論がそのままMEDIUM(HIGHではない)の理由。
+
+**RESEARCH_CONFIDENCE=LOW**: 強み: 定量的なCompany Operating
+Performance/Cash Flow/Guidance/Current & Historical Valuationは
+Strong〜Adequateに揃っている。弱み: Cross-Sectional Peer Context・
+Market Expectations/Consensus・Disclosure Risk/Catalyst Semanticsの
+3次元が完全に不在(Missing)であり、「この銘柄が割安か」「市場が
+何を織り込んでいるか」「なぜ業績が変化したか」という質問に一切
+答えられない構造。これはData Quality/PIT Reliabilityの問題ではなく、
+**Missing Comparative Context + Missing Semantic Context**が原因。
+
+### Research Dimension分類(12次元、実測ベース)
+
+1. Company Operating Performance: ADEQUATE(P&L 16件、4開示Event分の
+   実績。同一開示の反復ではなく期間展開のため一定の独立性あり)。
+2. Balance Sheet / Financial Resilience: ADEQUATE(12件、同上)。
+3. Cash Flow: ADEQUATE(12件、同上)。
+4. Company Guidance: ADEQUATE(12件、会社予想Labelあり)。
+5. Current Valuation: STRONG(Current Actual PER・Current FY Forecast
+   PERの両方、v2 Evidence、Provenance完備)。
+6. Historical Valuation Context: ADEQUATE(n=30、Provenance完備だが
+   約2.4年のみ、DataGap MISSING明示済み)。
+7. Market Positioning: WEAK(18件あるが単一Source Familyの高自己相関
+   Windowのみ、Volatility等の他Positioning指標は未構築)。
+8. Disclosure Risk / Catalyst Semantics: MISSING(Evidence Pool内に
+   0件、Local Snapshotにも該当Text Data自体が存在しない)。
+9. Cross-Sectional Peer Context: MISSING(Evidence Pool内に0件、
+   後述Peer Readiness Diagnosis参照)。
+10. Market Expectations / Consensus: MISSING(Evidence Pool内に0件、
+    後述Consensus Diagnosis参照)。
+11. Source Vintage / PIT Reliability: UNVERIFIED(DataGap明示済み、
+    上記参照)。
+12. Historical Coverage Depth: WEAK(約2.4年、後述Historical Coverage
+    Diagnosis参照——既存Local Dataでは拡張不可であることを実測確認)。
+
+### Peer Readiness Diagnosis
+
+`lib/universe.py`にPIT安全なUniverse解決機構(`ListingRecord.sector`
+含む)は既に存在するが、**特定Entityに対する「Peer Universe」を
+定義するHelper自体は現状Repository内に存在しない**。さらに実測の
+結果、Local Snapshot(`01_data/raw/local_snapshot_input/`)には7203の
+ほかに3626(TIS)・6758(Sony Group)・8056(BIPROGY)の価格・財務データが
+既に存在するが、`equities_master.json`のS33(業種)コードを実際に
+確認したところ、7203のS33=3700(輸送用機器)に対し、3626/8056は
+S33=5250(情報・通信)、6758はS33=3650(電気機器)であり、**いずれも
+Toyotaと同一業種のPeerではない**(異業種の他銘柄データが偶然
+存在するだけで、意味のあるPeer Comparisonには使えない)。真の
+同業種Peer(例: 本田技研・日産自動車・デンソー等)のデータはLocal
+Snapshotに一切存在しない。
+
+`PEER_READINESS = NOT_READY`。必要なGuard: (1) 同業種Peer Entity
+(S33=3700)のPrice/Fundamental Dataを既存`LocalSnapshotAdapter`
+経由で新規取得すること(新Fetch、本Roundでは未実施・未実装)、
+(2) PIT安全なPeer Universe定義(as_of時点の業種所属、現在の業種
+所属を過去へ遡らせない)、(3) 比較基準日の揃え(全PeerのHistorical
+PERを同一as_ofで構築)、(4) Metric比較可能性(IFRS/JGAAP差異・
+決算期のズレ)、(5) Entity Identity解決(D0036 Ticker Code方針の
+遵守)。
+
+### Consensus Diagnosis
+
+`lib/consensus/`(Phase4E-4)は、PIT-safe/Vintage-aware/Provenance
+保持の観点でModel・View・Normalize層まで完成しているが、
+`lib/consensus/catalog.py`に登録された2候補(quick_consensus_japan・
+ifis_japan_consensus)はいずれも`ImplementationStatus.NOT_IMPLEMENTED`
+であることを実測確認した。過去のdata-source-researcher調査
+(2026-08-19)では、候補Provider(LSEG/Bloomberg/FactSet/QUICK/IFIS
+Japan等)へのNetwork Egressがこのセッション環境で一貫してBlockされて
+おり(`EGRESS_BLOCKED`)、多くはSearch-snippet由来のUNVERIFIED情報に
+留まっている。
+
+`CONSENSUS_DATA_AVAILABILITY = ABSENT`。Conceptual Value(市場の
+Forward Expectationとの比較)は高いが、実装Readinessは現状で最も低い
+候補の一つ(新規Enterprise Provider契約が前提になる可能性が高く、
+個人利用ローカル実行前提のこのLabのCLAUDE.md方針とも緊張関係がある)。
+
+### Disclosure Semantic Extraction Diagnosis
+
+`financial_summary_7203.json`(J-Quants Financial Summary)の実フィールド
+一覧を実測したところ、Sales/OP/NP/EPS/TA/Eq/CFO/CFI/CFF等の完全に
+数値・構造化されたFieldのみで構成されており、Risk/Catalyst/経営者
+コメント等の自由文Field自体が存在しない。`lib/disclosures/providers/
+tdnet_normalize.py`(Phase4B-3)はTDnet開示のEvent Metadata(DiscNo/
+Code/DocType/時刻等)を扱うが、全文Text本体は対象外であり、かつ
+Local Snapshotには対応するTDnet Payload File自体が存在しない
+(`01_data/raw/local_snapshot_input/`にTDnet関連Fileは1件も無い)。
+
+`DISCLOSURE_SEMANTIC_READINESS = NOT_READY`。「Parser/Semantic Layerが
+無いだけ」ではなく、**Data自体(全文Text)がLocal Snapshotに不在**
+という、より根本的な不在(F区分)である。
+
+### Historical Coverage Diagnosis
+
+実測: 現在のHistorical Context(n=30)の元になった`completed_month_end_
+sessions`の候補は39件(2021-08-31〜2024-10-31)、うち9件が
+unavailable_denominator(FY実績EPSのRevision Historyが存在しない)で
+除外されている。実際にRevision Historyを実測したところ、7203のFY実績
+EPSの最古Versionのavailable_atは2022-05-11であり(FY2022/3決算)、
+それより前の候補月(2021-08〜2022-04)には対応するFY実績EPSが
+Local Snapshotに一切存在しない。これはD0087で確認済みの「本Labの
+J-Quants Subscriptionが2021-08-28以降のみをCoverする」という制約と
+整合しており、**既存Local Dataの範囲内ではHistorical Coverageをこれ
+以上拡張できない**(新規Fetch・Subscription拡張が無い限り、Candidate
+Dも実装不可)。
+
+より深いHistoryが仮に得られたとしても、改善するのはValuation
+Context次元(6)のみであり、Peer(9)・Consensus(10)・Disclosure
+Semantics(8)がMISSINGのままである限りResearch Confidence=LOWは
+変わらない可能性が高い(下記Counterfactual参照)。
+
+### Source Vintage Diagnosis
+
+上記Independence Analysisの過程で、Local Snapshotにある4銘柄全ての
+Financial Summary(各20行)を実測したが、いずれも同一Period Key
+(CurFYEn, CurPerType)の重複行(訂正の実例)が1件も存在しなかった
+(`ChgByASRev`/`ChgNoASRev`/`RetroRst`も全行でfalse/空欄)。つまり
+**現在のLocal Snapshotには、この疑問を検証できる実際の訂正Caseが
+1件も含まれていない**——Source Vintage DataGapは、既存Local Dataの
+再検査だけでは解決できないことを確認した(新規Fetchまたは公式仕様の
+文書的確認のいずれかが必要)。
+
+Source Vintage解決の価値: 主にData Confidenceのみを改善する
+(Infrastructure Reliabilityの確認であり、新しい情報を追加しない)。
+Evidence Confidence・Research Confidenceへの直接効果は限定的
+(Diversityの追加ではないため)。
+
+### Counterfactual Capability Analysis
+
+- Perfect Historical Coverage: Valuation Context次元は改善するが、
+  Peer/Consensus/Disclosure Semanticsは依然として不在のまま。
+  Research Confidenceは依然LOWの可能性が高い。
+- Perfect Peer Comparison: Cross-Sectional次元は解消するが、
+  Qualitative Risk/Catalystは依然不在、Consensusも不在のまま。
+- Perfect Consensus: Market Expectation次元は解消するが、Peer
+  Contextは依然不在、Source Vintageの不確実性も残る。
+- Perfect Source Vintage Verification: Data Confidenceの
+  Infrastructure的な信頼性は上がるが、新しい情報次元は一切追加
+  されない(Research Confidenceへの直接効果は薄い)。
+- Perfect Disclosure Semantic Extraction: Qualitative Contextは
+  追加されるが、Peer/Consensusは依然不在のまま。
+
+**単一の次善策では、Research Confidenceを単独でLOWから引き上げる
+ことはできない**(3つのMISSING次元が並立しているため)。
+
+### Candidate Dominance Table
+
+| Candidate | Current Gap Addressed | Info Novelty | Independence | PIT Readiness | Data Availability | Confidence Axis | Remaining Bottleneck After | Priority Tier |
+|---|---|---|---|---|---|---|---|---|
+| A. Peer Comparison | Dim 9 (Cross-Sectional) | HIGH | HIGH | READY_WITH_GUARDS | MISSING(既存Provider経由で取得可能) | Research | Consensus・Disclosure Semantics | TIER_1 |
+| B. Consensus | Dim 10 (Market Expectations) | HIGH | HIGH | NOT_READY | MISSING_PROVIDER(既存調査でBlocked確認済み) | Research | Peer・Disclosure Semantics | DEFER |
+| C. Disclosure Semantic Extraction | Dim 8 (Risk/Catalyst) | HIGH | HIGH | NOT_READY | MISSING_PROVIDER(全文Text自体が不在) | Research/Evidence | Peer・Consensus | TIER_2 |
+| D. Historical Coverage Extension | Dim 12 | LOW | LOW(既存2 Familyの再結合) | NOT_READY | 実測によりCONFIRMED_UNAVAILABLE(Subscription境界) | Data(限定的) | Dim 8/9/10全て | DEFER |
+| E. Source Vintage Verification | Dim 11 | LOW(新情報無し) | N/A(Infrastructure) | READY_WITH_GUARDS(Spec確認 or 訂正実例待ち) | PARTIAL(既存Dataでは実例なし) | Data | Dim 8/9/10全て | TIER_2 |
+| F. Positioning Enhancement | Dim 7 | LOW | LOW(既存Price Familyの再結合) | READY | AVAILABLE_NOW | Evidence(限定的) | ほぼ全て | TIER_3 |
+| G. Valuation Enhancement | Dim 5/6 | LOW | LOW(既存Price+EPS Familyの再結合) | READY | AVAILABLE_NOW | Evidence(限定的) | ほぼ全て | TIER_3 |
+
+### Dominant / Secondary / Tertiary Bottleneck
+
+`DOMINANT_RESEARCH_BOTTLENECK = Missing Cross-Sectional Peer Context`
+(Dimension 9)。理由: Independence Analysisにより、現在のEvidenceは
+実質2 Source Family(Company Disclosure・Market Price)にほぼ集約され、
+「割高/割安か」という最も基礎的な問いに答える手段(同業種比較)が
+構造として皆無であること、かつ他のMISSING次元(Consensus・Disclosure
+Semantics)と異なり、**既存の接続済みProvider(J-Quants)だけで解決
+できる**(新規Provider契約が不要)という点で、実現可能性込みで
+最も優先度が高いと判断した。
+
+`SECONDARY_BOTTLENECK = Missing Disclosure Risk/Catalyst Semantics`
+(Dimension 8)。定量的な変化の「なぜ」を説明する手段が皆無。
+
+`TERTIARY_BOTTLENECK = Missing Market Expectations/Consensus`
+(Dimension 10)。概念的価値は高いが、個人利用ローカル実行という
+本Labの前提(CLAUDE.md)とEnterprise専用Providerという制約が強く
+衝突するため、実現可能性の観点で最も後回しとした。
+
+### BEST_RESEARCH_VALUE / BEST_IMPLEMENTABLE_NEXT_STEP
+
+`BEST_RESEARCH_VALUE = Consensus`(Market Expectationとの比較は、
+静的なPeer比較よりも「市場が既に織り込んでいるか」という投資判断に
+直結する問いへ最も直接的に答えうる、という概念的価値の高さによる)。
+
+`BEST_IMPLEMENTABLE_NEXT_STEP = Peer Comparison`(既存の接続済み
+Provider・既存のEntity非依存Production Pipeline[Historical Context
+Builder等は既にentity_code Parametrizedである]をそのまま流用でき、
+新規Provider契約・新規Adapter実装が不要なため)。
+
+両者は一致しない——BEST_RESEARCH_VALUEとBEST_IMPLEMENTABLE_NEXT_STEP
+の乖離を明示する。
+
+### RECOMMENDED_NEXT_CAPABILITY / RUNNER_UP
+
+`RECOMMENDED_NEXT_CAPABILITY = Peer Comparison`。DOMINANT_BOTTLENECK
+(Dim 9)を直接解消し、既存Provider・既存Pipelineの範囲内で実現可能
+(新規Provider契約不要)という点でCandidate中最も現実的にRepository
+Capabilityと整合する。**本Roundでは実装しない**(Measurement Only)。
+
+`RUNNER_UP_CAPABILITY = Disclosure Semantic Extraction`。Novelty/
+Independenceは同等にHIGHだが、Local Snapshotに全文Text Data自体が
+一切存在せず(NOT_READY、新規Provider/新規Fetchが前提)、Peer
+Comparisonより実装依存関係が大きいため次点とした。
+
+### Opportunity / Reliability / Action分離の遵守
+
+本Round全体を通じて、BUY/SELL/HOLD/Target Price/Position Sizeへの
+言及は一切行っていない。Relationの自動格上げも行っていない
+(Packet実測はNEUTRAL/unknowns 77件のまま)。既存ResearchArtifact
+Conclusion(INCONCLUSIVE)は変更していない。新規ResearchArtifactは
+Persistしていない(Baseline再構築はStage 3.15既存Harnessの
+Temp Output内のみで完結、Repositoryへの新規Persistなし)。
+
+### Repository変更・Stage 3.15 Freeze遵守
+
+Production Code変更なし(`lib/evidence/*`・`lib/valuation/*`・
+`lib/registry/*`・Historical Context Model/Builder・PIT Logic・
+Calendar Logic・Evidence ID・Artifact Schema・Provenance Semantics
+いずれも無変更)。Concrete Reproducible Defectは発見していない
+(Stage 3.15 Freeze解除は不要)。H0001 Locked Testは実行していない。
+D0089/D0090/D0091/D0092/D0093はRewriteしていない。
+
+### Persistence / Commit対象
+
+このDECISIONS.md追記のみをCommit対象とする。他のTracked Fileの
+変更は無い。
