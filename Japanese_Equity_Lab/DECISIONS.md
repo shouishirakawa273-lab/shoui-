@@ -12933,3 +12933,115 @@ Inferred `supersedes_claim_id`・Silent Offset Rebindingのいずれも
 `lib/valuation/*`・`lib/evidence/model.py`・ResearchArtifact・
 `.claude/hooks/*`・Stage 3.17 Code・D0098.1 Codeはいずれも無変更。
 Automation/Orchestration Codeは追加していない。H0001は実行していない。
+
+## D0102.3 — Candidate Extraction Boundary設計(設計+Adversarial Auditのみ、実装なし)
+
+D0102.2実装のAdversarial Audit(`FINAL_VERDICT = SAFE_TO_PROCEED`)で
+持ち越されたResidual Finding**D0102.2-A01**(EvidenceSpanは直接構築
+可能で、Source Revalidationが必須ではない)を、D0102.1直上の
+Candidate Extraction Boundary設計で閉じる(または無害化する)ことを
+目的としたRoundである。Production Code・Test・LLM呼び出しはいずれも
+実装していない。
+
+### D0102.2-A01のClosure(Integration Boundaryでの無害化)
+
+`TRUSTED_EVIDENCE_REQUIRED_BEFORE_MODEL_CALL = TRUE`。以下の順序を
+必須Contractとして確定した: (1) Orchestrationが正確に1
+`NormalizedTextBlock`を選択、(2) `EvidenceSpan.from_text_block()`で
+Trusted EvidenceSpanを構築、(3) **`revalidate_evidence_span(...) ==
+VALID`をModel呼び出し**直前**に必ず確認する**(NEEDS_REVALIDATIONまたは
+Exceptionの場合はModelを一切呼ばない)、(4) Model呼び出し、(5) Model
+出力はSemantic Fieldのみ、(6) Candidateは同一のEvidenceSpan Instance
+へBindする。
+
+この設計により、`semantic_claims.py`自体がEvidenceSpanの直接構築を
+まだ技術的に許容している(D0102.2の既知Residual)ことは変えないまま、
+**構築経路に関わらずModel呼び出し前のRevalidationが必須**になるため、
+偽装/Fabricated EvidenceSpanは実在するSourceと一致しない限り必ず
+Revalidationで弾かれる。D0102.2-A01はIntegration Boundaryで
+**Neutralize**された(Schema層自体の追加的Hardening——private
+Constructor相当のSentinel Pattern等——は別Roundの小さな任意改善として
+残した、Blockingではない)。
+
+### Model Authority Boundary
+
+Model出力Schemaは`{"candidates": [{"claim_type", "normalized_claim_
+text", "direction"}]}`の3 Fieldのみ(EvidenceSpan/Document ID/Offset/
+Timestamp/Schema Version/Extraction Version/Claim ID/Semantic
+Identity Key等のIdentity系Fieldは一切含めない)。これらがModel出力に
+含まれていた場合は`REJECT_RESPONSE`(`MODEL_CONTRACT_VIOLATION`として
+分類、Silent Ignoreしない)。`ONE_SOURCE_TEXTBLOCK_PER_EXTRACTION_
+CALL = REQUIRED_V1`を維持。Model入力はTextBlockの`normalized_text`+
+`taxonomy_element_name`のみ(会社名/銘柄コード/Filing種別/期間等は
+意図的に含めない——特に会社名はModelの事前学習知識によるContamination
+Riskがあるため除外、`taxonomy_element_name`はPIT-safeかつ分類に
+直接有用なため含める)。
+
+### BUSINESS_RISK構造Rule(Substring Heuristicを明示的に却下)
+
+`taxonomy_element_name contains "Risk"`という素朴なSubstring Match
+は、本Repository自身の既存原則(D0045、`lib/disclosures/model.py`
+DocumentKind Docstring「Provider固有Codeからのmappingは明示的Mapping
+Tableのみで行い、substring heuristicは使わない」)に反するため却下
+した。代わりに実測済みTaxonomy要素名(`jpcrp_cor:BusinessRisksText
+Block`)のみを含む明示的Allowlistを採用し、これに一致しないTextBlock
+ではBUSINESS_RISKをLLMへ選択肢として提示しない(LLMが内容から「risky
+そう」と判断してBUSINESS_RISKを付与することを構造的に禁止)。
+
+### Direction FieldはLiteral Quantity Movementのみ
+
+「損失が減少した」→`DECREASE`(数値としての減少、Good Newsという
+評価ではない)。評価的表現(改善/悪化等)からDirectionを推測しない。
+明示的な数量変化が本文に無い場合は`UNSPECIFIED`。
+
+### Claim Granularity精密化
+
+「原材料価格の上昇により営業利益が減少した。」は単一のCausal Claim
+ではなく、`PERFORMANCE_CHANGE`(営業利益減少という事実)と
+`PERFORMANCE_DRIVER`(原材料価格上昇という帰属された要因)の**2件**へ
+分離することとした(同一EvidenceSpanを参照する複数Claimは既存D0102.2
+Infrastructureで既に検証済み)。事実Claimと帰属Claimを分離することで、
+後続層が両者を独立に扱える。
+
+### 長大TextBlock Policy
+
+Model Context Budgetを超えるTextBlockは、Chunkingせず
+`SKIP`/`QUARANTINE(TOO_LONG_FOR_EXTRACTION)`とする(Chunkingは
+Whole-TextBlock v1 Policyを破壊し、新たなSub-block座標問題を生むため
+明示的に却下)。閾値自体はImplementation Round側でModel Context
+Budgetに応じて確定する。
+
+### Prompt Injection境界
+
+Source Text(EDINET開示文)はModelにとってUntrusted Dataである。
+構造的Delimiting(SourceをData Fieldとして明示的に分離、Instructionと
+混在させない)+ Schema-Constrained Output(構造化出力)の2層で対処し、
+引用符のみへの依存はしない。Injection検知Heuristic自体は作らない
+(信頼性が低いため)——Injectionの結果として禁止Fieldや不正Structureが
+出力された場合は既存のREJECT_RESPONSE/MODEL_CONTRACT_VIOLATION経路が
+そのまま機能する。
+
+### Candidate Generation ≠ Faithfulness Certification
+
+`CANDIDATE_GENERATION_IS_NOT_FAITHFULNESS_CERTIFICATION = TRUE`。同一
+Model呼び出しでCandidateを生成しつつ自己証明させることを明示的に禁止
+した。D0102.4(未設計)は独立した第2Pass(Model/Deterministic
+Hybrid)を推奨したが、本Round自体はD0102.4を設計しない。
+
+### Adversarial Self-Audit(残存Risk、いずれもBlockingではない)
+
+Modelの事前学習知識・Prompt Injectionはいずれも構造的Mitigationのみで
+完全排除はできない(LLMを使う以上不可避、D0102.3-F01/F02、LOW/
+NONBLOCKING_LIMITATION)。他の全項目(EvidenceSpanへのLLM関与・複数
+TextBlock混入・BUSINESS_RISK捏造・Faithfulness自己証明・generated_at
+のPIT誤用等)はいずれも設計上構造的に不可能であることを確認した。
+
+### Persistence / Commit対象・Scope
+
+このDECISIONS.md追記のみがCommit対象(設計+Audit Recordのみ)。
+Production Code・Test・LLM SDK・Prompt本体はいずれも追加していない。
+Stage 3.17・D0098.1はいずれも無変更。H0001は実行していない。
+`AUTOMATION_READINESS = NOT_READY`(変更なし)。次Round(未着手)は
+Candidate Extraction Implementation(この設計に基づくSchema/
+Orchestration Code)であり、Faithfulness Verification(D0102.4)・
+Automationはいずれも別Roundに据え置く。
