@@ -25,6 +25,35 @@ PIT(`market_public_at`/`provider_available_at`/Historical Eligibility)も
   TextBlock Text)へ同一に適用しない限り、Exact Substring Citationが
   壊れる(D0100で実際に自己再現したFalse Negativeが根拠)。
 
+## Exact Quote Invariantの定義(D0101.1で明記)
+
+「Exact Quote Invariant」とは、**Versionされた正規化済みDocument Text
+に対する厳密一致**を意味し、Raw XML Bytesとのbyte-for-byte一致を意味
+**しない**。Raw ZIPは常にAuthoritative Source(不変)のままであり、
+`normalized_text`はそこからDeterministicに導出されるDerived
+Representationである(空白畳み込み・Hidden Content除外を経ており、
+Rawそのものではない)。この関数がRaw Sourceとのverbatim一致を主張する
+ものではないことを、Semantic Extraction Layer(将来Phase)を含む
+呼び出し側は前提とすること。
+
+## Offset識別の方式(D0101.1、D0101-F01の修正)
+
+D0101(初版)は`str.find(block_text, search_from)`による事後Substring
+Searchで`char_start`/`char_end`を決定していた。これはTextの**内容一致**
+は証明するが、**構造的同一性**は証明しない——例えば通常の地の文
+(Ordinary Prose)に同じ文言が先行して存在する場合、Factが誤ってその
+Prose側のOccurrenceへ結びつく可能性があった(Codex Adversarial Audit
+Finding D0101-F01)。
+
+D0101.1では、Offsetを**同じDOM走査(`_walk`)が生成するRaw Token列から
+Structuralに導出**する方式へ変更した(`_normalize_with_offset_map()`)。
+各Factの`char_start`/`char_end`は、そのFact自身のToken範囲がRaw結合
+文字列上で占める区間を正規化Index空間へMapping変換した結果であり、
+Member Text中の**どこか**を検索して一致箇所を探す操作は一切行わない。
+これにより、`block.normalized_text`は`member.normalized_text[char_start:
+char_end]`の**Sliceそのもの**として定義され、Exact Quote Invariantは
+Searchの成否に関係なく構造的に常に成立する。
+
 ## Raw Identity(このModuleは再発明しない)
 
 Canonical Raw Content Identityは既存の
@@ -37,7 +66,6 @@ Bugfix/改善はRaw Identityを変えない。
 
 from __future__ import annotations
 
-import html
 import io
 import re
 import xml.etree.ElementTree as ET
@@ -199,20 +227,53 @@ def _is_hidden_element(elem: ET.Element) -> bool:
     return False
 
 
-def _normalize_joined_text(joined: str) -> str:
-    """D0101 §5のNormalization Ruleを実装する唯一の関数。Member全体Text・
-    個々のTextBlock Textいずれもこの関数だけを通す(D0100で実際に発生した
-    「2つの異なるStrip方式を混在させるとExact Substring Matchが壊れる」
-    という自己再現Bugを、単一関数への集約で構造的に防ぐ)。"""
-    decoded = html.unescape(joined)
-    return _WHITESPACE_RE.sub(" ", decoded).strip()
+def _normalize_with_offset_map(raw: str) -> tuple[str, list[int]]:
+    """`raw`(DOM走査で得たRaw Token列を`" ".join()`したText)を、空白Run
+    をASCII Space 1個へ畳み込み・先頭/末尾を除去する形でNormalizeしつつ、
+    各Raw Char Indexが対応するNormalized Char Indexを返す(D0101.1、
+    D0101-F01の修正: Post-hoc Searchを使わずFact境界をStructuralに
+    Mapping変換するための基盤)。
+
+    **Entity Decodeを行わない理由(D0101.1、D0101-F02の修正)**:
+    `raw`を構成する各Tokenは、既に`xml.etree.ElementTree`がXML/XHTMLを
+    Parseした結果のText(`elem.text`/`.tail`)であり、Parser自身が
+    `&amp;`/`&lt;`/`&#38;`等のXML Entityを既に一度だけ解決済みである。
+    この関数(旧`_normalize_joined_text`)が`html.unescape()`を追加で
+    呼んでいたため、`&amp;lt;`のようなSource(DOM解決後のText`&lt;`)が
+    さらに`<`へ二重Decodeされ、Source上可視のTextを無言で書き換えて
+    いた(Codex Adversarial Audit Finding D0101-F02)。DOM Textは
+    Entity解決済みでAuthoritativeであり、この関数はWhitespace処理
+    **のみ**を行う。
+
+    `offset_map[i]`(`i`は`0..len(raw)`)は、「Raw Position `i`の直前まで
+    に確定したNormalized Text長」を表す(非空白文字については、その
+    文字自身がNormalized Textへ書き込まれる正確なIndexと一致する)。
+    """
+    out_chars: list[str] = []
+    offset_map: list[int] = [0] * (len(raw) + 1)
+    pending_space = False
+    started = False
+    for i, ch in enumerate(raw):
+        if ch.isspace():
+            if started:
+                pending_space = True
+            offset_map[i] = len(out_chars)
+        else:
+            if pending_space and started:
+                out_chars.append(" ")
+            pending_space = False
+            offset_map[i] = len(out_chars)
+            out_chars.append(ch)
+            started = True
+    offset_map[len(raw)] = len(out_chars)
+    return "".join(out_chars), offset_map
 
 
 @dataclass
 class _WalkResult:
     tokens: list[str]
-    # (elem, name属性値, token_start_idx, token_end_idx) のList。Document
-    # Order(Text出現順)のまま保持する。
+    # (name属性値, token_start_idx, token_end_idx) のList。Document Order
+    # (Text出現順)のまま保持する。
     facts: list[tuple[str, int, int]]
 
 
@@ -221,22 +282,25 @@ def _walk(elem: ET.Element, *, hidden: bool, inside_fact: bool, result: _WalkRes
     Hidden Subtree配下のTextを除外しつつToken Listへ集約する。同じ走査の
     中で、Hiddenでない・かつ他の`ix:nonNumeric`の内側にNestしていない
     `ix:nonNumeric`要素それぞれについて、そのSubtreeが占めるTokenの開始/
-    終了Indexを記録する(Member全体Textと個々のTextBlock Textを同一の
-    Token列から導出することで、Normalization関数の不一致によるExact
-    Quote Invariant違反を構造的に防ぐ、D0101 §5/§9)。
+    終了Indexを記録する。この`facts`(Token Index範囲のList)から、
+    `_extract_member_text_and_blocks()`がStructuralにChar Offsetを導出
+    する(D0101.1、Post-hoc Searchを使わない設計、D0101-F01の修正)。
 
-    **Nested Factの扱い(D0101、S100UP32実データ検証で発見)**: `escape=
-    "true"`の`ix:nonNumeric`(例: 半期報告書AuditDocの
-    `jpcrp_cor:IndependentAuditorsReportConsolidatedTextBlock`)は、内側に
-    別の`ix:nonNumeric`(監査法人名・公認会計士名等のFact)をNestして
-    持つことが実際に確認されている。Nested Factを独立したTop-level
-    TextBlockとして抽出すると、Postorder木走査によりInner Factが
-    Outer Factより先に`facts`へ記録され、`search_from`の単調増加Searchが
-    Outer Fact自身のOffset特定に失敗する(Outer FactはInner Factより
-    前から開始するため)。したがって、既に他の`ix:nonNumeric`の内側にある
-    `ix:nonNumeric`はTop-level TextBlockとしては抽出しない(そのText自体は
-    Outer FactのNormalized Textへそのまま含まれ続けるため、情報は失われ
-    ない)。"""
+    **Nested Factの扱い(D0101、S100UP32実データ検証で発見。D0101.1
+    D0101-F02 Codex Auditで`SAFE_WITH_NONBLOCKING_LIMITATION`と再分類、
+    v1 Policyは維持)**: `escape="true"`の`ix:nonNumeric`(例: 半期報告書
+    AuditDocの`jpcrp_cor:IndependentAuditorsReportConsolidatedTextBlock`)
+    は、内側に別の`ix:nonNumeric`(監査法人名・公認会計士名等のFact)を
+    Nestして持つことが実際に確認されている。D0101(初版)のPost-hoc
+    Search方式では、Postorder木走査でInner FactがOuter Factより先に
+    `facts`へ記録されることが`search_from`の単調増加Searchを破壊して
+    いたが、D0101.1のStructural Offset方式ではその特定の破壊Mechanism
+    自体は解消されている。それでもNested Factを独立Top-level Blockとして
+    抽出しないPolicyは本Roundでは変更しない(D0101.1 Scope外、Hierarchy
+    Model自体の設計は将来Phaseへ据え置く)——既に他の`ix:nonNumeric`の
+    内側にある`ix:nonNumeric`はTop-level TextBlockとしては抽出せず、
+    そのText自体はOuter FactのNormalized Textへそのまま含まれ続ける
+    (情報は失われない)。"""
     is_hidden = hidden or _is_hidden_element(elem)
     is_nonnumeric = _namespace(elem.tag) == _IX_NAMESPACE and _local_name(elem.tag) == "nonNumeric"
     is_fact = is_nonnumeric and not is_hidden and not inside_fact
@@ -256,32 +320,70 @@ def _walk(elem: ET.Element, *, hidden: bool, inside_fact: bool, result: _WalkRes
             result.facts.append((name, fact_start, len(result.tokens)))
 
 
+def _token_raw_span(tokens: list[str]) -> tuple[str, list[int]]:
+    """`tokens`を`" ".join(tokens)`相当のRaw文字列へ結合しつつ、各Tokenが
+    そのRaw文字列上で開始するIndexを返す(D0101.1、Fact境界をToken Index
+    空間からRaw Char Index空間へ変換するための基盤)。"""
+    raw_parts: list[str] = []
+    token_raw_starts: list[int] = []
+    cursor = 0
+    for idx, token in enumerate(tokens):
+        if idx > 0:
+            raw_parts.append(" ")
+            cursor += 1
+        token_raw_starts.append(cursor)
+        raw_parts.append(token)
+        cursor += len(token)
+    return "".join(raw_parts), token_raw_starts
+
+
 def _extract_member_text_and_blocks(root: ET.Element) -> tuple[str, tuple[NormalizedTextBlock, ...]]:
+    """D0101.1(D0101-F01の修正): Fact境界はDOM走査(`_walk`)が記録した
+    Token Index範囲から、Post-hoc SearchなしにStructuralに導出する。
+
+    手順: (1) `_walk`が集めたToken列をRaw文字列へ結合し、各Factの
+    Token Index範囲をRaw Char Index範囲へ変換する。(2) Raw文字列全体を
+    一度だけ`_normalize_with_offset_map()`へ通し、Member全体のNormalized
+    TextとRaw→Normalized Index Mappingを得る。(3) 各FactについてRaw範囲
+    内の最初/最後の非空白文字のNormalized Indexを`offset_map`から引き、
+    それを`char_start`/`char_end`とする——`block.normalized_text`は
+    `member_text[char_start:char_end]`の**Slice**そのものであり、
+    Member Text中の別の場所を検索して一致箇所を探す操作は一切行わない
+    (Ordinary Prose側の同一文言・Identical Fact同士等、内容が同じ
+    別Occurrenceへ誤って結びつくことが構造的に起こり得ない)。
+    """
     walk_result = _WalkResult(tokens=[], facts=[])
     _walk(root, hidden=False, inside_fact=False, result=walk_result)
 
-    member_text = _normalize_joined_text(" ".join(walk_result.tokens))
+    tokens = walk_result.tokens
+    raw_full, token_raw_starts = _token_raw_span(tokens)
+    member_text, offset_map = _normalize_with_offset_map(raw_full)
 
     occurrence_counters: dict[str, int] = {}
-    search_from = 0
     blocks: list[NormalizedTextBlock] = []
     for name, start_idx, end_idx in walk_result.facts:
-        block_text = _normalize_joined_text(" ".join(walk_result.tokens[start_idx:end_idx]))
+        if end_idx <= start_idx:
+            continue  # Fact自身にToken(=Text)が一切無い(D0101 §7と同じ精神でSkip)
+
+        raw_start = token_raw_starts[start_idx]
+        last_token_idx = end_idx - 1
+        raw_end = token_raw_starts[last_token_idx] + len(tokens[last_token_idx])
+
+        first_non_ws: int | None = None
+        last_non_ws: int | None = None
+        for i in range(raw_start, raw_end):
+            if not raw_full[i].isspace():
+                if first_non_ws is None:
+                    first_non_ws = i
+                last_non_ws = i
+        if first_non_ws is None or last_non_ws is None:
+            continue  # Fact全体が空白のみ(実質空)
+
+        char_start = offset_map[first_non_ws]
+        char_end = offset_map[last_non_ws] + 1
+        block_text = member_text[char_start:char_end]
         if len(block_text) < _MIN_TEXT_BLOCK_LENGTH:
             continue
-
-        pos = member_text.find(block_text, search_from)
-        if pos == -1:
-            # D0101 §8: Document Order Searchで見つからない場合はFail
-            # Closed(架空のOffsetを作らない)。search_from以前の位置に
-            # しか存在しない場合も含め、あえてFallbackしない。
-            raise DisclosureNormalizationError(
-                f"TextBlock {name!r} をMember正規化Text内でDocument Order通りに特定できませんでした"
-                "(Exact Quote Invariantを満たすOffsetが構築できません)"
-            )
-        char_start = pos
-        char_end = pos + len(block_text)
-        search_from = char_end
 
         occurrence_index = occurrence_counters.get(name, 0)
         occurrence_counters[name] = occurrence_index + 1

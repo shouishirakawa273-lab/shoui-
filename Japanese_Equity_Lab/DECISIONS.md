@@ -12519,3 +12519,140 @@ Return/Decision関連Codeは一切追加していない。Stage 3.17はFROZENの
 H0001は実行していない。`01_data/raw/EDINET/edinet_document_S100UP32_
 type1_2024_09_interim_half_year_report.bin`はD0016によりGit Ignore
 対象のためCommit対象外のまま(D0100.2から変更なし)。
+
+## D0101.1 — EDINET Source Span Fidelityの修正(Codex Adversarial Audit対応)
+
+D0101のRead-only Codex Adversarial AuditがFINAL_VERDICT=NEEDS_FIXを
+返し、HIGH Finding 2件(D0101-F01・D0101-F02)を特定した。本Roundは
+この2件のみを修正する(新機能追加なし、`normalization.py`・
+`test_disclosures_normalization.py`・本DECISIONS.md追記のみが対象)。
+
+### D0101-F01 — Offsetが誤ったOccurrenceへ結びつき得た
+
+**問題**: D0101(初版)は`member_text.find(block_text, search_from)`と
+いうPost-hoc Substring Searchで`char_start`/`char_end`を決定していた。
+これはText内容の一致は証明するが、**構造的同一性は証明しない**。例えば
+`<p>同文</p><ix:nonNumeric name="X">同文</ix:nonNumeric>`のように、
+通常の地の文(Ordinary Prose)にFactと同じ文言が先行する場合、Factが
+誤ってProse側のOccurrenceへ結びつく可能性があった。
+
+**修正**: Offsetを`str.find()`によるSearchではなく、**同じDOM走査
+(`_walk`)が生成するRaw Token列からStructuralに導出**する方式へ変更
+した。具体的には: (1) `_walk`が集めたToken列を`_token_raw_span()`で
+Raw結合文字列へ変換しつつ、各TokenのRaw開始Indexを記録する、(2) Raw
+文字列全体を`_normalize_with_offset_map()`で一度だけ正規化し、Member
+全体のNormalized TextとRaw→Normalized Index Mappingを得る、(3) 各Fact
+についてRaw Token範囲内の最初/最後の非空白文字のNormalized Indexを
+Mappingから引き、それを`char_start`/`char_end`とする。`block.
+normalized_text`は`member.normalized_text[char_start:char_end]`の
+**Sliceそのもの**として定義され、Member Text中の別の場所を検索して
+一致箇所を探す操作は完全に無くなった。
+
+`OFFSET_IDENTITY = STRUCTURAL`。`POST_HOC_STR_FIND_FOR_IDENTITY =
+ABSENT`(`str.find`/`str.index`はIdentity決定に一切使用しない)。
+
+これにより、旧`_extract_member_text_and_blocks()`にあった「見つから
+なければFail Closed」という`DisclosureNormalizationError`分岐も削除
+した——Structural導出はDOM上に実在するFactに対して常に一意に定義でき、
+Post-hoc Searchが失敗しうる状況自体が構造的に存在しなくなったため
+(Exact Quote Invariantは`NormalizedDisclosureMember.__post_init__`の
+Constructor-level Validationで引き続き独立に再検証される、変更なし)。
+
+### D0101-F02 — XML Entityの二重Decode
+
+**問題**: `xml.etree.ElementTree`は既にXML Entity(`&amp;`/`&lt;`/
+`&#38;`等)をParse時に解決済みである。旧`_normalize_joined_text()`は
+それに加えて`html.unescape()`を呼んでおり、既にDOM解決済みのText
+(例: Source `&amp;amp;`→DOM Text`&amp;`)をさらに二重Decodeして
+`&`へ書き換えていた。これはSource上可視のTextを無言で改変する
+Data Corruptionであり、Semantic Extraction Layer(将来Phase)が誤った
+Textを引用する原因になり得た。
+
+**修正**: `html.unescape()`の呼び出しを完全に削除した(`import html`
+自体も未使用になったため削除)。DOM Text(`elem.text`/`.tail`)は
+Parser自身がEntity解決済みでAuthoritativeであり、正規化Layer
+(`_normalize_with_offset_map()`)はWhitespace処理(空白Run畳み込み・
+先頭/末尾除去)のみを行う。
+
+`ENTITY_DECODING_POLICY = DOM_TEXT_IS_AUTHORITATIVE_NO_SECOND_DECODE`。
+`DOUBLE_ENTITY_DECODE = ABSENT`。
+
+### Exact Quote Invariantの定義明確化
+
+「Exact Quote Invariant」は**Versionされた正規化済みDocument Textに
+対する厳密一致**を意味し、Raw XML Bytesとのbyte-for-byte一致を意味
+しないことをModule Docstringへ明記した。Raw ZIPは引き続き
+Authoritative Source(不変)のままであり、`normalized_text`はそこから
+Deterministicに導出されるDerived Representation(空白畳み込み・Hidden
+Content除外・Entity解決[XML Parser自身による、1回のみ]を経る)である。
+Verbatim Raw Source一致は主張していない。
+
+### Nested Fact Policy(変更なし)
+
+D0101で導入した「Nested`ix:nonNumeric`はTop-level TextBlockとして
+独立抽出しない」というPolicyは、本Roundでは**変更していない**
+(`SAFE_WITH_NONBLOCKING_LIMITATION`のまま、Hierarchy Model自体の設計は
+将来Phaseへ据え置く)。なお、D0101.1のStructural Offset方式では、
+D0101で実際に発生した「Nested Factが`search_from`の単調増加Searchを
+破壊する」という特定の破壊Mechanism自体は解消されている(Structural
+導出はNestした範囲でも独立に正しく計算できる)が、それでもNested Fact
+を独立Blockとして抽出しないPolicyは意図的に維持した(Scope外の
+Redesignを行わないため)。
+
+### Regression Tests(新規13件、既存19件はそのままPass)
+
+D0101-F01向け8件(A〜H、要件通り): (A)Prose→Fact同文言でFact側
+(2番目)を指す、(B)Fact→Prose同文言でFact側(1番目)を指す、(C)前後
+両方に同文言、中央(Fact自身)を指す、(D)隣接する同一内容2 Factが別々の
+非重複Offsetを得る、(E)FactのTextが先行Proseの部分文字列である場合も
+Fact自身の独立Occurrenceを指す、(F)Fact内部のFormatting Tagが
+Structural Offsetを壊さない、(G)Fact境界をまたぐ空白畳み込みがFact
+自身へ漏れ出さない、(H)Fact境界に隣接するHidden NodeがOffsetを汚染
+しない。いずれも内容一致だけでなく、Offset値そのもの(Occurrence
+位置)を直接検証する。
+
+D0101-F02向け5件(A〜E、要件通り): `&amp;amp;`→`&amp;`、`&amp;lt;`→
+`&lt;`、`&#38;amp;`→`&amp;`、通常の`&amp;`→`&`、Numeric Entity単体の
+Exactly Once Decode。いずれもElementTreeが構築するDOM Semantics(Raw
+Byte Literalとの比較ではない)に対して検証する。
+
+### Quality Gates(このRoundで実施、Targeted Only)
+
+- `ruff check` / `ruff format --check`(`lib/disclosures/normalization.py`・
+  `13_tests/test_disclosures_normalization.py`のみ): All Pass。
+- `mypy`(`lib/disclosures/normalization.py`のみ): Success, no issues。
+- Targeted Pytest(`13_tests/test_disclosures_normalization.py`):
+  **32 passed**(既存19件 + D0101.1新規13件)。
+- Full Repository Suite/H0001/Repository-wide mypyはいずれも実行して
+  いない。
+
+### Toyota S100UP32 Re-Acceptance(Gitignored Raw File、Commit対象外)
+
+修正後のModuleで、D0101と同じ`edinet_document_S100UP32_type1_2024_09_
+interim_half_year_report.bin`に対しLocal Acceptance Probeを再実行した:
+
+- NORMALIZED_MEMBER_COUNT = 14(D0101から不変)
+- TEXTBLOCK_COUNT = 52(D0101から不変)
+- MD&A(`ManagementAnalysisOfFinancialPositionOperatingResultsAndCash
+  FlowsTextBlock`)・Risk(`BusinessRisksTextBlock`)いずれも存在確認
+  = True(D0101から不変)
+- EXACT_QUOTE_INVARIANT = 52/52(D0101から不変)
+- raw_canonical_content_hash = D0101/D0100.2と完全に同一の値
+  (`6f9219ec545aee...`)——正規化LogicのBugfixがRaw Identityに一切
+  影響していないことを実データで確認した(D0101 §11の設計意図通り)
+- **新規**: DOM_BOUNDARY_OFFSET_MISMATCH = 0(Member内のBlock群を
+  `char_start`でSortし、隣接Blockの範囲が重複しないことを独立に確認する
+  Structural Check、修正前の`str.find()`方式では原理上検証していな
+  かった観点)
+
+抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/normalization.py`(F01/F02修正)・
+`Japanese_Equity_Lab/13_tests/test_disclosures_normalization.py`
+(Regression Test 13件追加)・このDECISIONS.md追記をCommit対象とする。
+`lib/evidence/*`・`lib/peer/*`・`lib/valuation/*`・ResearchArtifact・
+`.claude/hooks/*`はいずれも無変更。SemanticClaim/PIT/Evidence関連の
+実装は本Roundでも一切行っていない(D0101の境界をそのまま維持)。Stage
+3.17はFROZENのまま。H0001は実行していない。

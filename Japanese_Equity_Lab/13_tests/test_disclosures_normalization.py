@@ -344,3 +344,213 @@ def test_empty_document_id_rejected() -> None:
     raw_zip = _build_zip({_BODY_PATH: _htm(_ix("jpcrp_cor:X", "内容"))})
     with pytest.raises(DisclosureNormalizationError):
         normalize_edinet_type1_zip(document_id="", raw_zip_bytes=raw_zip)
+
+
+# =============================================================================
+# D0101.1 — D0101-F01: Offsetは内容一致(Search)ではなくStructural Position
+# から導出されることを確認する(Codex Adversarial Audit Finding)。
+# =============================================================================
+
+
+def _all_occurrences(haystack: str, needle: str) -> list[int]:
+    positions: list[int] = []
+    start = 0
+    while True:
+        pos = haystack.find(needle, start)
+        if pos == -1:
+            break
+        positions.append(pos)
+        start = pos + 1
+    return positions
+
+
+def test_f01_a_identical_prose_before_fact_binds_to_fact_occurrence() -> None:
+    """通常の地の文(Prose)にFactと同じ文言が先行する場合、FactのOffsetは
+    自分自身(2番目のOccurrence)を指し、Prose側(1番目)を指してはならない。"""
+    body = "<p>同文</p>" + _ix("jpcrp_cor:X", "同文")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    occurrences = _all_occurrences(member.normalized_text, "同文")
+    assert len(occurrences) == 2
+    block = member.text_blocks[0]
+    assert block.char_start == occurrences[1]  # 2番目(Fact自身)
+    assert block.char_start != occurrences[0]  # 1番目(Prose)ではない
+
+
+def test_f01_b_identical_prose_after_fact_binds_to_fact_occurrence() -> None:
+    """FactのTextと同じ文言が後続のProseに現れても、FactのOffsetは自分自身
+    (1番目のOccurrence)を指し、後続Prose(2番目)を指してはならない。"""
+    body = _ix("jpcrp_cor:X", "同文") + "<p>同文</p>"
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    occurrences = _all_occurrences(member.normalized_text, "同文")
+    assert len(occurrences) == 2
+    block = member.text_blocks[0]
+    assert block.char_start == occurrences[0]  # 1番目(Fact自身)
+    assert block.char_start != occurrences[1]  # 2番目(後続Prose)ではない
+
+
+def test_f01_c_identical_prose_before_and_after_fact_binds_to_middle_occurrence() -> None:
+    """前後両方に同じ文言のProseが存在する場合、FactのOffsetは3つ中2番目
+    (Fact自身)を指す。"""
+    body = "<p>同文</p>" + _ix("jpcrp_cor:X", "同文") + "<p>同文</p>"
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    occurrences = _all_occurrences(member.normalized_text, "同文")
+    assert len(occurrences) == 3
+    block = member.text_blocks[0]
+    assert block.char_start == occurrences[1]  # 中央(Fact自身)
+
+
+def test_f01_d_two_adjacent_identical_facts_get_distinct_structural_offsets() -> None:
+    """隣接する2つの同一内容Factが、別々のStructural Offsetを得ること
+    (内容一致だけでなく、独立したDOM上のOccurrenceとして扱われる)。"""
+    body = _ix("jpcrp_cor:NoteA", "同文") + _ix("jpcrp_cor:NoteB", "同文")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    blocks = doc.members[0].text_blocks
+    assert len(blocks) == 2
+    assert blocks[0].char_start != blocks[1].char_start
+    assert blocks[0].char_end <= blocks[1].char_start  # 範囲が重ならない
+
+
+def test_f01_e_fact_text_that_is_substring_of_earlier_prose_still_correctly_located() -> None:
+    """Prose自体がFactのTextを部分文字列として含む場合でも(例: Prose=
+    "AAA 同文 BBB"、Fact="同文")、FactのOffsetは自分自身の独立した
+    Occurrenceを指し、Prose内部への誤った位置(部分文字列一致)を指しては
+    ならない。"""
+    body = "<p>AAA 同文 BBB</p>" + _ix("jpcrp_cor:X", "同文")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    occurrences = _all_occurrences(member.normalized_text, "同文")
+    assert len(occurrences) == 2  # Prose内の1回 + Fact自身の1回
+    block = member.text_blocks[0]
+    assert block.char_start == occurrences[1]  # Fact自身(2番目)
+    assert block.char_start != occurrences[0]  # Prose内部(1番目、部分文字列一致)ではない
+
+
+def test_f01_f_formatting_tags_inside_fact_do_not_break_structural_offset() -> None:
+    """Fact内部にFormatting Tagが混在していても、周囲のProseを含まない
+    正確なStructural Offsetが得られること。"""
+    body = "<p>前文</p>" + _ix("jpcrp_cor:X", "内容<b>強調</b>末尾") + "<p>後文</p>"
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    block = member.text_blocks[0]
+    assert block.normalized_text == "内容 強調 末尾"
+    assert member.normalized_text[block.char_start : block.char_end] == "内容 強調 末尾"
+    assert "前文" not in block.normalized_text
+    assert "後文" not in block.normalized_text
+
+
+def test_f01_g_whitespace_collapse_across_fact_boundaries_does_not_leak_into_fact() -> None:
+    """Fact直前/直後の(Fact外の)空白・改行が、Fact自身のnormalized_textへ
+    先頭/末尾の空白として漏れ出さないこと。"""
+    body = "<p>前文\n\n  </p>" + _ix("jpcrp_cor:X", "本体") + "<p>\n\n  後文</p>"
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "本体"  # 前後の空白が漏れ出していない
+
+
+def test_f01_h_hidden_nodes_adjacent_to_fact_boundaries_do_not_affect_offset() -> None:
+    """Fact直前/直後にHidden Node(style=display:none)が存在しても、
+    FactのOffset/Contentが汚染されないこと。"""
+    hidden_before = '<div style="display:none">隠A</div>'
+    hidden_after = '<div style="display:none">隠B</div>'
+    body = hidden_before + _ix("jpcrp_cor:X", "本体") + hidden_after
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    member = doc.members[0]
+    block = member.text_blocks[0]
+    assert block.normalized_text == "本体"
+    assert "隠A" not in member.normalized_text
+    assert "隠B" not in member.normalized_text
+    assert member.normalized_text[block.char_start : block.char_end] == "本体"
+
+
+# =============================================================================
+# D0101.1 — D0101-F02: ElementTreeが既に解決したXML Entityを、二重に
+# Decodeしない(Codex Adversarial Audit Finding)。
+# =============================================================================
+
+
+def test_f02_a_amp_amp_decodes_once_to_amp() -> None:
+    """Raw Source `&amp;amp;` はXML Parserにより`&amp;`(5文字)へ一度だけ
+    解決される。二重Decodeされて`&`(1文字)になってはならない。"""
+    body = _ix("jpcrp_cor:X", "&amp;amp;")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "&amp;"
+
+
+def test_f02_b_amp_lt_decodes_once_to_lt() -> None:
+    """Raw Source `&amp;lt;` はXML Parserにより`&lt;`(4文字)へ一度だけ
+    解決される。二重Decodeされて`<`になってはならない。"""
+    body = _ix("jpcrp_cor:X", "&amp;lt;")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "&lt;"
+
+
+def test_f02_c_numeric_entity_amp_amp_decodes_once_to_amp() -> None:
+    """Raw Source `&#38;amp;`(Numeric Character Reference)も同様に、
+    XML Parserにより`&amp;`(5文字)へ一度だけ解決される。"""
+    body = _ix("jpcrp_cor:X", "&#38;amp;")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "&amp;"
+
+
+def test_f02_d_ordinary_amp_decodes_to_single_ampersand() -> None:
+    """通常のCase(Residualな二重Escapeが無い場合): Raw Source `&amp;`は
+    そのまま`&`(1文字)へ解決される(既存の正しい単純Decode経路の確認)。"""
+    body = _ix("jpcrp_cor:X", "A&amp;B")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "A&B"
+
+
+def test_f02_e_numeric_entity_decoded_exactly_once() -> None:
+    """Numeric Character Reference単体(`&#38;`)がExactly Onceだけ解決
+    され、`&`(1文字)になること(Byte Literalとの比較ではなく、
+    ElementTreeが構築するDOM Semanticsに対する比較で確認する)。"""
+    body = _ix("jpcrp_cor:X", "&#38;")
+    raw_zip = _build_zip({_BODY_PATH: _htm(body)})
+
+    doc = normalize_edinet_type1_zip(document_id="DOC1", raw_zip_bytes=raw_zip)
+
+    block = doc.members[0].text_blocks[0]
+    assert block.normalized_text == "&"
