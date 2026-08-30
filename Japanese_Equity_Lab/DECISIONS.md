@@ -12360,3 +12360,162 @@ DECISIONS.md追記をCommit対象とする。`protected_path_warning.sh`・
 `lib/registry/*`等のResearch Production/既存Screening Toolはいずれも
 無変更。Stage 3.17はFROZENのまま。H0001は実行していない。D0099/D0100
 のInvestigation Outputは本Roundでは変更していない。
+
+## D0101 — Stage 3.18.2: EDINET Narrative Normalization v1(Production実装)
+
+D0099(Readiness Audit)・D0100(Type-1 Feasibility Probe)・D0100.2
+(Human-Approved Toyota S100UP32取得・実データ検証)で確立した知見を、
+初めてProduction Codeへ落とし込んだ。SemanticClaim抽出・LLM呼び出し・
+EvidenceRecord生成はいずれも本Roundの意図的なScope外(D0101 §19)。
+
+### 実装Module
+
+`Japanese_Equity_Lab/lib/disclosures/normalization.py`(新設)。
+`lib/disclosures/providers/edinet.py`(Raw Fetch)とは意図的に分離した
+Provider非依存Module(Acquisition/Normalizationの責務分離、D0101 §2)。
+
+### Core型
+
+`NormalizedTextBlock`(taxonomy_element_name/occurrence_index/
+normalized_text/char_start/char_end)・`NormalizedDisclosureMember`
+(member_path/content_type/normalized_text/text_blocks)・
+`NormalizedDisclosureDocument`(document_id/raw_canonical_content_hash/
+normalizer_version/members)。いずれも`dataclass(kw_only=True,
+frozen=True)`、既存`lib.disclosures.model`と同じ規約。SemanticClaim
+相当のFieldは一切追加していない。
+
+`MemberContentType`(HEADER/BODY/AUDIT/XBRL_INSTANCE/SCHEMA/LINKBASE/
+MANIFEST/OTHER)はMember Path/拡張子からDeterministicに分類する
+(D0101 §4)。Narrative正規化の対象は`HEADER`/`BODY`/`AUDIT`のみで、
+`XBRL_INSTANCE`/`SCHEMA`/`LINKBASE`/`MANIFEST`は`members`に一切含めない
+(誤ってProse Blockとして出力しない、Test P)。
+
+### Normalization Rule(D0100/D0100.2で確立した規則をそのままCode化)
+
+`_normalize_joined_text()`という**単一の関数**を、Member全体Text・
+個々のTextBlock Textいずれにも同一に適用する(D0100で実際に自己再現した
+「2つの異なるStrip方式の混在によるExact Substring Match破壊」を、
+共有Token列からの導出によって構造的に排除、`_walk()`参照)。HTML Entity
+Decode(`html.unescape`)・空白畳み込み(`\s+`→半角Space 1個)を行うが、
+NFKC正規化は既定で適用しない(全角見出し「１【提出理由】」等の構造的
+意味を保持する)。
+
+### Hidden Content
+
+`style="display:none"`(大小文字非依存)・`ix:hidden`要素配下のTextを
+Document Order走査(`_walk()`)の中でExclude する。CSS Engineの挙動は
+模倣せず、D0100/D0100.2で実際に観測された2つのMechanismのみをv1で
+Supportする(D0101 §6)。
+
+### TextBlock抽出とNested Fact(実データ検証で発見・修正)
+
+`ix:nonNumeric`要素から`name`属性必須でFactを抽出する。**実装中に
+S100UP32(AuditDoc)の実データ検証で、`escape="true"`の
+`jpcrp_cor:IndependentAuditorsReportConsolidatedTextBlock`が内側に別の
+`ix:nonNumeric`(`AuditFirm1Consolidated`等、監査法人名Fact)をNestして
+持つことを発見した。** Nested FactをTop-level Blockとして独立抽出すると、
+Postorder木走査によりInner FactがOuter Factより先に`facts`Listへ記録され、
+`search_from`の単調増加SearchでOuter Fact自身のOffset特定が失敗する
+ことを実際に確認した(`DisclosureNormalizationError`で再現)。修正として、
+既に他の`ix:nonNumeric`の内側にある`ix:nonNumeric`はTop-level TextBlock
+として抽出しない(そのTextはOuter FactのNormalized Textにそのまま含まれ
+続けるため情報は失われない)よう`_walk()`へ`inside_fact`状態を追加した。
+Regression Test`test_nested_ix_nonnumeric_is_not_extracted_as_separate_
+top_level_block`で固定した。
+
+空/ほぼ空のFactは`_MIN_TEXT_BLOCK_LENGTH=1`(完全に空のみ除外)という
+明示的Constantで制御する(実測: `BusinessRisksTextBlock`が正規化後63
+文字と短いが実質的な開示だったため、閾値を最小限に留めた、D0101 §7)。
+
+### occurrence_index / char offset / Exact Quote Invariant
+
+`occurrence_index`はMember内でTaxonomy要素名ごとに0始まりで付与する。
+`char_start`/`char_end`はDocument Order Search(`str.find(text,
+search_from)`、`search_from`をMatch終了位置まで単調に進める)で決定論的に
+構築し、見つからない場合は`DisclosureNormalizationError`でFail Closed
+する(架空のOffsetを作らない、D0101 §8)。
+
+Exact Quote Invariant(`member.normalized_text[char_start:char_end] ==
+block.normalized_text`)は`NormalizedDisclosureMember.__post_init__`で
+Schema制約として強制する——`normalize_edinet_type1_zip()`経由でなく
+直接構築した場合も同じ検証が働く(Test K、D0101 §9)。
+
+### Raw Identity / Normalizer Version分離
+
+既存`lib.disclosures.providers.edinet_zip.compute_canonical_zip_
+content_hash()`をそのまま再利用し、新しいHash Algorithmは作っていない。
+`raw_canonical_content_hash`(Raw Identity)と`normalizer_version`
+(`EDINET_TYPE1_NORMALIZER_V1`、正規化Logic自体のVersion)は独立した
+Fieldであり、正規化LogicのBugfix(本Roundで発生したNested Fact修正等)は
+Raw Identityを変えない(D0101 §11)。Test Nで既存Hash関数の出力と一致
+すること、Test OでZIP Timestampのみ異なる場合でもRaw Hashが不変である
+こと(D0046の実観測パターンをSynthetic Fixtureで再現)を確認した。
+
+### Member順序
+
+Member Path(POSIX区切りへ正規化)の辞書順というDeterministicなRuleを
+採用した(D0101 §13)。EDINET自身のManifest順序Parseは行わない
+(Overengineeringを避ける、実測では両者は一致する)。
+
+### PIT / Evidence境界
+
+このModuleは`market_public_at`/`provider_available_at`/Historical
+Eligibilityを一切算出・推論しない(D0101 §18)。`SemanticClaimRecord`・
+`semantic_claim_to_evidence()`・`EvidenceRelation`付与・LLM呼び出しは
+いずれも実装していない(D0101 §19、D0101は`NormalizedDisclosureDocument`
+の構築で終わる)。
+
+### Toyota S100UP32 Real Acceptance(Gitignored Raw Fileを使用、Commit対象外)
+
+`Japanese_Equity_Lab/01_data/raw/EDINET/edinet_document_S100UP32_type1_
+2024_09_interim_half_year_report.bin`(D0100.2で取得、D0016によりGit
+Ignore対象、本Roundでも未Commit)に対しLocal Acceptance Probeを実行した:
+
+- NORMALIZED_MEMBER_COUNT = 14(.htm Member、HEADER+BODY+AUDIT)
+- TEXTBLOCK_COUNT = 52(Nested Fact除外後の値。除外前Naive Count[全
+  `ix:nonNumeric`単純合計]は95件——差分33件はNested Fact、うち一部は
+  D0100.2が「Duplicate Taxonomy Name」として報告した株主一覧Fact
+  [`AddressMajorShareholders`等]も含む。D0100.2時点のRegex-based
+  探索的ScriptはNestingを認識できず、これらをTop-level Duplicateとして
+  過大にCountしていたことが今回判明した——D0100.2の観測自体は誤りでは
+  ないが、より正確な構造理解はD0101のDOM-aware実装によって得られた)。
+- `jpcrp_cor:ManagementAnalysisOfFinancialPositionOperatingResultsAnd
+  CashFlowsTextBlock`(MD&A): 存在確認 = True
+- `jpcrp_cor:BusinessRisksTextBlock`(Risk): 存在確認 = True
+- EXACT_QUOTE_INVARIANT = 52/52(全件Pass)
+- raw_canonical_content_hash = D0100.2で独立に計算した値
+  (`6f9219ec545aee...`)と一致(既存Hash関数への統合を実データで確認)
+- DUPLICATE_TAXONOMY_NAME_COUNT(Top-level、Nested除外後) = 0(この
+  実Documentでは、Nested Fact除外後にTop-levelで名前が重複する
+  TextBlockは存在しなかった——occurrence_index機構自体はSynthetic
+  Test Iで引き続き検証されている)
+
+抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない
+(件数・存在確認・Hash値のみ)。
+
+### Quality Gates(このRoundで実施、Targeted Onlyの理由: D0098 Post-Edit
+Gate Policyと同じ「実行TimingをTargetedへ分離する」方針を踏襲)
+
+- `ruff check` / `ruff format --check`(`lib/disclosures/normalization.py`・
+  `13_tests/test_disclosures_normalization.py`のみ): All Pass。
+- `mypy`(`lib/disclosures/normalization.py`のみ): Success, no issues。
+- `mypy`(`13_tests/test_disclosures_normalization.py`): D0095以来の
+  既知環境問題(`numpy/__init__.pyi`のPython 3.12構文、`import pytest`
+  単体で再現)によりBlockされる。D0101とは無関係のPre-existing
+  Environment Limitationであり、日和見的な修正はしていない。
+- Targeted Pytest(`13_tests/test_disclosures_normalization.py`):
+  **19 passed**(要件A〜P全件 + Header/Audit分類確認 + 空document_id
+  拒否確認 + 実データ検証で発見したNested Fact Regression 1件)。
+- Full Repository Suite/H0001はいずれも実行していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/normalization.py`(新設)・
+`Japanese_Equity_Lab/13_tests/test_disclosures_normalization.py`
+(新設)・このDECISIONS.md追記をCommit対象とする。`lib/peer/*`・
+`lib/valuation/*`・`lib/evidence/model.py`・`lib/disclosures/providers/
+edinet.py`・`.claude/hooks/*`はいずれも無変更。BUY/SELL/Expected
+Return/Decision関連Codeは一切追加していない。Stage 3.17はFROZENのまま。
+H0001は実行していない。`01_data/raw/EDINET/edinet_document_S100UP32_
+type1_2024_09_interim_half_year_report.bin`はD0016によりGit Ignore
+対象のためCommit対象外のまま(D0100.2から変更なし)。
