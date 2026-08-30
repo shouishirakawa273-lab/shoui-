@@ -12084,3 +12084,177 @@ Commit対象とする。`lib/peer/universe.py`・`lib/peer/comparability.py`・
 はCommit対象外(本Roundでは変更していない)。`02_company_research/
 7203_Toyota_Motor/`はいずれもCommit対象外(既存の無関係なUntracked
 Directory)。
+
+## D0098 — Claude Code Post-Edit Hookの安全化(Fast Gate / Explicit Acceptance分離)
+
+Research Production(`lib/`)・Stage 3.17系Researchへは着手していない。
+PC Crash(の可能性)を契機に、Claude Code `.claude/hooks/` の実行構造を
+見直したInfrastructure Decisionである。Stage 3.15/3.17 Freezeは無変更。
+H0001は実行していない。
+
+### Root Cause 1 — Python解決の誤り(D0097以前から継続)
+
+`.venv/bin/python`(POSIX Venv Layout)固定でWindows実体(`.venv/Scripts/
+python.exe`)を検出できず、存在しない`python3`へFallbackしていた結果、
+Windows App Execution Aliasが解決するToolingを一切持たないGlobal
+Pythonが選ばれ、"No module named ruff/mypy/pytest"が発生していた。
+`.venv/Scripts/python.exe` → `.venv/bin/python` → `.venv/bin/python3`の
+順でRepo-Root-Relativeに解決し、Global Pythonへは一切Fallbackしない
+方針を維持した(この方針自体はD0098以前から実装済みで、変更していない)。
+
+### Root Cause 2 — Post-Edit Hookの計算量的な危険性(新規特定)
+
+`.claude/hooks/post_edit_quality_gate.sh`が、`PostToolUse`(Edit/Write/
+MultiEditのたび)に以下を**毎回**実行する構造になっていた:
+
+```
+Edit/Write/MultiEdit
+→ ruff check .(Repository全体)
+→ ruff format --check .(Repository全体)
+→ mypy core app.py scripts Japanese_Equity_Lab/lib
+→ pytest tests/ Japanese_Equity_Lab/13_tests/ -q(Full Suite)
+  → pytest内のHook Integration Test群(test_post_edit_quality_gate_hook.py)が
+    Hook Script自体をsubprocessで再起動
+    → その再起動されたHook Scriptの中で再度full ruff/mypy/pytestが走る
+  → 別のTestがさらに`python -m venv`でNested Venvをゼロから作成
+```
+
+1回のFile編集につき、Repository全体のLint/Type Check/Full Test Suiteに
+加えて、Full Test Suite自身の中でHook(=同じFull Gate)がsubprocessとして
+再度起動されるという多重・入れ子(Nested/Recursive)構造になっており、
+CPU・RAM・Process数を編集1回あたり本来必要な水準を大きく超えて消費して
+いた。これがPC Crash / 極端なCPU-RAM-I/O消費の最有力原因と判断する。
+品質基準そのものに欠陥があったわけではなく、**高頻度Trigger(毎編集)に
+対して不適切な実行コスト・実行構造**が根本原因である。
+
+### New Policy — Execution Cadenceの分離(品質基準は削除しない)
+
+品質を削除するのではなく、**実行Timing(Cadence)を分離する**:
+
+- **Layer A(Post-Edit Fast Gate)** — 毎Edit/Write/MultiEdit後、
+  `.claude/hooks/post_edit_quality_gate.sh`が自動実行。
+  - Repository-local `.venv` Python解決(Root Cause 1の方針を維持)。
+  - `ruff`の利用可否のみ確認(mypy/pytestはこのLayerでは不要なため
+    確認しない)。
+  - Hook Stdin(Claude CodeのTool Input JSON)から`tool_input.file_path`
+    をUnicode-safeに取得し(`protected_path_warning.sh`と同じStdin→
+    Temp File→Python argv方式)、**その1ファイルのみ**に対して
+    `ruff check`・`ruff format --check`を実行。
+  - 対象が`.py`以外、または存在しないFileの場合はPython Quality Tool
+    を一切起動せずexit 0。
+  - mypy・pytestは**完全に削除**。Hook Script自身のsubprocess再起動・
+    Nested Venv作成も一切行わない(Recursion Structureを構造的に排除)。
+- **Layer B(Targeted Acceptance)** — Task完了時に人間/Main Claudeが
+  明示的に実行。関連する`mypy`(該当パス)・関連する`pytest`(該当
+  テストファイル/ディレクトリ)を対象範囲を絞って実行する。
+  実行例(このRoundでの実施内容そのもの):
+  `.venv/Scripts/python.exe -m pytest Japanese_Equity_Lab/13_tests/
+  test_post_edit_quality_gate_hook.py Japanese_Equity_Lab/13_tests/
+  test_protected_path_hook.py -m "not integration" -q`
+- **Layer C(Full Acceptance)** — Stage Freeze/重要な受理判断時のみ、
+  人間/Main Claudeが明示的に実行。従来のFull `ruff`/Full `mypy`/Full
+  `pytest tests/ Japanese_Equity_Lab/13_tests/`を実行する。
+  新しいCI Framework・専用Scriptは新設しない(既存の手動Command
+  Contractをこの記録自体で残す)。
+
+`PostToolUse` Hook(`.claude/settings.json`)からLayer B/Cを呼び出す経路
+は存在しない。
+
+### Reentrancy Safety
+
+Layer A Hook Script自身がpytest・mypyを一切呼ばない設計にしたことで、
+「Hook→pytest→Hook Integration Test→Hook Subprocess→pytest」という
+再帰構造は**構造的に発生しなくなった**(Guardによる隠蔽ではなく、
+呼び出し経路そのものを削除した)。既存のHeavy Integration Test
+(Nested Venv作成でToolingの欠落をfail closed確認するTest)は削除せず
+`@pytest.mark.integration`として残したが、Post-Edit Hook自体がもう
+pytestを呼ばないため、通常のEdit経路からは自然に除外される
+(Markingの有無に安全性を依存させていない)。
+
+### Changed File Detection
+
+複雑な新Architectureは作らず、既存の`protected_path_warning.sh`と同じ
+Unicode-safe方式(Stdin→mktempのTemp File→Repository-local PythonがargvでFile
+Pathを受け取り`rb`でOpenして`.decode("utf-8")`)を流用し、Claude Code
+がHookへ渡す`tool_input.file_path`から対象1ファイルを取得する。
+`cygpath`が利用可能な場合はPOSIX形式へ正規化(Windowsスタイル/Git Bash
+双方に対応)。`.py`以外・存在しないFileは早期exit 0とし、無用な
+Process起動を避ける。
+
+### Mypy / Pytest Policy変更
+
+mypyはPostToolUseごとに実行しない(理由: Repository全体へのDependency
+Traversalコストと、Edit頻度に対する実行コストの不釣り合い)。pytestは
+PostToolUseから完全に外す(理由: 上記Root Cause 2そのもの)。いずれも
+品質基準としては維持し、Layer B/Cで明示実行する。
+
+### Hook Integration Tests(要件A〜J)
+
+`test_post_edit_quality_gate_hook.py`を全面改訂し、Layer A Fast Gateが
+以下を満たすことを直接確認するTestを追加した: (A)Repository-local
+Python解決、(B)Global Python非Fallback、(C)Toolingが無い場合のfail
+closed(`@pytest.mark.integration`、Nested Venv作成を伴うため通常実行
+から除外)、(D)Valid Python Fileでの成功、(E)Ruff失敗の非ゼロ伝播、
+(F)non-Python Editでの完全skip、(G)pytestを起動しないこと(静的+動的
+確認)、(H)mypyを起動しないこと(静的+動的確認)、(I)Nested Venvを
+作成しないこと(静的確認)、(J)日本語/Unicode Repository Path互換性。
+
+既存の`test_hook_scripts_do_not_hardcode_username_specific_paths`が、
+`protected_path_warning.sh`内の一般化されたPlaceholder例
+(`C:\Users\<日本語ユーザー名>\...`)に対して過剰反応してFAILしている
+ことをFocused Test実行で発見した。これは`protected_path_warning.sh`の
+実際のMachine固有ハードコードではなく(角括弧のPlaceholderであり実際の
+ユーザー名ではない)、Test側のAssertionが広すぎたことによるFalse
+Positiveと判断し、判定基準を実際の`Path.home()`文字列の埋め込み有無に
+変更した(`protected_path_warning.sh`自体は無変更)。
+
+### Quality Gates(このRoundで実施、Full Pytestは実行していない)
+
+- `bash -n`(両Hook Script): Syntax OK。
+- `.claude/settings.json`: JSON構文OK(無変更)。
+- Fast Gate Direct Invocation(手動、有効なPython File 1件・
+  non-Python File 1件): いずれも想定どおり(前者はruff check/format
+  実行、後者は即exit 0)。
+- Focused Pytest(`test_post_edit_quality_gate_hook.py`・
+  `test_protected_path_hook.py`、`-m "not integration"`): **19 passed,
+  1 deselected**。Full Suiteは実行していない(D0098の目的そのものが
+  Post-Edit Hookからのfull pytest自動実行を排除する作業のため)。
+- `ruff check` / `ruff format --check`(D0098で変更した唯一のPython
+  File`test_post_edit_quality_gate_hook.py`のみ): All Pass。
+- Repository全体のFull `ruff`/Full `mypy`/Full `pytest`は本Roundでは
+  実行していない(Layer Cとして今後明示的なAcceptance Timingで実行)。
+
+### Persistence / Commit対象・Scope
+
+`.claude/hooks/post_edit_quality_gate.sh`(全面改訂、Layer A化)・
+`Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py`
+(全面改訂)・このDECISIONS.md追記をCommit対象とする。
+`.claude/hooks/protected_path_warning.sh`・`.claude/settings.json`・
+`Japanese_Equity_Lab/13_tests/test_protected_path_hook.py`は本Round
+以前の既存修正(D0098着手前から作業中だったUncommitted変更)であり、
+機能的な変更は加えていないが、D0098のCommit Scopeに含める。
+`core/`・`app.py`・`tests/`・`lib/peer/*`等のResearch Production/
+既存Screening Toolはいずれも無変更。Stage 3.17はFROZENのまま。H0001は
+実行していない。`02_company_research/7203_Toyota_Motor/`はCommit対象外
+(既存の無関係なUntracked Directory)。`.agents/`・`.codex/`・
+`AGENTS.md`(Codex CLI向けの並行設定一式と推測されるUntracked
+Directory/File)もD0098に必要とは証明できないためCommit対象外とし、
+削除もしていない(`.codex/hooks.json`が参照するHook Scriptは
+`.claude/hooks/`配下の今回変更したFileと同一Pathであるため、Codex CLI
+使用時もLayer A化の恩恵を受けるが、`.codex/hooks/`配下の重複Copy自体は
+本Roundでは未確認・未修正のまま残っている)。
+
+### Residual / 既知の未実施事項
+
+- `.codex/hooks/post_edit_quality_gate.sh`は`.claude/hooks/`配下の
+  旧(Full Gate)版と同一内容のCopyであり、D0098のLayer A化を反映して
+  いない。ただし`.codex/hooks.json`自体は`.claude/hooks/`配下を直接
+  参照しているため、実際に使われるのは今回改訂したFileである
+  (`.codex/hooks/`配下は使われていない孤立Copyの可能性が高いが、
+  未確認のため断定しない)。
+- `pytest.mark.integration`は`pyproject.toml`へ未登録(Unknown Mark
+  Warningが出るのみで実行はBlockされない)。Marker登録は今回のScope
+  (Expected Scope: 5 File)には含めておらず、必要であれば別Roundで
+  `[tool.pytest.ini_options]`を追加する。
+- Layer C(Full Acceptance)専用Scriptは新設していない。このDECISIONS
+  記録に残したManual Command Contractを当面の実行手順とする。

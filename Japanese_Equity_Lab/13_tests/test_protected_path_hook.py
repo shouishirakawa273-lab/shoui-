@@ -23,6 +23,12 @@ def _run_hook(file_path: str | None) -> subprocess.CompletedProcess[str]:
         input=json.dumps(payload),
         capture_output=True,
         text=True,
+        # D0098: このHookはWarning文へ日本語(UTF-8)を出力する。この環境の
+        # `locale.getpreferredencoding()`はWindows日本語Codepage(cp932)で
+        # あり、Git Bash側のStdout/StderrバイトストリームはUTF-8であるため、
+        # `encoding`未指定だとsubprocessの出力Decode時に`UnicodeDecodeError`
+        # になる(DECISIONS.md D0098で実測確認済み)。明示的にUTF-8を指定する。
+        encoding="utf-8",
         cwd=_REPO_ROOT,
         timeout=10,
         check=False,
