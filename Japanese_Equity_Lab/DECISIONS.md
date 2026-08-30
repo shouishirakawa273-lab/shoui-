@@ -12258,3 +12258,105 @@ Directory/File)もD0098に必要とは証明できないためCommit対象外と
   `[tool.pytest.ini_options]`を追加する。
 - Layer C(Full Acceptance)専用Scriptは新設していない。このDECISIONS
   記録に残したManual Command Contractを当面の実行手順とする。
+
+## D0098.1 — Post-Edit Fast GateへのRepository Boundary Guard追加
+
+D0098のLayer A(Fast Gate)を実運用したところ(D0099/D0100 Round)、
+Claude Scratchpad配下(`%LOCALAPPDATA%\...\scratchpad\*.py`相当、
+Repository外)のInvestigation Scriptを`Write`/`Edit`しただけで
+Post-Edit Hookが失敗する事象が発生した。本Roundはこの根本原因を
+特定・修正した。
+
+### Root Cause
+
+Post-Edit Fast Gateは`tool_input.file_path`が`.py`で終わり実在すれば
+即座に`ruff check`/`ruff format --check`を実行しており、**そのFile
+自体がこのRepository配下にあるかどうかを一切検証していなかった**。
+Claude Scratchpad File(Repository外の一時Inspection Script)を編集
+しただけでも、このRepositoryの`pyproject.toml`(`line-length=130`等)を
+使ってruffが実行され、Repository外Fileのformat差分・行長超過だけで
+Fast Gateが非ゼロ終了していた(`SCRATCHPAD_FALSE_POSITIVE`、実測:
+`d0100_inspect.py`でのE501、`d0100_inspect.py`/`d0100_inspect2.py`
+双方でのUnformatted File判定)。品質基準・Recursion構造いずれにも
+問題は無く、**Fast Gateの対象範囲(Scope)がRepository境界を考慮して
+いなかったこと**が唯一の原因である。
+
+### Fix — Repository Boundary Guard
+
+`.claude/hooks/post_edit_quality_gate.sh`のFile Path解決Python
+Snippet(既存のStdin→Temp File→argv方式、変更なし)へ、`repo_root`
+(既存`git rev-parse --show-toplevel`の出力、Bash側で新たに変数化した
+のみで解決方式自体は無変更)を追加引数として渡し、`pathlib.Path.
+resolve()` + `relative_to()`によるMembership Checkを追加した。
+
+- **素朴な文字列Prefix比較ではない**: `relative_to()`はPath Parts単位
+  で比較するため、Repository Root(例: `.../shoui-`)に対する
+  Near-Prefix Path(例: `.../shoui-other/x.py`)を誤って内側と判定
+  しない(Test`test_boundary_guard_rejects_near_prefix_sibling_
+  directory`で実測確認)。
+- **Windows Path前提**: `repo_root`(`git rev-parse --show-toplevel`)
+  も`file_path`(Claude Code Tool Inputの生値)もいずれもWindows
+  Drive-Letter形式(`C:/...`または`C:\...`)であり、この2つを直接
+  `pathlib`(Windows Python)へ渡して比較する。cygpath由来のGit Bash
+  POSIX形式Path(`/c/...`)はこのMembership Check自体には使わない
+  (Windows Pythonの`pathlib`は`/c/...`をMSYS規約通りには解釈できず、
+  Boundary Guardを誤動作させるため——実装中に実測で確認した)。
+  既存のcygpath正規化(`.py`拡張子判定・`-f`存在確認・ruff起動時の
+  引数)はこのGuardより後段のままで無変更。
+- **判定不能時と同じFail Open経路**: Membership Check失敗
+  (Repository外・`resolve()`失敗)は、既存の「file_pathが取得できない
+  場合」と同じ`file_path`空文字列扱いに合流させ、新しいExit Code分岐
+  を増やしていない(既存Fail Open方針の一貫性を維持)。
+
+### Policy
+
+`POST_EDIT_GATE_SCOPE = REPOSITORY_PYTHON_FILES_ONLY`。Repository外・
+Scratchpad・一時File等の`.py`はPost-Edit Fast Gateの対象外であり、
+品質チェック無しでskipされる(Blockしない、既存のnon-Python Fileや
+存在しないFileと同じ扱い)。これはRepository自身のPython品質基準を
+緩めたものではなく、**「何をこのGateの対象とみなすか」というScopeの
+訂正**である。
+
+### Tests
+
+`Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py`を
+更新した。D0098時点の要件A/D/E/G・H(動的)/Jは、Boundary Guard導入後も
+実際にFast Gateがruff経路を実行することを検証し続ける必要があるため、
+pytestの`tmp_path`(常にRepository外——通常OS Temp配下)ではなく、
+新設したHelper`_repo_local_python_file()`(`Japanese_Equity_Lab/
+13_tests/`配下に一意な名前でFileを作成し、Test終了後に必ず削除する
+Context Manager)を使うよう更新した。
+
+D0098.1固有のRegression Testを5件追加した: (A)Scratchpad相当のPathは
+skip、(B)任意のRepository外Pathも同様にskip、(C)Repository配下の
+`.py`はBoundary Guard導入後も引き続き実行される(過剰Block防止の
+確認、要件Dと相補)、(D)Repository RootとFilesystem上兄弟関係にある
+Near-Prefix Directoryを実Machine上に動的作成し(`Path.home()`等の
+Hardcodeなし)、誤って内側と判定しないことを確認、(E)Repository外の
+日本語/Unicode Pathも安全にskipされる。
+
+### Quality Gates(このRoundで実施)
+
+- `bash -n .claude/hooks/post_edit_quality_gate.sh`: Syntax OK。
+- 手動Direct Invocation: Repository配下の`.py`(Windows Style Path)→
+  ruff実行・成功。Repository外のScratchpad相当Path→skip。Repository
+  RootとNear-Prefix関係にある兄弟Directory→skip(誤判定なし)。
+- `ruff check` / `ruff format --check`(D0098.1で変更した唯一のPython
+  File`test_post_edit_quality_gate_hook.py`のみ): All Pass。
+- Focused Pytest(`test_post_edit_quality_gate_hook.py`・
+  `test_protected_path_hook.py`、`-m "not integration"`): **24
+  passed, 1 deselected**(D0098時点の19件 + D0098.1新規5件)。Full
+  Suiteは実行していない。
+
+### Persistence / Commit対象・Scope
+
+`.claude/hooks/post_edit_quality_gate.sh`(Boundary Guard追加のみ、
+既存のPython解決・ruff実行Logicは無変更)・
+`Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py`
+(Helper追加・既存TestのRepository配下化・新規5 Test追加)・この
+DECISIONS.md追記をCommit対象とする。`protected_path_warning.sh`・
+`.claude/settings.json`は本Roundでは無変更。`core/`・`app.py`・
+`tests/`・`lib/peer/*`・`lib/evidence/*`・`lib/valuation/*`・
+`lib/registry/*`等のResearch Production/既存Screening Toolはいずれも
+無変更。Stage 3.17はFROZENのまま。H0001は実行していない。D0099/D0100
+のInvestigation Outputは本Roundでは変更していない。

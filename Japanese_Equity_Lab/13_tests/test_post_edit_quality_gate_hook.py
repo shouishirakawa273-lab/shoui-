@@ -25,13 +25,28 @@ D0098でPost-Edit Hookを「Layer A: Fast Fail-Fast Gate」(ruffのみ・
 Post-Edit Hook自体からはpytestが完全に削除されたため、通常Edit経路
 からは自然に除外される(marking自体には依存しない、DECISIONS.md
 D0098 §3参照)。
+
+D0098.1 Root Cause(DECISIONS.md D0098.1参照): D0098時点のFast Gateは
+tool_input.file_pathが実際にこのRepository配下かどうかを検証しておらず、
+Claude Scratchpad等Repository外の`.py`FileへのEditでもこのRepositoryの
+`pyproject.toml`を使ってruffを実行し、Repository外Fileの整形差分だけで
+Fast Gateが失敗していた(SCRATCHPAD_FALSE_POSITIVE)。Repository Boundary
+Guard(`Path.relative_to()`によるPath Parts単位のMembership Check)を
+追加し、Repository外の`.py`Fileは判定不能時と同じFail Open経路(skip)へ
+倒すようにした。既存の要件A/D/E/G・H(動的)/JのTestは、この変更後も
+実際にFast Gateがruffを起動する経路を検証し続けられるよう、pytestの
+`tmp_path`(常にRepository外)ではなく`_repo_local_python_file()`(下記
+Helper、Repository配下に実File作成)を使うよう更新した。
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
+import uuid
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -39,6 +54,7 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = _REPO_ROOT / ".claude" / "hooks" / "post_edit_quality_gate.sh"
 _SETTINGS = _REPO_ROOT / ".claude" / "settings.json"
+_THIS_TEST_DIR = Path(__file__).resolve().parent
 
 
 def _run_hook(
@@ -58,6 +74,23 @@ def _run_hook(
         timeout=timeout,
         check=False,
     )
+
+
+@contextlib.contextmanager
+def _repo_local_python_file(content: str, *, name: str | None = None, suffix: str = ".py") -> Iterator[Path]:
+    """D0098.1: Repository Boundary Guardの対象として実際にFast Gateが
+    ruffを起動する経路を検証するには、Test対象File自体がこのRepository
+    配下に実在している必要がある(pytestの`tmp_path`は常にRepository外
+    ——通常OS Temp配下——であり、Boundary Guard導入後は必ずskipされて
+    しまうため)。このRepositoryの`13_tests/`配下に一意な名前でFileを
+    作成し、Test終了後は成功・失敗いずれでも必ず削除する。"""
+    filename = name if name is not None else f"_d0098_1_scratch_{uuid.uuid4().hex}{suffix}"
+    target = _THIS_TEST_DIR / filename
+    target.write_text(content, encoding="utf-8")
+    try:
+        yield target
+    finally:
+        target.unlink(missing_ok=True)
 
 
 def test_hook_script_exists_and_is_registered_in_settings() -> None:
@@ -149,12 +182,13 @@ def test_hook_fails_closed_when_no_venv_present(tmp_path: Path) -> None:
 # --- D0098 §8 Layer A Fast Gate要件 A〜J ---------------------------------
 
 
-def test_fast_gate_resolves_repository_venv_python(tmp_path: Path) -> None:
+def test_fast_gate_resolves_repository_venv_python() -> None:
     """要件A: Repository-local .venv Pythonを選択して実際にruffを起動
-    できること(=このRepositoryの実.venvからPythonを解決できている)。"""
-    target = tmp_path / "d0098_valid_a.py"
-    target.write_text("value = 1\n", encoding="utf-8")
-    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    できること(=このRepositoryの実.venvからPythonを解決できている)。
+    D0098.1: Boundary Guardを実際に通過させるため、対象FileはRepository
+    配下に作成する(`_repo_local_python_file`)。"""
+    with _repo_local_python_file("value = 1\n") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
     combined = result.stdout + result.stderr
     assert "No module named ruff" not in combined, combined
     assert "[hook] ruff check (changed file only)" in result.stdout, combined
@@ -237,31 +271,31 @@ def test_fast_gate_fails_closed_when_repo_venv_lacks_ruff(tmp_path: Path) -> Non
     assert "Traceback (most recent call last)" not in combined
 
 
-def test_fast_gate_succeeds_on_valid_changed_python_file(tmp_path: Path) -> None:
+def test_fast_gate_succeeds_on_valid_changed_python_file() -> None:
     """要件D: 変更FileがValidなPythonであれば、Fast Gateは成功
-    (exit 0)すること。"""
-    target = tmp_path / "d0098_valid_d.py"
-    target.write_text("value = 1\n", encoding="utf-8")
-    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    (exit 0)すること。D0098.1: Repository配下に実File作成。"""
+    with _repo_local_python_file("value = 1\n") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Fast Gate OK" in result.stdout
 
 
-def test_fast_gate_propagates_ruff_failure(tmp_path: Path) -> None:
-    """要件E: 変更FileがRuffのCheckに違反する場合、非ゼロで伝播すること。"""
-    target = tmp_path / "d0098_bad_e.py"
-    target.write_text("value=1\n", encoding="utf-8")  # E225: missing whitespace
-    result = _run_hook({"tool_input": {"file_path": str(target)}})
+def test_fast_gate_propagates_ruff_failure() -> None:
+    """要件E: 変更FileがRuffのCheckに違反する場合、非ゼロで伝播すること。
+    D0098.1: Repository配下に実File作成(Boundary Guardをすり抜けさせない)。"""
+    with _repo_local_python_file("value=1\n") as target:  # E225: missing whitespace
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
     assert result.returncode != 0
     assert "Fast Gateに失敗しました" in result.stderr
 
 
-def test_fast_gate_skips_non_python_files(tmp_path: Path) -> None:
+def test_fast_gate_skips_non_python_files() -> None:
     """要件F: non-Python Fileの編集では、Python Quality Tool(ruff)を
-    起動せずにexit 0で即終了すること。"""
-    target = tmp_path / "d0098_notes_f.md"
-    target.write_text("# note\n", encoding="utf-8")
-    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    起動せずにexit 0で即終了すること。D0098.1: Repository配下に実File
+    作成し、skip理由が拡張子判定であることを明確にする(Boundary Guard
+    による別経路のskipと混同しない)。"""
+    with _repo_local_python_file("# note\n", suffix=".md") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
     assert result.returncode == 0
     assert "ruff check" not in result.stdout
 
@@ -274,12 +308,12 @@ def test_fast_gate_script_never_invokes_pytest_or_mypy() -> None:
     assert "-m mypy" not in content, "post_edit_quality_gate.shがmypyを起動しています(D0098違反)"
 
 
-def test_fast_gate_output_never_reports_pytest_or_mypy_stage(tmp_path: Path) -> None:
+def test_fast_gate_output_never_reports_pytest_or_mypy_stage() -> None:
     """要件G・H(動的確認): 実際にHookを実行した出力にも
-    pytest/mypy Stageのメッセージが一切現れないこと。"""
-    target = tmp_path / "d0098_valid_gh.py"
-    target.write_text("value = 1\n", encoding="utf-8")
-    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    pytest/mypy Stageのメッセージが一切現れないこと。D0098.1: Boundary
+    Guardを通過させ、実際にruff経路を動かした上で確認する。"""
+    with _repo_local_python_file("value = 1\n") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
     combined = result.stdout + result.stderr
     assert "[hook] pytest" not in combined
     assert "[hook] mypy" not in combined
@@ -292,15 +326,94 @@ def test_fast_gate_script_never_creates_nested_venv() -> None:
     assert "-m venv" not in content, "post_edit_quality_gate.shがVenvを作成しています(D0098違反)"
 
 
-def test_fast_gate_handles_unicode_japanese_repository_path(tmp_path: Path) -> None:
+def test_fast_gate_handles_unicode_japanese_repository_path() -> None:
     """要件J: 日本語/Unicodeを含むFile Pathでも、Stdin経由のJSON解析・
     File存在確認・ruff起動のいずれも壊れないこと(このRepository自体が
     `C:\\Users\\<日本語ユーザー名>\\...`配下にあるため必須の確認、
-    DECISIONS.md D0098参照)。"""
-    unicode_dir = tmp_path / "日本語ディレクトリ"
-    unicode_dir.mkdir()
-    target = unicode_dir / "日本語ファイル名_d0098.py"
+    DECISIONS.md D0098参照)。D0098.1: Boundary Guardを通過させるため
+    Repository配下(`13_tests/`)に日本語Filenameで実File作成する。"""
+    with _repo_local_python_file("value = 1\n", name="日本語ファイル名_d0098.py") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Fast Gate OK" in result.stdout
+
+
+# --- D0098.1 Repository Boundary Guard要件 ---------------------------------
+
+
+def test_boundary_guard_skips_external_scratchpad_style_python_file(tmp_path: Path) -> None:
+    """D0098.1要件A: Claude Scratchpad相当(Repository外`scratchpad/`配下)
+    の`.py`Fileは、exit 0でskipし、ruff Stageを一切出力しないこと
+    (SCRATCHPAD_FALSE_POSITIVEの再発防止)。`tmp_path`は常にRepository外
+    ——通常OS Temp配下——であるため、追加の細工なしにRepository外Pathを
+    表現できる。"""
+    scratchpad_dir = tmp_path / "scratchpad"
+    scratchpad_dir.mkdir()
+    target = scratchpad_dir / "d0098_1_scratchpad_style.py"
     target.write_text("value = 1\n", encoding="utf-8")
     result = _run_hook({"tool_input": {"file_path": str(target)}})
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "ruff check" not in result.stdout
+    assert "ruff format" not in result.stdout
+
+
+def test_boundary_guard_skips_external_arbitrary_python_file(tmp_path: Path) -> None:
+    """D0098.1要件B: Scratchpad固有の命名でなくとも、Repository外の
+    任意の`.py`Fileは同様にexit 0でskipし、ruff Stageを一切出力しない
+    こと。"""
+    external_dir = tmp_path / "some_external_project"
+    external_dir.mkdir()
+    target = external_dir / "unrelated_module.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ruff check" not in result.stdout
+    assert "ruff format" not in result.stdout
+
+
+def test_boundary_guard_still_runs_for_repository_local_python_file() -> None:
+    """D0098.1要件C: Repository配下の`.py`Fileは、Boundary Guard導入後も
+    引き続きFast Gateが実行される(過剰Blockになっていないことの確認、
+    要件Dと相補的)。"""
+    with _repo_local_python_file("value = 1\n") as target:
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[hook] ruff check (changed file only)" in result.stdout
     assert "Fast Gate OK" in result.stdout
+
+
+def test_boundary_guard_rejects_near_prefix_sibling_directory(tmp_path: Path) -> None:
+    """D0098.1要件D: `repo_root`に対する素朴な文字列Prefix比較では、
+    例えばRepository Root(`.../shoui-`)に対する`.../shoui-other/x.py`の
+    ようなNear-Prefix Pathを誤って"内側"と判定しうる。実際のRepository
+    RootとFilesystem上で兄弟関係にある(同じ親Directory直下の別名)
+    Directoryを動的に作成し、Machine固有Pathを一切Hardcodeせずに
+    このCaseを再現する(`Path.relative_to()`はPath Parts単位で比較する
+    ため、本来は誤判定しないはずであることを確認する)。"""
+    sibling_name = f"{_REPO_ROOT.name}-other-external-{uuid.uuid4().hex[:8]}"
+    near_prefix_dir = _REPO_ROOT.parent / sibling_name
+    near_prefix_dir.mkdir()
+    try:
+        target = near_prefix_dir / "x.py"
+        target.write_text("value = 1\n", encoding="utf-8")
+        result = _run_hook({"tool_input": {"file_path": str(target)}})
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "ruff check" not in result.stdout
+        assert "ruff format" not in result.stdout
+    finally:
+        for child in near_prefix_dir.glob("*"):
+            child.unlink()
+        near_prefix_dir.rmdir()
+
+
+def test_boundary_guard_skips_external_unicode_path(tmp_path: Path) -> None:
+    """D0098.1要件E: Repository外の日本語/Unicodeを含むFile Pathも、
+    CrashやHangを起こさず安全にskipされること(Fail Openのまま)。"""
+    unicode_external_dir = tmp_path / "日本語スクラッチパッド"
+    unicode_external_dir.mkdir()
+    target = unicode_external_dir / "日本語外部ファイル.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    result = _run_hook({"tool_input": {"file_path": str(target)}})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ruff check" not in result.stdout
+    assert "ruff format" not in result.stdout

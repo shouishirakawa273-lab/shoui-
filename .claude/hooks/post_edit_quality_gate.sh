@@ -25,9 +25,20 @@
 # 前提のみを置き、そこからRepo-Root-Relativeに解決する。グローバル
 # Python・`%LOCALAPPDATA%`のPython・PATH上でたまたま先頭に来た
 # `python`/`python3`へは一切Fallbackしない。
+#
+# Repository Boundary Guard(D0098.1): D0098時点ではtool_input.file_path
+# が実際にこのRepository配下かどうかを検証しておらず、Claude Scratchpad
+# 等Repository外の`.py`File(例: `%LOCALAPPDATA%\...\scratchpad\*.py`)への
+# EditでもこのRepositoryの`pyproject.toml`(line-length等)を使ってruffを
+# 実行し、Repository外Fileの整形差分だけでFast Gateが失敗していた
+# (SCRATCHPAD_FALSE_POSITIVE、DECISIONS.md D0098.1参照)。以下で取得する
+# `repo_root`をPython側のMembership Check(`Path.relative_to()`、素朴な
+# 文字列Prefix比較ではなくPath Parts単位の比較)に渡し、Repository外の
+# Fileは判定できない場合と同じFail Open経路(skip)で扱う。
 set -uo pipefail
 
-cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)" || exit 1
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$repo_root" || exit 1
 
 PY=""
 for candidate in ".venv/Scripts/python.exe" ".venv/bin/python" ".venv/bin/python3"; do
@@ -65,6 +76,7 @@ cat > "$tmp_input"
 file_path="$("$PY" -c '
 import json
 import sys
+from pathlib import Path
 
 value = None
 try:
@@ -76,13 +88,27 @@ else:
     value = data.get("tool_input", {}).get("file_path")
 
 if value:
-    sys.stdout.buffer.write(value.encode("utf-8"))
-' "$tmp_input" 2>/dev/null)"
+    # Repository Boundary Guard(D0098.1): Path Parts単位のMembership Check
+    # (`relative_to()`)であり、素朴な文字列Prefix比較ではない
+    # (`repo_root=/x/repo`に対して`/x/repo-other/y.py`のような
+    # Near-Prefix Pathを誤って内側と判定しない)。File自体が存在しなくても
+    # `resolve()`できるため(Edit直後でまだ存在しない場合を含む)、
+    # 存在確認は別途後段で行う。
+    try:
+        candidate_resolved = Path(value).resolve()
+        candidate_resolved.relative_to(Path(sys.argv[2]).resolve())
+    except (OSError, ValueError):
+        value = None
 
-# file_pathが取得できない場合は、Fast Gateを安全側でskipする(Fail Open。
-# 判定できないだけで、Blockはしない——Protected Path Warningと同じ方針)。
+if value:
+    sys.stdout.buffer.write(value.encode("utf-8"))
+' "$tmp_input" "$repo_root" 2>/dev/null)"
+
+# file_pathが取得できない場合(Tool Input未解決、またはRepository外)は、
+# Fast Gateを安全側でskipする(Fail Open。判定できないだけで、Blockは
+# しない——Protected Path Warningと同じ方針)。
 if [ -z "$file_path" ]; then
-  echo "[hook] file_pathを取得できなかったためFast Gateをskipします。" >&2
+  echo "[hook] file_pathを取得できなかった、またはRepository外のためFast Gateをskipします。" >&2
   exit 0
 fi
 
