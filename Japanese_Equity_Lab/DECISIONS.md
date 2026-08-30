@@ -12669,3 +12669,130 @@ interim_half_year_report.bin`に対しLocal Acceptance Probeを再実行した:
 `.claude/hooks/*`はいずれも無変更。SemanticClaim/PIT/Evidence関連の
 実装は本Roundでも一切行っていない(D0101の境界をそのまま維持)。Stage
 3.17はFROZENのまま。H0001は実行していない。
+
+## D0102 — Stage 3.18.3: Semantic Claim Extraction Design(設計のみ、実装なし)
+
+D0101.1完了後、D0101.1直上のLayer(EDINET正規化済みDisclosure Textから
+SemanticClaimへの変換)をDesign Onlyで検討した。Production Code変更・
+Test変更・DECISIONS.md以外への変更はいずれも行っていない。
+
+### 初回設計 → Codex Adversarial Audit → NEEDS_DESIGN_FIX
+
+初回提案(3-Stage: Candidate生成[LLM]→Deterministic Provenance
+Validation→Faithfulness Verification、EvidenceSpan=常にWhole
+TextBlock)に対しAdversarial Auditを実施し、`FINAL_VERDICT =
+NEEDS_DESIGN_FIX`と判定した。BLOCKING Finding 5件:
+
+- **D0102-A01(CRITICAL)**: LLMがどのTextBlockから抽出したかを
+  自己申告するReading(=Identity Authorityが曖昧)を許容していた——
+  D0101-F01と同型のRisk(Search対象がOffsetからTextBlock Identity自体へ
+  移動しただけ)。
+- **D0102-A03(HIGH)**: 1呼び出し1TextBlockが必須Requirementとして
+  明記されていなかった。
+- **D0102-C01(HIGH)**: Faithfulness Verificationに
+  PROPOSITION_IDENTITY(主張されている属性・Property自体が Evidence と
+  同一か)のCheckが欠落していた(例: 「販売台数が減少した」→
+  「競争力が低下した」を検出できなかった)。
+- **D0102-C02(HIGH)**: CERTAINTYのCheckがProbability Hedge
+  (可能性がある等)のみを対象とし、Commitment Stage Escalation
+  (「検討している」→「実施する」)を見落としていた。
+- **D0102-E01(HIGH)**: `claim_id`のHash InputがEvidenceの
+  `source_normalizer_version`/`source_raw_canonical_content_hash`を
+  含んでおらず、将来のNormalizer変更時にContent相違を伴うID衝突
+  (異なるEvidence Textが同一claim_idを得る)が理論上可能だった。
+
+### D0102.1 — 修正設計、`FINAL_VERDICT = READY_FOR_IMPLEMENTATION`
+
+上記5件全てをCLOSEDとする修正Architectureを設計した(実装はまだ行って
+いない、次Round以降のScope)。要点:
+
+1. **Identity Authority(A01/A03 Close)**: Deterministic Orchestration
+   が1呼び出しにつき正確に1 NormalizedTextBlockを選択し、その
+   Identity(document_id/member_path/taxonomy_element_name/
+   occurrence_index/char_start/char_end/source_raw_canonical_
+   content_hash/source_normalizer_version)をLLM呼び出し**前**に
+   確定する。LLMはClaim内容(claim_type/normalized_claim_text/
+   direction)のみを出力し、Identity/Offset/Quote/Versionはいずれも
+   出力しない・出力しても権威を持たない
+   (`SOURCE_IDENTITY_AUTHORITY = CALLER_PINNED_NON_LLM`、
+   `ONE_SOURCE_TEXTBLOCK_PER_EXTRACTION_CALL = REQUIRED_V1`)。
+2. **Evidence Binding方向(A02 Close)**: `EVIDENCE_BINDING_DEPENDS_ON_
+   SOURCE_NOT_CLAIM = TRUE`——Evidence BindingはClaim Textから独立に、
+   常にKnown TextBlock→Candidateの順で行う(逆方向・Claim Textからの
+   Evidence再探索は構造的に発生しない)。
+3. **Evidence Span Cardinality修正(B02 Close)**: v1では
+   `SemanticClaim`は`EvidenceSpan`を**Tupleではなく単数**で持つ
+   (旧設計はMulti-Span対応を許容していたが、Cross-Block Composition
+   はFaithfulness Verificationを不必要に複雑化するため、v1では単一
+   TextBlockに完全に収まるClaimのみを扱い、Cross-Block Reasoningが
+   必要なCandidateは`requires_cross_block_reasoning`としてQuarantine
+   する)。`EvidenceSpan`はCaller-pinned TextBlockの全体そのもの
+   (char_start/char_end/normalized_textはTextBlockから逐語Copyのみ、
+   独自のOffset計算・Substring Re-resolutionは一切行わない)。
+4. **Faithfulness Model拡張(C01/C02 Close)**: 6→8軸へ拡張
+   (PROPOSITION_IDENTITY・SUBJECT/ATTRIBUTION・SCOPE・
+   CAUSAL_STRENGTH・CERTAINTY_AND_COMMITMENT・TEMPORAL_SCOPE・
+   QUANTITY・NEGATION)。PROPOSITION_IDENTITYはLLMによるProperty
+   Label抽出(Advisory Inputのみ)+ Deterministicな承認済み同義語
+   TableでのCheckという形にし、LLMの自由な同一性判断を最終権威と
+   しない。CERTAINTY_AND_COMMITMENTはEpistemic Tier(可能性がある/
+   見込み/断定)とCommitment Tier(検討中/予定/決定/実施)を独立2軸の
+   機械的Marker Word Listでcheckし、いずれの軸もEvidence以上には
+   強化させない。判定不能な場合は`REVIEW_REQUIRED`(Silent Acceptは
+   しない)。
+5. **claim_id修正(E01 Close)**: `semantic_identity_key`
+   (document_id・source_raw_canonical_content_hash・
+   source_normalizer_version・member_path・taxonomy_element_name・
+   occurrence_index・char_start・char_end・claim_type・
+   normalized_claim_text・schema_versionのHash、extraction_version
+   除外)と`claim_id`(`semantic_identity_key`+extraction_versionの
+   Hash)を分離した。Raw Content/Normalizer Version/Evidence座標/
+   Claim Type/Semantic Proposition/Schema Versionいずれかが変われば
+   `semantic_identity_key`(ひいてはclaim_id)も必ず変わる。異なる
+   Extraction Run(Model Version違い)が同一Evidenceから同一Textを
+   独立に再生成した場合は`semantic_identity_key`が一致することを
+   Cross-Validation Signalとして利用可能(claim_id自体は
+   Extraction Run単位で別々のまま、Append-Only)。
+
+### Taxonomy(6種、OTHER_MATERIAL_DISCLOSUREはv1除外)
+
+`PERFORMANCE_CHANGE`・`PERFORMANCE_DRIVER`・`BUSINESS_RISK`・
+`MANAGEMENT_EXPLANATION`・`OUTLOOK`・`CAPITAL_ALLOCATION`。
+`OUTLOOK`はv1に含める(TEMPORAL_SCOPE/CERTAINTY_AND_COMMITMENT両軸で
+既に Gate されるため、Source自身が既にForward-lookingな内容のみ
+安全に扱える)。`OTHER_MATERIAL_DISCLOSURE`はInclusion基準を持たない
+Catch-allとなりSemantic Overreach Riskを高めるため、v1からは除外した
+(Coverage Gapとして許容、Safety Gapにはしない)。
+`BULLISH`/`BEARISH`/`POSITIVE_CATALYST`等Investment判断語は一切
+含めない(direction Fieldも常にSourceの語彙をそのまま反映するのみで、
+独立判断ではない)。
+
+### PIT / Evidence境界(変更なし、明示のみ)
+
+`EvidenceSpan.document_id`は既存`DisclosureDocument.
+internal_document_id`(D0045)と同一Identity空間であることを明記した
+(D0102自身はTimestampを持たない、PIT判定は既存DisclosureDocument/
+SourceMetadataへのJoinに委譲)。`generated_at`等のExtraction
+Timestampは`EXTRACTION_TIMESTAMP_IS_NOT_PIT_AVAILABILITY = TRUE`と
+して、PIT判定に一切使用しないことを明示した。
+
+### 既知の残存Risk(Blockingではない、Bounded/Monitored)
+
+Faithfulness 8軸ChecklistはConservative Gateであり、Formal Proofでは
+ない——列挙されていないOverreach Patternまで完全に防げるとは主張しない
+(`REVIEW_REQUIRED`という逃げ道と、Automationを当面停止したままにする
+ことで抑制する)。`generated_at`がPIT判定へ誤用されないことはSchema
+Levelでは強制できず、命名Invariant+実装Guardrail(PIT判定Codeと
+Extraction Timestampを同一Moduleに置かない等)による運用的対策に
+留まる。
+
+### Persistence / Commit対象・Scope
+
+このDECISIONS.md追記(D0102・D0102.1、設計のみ)がCommit対象の全てで
+ある。`lib/disclosures/*`・Test・`.claude/hooks/*`はいずれも無変更。
+SemanticClaim/EvidenceSpan等のSchema自体はまだCode化していない
+(次Round以降のScope、`lib/disclosures/semantic_claims.py`予定)。
+LLM抽出Logic(Stage 1/Faithfulness Verification)は本Roundでは設計の
+Mechanism論までであり、実装・Prompt作成はさらに別Roundとする。Stage
+3.17はFROZENのまま。D0098.1はFROZENのまま。H0001は実行していない。
+Automation未着手(`AUTOMATION_READINESS = NOT_READY`)。
