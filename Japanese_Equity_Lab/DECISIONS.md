@@ -12640,10 +12640,23 @@ interim_half_year_report.bin`に対しLocal Acceptance Probeを再実行した:
 - raw_canonical_content_hash = D0101/D0100.2と完全に同一の値
   (`6f9219ec545aee...`)——正規化LogicのBugfixがRaw Identityに一切
   影響していないことを実データで確認した(D0101 §11の設計意図通り)
-- **新規**: DOM_BOUNDARY_OFFSET_MISMATCH = 0(Member内のBlock群を
-  `char_start`でSortし、隣接Blockの範囲が重複しないことを独立に確認する
-  Structural Check、修正前の`str.find()`方式では原理上検証していな
-  かった観点)
+- **新規**: TEXTBLOCK_RANGE_OVERLAP_COUNT = 0。各Member内のTextBlockを
+  `char_start`順にSortし、隣接するBlockについて`previous.char_end <=
+  current.char_start`が成立することを確認した。抽出されたTop-level
+  TextBlock間でCharacter Rangeの重複が存在しないことを独立に検証した
+  ものである。
+
+  **この項目はDOM上のFact境界と`char_start`/`char_end`が完全に一致する
+  こと自体を独立に再検証したものではない**(2026-08-31訂正、D0101.1
+  初出時の呼称`DOM_BOUNDARY_OFFSET_MISMATCH`はこの点を過大に主張して
+  いたため撤回する)。DOM Fact境界からNormalized Offsetへの対応は、
+  `_walk()`→`_token_raw_span()`→`_normalize_with_offset_map()`という
+  実装経路と、各Blockについて`block.normalized_text == member.
+  normalized_text[block.char_start:block.char_end]`が成立するExact
+  Quote Invariant(`NormalizedDisclosureMember.__post_init__`)によって
+  検証されている。したがって本Acceptance Probeが独立に確認した追加
+  条件は「Top-level TextBlock range同士が重複していないこと」のみで
+  あり、DOM境界一致そのものの独立検証ではない。
 
 抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない。
 
