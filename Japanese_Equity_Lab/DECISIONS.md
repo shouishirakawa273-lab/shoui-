@@ -12796,3 +12796,140 @@ LLM抽出Logic(Stage 1/Faithfulness Verification)は本Roundでは設計の
 Mechanism論までであり、実装・Prompt作成はさらに別Roundとする。Stage
 3.17はFROZENのまま。D0098.1はFROZENのまま。H0001は実行していない。
 Automation未着手(`AUTOMATION_READINESS = NOT_READY`)。
+
+## D0102.2 — Stage 3.18.4: Semantic Claim Provenance Schema実装(Deterministic層のみ)
+
+D0102.1で確定したDeterministic Contractを、初めてProduction Codeへ
+実装した。LLM Candidate生成・8軸Faithfulness Verification Algorithmは
+いずれも本Roundの意図的なScope外(D0102.1の設計をそのままCode化する
+Schema/Provenance Infrastructureのみ)。
+
+### 実装Module
+
+`Japanese_Equity_Lab/lib/disclosures/semantic_claims.py`(新設)。
+`EvidenceSpan`(逐語Copyのみ、`from_text_block()`Factory経由を推奨、
+Constructor自体もIndependentに`__post_init__`でInvariant検証)・
+`SemanticClaim`(`evidence_span`は単数Field、Tuple/Listを渡すと
+`isinstance`チェックによりRuntime Rejectされる——D0102.1 B02修正の
+Cross-Block Composition不可能性をRuntimeでも保証)・
+`SemanticClaimType`(6種、`OTHER_MATERIAL_DISCLOSURE`除外)・
+`ClaimDirection`(INCREASE/DECREASE/UNSPECIFIED)・
+`FaithfulnessOutcome`(ACCEPT/REJECT/REVIEW_REQUIRED)・
+`RevalidationResult`(VALID/NEEDS_REVALIDATION)。
+
+### Identity/Hash実装
+
+新しいHash Algorithmは作らず、既存`lib.reproducibility.
+hash_json_safe()`(JSON `sort_keys=True`によるKey名Alphabetical
+Order、SHA-256)をそのまま再利用した。`compute_semantic_identity_key()`
+(`extraction_version`を含まない)と`compute_claim_id()`
+(`semantic_identity_key`+`extraction_version`)を分離実装し、
+`build_semantic_claim()`Helperで両方を自動導出する。
+
+### REVIEW_REQUIRED Contract設計判断
+
+D0102.1 §8の指示に従い、`faithfulness_review_required`(bool)のみで
+なく`faithfulness_outcome`(`FaithfulnessOutcome`)も併せて保持する
+設計を採用した(理由: Booleanのみでは`REVIEW_REQUIRED`の理由を後から
+拡張しにくく、また`SemanticClaim.__post_init__`で両者の整合性を
+相互検証することで「Outcome=ACCEPTなのにreview_required=True」等の
+矛盾State混入をConstructor Levelで構造的に排除できるため)。加えて
+`faithfulness_outcome=REJECT`のCandidateは`SemanticClaim`自体を構築
+できないようにした(REJECTされたCandidateはD0102.1のArchitecture図
+通り「discarded, logged」であり、そもそも`SemanticClaim`Instanceには
+ならないという設計をそのままCode化した)。
+
+### Revalidation実装
+
+`revalidate_evidence_span()`は`str.find`/`str.index`等のSearchを一切
+使わず、`document_id`/`member_path`/`taxonomy_element_name`/
+`occurrence_index`によるLookupのみでMember/TextBlockを特定する。
+Version(`source_raw_canonical_content_hash`/`source_normalizer_
+version`)不一致は`NEEDS_REVALIDATION`を返すのみ(Silent Remapも
+Silent Trustもしない)。Version一致にもかかわらずContent/Offset自体が
+食い違う場合(Tampering/Corruption疑い)は`SemanticClaimSchemaError`で
+Fail Closedする(Versionが同じならD0101.1の決定論的挙動により同一
+Contentになるはずのため、これはVersion Migrationとは異なる、より
+深刻な不整合として扱う)。`generated_at`はこの関数内で一切参照しない。
+
+### Tests(35要件、40 Test関数、`test_disclosures_semantic_claims.py`新設)
+
+D0101.1の実Object(`normalize_edinet_type1_zip()`)に対してSchemaを
+実際に動かすBlack Box方式を踏襲し、D0102.2独自のFake Objectは作って
+いない。Identity Property(A-I相当、Same Input→Same Key・
+Extraction Version変更→claim_idのみ変化・Raw Hash/Normalizer
+Version/Offset/Claim Type/Claim Text/Schema Version変更→
+semantic_identity_key変化・作成順序非依存)・Revalidation(Tampering
+検知・Out-of-bounds検知・Version Mismatch検知・正常Revalidation)・
+Taxonomy(6種Accept・禁止Type不可能)・Claim Text Validation(空・
+空白のみ・制御文字Reject、Verbatim一致はAllow)・REVIEW_REQUIRED
+Contract(矛盾State拒否)・Entity/Unicode保持・Hidden Content非再出現
+をいずれも実データに近いSynthetic Fixtureで固定した。
+
+実装過程で発見したTest自体の誤り1件: 「異なる2 TextBlock」Testで
+異なるTaxonomy名を使っていたため、`occurrence_index`不一致という
+誤ったAssertionになっていた(occurrence_indexはMember内で同一Taxonomy
+名ごとに独立Countされる、D0101.1の既存仕様通り正しく動作していた)。
+同一Taxonomy名を2回使うFixtureへ修正し、`occurrence_index`
+Disambiguationを正しくExerciseするようにした。
+
+### Quality Gates(このRoundで実施、Targeted Only)
+
+- `ruff check` / `ruff format --check`
+  (`lib/disclosures/semantic_claims.py`・
+  `13_tests/test_disclosures_semantic_claims.py`のみ): All Pass。
+- `mypy`(`lib/disclosures/semantic_claims.py`のみ): Success, no
+  issues。実装中に`**dict[str, str | int]`形式のKeyword Unpackingが
+  mypyでArgument Type Errorとなったため、EvidenceSpanの各Fieldを
+  明示的なKeyword引数として渡す形に修正した(Dict Unpack自体を
+  廃止、型安全性を優先)。
+- `mypy`(`13_tests/test_disclosures_semantic_claims.py`): D0095以来の
+  既知環境問題(`numpy/__init__.pyi`のPython 3.12構文)によりBlocked。
+  D0102.2とは無関係のPre-existing Environment Limitation、日和見的な
+  修正はしていない。
+- Targeted Pytest(`13_tests/test_disclosures_semantic_claims.py`):
+  **40 passed**。
+- Regression確認(`13_tests/test_disclosures_normalization.py`、
+  D0101.1既存Test): **32 passed**(無変化)。
+- Full Repository Suite/H0001はいずれも実行していない。
+
+### Toyota S100UP32 Structural Acceptance(Gitignored Raw File、
+Commit対象外、Schema/Factoryのみ・LLM不使用)
+
+- NORMALIZED_MEMBER_COUNT = 14(D0101.1/D0101.2から不変)
+- TEXTBLOCK_COUNT = 52(不変)
+- EVIDENCE_SPAN_FACTORY_SUCCESS_COUNT = 52/52(全TextBlockからEvidence
+  Span Factoryが成功)
+- EVIDENCE_SPAN_EXACT_SLICE_INVARIANT_COUNT = 52/52
+- EVIDENCE_SPAN_REVALIDATION_SUCCESS_COUNT = 52/52(全件VALID)
+- MDA_EVIDENCE_SPAN_FACTORY_SUCCESS = True
+- RISK_EVIDENCE_SPAN_FACTORY_SUCCESS = True
+
+抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない
+(件数・Boolean結果のみ)。本RoundではTextBlockを`SemanticClaim`へ
+変換していない(Semantic Extraction自体が未実装のため、52件の
+TextBlock全てがSemanticClaimになる必要はない、D0102.2 §18)。
+
+### 明示的な未実装確認
+
+`LLM_EXTRACTION_IMPLEMENTED = NO`。`FAITHFULNESS_CHECKER_IMPLEMENTED
+= NO`(PROPOSITION_IDENTITY/SUBJECT-ATTRIBUTION/SCOPE/CAUSAL_
+STRENGTH/CERTAINTY_AND_COMMITMENT/TEMPORAL_SCOPE/QUANTITY/NEGATIONの
+いずれも未実装)。`AUTOMATION_READINESS = NOT_READY`(変更なし)。
+
+### Adversarial Self-Check(Commit前、D0102.2 §20)
+
+`str.find()`/`str.index()`によるIdentity解決・Fuzzy Matching・Claim
+Text駆動のEvidence Lookup・Random UUID・組み込み`hash()`・Model/LLM
+依存・Multi-EvidenceSpan SemanticClaim・`generated_at`のPIT用途・
+Inferred `supersedes_claim_id`・Silent Offset Rebindingのいずれも
+**ABSENT**(Grep + Code Reviewで確認)。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/semantic_claims.py`(新設)・
+`Japanese_Equity_Lab/13_tests/test_disclosures_semantic_claims.py`
+(新設)・このDECISIONS.md追記をCommit対象とする。`lib/peer/*`・
+`lib/valuation/*`・`lib/evidence/model.py`・ResearchArtifact・
+`.claude/hooks/*`・Stage 3.17 Code・D0098.1 Codeはいずれも無変更。
+Automation/Orchestration Codeは追加していない。H0001は実行していない。
