@@ -234,7 +234,15 @@ class EvidenceSpan:
         return span
 
 
-def _validate_claim_text(text: str) -> None:
+def validate_claim_text(text: str) -> None:
+    """Claim Text(`normalized_claim_text`)自体のSchema Safety Check
+    (D0102.1 §9)。空/空白のみ/制御文字を拒否する。Evidence自体の
+    再正規化ではない。
+
+    D0102.3.1(Candidate Extraction Layer)からも再利用される公開関数
+    ——同種のValidation LogicをModule間で重複実装しない(D0102.3.1
+    §1「Do not duplicate these models」の精神を、この1関数についても
+    そのまま適用する)。"""
     if not text:
         raise SemanticClaimSchemaError("normalized_claim_text は空にできません")
     if not text.strip():
@@ -282,7 +290,7 @@ class SemanticClaim:
                 "evidence_span は単一のEvidenceSpanである必要があります"
                 "(Tuple/List等の複数EvidenceSpanはv1では許可されません、D0102.1 B02修正)"
             )
-        _validate_claim_text(self.normalized_claim_text)
+        validate_claim_text(self.normalized_claim_text)
         if not self.claim_id:
             raise SemanticClaimSchemaError("claim_id は空にできません")
         if not self.semantic_identity_key:
@@ -499,4 +507,5 @@ __all__ = [
     "compute_semantic_identity_key",
     "evidence_span_identity_fields",
     "revalidate_evidence_span",
+    "validate_claim_text",
 ]

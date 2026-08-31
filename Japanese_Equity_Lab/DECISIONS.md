@@ -13045,3 +13045,213 @@ Stage 3.17・D0098.1はいずれも無変更。H0001は実行していない。
 Candidate Extraction Implementation(この設計に基づくSchema/
 Orchestration Code)であり、Faithfulness Verification(D0102.4)・
 Automationはいずれも別Roundに据え置く。
+
+## D0102.3.1 — Candidate Extraction実装(D0102.3承認Boundaryのそのままの実装)
+
+D0102.3で承認されたArchitecture(`READY_FOR_IMPLEMENTATION`)を
+再設計せず、そのままCode化した。Faithfulness Verification(D0102.4)は
+本Round引き続き別Round据え置き。
+
+### 実装Module
+
+`Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py`(新設)。
+`lib.disclosures.normalization`/`lib.disclosures.semantic_claims`の
+既存Model(`NormalizedDisclosureDocument`/`EvidenceSpan`/
+`SemanticClaimType`/`ClaimDirection`/`revalidate_evidence_span()`/
+`build_semantic_claim()`等)は一切複製せずそのまま再利用した。
+`validate_claim_text()`をD0102.2側の`semantic_claims.py`で
+`_validate_claim_text()`から公開関数へ改名し(呼び出し元1箇所を
+追従修正、既存40 Test再検証済み)、Candidate Text Validationの
+重複実装を避けた。
+
+### D0102.2-A01のIntegration Boundary Closure
+
+`extract_candidates()`を本Moduleの唯一の公開Entrypointとし、
+`model.extract(...)`を呼び出す経路をこの関数の内部1箇所のみに限定
+した(Grepで確認、他に呼び出し箇所なし)。関数内部は
+`revalidate_evidence_span(...) == RevalidationResult.VALID`の確認→
+`max_source_chars`以内であることの確認、の順で全てPassした場合に
+のみModelを呼び出す。`SemanticClaimSchemaError`のRaise(構造的
+不整合・Tampering疑い)・`RevalidationResult.NEEDS_REVALIDATION`
+(Version不一致)いずれも`SOURCE_REVALIDATION_FAILED`として扱い、
+Model呼び出しをBlockする。`extraction_version`/`prompt_hash`が
+空の場合は`CandidateExtractionSchemaError`をModel呼び出し前に
+Raiseする(Caller Programming Error)。
+
+### Model Authority Boundary実装
+
+Model Raw出力は`_validate_and_build_candidates()`が一元的に検証する。
+Top-levelが`{"candidates": [...]}`以外の形・`candidates`がList以外・
+上限(`MAX_CANDIDATES_PER_TEXTBLOCK=20`)超過はResponse全体を
+`MODEL_CONTRACT_VIOLATION`とする。各Candidate Dictに`document_id`・
+`member_path`・`taxonomy_element_name`・`occurrence_index`・
+`char_start`/`char_end`・`supporting_quote`・`source_raw_canonical_
+content_hash`・`source_normalizer_version`・`claim_id`・
+`semantic_identity_key`・`schema_version`・`extraction_version`・
+`generated_at`・`market_public_at`・`provider_available_at`・
+`evidence_span`のいずれか1つでも含まれていた場合はResponse全体を
+`MODEL_CONTRACT_VIOLATION`とする(Silent Ignoreしない)。許可Key
+(`claim_type`/`normalized_claim_text`/`direction`)以外のKeyが1つでも
+あれば同様にResponse全体を拒否する。個別Candidateの型不正・不正
+Enum値・Text長超過はCandidate単位でSkip(`rejected_candidate_count`
+に計上)し、Response全体は拒否しない(構造Violationと値Violationを
+明確に区別する設計)。
+
+### BUSINESS_RISK Allowlist実装(Substring Heuristic不使用)
+
+`BUSINESS_RISK_ELIGIBLE_TAXONOMY_NAMES = frozenset({"jpcrp_cor:
+BusinessRisksTextBlock"})`のみを許可する明示的Allowlistとして実装した
+(`"Risk" in taxonomy_element_name`のようなSubstring判定は一切ない、
+Grepで確認)。Modelが非対象TextBlockに対してBUSINESS_RISKを返した
+場合はCandidate単位のSkipではなくResponse全体を
+`MODEL_CONTRACT_VIOLATION`とする(D0102.3 §7の通り、Hard Constraintの
+無視は深刻なContract Violationとして扱う)。
+
+### Direction/Claim Granularity実装
+
+`direction`はModel出力の`ClaimDirection` Enum値をそのままPass-Through
+するのみで、本Module自身が語彙から意味を再解釈することはない(「損失が
+減少した」→`DECREASE`のまま、Good/Bad再解釈をしない)。因果Claimの
+2件分割(`PERFORMANCE_CHANGE`+`PERFORMANCE_DRIVER`)は、Model側が
+複数Candidateを返せば本Moduleがそのまま受理し、両方を同一
+`EvidenceSpan` Instanceへ束縛する(Test`test_causal_claim_splits_
+into_two_candidates_sharing_one_evidence_span`で
+`is`比較により同一Instanceであることを確認)。
+
+### 長大TextBlock Policy実装
+
+`max_source_chars`(既定`DEFAULT_MAX_SOURCE_CHARS=8000`、呼び出し側で
+上書き可能、Model非依存のCharacter-based Proxy)を`evidence_span.
+supporting_quote`の長さと比較し、超過時は`TOO_LONG_FOR_EXTRACTION`を
+返してModelを呼び出さない。Chunkingは実装していない(部分Source Text
+をModelへ渡す経路は存在しない、Testで`model.last_call is None`を
+確認)。
+
+### Prompt Injection境界実装
+
+Modelへ渡すのは`taxonomy_element_name`+`source_text`
+(=`evidence_span.supporting_quote`)の2値のみ(Keyword引数のみを
+受け取る`CandidateExtractionModel` Protocol)。会社名・銘柄コード・
+書類種別・提出期間・他のTextBlock・市場データはいずれも渡さない
+(Test`test_model_receives_only_taxonomy_element_name_and_source_
+text`で確認)。Keyword検知Heuristicは実装しておらず、Source Text内に
+Injection的な文言が含まれていても、それはStructural Data Fieldとして
+渡るのみで、禁止Field出力等のContract Violationが実際に発生した場合は
+既存のMODEL_CONTRACT_VIOLATION経路がそのまま機能する(構造的分離のみ、
+Keyword Blocklistは作らない)。
+
+### Candidate ≠ 確定したSemanticClaim
+
+`SemanticClaimCandidate`は`claim_id`/`semantic_identity_key`/
+`FaithfulnessOutcome`のいずれも属性として持たない(Test`test_
+semantic_claim_candidate_has_no_claim_id_or_semantic_identity_key_
+attributes`で`hasattr()`により確認)。`build_semantic_claim()`(D0102.2
+既存)は本Roundから一切呼び出していない——Candidateから
+`SemanticClaim`への昇格経路は未実装のまま(Faithfulness Verification、
+D0102.4後に実装予定)。
+
+### Provenance実装
+
+`AiDerivedProvenance`(D0102.2既存、変更なし)をそのまま再利用し、
+`generated_at`は本Module内(`datetime.now(UTC)`)で確定する——Model
+自身に自己申告させることはない。`AiDerivedProvenance`自体が
+`market_public_at`/`provider_available_at`相当のFieldを持たないため、
+`generated_at`をPIT可用性として誤用する経路は構造的に存在しない
+(Test`test_extraction_provenance_generated_at_is_not_treated_as_pit_
+signal`で確認)。
+
+### Tests(48 Test関数、`test_candidate_extraction.py`新設)
+
+Revalidation Gate A-F(VALID時のみModel呼び出し・NEEDS_REVALIDATION・
+構造的Tampering・document_id不一致・Over-Budget・extraction_version/
+prompt_hash欠落、いずれも`model.call_count == 0`を直接Assert)、
+Model Authority/Contract Violation(禁止Field16種の個別Parametrize
+Test含む、Top-level構造不正、Candidate上限超過、Key過不足、Model
+Exception→MODEL_ERROR)、Taxonomy Eligibility(Allowlist受理・
+非対象Reject・**Substring Heuristic回帰防止Test**——"Risk"を含むが
+Allowlist外のTaxonomy名からのBUSINESS_RISKを明示的に拒否確認)、
+Direction Pass-Through(literal DECREASE・UNSPECIFIED)、Causal
+Granularity(2 Candidate、同一EvidenceSpan Instance)、Long-Input
+(In-Budget成功・Over-Budget Skip・Chunking不在確認)、Prompt
+Injection Isolation(渡されるKeyの完全一致確認、禁止Field出力の
+拒否確認)、SemanticClaimCandidate自体のConstructor Invariant
+(非EvidenceSpan型拒否・Claim ID等Attribute不在)をいずれも
+Deterministic Fake Model(`_RecordingFakeModel`、実LLM/Vendor SDK
+接続なし)で固定した。実装過程で1件のTest不備を発見・修正:
+構造的Tampering Testで`char_start`のみを変更していたため、
+`EvidenceSpan.__post_init__()`自身のLength Invariantに
+Construction時点で先に抵触していた(Revalidation Gateまで
+到達しない誤ったTestになっていた)。`char_start`/`char_end`を
+両方ずらすことで`EvidenceSpan`自体の内部整合性は保ちつつ、
+現在のDocumentとの構造的不一致を`revalidate_evidence_span()`
+Levelで検知させる形に修正した。
+
+### Quality Gates(このRoundで実施、Targeted Only)
+
+- `ruff check` / `ruff format --check`
+  (`lib/disclosures/candidate_extraction.py`・
+  `lib/disclosures/semantic_claims.py`・
+  `13_tests/test_candidate_extraction.py`のみ): All Pass。
+- `mypy`(`lib/disclosures/candidate_extraction.py`のみ): Success, no
+  issues found in 1 source file。
+- `mypy`(Test file): D0102.2から継続する既知環境問題
+  (`numpy/__init__.pyi`のPython 3.12構文)によりBlocked、本Roundの
+  Scope外(このRoundのProduction Moduleとは無関係のPre-existing
+  Environment Limitation)。
+- Targeted Pytest(`13_tests/test_candidate_extraction.py`):
+  **48 passed**。
+- Regression確認(`13_tests/test_disclosures_normalization.py`+
+  `13_tests/test_disclosures_semantic_claims.py`): 3ファイル合計
+  **120 passed**(既存Testに無変化・無退行)。
+- Full Repository Suite/H0001/Repository全体mypyはいずれも実行して
+  いない。
+
+### Toyota S100UP32 Read-Only Structural Acceptance(Gitignored Raw
+File、Commit対象外、Deterministic Fake Modelのみ・実LLM不使用)
+
+MD&A(`jpcrp_cor:ManagementAnalysisOfFinancialPositionOperatingResults
+AndCashFlowsTextBlock`)・BusinessRisks
+(`jpcrp_cor:BusinessRisksTextBlock`)の2 TextBlockのみを選択して実行:
+
+- SELECTED_TEXTBLOCK_COUNT = 2
+- MODEL_CALL_COUNT = 2(選択した2 TextBlockに対して各1回、Fake Model
+  経由)
+- EXTRACTION_SUCCESS_COUNT = 2/2
+- TOTAL_CANDIDATE_COUNT = 2
+- CANDIDATES_BOUND_TO_SAME_EVIDENCE_SPAN_INSTANCE_COUNT = 2/2(各
+  Candidateが渡した`EvidenceSpan` Instanceへ`is`比較で一致)
+- MDA_CALLED = True / RISK_CALLED = True
+
+抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない
+(件数・Boolean結果のみ)。実LLM/Vendor SDKへの接続は一切行っていない。
+
+### 明示的な未実装確認
+
+`FAITHFULNESS_CHECKER_IMPLEMENTED = NO`(PROPOSITION_IDENTITY/
+SUBJECT-ATTRIBUTION/SCOPE/CAUSAL_STRENGTH/CERTAINTY_AND_COMMITMENT/
+TEMPORAL_SCOPE/QUANTITY/NEGATIONのいずれも未実装、D0102.4は別Round)。
+`SemanticClaim`への昇格(`build_semantic_claim()`呼び出し)は本Round
+未実装。`AUTOMATION_READINESS = NOT_READY`(変更なし)。`H0001`は
+実行していない。
+
+### Adversarial Self-Check(Commit前)
+
+`model.extract(...)`の実呼び出し箇所はModule内1箇所
+(`extract_candidates()`内部)のみであることをGrepで確認した。
+`str.find()`/`str.index()`・Substring Heuristic
+(`"Risk" in taxonomy_element_name`相当)・禁止Field値の`dict.get()`
+によるSilent黙殺のいずれも**ABSENT**(Grep + Code Reviewで確認)。
+Model Providerは本Round `CandidateExtractionModel` Protocol経由で
+Caller注入のままであり、本Moduleは実Vendor SDKに一切依存しない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py`
+(新設)・`Japanese_Equity_Lab/13_tests/test_candidate_extraction.py`
+(新設)・`Japanese_Equity_Lab/lib/disclosures/semantic_claims.py`
+(`_validate_claim_text`→`validate_claim_text`公開化のみ)・この
+DECISIONS.md追記をCommit対象とする。Normalization Semantics
+(D0101.1)・Evidence Core・Peer・Valuation・ResearchArtifact・
+Expected Return・Decision・Portfolio・`.claude/hooks/*`・H0001は
+いずれも無変更。Automation/Orchestrator Codeは追加していない。次
+Round(未着手)はFaithfulness Verification(D0102.4)。
