@@ -1,0 +1,24 @@
+{
+  "content_hash": "3879ed8fa71f7372a70fa43da97758461fbe61d8f77d2af84ba7eb348217e9c3",
+  "created_at": "2026-08-19T11:17:34.889429+00:00",
+  "data_period": "2026-01-05/2026-03-04",
+  "endpoint": "fixture:equity_bars",
+  "local_file": "raw/fixture/SNAP_BT_PHASE5_V1_H0001_SMOKE_V2_TRAIN_equity_bars.json",
+  "provenance_id": null,
+  "record_count": 126,
+  "request_parameters": {
+    "codes": [
+      "7203",
+      "6758",
+      "9984"
+    ],
+    "from": "2026-01-05",
+    "to": "2026-03-04"
+  },
+  "response_schema_version": "fixture-v2(synthetic)",
+  "retrieved_at": "2026-08-19T11:17:34.887528+00:00",
+  "schema_version": "1.0",
+  "snapshot_id": "SNAP_BT_PHASE5_V1_H0001_SMOKE_V2_TRAIN_equity_bars",
+  "source": "fixture",
+  "updated_at": "2026-08-19T11:17:34.889433+00:00"
+}

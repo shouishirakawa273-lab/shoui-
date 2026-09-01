@@ -1,0 +1,126 @@
+{
+  "_disclaimer": "Disclosure Common Core(Phase4B-1、D0045)のGolden Fixture。完全に合成データであり、TDnet/EDINET/Company IRいずれの実Wire Formatも模していない(Provider-neutral、実Source未接続)。Field名(DocId/Code/Title/DocKind/PublicDate/PublicTime/SourceVersion/Language/Attachments等)は将来の実Source接続時に確認された実Field名へ置き換わる想定であり、現時点では確定仕様ではない。DECISIONS.md D0045参照。",
+  "data": [
+    {
+      "DocId": "FIX-D-001",
+      "Code": "72030",
+      "Title": "2024年3月期 決算短信",
+      "DocKind": "FIXTURE_FINANCIAL_RESULTS",
+      "PublicDate": "2024-05-08",
+      "PublicTime": "14:00",
+      "SourceVersion": "1",
+      "Language": "ja",
+      "Attachments": [
+        {
+          "AttachmentId": "FIX-A-001",
+          "MediaType": "application/pdf",
+          "AttachmentKind": "PDF",
+          "Filename": "fy_results.pdf",
+          "Locator": "https://example.invalid/fy_results.pdf",
+          "IsPrimary": true
+        },
+        {
+          "AttachmentId": "FIX-A-002",
+          "MediaType": "application/xbrl+xml",
+          "AttachmentKind": "XBRL",
+          "Filename": "fy_results.xbrl",
+          "Locator": "https://example.invalid/fy_results.xbrl",
+          "IsPrimary": false
+        }
+      ]
+    },
+    {
+      "DocId": "FIX-D-002",
+      "Code": "72030",
+      "Title": "配当予想の修正に関するお知らせ",
+      "DocKind": "FIXTURE_DIVIDEND",
+      "PublicDate": "2024-05-08",
+      "PublicTime": "15:30",
+      "SourceVersion": "1",
+      "Language": "ja"
+    },
+    {
+      "DocId": "FIX-D-003",
+      "Code": "67580",
+      "Title": "自己株式取得に係る事項",
+      "DocKind": "FIXTURE_SHARE_REPURCHASE",
+      "PublicDate": "2024-06-01",
+      "PublicTime": "15:00",
+      "SourceVersion": "1"
+    },
+    {
+      "DocId": "FIX-D-004",
+      "Code": "67580",
+      "Title": "未知の開示種別のテスト行",
+      "DocKind": "FIXTURE_UNKNOWN_KIND_NOT_IN_MAPPING_TABLE",
+      "PublicDate": "2024-06-02",
+      "PublicTime": "10:00",
+      "SourceVersion": "1",
+      "Attachments": [
+        {
+          "AttachmentId": "FIX-A-004",
+          "MediaType": "application/octet-stream",
+          "AttachmentKind": "FIXTURE_UNKNOWN_ATTACHMENT_KIND",
+          "Filename": "unknown.bin",
+          "Locator": "https://example.invalid/unknown.bin",
+          "IsPrimary": true
+        }
+      ]
+    },
+    {
+      "DocId": "FIX-D-005",
+      "Code": "67580",
+      "Title": "公表時刻が不明な開示",
+      "DocKind": "FIXTURE_MATERIAL_EVENT",
+      "PublicDate": "2024-06-05",
+      "PublicTime": "",
+      "SourceVersion": "1"
+    },
+    {
+      "DocId": "FIX-D-006",
+      "Code": "80560",
+      "Title": "重要事実に関するお知らせ",
+      "DocKind": "FIXTURE_MATERIAL_EVENT",
+      "PublicDate": "2024-07-01",
+      "PublicTime": "13:00",
+      "SourceVersion": "1"
+    },
+    {
+      "DocId": "FIX-D-006",
+      "Code": "80560",
+      "Title": "重要事実に関するお知らせ(号外)",
+      "DocKind": "FIXTURE_MATERIAL_EVENT",
+      "PublicDate": "2024-07-01",
+      "PublicTime": "13:05",
+      "SourceVersion": "2"
+    },
+    {
+      "DocId": "FIX-D-007",
+      "Code": "36260",
+      "Title": "ガバナンスに関するお知らせ",
+      "DocKind": "FIXTURE_GOVERNANCE",
+      "PublicDate": "2024-07-10",
+      "PublicTime": "16:00",
+      "SourceVersion": "1"
+    },
+    {
+      "DocId": "FIX-D-007",
+      "Code": "36260",
+      "Title": "ガバナンスに関するお知らせ",
+      "DocKind": "FIXTURE_GOVERNANCE",
+      "PublicDate": "2024-07-10",
+      "PublicTime": "16:00",
+      "SourceVersion": "1"
+    },
+    {
+      "DocId": "FIX-D-008",
+      "Code": "36260",
+      "Title": "大量保有報告書に関するお知らせ",
+      "DocKind": "FIXTURE_LARGE_SHAREHOLDING",
+      "PublicDate": "2024-07-15",
+      "PublicTime": "09:00",
+      "SourceVersion": "1",
+      "FutureProviderFieldNotYetKnown": "unrecognized-but-preserved"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "content_hash": "e2a37aebfa2c567e013d9867c90c5a020fcd7c0d207c038f22a3256c816b540c",
+  "created_at": "2026-08-16T11:48:50.957862+00:00",
+  "data_period": "2026-01-05/2026-06-30",
+  "endpoint": "fixture:daily_quotes",
+  "local_file": "raw/fixture/SNAP_RUN_20260816T114850955426_daily_quotes.json",
+  "provenance_id": null,
+  "record_count": 500,
+  "request_parameters": {
+    "codes": [
+      "7203",
+      "6758",
+      "9984",
+      "TOPIX_SYNTH"
+    ],
+    "from": "2026-01-05",
+    "to": "2026-06-30"
+  },
+  "response_schema_version": "fixture-v1(synthetic)",
+  "retrieved_at": "2026-08-16T11:48:50.955634+00:00",
+  "schema_version": "1.0",
+  "snapshot_id": "SNAP_RUN_20260816T114850955426_daily_quotes",
+  "source": "fixture",
+  "updated_at": "2026-08-16T11:48:50.957866+00:00"
+}
