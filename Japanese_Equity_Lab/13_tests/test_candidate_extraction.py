@@ -1,11 +1,16 @@
-"""`lib.disclosures.candidate_extraction`(Stage 3.18.5、D0102.3.1)の
-Regression Test。
+"""`lib.disclosures.candidate_extraction`(Stage 3.18.5、D0102.3.1/
+D0102.3.2)のRegression Test。
 
 D0102.3(DECISIONS.md、`READY_FOR_IMPLEMENTATION`)で承認された
 Architectureをそのまま検証する。実LLM/Vendor SDKへの接続は一切行わず、
 `CandidateExtractionModel` Protocolを実装したDeterministic Fake Model
 のみを使う(D0102.3.1 §17)。Faithfulness Verification(D0102.4)は
 このModuleに存在しないため、それらのTestは含まない。
+
+D0102.3.2ではCodex Adversarial Audit Findings F01-F04を閉じるための
+Regression Testを追加した(Candidate-Local Claim Text検証Exception
+Leak・Mixed-Type Dict Key Crash・max_source_chars厳密検証・
+SemanticClaimCandidate Constructor Hardening)。
 
 Fixture方式は`test_disclosures_semantic_claims.py`と同じ(Synthetic
 EDINET-shaped ZIPを構築し、実際の`normalize_edinet_type1_zip()`経由で
@@ -17,6 +22,7 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
 from lib.disclosures.candidate_extraction import (
@@ -30,6 +36,7 @@ from lib.disclosures.candidate_extraction import (
 )
 from lib.disclosures.normalization import NormalizedDisclosureDocument, normalize_edinet_type1_zip
 from lib.disclosures.semantic_claims import ClaimDirection, EvidenceSpan, SemanticClaimType
+from lib.evidence.model import AiDerivedProvenance
 
 _XHTML_OPEN = '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ix="http://www.xbrl.org/2008/inlineXBRL">'
 
@@ -102,7 +109,7 @@ def _extract(
     model: _RecordingFakeModel,
     extraction_version: str = "EXTRACT_V1",
     prompt_hash: str = "PROMPT_HASH_1",
-    max_source_chars: int = DEFAULT_MAX_SOURCE_CHARS,
+    max_source_chars: object = DEFAULT_MAX_SOURCE_CHARS,
 ) -> CandidateExtractionResult:
     return extract_candidates(
         evidence_span=evidence_span,
@@ -114,7 +121,16 @@ def _extract(
         model_version="v1",
         prompt_version="p1",
         prompt_hash=prompt_hash,
-        max_source_chars=max_source_chars,
+        max_source_chars=max_source_chars,  # type: ignore[arg-type]
+    )
+
+
+def _fake_provenance() -> AiDerivedProvenance:
+    return AiDerivedProvenance(
+        model_provider="test-provider",
+        model_name="test-model",
+        model_version="v1",
+        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
 
@@ -423,6 +439,147 @@ def test_exact_duplicate_candidates_are_collapsed() -> None:
 
 
 # ============================================================
+# D0102.3.1-F01: Candidate-Local Claim-Text Validation(Exception Leak Regression)
+# ============================================================
+
+
+def test_f01_a_empty_claim_text_is_candidate_local_no_candidates() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {"candidates": [{"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "", "direction": "DECREASE"}]}
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert model.call_count == 1
+    assert result.status == CandidateExtractionStatus.NO_CANDIDATES
+    assert result.rejected_candidate_count == 1
+    assert result.candidates == ()
+
+
+def test_f01_b_whitespace_only_claim_text_is_candidate_local_no_candidates() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {"candidates": [{"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "   ", "direction": "DECREASE"}]}
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert model.call_count == 1
+    assert result.status == CandidateExtractionStatus.NO_CANDIDATES
+    assert result.rejected_candidate_count == 1
+
+
+def test_f01_c_control_character_claim_text_is_candidate_local_no_candidates() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {
+        "candidates": [{"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "文\x00本。", "direction": "DECREASE"}]
+    }
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert model.call_count == 1
+    assert result.status == CandidateExtractionStatus.NO_CANDIDATES
+    assert result.rejected_candidate_count == 1
+
+
+def test_f01_d_one_valid_one_empty_candidate_is_success_with_rejection_count() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {
+        "candidates": [
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "営業利益が減少した。", "direction": "DECREASE"},
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "", "direction": "UNSPECIFIED"},
+        ]
+    }
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert model.call_count == 1
+    assert result.status == CandidateExtractionStatus.SUCCESS
+    assert len(result.candidates) == 1
+    assert result.rejected_candidate_count == 1
+
+
+def test_f01_e_all_invalid_claim_texts_is_no_candidates() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {
+        "candidates": [
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "", "direction": "DECREASE"},
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "   ", "direction": "UNSPECIFIED"},
+        ]
+    }
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert model.call_count == 1
+    assert result.status == CandidateExtractionStatus.NO_CANDIDATES
+    assert result.rejected_candidate_count == 2
+
+
+# ============================================================
+# D0102.3.1-F02: Mixed-Type Dict Key Crash Regression
+# ============================================================
+
+
+def test_f02_a_top_level_mixed_string_int_keys_is_contract_violation() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {"candidates": [], 1: "x"}
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert result.status == CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION
+
+
+def test_f02_b_candidate_dict_mixed_string_int_keys_is_contract_violation() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {
+        "candidates": [{"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "文。", "direction": "UNSPECIFIED", 1: "x"}]
+    }
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert result.status == CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION
+
+
+def test_f02_c_candidate_dict_only_non_string_keys_is_contract_violation() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {"candidates": [{1: "a", 2: "b", 3: "c"}]}
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert result.status == CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION
+
+
+def test_f02_d_mixed_keys_never_raise_uncaught_type_error() -> None:
+    # A-Cで使ったMalformed Responseはいずれもsorted()等でTypeErrorを
+    # 誘発しうる形だった。ここではTypeErrorを一切許容せず、通常のTyped
+    # Resultとして返ることを明示的に確認する(pytest.raisesを使わない
+    # ことで、TypeErrorが漏れた場合はTest自体がErrorとして失敗する)。
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    for response in (
+        {"candidates": [], 1: "x"},
+        {"candidates": [{"claim_type": "X", "normalized_claim_text": "t", "direction": "UNSPECIFIED", 1: "x"}]},
+        {"candidates": [{1: "a", 2: "b"}]},
+    ):
+        model = _RecordingFakeModel(response=response)
+        result = _extract(evidence_span=span, document=doc, model=model)
+        assert result.status == CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION
+
+
+# ============================================================
 # Taxonomy Eligibility(BUSINESS_RISK Allowlist、Substring Heuristic不使用)
 # ============================================================
 
@@ -566,6 +723,47 @@ def test_over_budget_textblock_is_skipped_without_chunking() -> None:
 
 
 # ============================================================
+# D0102.3.1-F03: max_source_chars Strict Runtime Validation
+# ============================================================
+
+
+@pytest.mark.parametrize("bad_value", [0, -1, True, False, "10", 10.0])
+def test_f03_invalid_max_source_chars_raises_before_model_call(bad_value: object) -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    model = _RecordingFakeModel(response=_one_candidate_response())
+
+    with pytest.raises(CandidateExtractionSchemaError):
+        _extract(evidence_span=span, document=doc, model=model, max_source_chars=bad_value)
+    assert model.call_count == 0
+
+
+def test_f03_max_source_chars_exact_length_boundary_allows_model_call() -> None:
+    text = "本文。" * 10
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", text))
+    span = _span_for(doc)
+    model = _RecordingFakeModel(response=_one_candidate_response())
+
+    result = _extract(evidence_span=span, document=doc, model=model, max_source_chars=len(span.supporting_quote))
+
+    assert result.status == CandidateExtractionStatus.SUCCESS
+    assert model.call_count == 1
+
+
+def test_f03_max_source_chars_plus_one_over_length_blocks_model_call() -> None:
+    text = "本文。" * 10
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", text))
+    span = _span_for(doc)
+    model = _RecordingFakeModel(response=_one_candidate_response())
+    over_by_one_max = len(span.supporting_quote) - 1
+
+    result = _extract(evidence_span=span, document=doc, model=model, max_source_chars=over_by_one_max)
+
+    assert result.status == CandidateExtractionStatus.TOO_LONG_FOR_EXTRACTION
+    assert model.call_count == 0
+
+
+# ============================================================
 # Prompt-Injection Boundary(Structural Data/Schema分離のみ、Keyword検知はしない)
 # ============================================================
 
@@ -612,7 +810,7 @@ def test_prompt_injection_attempt_returning_forbidden_field_is_still_rejected() 
 
 
 # ============================================================
-# SemanticClaimCandidate Direct Construction Invariants
+# SemanticClaimCandidate Direct Construction Invariants(D0102.3.1-F04)
 # ============================================================
 
 
@@ -626,6 +824,7 @@ def test_semantic_claim_candidate_rejects_non_evidence_span_type() -> None:
             direction=ClaimDirection.UNSPECIFIED,
             evidence_span=(span,),  # type: ignore[arg-type]
             extraction_version="EXTRACT_V1",
+            extraction_provenance=_fake_provenance(),
         )
 
 
@@ -638,10 +837,142 @@ def test_semantic_claim_candidate_has_no_claim_id_or_semantic_identity_key_attri
         direction=ClaimDirection.UNSPECIFIED,
         evidence_span=span,
         extraction_version="EXTRACT_V1",
+        extraction_provenance=_fake_provenance(),
     )
     assert not hasattr(candidate, "claim_id")
     assert not hasattr(candidate, "semantic_identity_key")
     assert not hasattr(candidate, "faithfulness_outcome")
+
+
+def test_f04_valid_direct_construction_succeeds() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    candidate = SemanticClaimCandidate(
+        claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+        normalized_claim_text="文。",
+        direction=ClaimDirection.UNSPECIFIED,
+        evidence_span=span,
+        extraction_version="EXTRACT_V1",
+        extraction_provenance=_fake_provenance(),
+    )
+    assert candidate.claim_type == SemanticClaimType.PERFORMANCE_CHANGE
+    assert candidate.extraction_provenance is not None
+
+
+def test_f04_invalid_claim_type_runtime_type_is_rejected() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type="BOGUS",  # type: ignore[arg-type]
+            normalized_claim_text="文。",
+            direction=ClaimDirection.UNSPECIFIED,
+            evidence_span=span,
+            extraction_version="EXTRACT_V1",
+            extraction_provenance=_fake_provenance(),
+        )
+
+
+def test_f04_invalid_direction_runtime_type_is_rejected() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+            normalized_claim_text="文。",
+            direction="BULLISH",  # type: ignore[arg-type]
+            evidence_span=span,
+            extraction_version="EXTRACT_V1",
+            extraction_provenance=_fake_provenance(),
+        )
+
+
+def test_f04_non_evidence_span_dict_is_rejected() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+            normalized_claim_text="文。",
+            direction=ClaimDirection.UNSPECIFIED,
+            evidence_span={"char_start": span.char_start},  # type: ignore[arg-type]
+            extraction_version="EXTRACT_V1",
+            extraction_provenance=_fake_provenance(),
+        )
+
+
+def test_f04_empty_extraction_version_is_rejected() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+            normalized_claim_text="文。",
+            direction=ClaimDirection.UNSPECIFIED,
+            evidence_span=span,
+            extraction_version="",
+            extraction_provenance=_fake_provenance(),
+        )
+
+
+def test_f04_empty_schema_version_is_rejected() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+            normalized_claim_text="文。",
+            direction=ClaimDirection.UNSPECIFIED,
+            evidence_span=span,
+            extraction_version="EXTRACT_V1",
+            schema_version="",
+            extraction_provenance=_fake_provenance(),
+        )
+
+
+def test_f04_none_provenance_is_rejected() -> None:
+    """D0102.3.2 §13: 実Production Factory(`extract_candidates()`)は
+    成功する全Candidateに常に`AiDerivedProvenance`を付与するため、
+    `extraction_provenance`をMandatory化した(D0102.3.1では`| None`が
+    許容されていたが、D0102.4がこのDataclassの上に構築される前に、
+    Provenance不在のCandidateを構造的に排除しておく)。"""
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    with pytest.raises(CandidateExtractionSchemaError):
+        SemanticClaimCandidate(
+            claim_type=SemanticClaimType.PERFORMANCE_CHANGE,
+            normalized_claim_text="文。",
+            direction=ClaimDirection.UNSPECIFIED,
+            evidence_span=span,
+            extraction_version="EXTRACT_V1",
+            extraction_provenance=None,  # type: ignore[arg-type]
+        )
+
+
+# ============================================================
+# Candidate-Local Partial Success(D0102.3.2 §17、順序安定性を含む)
+# ============================================================
+
+
+def test_candidate_local_partial_success_preserves_order_and_rejection_count() -> None:
+    doc = _single_member_doc(_ix("jpcrp_cor:ManagementAnalysisTextBlock", "本文です。"))
+    span = _span_for(doc)
+    response = {
+        "candidates": [
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "候補A。", "direction": "DECREASE"},
+            {"claim_type": "PERFORMANCE_CHANGE", "normalized_claim_text": "", "direction": "UNSPECIFIED"},
+            {"claim_type": "PERFORMANCE_DRIVER", "normalized_claim_text": "候補C。", "direction": "INCREASE"},
+        ]
+    }
+    model = _RecordingFakeModel(response=response)
+
+    result = _extract(evidence_span=span, document=doc, model=model)
+
+    assert result.status == CandidateExtractionStatus.SUCCESS
+    assert len(result.candidates) == 2
+    assert result.rejected_candidate_count == 1
+    assert result.candidates[0].normalized_claim_text == "候補A。"
+    assert result.candidates[1].normalized_claim_text == "候補C。"
 
 
 def test_extraction_provenance_generated_at_is_not_treated_as_pit_signal() -> None:

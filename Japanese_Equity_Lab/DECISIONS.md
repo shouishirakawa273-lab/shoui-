@@ -13255,3 +13255,192 @@ DECISIONS.md追記をCommit対象とする。Normalization Semantics
 Expected Return・Decision・Portfolio・`.claude/hooks/*`・H0001は
 いずれも無変更。Automation/Orchestrator Codeは追加していない。次
 Round(未着手)はFaithfulness Verification(D0102.4)。
+
+## D0102.3.2 — Candidate Extraction Boundary Hardening(Codex Adversarial Audit F01-F04 Closure)
+
+D0102.3.1実装に対するCodex Adversarial Auditが返した
+`FINAL_VERDICT = NEEDS_FIX`(F01 HIGH・F02 MEDIUM・F03/F04 LOW)を、
+Architectureを変更せず1 Roundで全件Closeした。Faithfulness
+Verification(D0102.4)は引き続き着手していない。
+
+### D0102.3.1-F01(HIGH)= CLOSED — Candidate-Local Claim-Text検証のException Leak
+
+Root Cause: `SemanticClaimCandidate.__post_init__()`が
+`validate_claim_text()`をそのまま呼んでいたため、空・空白のみ・
+制御文字を含むModel出力Textに対して`lib.disclosures.semantic_claims.
+SemanticClaimSchemaError`が`_validate_and_build_candidates()`の
+`except CandidateExtractionSchemaError:`をすり抜けてCaller側へ
+Uncaught Exceptionとして漏れていた。
+
+Fix: `validate_claim_text()`自体のSemantics/Error型は変更せず、
+`SemanticClaimCandidate.__post_init__()`内の1箇所(Narrow Boundary)で
+`SemanticClaimSchemaError`を`CandidateExtractionSchemaError`へ変換
+する形にした。これにより`_validate_and_build_candidates()`側の
+既存`except CandidateExtractionSchemaError:`が変更なしでそのまま
+機能し、Candidate-LocalなSkip(`rejected_candidate_count`計上・
+Response継続処理)として扱われるようになった。Model出力由来の空/
+空白のみ/制御文字Textは`MODEL_ERROR`にもWhole-Response Rejectにも
+分類しない(Value-Level Violationとして一貫してCandidate-Local
+Skip)。
+
+Tests(A-E、いずれも`model.call_count == 1`を確認、Model呼び出し
+「後」に判明する失敗であることを明示): 空Text単独→NO_CANDIDATES、
+空白のみText単独→NO_CANDIDATES、制御文字Text単独→NO_CANDIDATES、
+有効1件+空Text1件→SUCCESS(1件、rejected_candidate_count=1)、
+全件不正→NO_CANDIDATES(rejected_candidate_count=2)。
+
+### D0102.3.1-F02(MEDIUM)= CLOSED — Mixed-Type Dict Key Crash
+
+Root Cause: `_validate_and_build_candidates()`のDiagnostic生成
+(`sorted(raw_response.keys())`等)が、Model出力Dictの全Keyがstrで
+あることを事前確認せずに実行されていた。`{"candidates": [], 1: "x"}`
+のようなMalformed Responseで`sorted()`がint/str混在Listに対して
+`TypeError`を送出し、これもTyped Result Contractをすり抜ける経路
+だった。
+
+Fix: 新設Helper`_is_string_keyed_dict()`で、Top-level Response Dict・
+各Candidate Dictそれぞれについて「`sorted()`等のKey比較を行う前に」
+全Keyがstrであることを`isinstance`のみで確認するGateを追加した。
+非文字列Keyを検出した場合は即座に`MODEL_CONTRACT_VIOLATION`を返し、
+Malformed Payload自体を再Serializeした診断文字列は生成しない(§8
+Diagnostic Safety、`sorted(mixed_keys)`/巨大Nested Responseの生Repr
+はいずれも回避)。
+
+Tests: Top-level混在Key・Candidate Dict内混在Key・Candidate Dictが
+非文字列Keyのみで構成、いずれも`MODEL_CONTRACT_VIOLATION`。加えて
+上記3ケースを1 Testでまとめて実行し、`TypeError`が一切Uncaughtで
+伝播しないことを明示的に確認した。
+
+### D0102.3.1-F03(LOW)= CLOSED — max_source_chars厳格Runtime検証
+
+Fix: `extract_candidates()`冒頭(Revalidation/Model呼び出しより前)に
+`type(max_source_chars) is not int or max_source_chars <= 0`を追加
+した。`bool`は`int`のSubclassだが`type(True) is bool`(`is int`ではない)
+であるため、`isinstance(x, int)`ではなく`type(x) is int`による厳密
+一致のみを用いることで`True`/`False`も構造的に排除される
+(`isinstance(True, int) == True`という既知の落とし穴を回避)。違反時は
+`CandidateExtractionSchemaError`をModel呼び出し前にRaiseする
+(Model呼び出し回数は常に0)。
+
+Tests: `0`/`-1`/`True`/`False`/`"10"`(str)/`10.0`(float)いずれも
+Error・Model呼び出し0回。`max_source_chars`と厳密に同じ長さの
+Source Textは許可(Model呼び出し発生)、`+1`超過は
+`TOO_LONG_FOR_EXTRACTION`(Model呼び出し0回)という既存の境界値挙動を
+維持したまま確認した。
+
+### D0102.3.1-F04(LOW)= CLOSED — SemanticClaimCandidate Constructor Hardening
+
+Fix: `__post_init__()`に`isinstance(self.claim_type, SemanticClaimType)`
+/`isinstance(self.direction, ClaimDirection)`のRuntime型検証を追加
+した(Type Hintのみに依存せず、直接構築時のInvalid Runtime型を
+構造的に拒否する)。`extraction_version`/`schema_version`は「非空」
+だけでなく「str型であること」も検証するように強化した。
+
+Provenance Decision: `extract_candidates()`(実Production Factory)は
+成功する全Candidateに対して例外なく`AiDerivedProvenance`を構築・
+付与しており(D0102.3.1実装済み、`generated_at`はModel自己申告では
+なくModule側`datetime.now(UTC)`で確定)、`None`のまま`SemanticClaim
+Candidate`が生成される設計上の経路は存在しない。D0102.4が本
+Dataclassの上に構築される前に不整合Stateを排除するため、`extraction_
+provenance: AiDerivedProvenance | None = None`を`extraction_
+provenance: AiDerivedProvenance`(Default無し、Mandatory)へ変更し、
+`isinstance`によるRuntime検証も追加した。
+
+Tests: 不正`claim_type`Runtime型(str)・不正`direction`Runtime型
+(str)・非`EvidenceSpan`(dict)・空`extraction_version`・空`schema_
+version`・`extraction_provenance=None`、いずれもReject確認。加えて
+正常な直接構築1件が引き続き成功することも確認した。
+
+### WHOLE_RESPONSE_FATAL vs CANDIDATE_LOCAL Contract(明文化)
+
+Module Docstringへ確定Contractとして追記した:
+
+**WHOLE_RESPONSE_FATAL**: Top-level構造不正(dict以外・許可Key以外・
+非文字列Key)・`candidates`がlist以外/上限超過・Candidate Dictの
+非文字列Key・禁止Field混入・Candidate Dict許可Key集合との不一致・
+BUSINESS_RISK Hard Constraint違反。
+
+**CANDIDATE_LOCAL**: `claim_type`/`direction`の不正Enum文字列値・
+`normalized_claim_text`のValidation失敗(空/空白のみ/制御文字)・
+文字数超過・Field値の型不正。
+
+この分類自体はD0102.3.1から実質変更していない(F01/F02はいずれも
+「既存の意図した分類を、実装の穴によって破っていたケース」を閉じた
+ものであり、分類の定義自体を拡張・変更してはいない)。
+
+### Model Error Sanitization(§18、実施)
+
+`extract_candidates()`のModel呼び出し失敗時、`reason`へ`str(exc)`
+(Vendor SDKの生Exception文言、Credential/Token/内部URL等を含み得る)
+を直接埋め込んでいた既存実装を、`f"model raised {type(exc).__name__}"`
+(Exception種別名のみ)へ変更した。デバッグに必要な詳細はCaller側の
+Logging(本Module外)に委ねる方針とし、本Module自身は生Exception内容を
+一切保持・返却しない。Trivialな変更のため本Roundで実施し、Deferしな
+かった。
+
+### Tests(D0102.3.2で新設、25 Test関数)
+
+F01(5)・F02(4)・F03(9、`parametrize`6 + 境界値2 + 既存2の一部)・
+F04(7)・Candidate-Local Partial Success順序安定性確認(1、候補A/B/C
+のうちBのみ不正Textの場合にA・Cがこの順序で残ることを確認)を追加。
+既存TestのうちDirect Construction 2件は`extraction_provenance`
+Mandatory化に伴い呼び出しを更新した(Test自体の意図は無変更)。
+
+### Quality Gates(このRoundで実施、Targeted Only)
+
+- `ruff check` / `ruff format --check`
+  (`lib/disclosures/candidate_extraction.py`・
+  `13_tests/test_candidate_extraction.py`のみ): All Pass。
+- `mypy`(`lib/disclosures/candidate_extraction.py`のみ、`--strict`
+  でも確認): Success, no issues found in 1 source file。
+- Targeted Pytest(`13_tests/test_candidate_extraction.py`):
+  **73 passed**(D0102.3.1の48 + D0102.3.2新設25)。
+- Regression確認(`13_tests/test_disclosures_normalization.py`+
+  `13_tests/test_disclosures_semantic_claims.py`+`13_tests/test_
+  candidate_extraction.py`): 3ファイル合計**145 passed**(既存Test
+  に無変化・無退行)。
+- Full Repository Suite/H0001/Repository全体mypyはいずれも実行して
+  いない。
+
+### Toyota S100UP32 Read-Only Structural Acceptance(再実行、Gitignored
+Raw File、Commit対象外、Deterministic Fake Modelのみ・実LLM不使用)
+
+D0102.3.1と同一Script・同一2 TextBlock選択(MD&A/BusinessRisks)で
+再実行し、Hardening後も同じ結果であることを確認した:
+
+- SELECTED_TEXTBLOCK_COUNT = 2 / MODEL_CALL_COUNT = 2 /
+  EXTRACTION_SUCCESS_COUNT = 2/2 /
+  CANDIDATES_BOUND_TO_SAME_EVIDENCE_SPAN_INSTANCE_COUNT = 2/2
+- MDA_CALLED = True / RISK_CALLED = True
+
+抽出したToyota本文Textはこの記録・Repositoryいずれにも一切含めていない。
+
+### 明示的な未実装確認
+
+`FAITHFULNESS_CHECKER_IMPLEMENTED = NO`(変更なし)。
+`AUTOMATION_READINESS = NOT_READY`(変更なし)。`H0001`は実行して
+いない。
+
+### Adversarial Self-Check(Commit前)
+
+`model.extract(...)`の実呼び出し箇所は引き続きModule内1箇所
+(`extract_candidates()`内部)のみであることをGrepで再確認した。
+`sorted()`呼び出し3箇所(Top-level Key・禁止Field・Candidate Key)は
+いずれも`_is_string_keyed_dict()`Gateの通過後にのみ到達することを
+確認した。`SemanticClaimSchemaError`のCatch箇所は2箇所のみ
+(`SemanticClaimCandidate.__post_init__()`内のNarrow Boundary変換・
+`extract_candidates()`内のRevalidation Exception処理、D0102.3.1から
+変更なし)であり、それ以外に`lib.disclosures.semantic_claims`固有の
+例外がModule外へ伝播する経路が無いことを確認した。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py`
+(Hardening)・`Japanese_Equity_Lab/13_tests/test_candidate_
+extraction.py`(F01-F04 Regression Test追加)・このDECISIONS.md
+追記をCommit対象とする。`semantic_claims.py`は本Round無変更(§1の
+「Prefer no further change there」指示通り)。Normalization
+Semantics・Evidence Core・Peer・Valuation・ResearchArtifact・
+Expected Return・Decision・Portfolio・`.claude/hooks/*`・H0001は
+いずれも無変更。Automation/Orchestrator Codeは追加していない。次
+Round(未着手)はFaithfulness Verification(D0102.4)。

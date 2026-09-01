@@ -75,6 +75,35 @@ Verification(D0102.4)がACCEPT/REVIEW_REQUIREDを判定した後にのみ、
 Substring Heuristicは使わない(既存原則、D0045: 「Provider固有Codeから
 のmappingは明示的Mapping Tableのみで行い、substring heuristicは
 使わない」)。実測済みTaxonomy要素名のみを含む明示的Allowlistを使う。
+
+## WHOLE_RESPONSE_FATAL vs CANDIDATE_LOCAL(D0102.3.2、Boundary Hardening)
+
+Codex Adversarial Audit(D0102.3.1-F01〜F04)を受け、以下の分類を本
+Moduleの確定Contractとして明文化する:
+
+**WHOLE_RESPONSE_FATAL**(Response全体を`MODEL_CONTRACT_VIOLATION`で
+Reject。Candidate単位のSkipではない):
+    - Top-level構造不正(dict以外、`{"candidates"}`以外のKey、
+      非文字列Key)
+    - `candidates`がlist以外、上限超過
+    - Candidate Dictが非文字列Keyを含む
+    - 禁止Field(Identity/Provenance系)の混入
+    - Candidate Dictの許可Key集合との不一致(過不足)
+    - BUSINESS_RISK Hard Constraint違反(非対象Taxonomyへの付与)
+
+**CANDIDATE_LOCAL**(該当Candidateのみをrejected_candidate_countへ
+計上してSkip、Response全体は継続処理):
+    - `claim_type`/`direction`の値が不正なEnum文字列
+    - `normalized_claim_text`が空・空白のみ・制御文字を含む
+      (`validate_claim_text()`失敗)
+    - `normalized_claim_text`の長さ超過(`MAX_CLAIM_TEXT_LENGTH`)
+    - 値の型不正(str以外のField値)
+
+`SemanticClaimCandidate.__post_init__()`は`validate_claim_text()`が
+送出する`SemanticClaimSchemaError`を`CandidateExtractionSchemaError`
+へこの1箇所で変換する(Narrow Boundary、D0102.3.1-F01)——`_validate_
+and_build_candidates()`側は`CandidateExtractionSchemaError`のみを
+Catchすれば良く、例外型の重複管理をしない。
 """
 
 from __future__ import annotations
@@ -148,6 +177,14 @@ MAX_CLAIM_TEXT_LENGTH = 300
 DEFAULT_MAX_SOURCE_CHARS = 8_000
 
 
+def _is_string_keyed_dict(value: dict[object, object]) -> bool:
+    """D0102.3.2 F02: Model出力Dictへの`sorted(dict.keys())`等を安全に
+    行える前提(全Keyがstr)を、実際に使う前に必ず確認する。`int`/
+    `float`等が混在するKeyに対して`sorted()`を呼ぶと`TypeError`になる
+    ため、比較を一切行わずに`isinstance`のみで判定する。"""
+    return all(isinstance(key, str) for key in value.keys())
+
+
 class CandidateExtractionSchemaError(ValueError):
     """本Module固有のSchema/Provenance Invariant違反(呼び出し側の
     Programming Errorに相当するもの)で送出する。Model出力自体の
@@ -196,19 +233,39 @@ class SemanticClaimCandidate:
     direction: ClaimDirection
     evidence_span: EvidenceSpan
     extraction_version: str
+    extraction_provenance: AiDerivedProvenance
     schema_version: str = SCHEMA_VERSION
-    extraction_provenance: AiDerivedProvenance | None = None
 
     def __post_init__(self) -> None:
+        # D0102.3.2 F04: Public Constructorであるため、Enum/Provenance/
+        # EvidenceSpanのRuntime型をここで厳格に検証する(Type Hintのみに
+        # 依存しない——D0102.4がこのDataclassの上に構築される前に、直接
+        # 構築されたInvalid Instanceを構造的に排除しておく)。
+        if not isinstance(self.claim_type, SemanticClaimType):
+            raise CandidateExtractionSchemaError(f"claim_type は SemanticClaimType である必要があります: {self.claim_type!r}")
+        if not isinstance(self.direction, ClaimDirection):
+            raise CandidateExtractionSchemaError(f"direction は ClaimDirection である必要があります: {self.direction!r}")
         if not isinstance(self.evidence_span, EvidenceSpan):
             raise CandidateExtractionSchemaError("evidence_span は単一のEvidenceSpanである必要があります")
-        validate_claim_text(self.normalized_claim_text)
+        # D0102.3.2 F01: validate_claim_text()自体のSemantics/Errorは
+        # 変更しない。送出されるSemanticClaimSchemaErrorをこの1箇所
+        # (Narrow Boundary)でCandidateExtractionSchemaErrorへ変換する
+        # ことで、Module外へ`lib.disclosures.semantic_claims`固有の
+        # 例外型が漏れることを構造的に防ぐ。
+        try:
+            validate_claim_text(self.normalized_claim_text)
+        except SemanticClaimSchemaError as exc:
+            raise CandidateExtractionSchemaError(str(exc)) from exc
         if len(self.normalized_claim_text) > MAX_CLAIM_TEXT_LENGTH:
             raise CandidateExtractionSchemaError(f"normalized_claim_text が上限({MAX_CLAIM_TEXT_LENGTH}文字)を超えています")
-        if not self.extraction_version:
-            raise CandidateExtractionSchemaError("extraction_version は空にできません")
-        if not self.schema_version:
-            raise CandidateExtractionSchemaError("schema_version は空にできません")
+        if not isinstance(self.extraction_version, str) or not self.extraction_version:
+            raise CandidateExtractionSchemaError("extraction_version は空でないstrである必要があります")
+        if not isinstance(self.schema_version, str) or not self.schema_version:
+            raise CandidateExtractionSchemaError("schema_version は空でないstrである必要があります")
+        if not isinstance(self.extraction_provenance, AiDerivedProvenance):
+            raise CandidateExtractionSchemaError(
+                "extraction_provenance は AiDerivedProvenance である必要があります(D0102.3.2、Optional廃止)"
+            )
 
 
 @dataclass(kw_only=True, frozen=True)
@@ -241,6 +298,11 @@ def _validate_and_build_candidates(
     `evidence_span`をそのままCopyするのみ)。"""
     if not isinstance(raw_response, dict):
         return _reject(CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION, "response is not a JSON object")
+    # D0102.3.2 F02: sorted()等でKeyを比較する前に、全Keyがstrである
+    # ことを必ず先に確認する(int/float混在Keyに対するsorted()は
+    # TypeErrorになるため、比較そのものを行う前にRejectする)。
+    if not _is_string_keyed_dict(raw_response):
+        return _reject(CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION, "top-level response contains non-string keys")
     if set(raw_response.keys()) != {"candidates"}:
         return _reject(
             CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION,
@@ -263,6 +325,9 @@ def _validate_and_build_candidates(
     for raw_candidate in raw_candidates:
         if not isinstance(raw_candidate, dict):
             return _reject(CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION, "candidate entry is not a JSON object")
+        # D0102.3.2 F02: Candidate Dict自体もsorted()前にstr-only Keyを確認する。
+        if not _is_string_keyed_dict(raw_candidate):
+            return _reject(CandidateExtractionStatus.MODEL_CONTRACT_VIOLATION, "candidate entry contains non-string keys")
         keys = set(raw_candidate.keys())
         forbidden_present = keys & FORBIDDEN_MODEL_OUTPUT_FIELDS
         if forbidden_present:
@@ -370,10 +435,11 @@ def extract_candidates(
     (`TRUSTED_EVIDENCE_REQUIRED_BEFORE_MODEL_CALL = TRUE`、D0102.2-A01
     のIntegration Boundaryでの Closure):
 
-    1. `extraction_version`/`prompt_hash`が空でないこと(D0102.3 §16、
-       ModelにVersioningを自己申告させない——ここが空ならCallerの
-       Programming Errorとして`CandidateExtractionSchemaError`をRaise
-       する、Model呼び出し前)。
+    1. `extraction_version`/`prompt_hash`が空でないこと、`max_source_
+       chars`が厳密な正のint(`bool`は不可、D0102.3.2 F03)であること
+       (D0102.3 §16、ModelにVersioningを自己申告させない——いずれも
+       Callerの Programming Errorとして`CandidateExtractionSchemaError`
+       をRaiseする、Model呼び出し前)。
     2. `revalidate_evidence_span(evidence_span, document=document) ==
        RevalidationResult.VALID`(NEEDS_REVALIDATION・Exceptionいずれも
        `SOURCE_REVALIDATION_FAILED`として扱い、Model呼び出しを行わない)。
@@ -386,6 +452,11 @@ def extract_candidates(
         raise CandidateExtractionSchemaError("extraction_version は空にできません")
     if not prompt_hash:
         raise CandidateExtractionSchemaError("prompt_hash は空にできません(D0102.3 §16、Promptの決定論的Versioningが必須)")
+    # D0102.3.2 F03: `bool`は`int`のSubclassのため`isinstance(x, int)`
+    # では`True`/`False`を排除できない。`type(x) is int`による厳密な
+    # 型一致のみを許可する。
+    if type(max_source_chars) is not int or max_source_chars <= 0:
+        raise CandidateExtractionSchemaError(f"max_source_chars は正のintである必要があります: {max_source_chars!r}")
 
     try:
         revalidation = revalidate_evidence_span(evidence_span, document=document)
@@ -407,7 +478,10 @@ def extract_candidates(
             source_text=evidence_span.supporting_quote,
         )
     except Exception as exc:
-        return _reject(CandidateExtractionStatus.MODEL_ERROR, f"{type(exc).__name__}: {exc}")
+        # D0102.3.2 §18: Vendor SDKの生Exception文言(Credential/Token/
+        # 内部URL等を含み得る)をそのままreasonへ保存しない。Exception
+        # 種別名のみを記録し、詳細調査はCaller側のLoggingに委ねる。
+        return _reject(CandidateExtractionStatus.MODEL_ERROR, f"model raised {type(exc).__name__}")
 
     provenance = AiDerivedProvenance(
         model_provider=model_provider,
