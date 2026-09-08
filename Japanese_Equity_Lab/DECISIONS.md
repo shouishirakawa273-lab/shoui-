@@ -13444,3 +13444,168 @@ Semantics・Evidence Core・Peer・Valuation・ResearchArtifact・
 Expected Return・Decision・Portfolio・`.claude/hooks/*`・H0001は
 いずれも無変更。Automation/Orchestrator Codeは追加していない。次
 Round(未着手)はFaithfulness Verification(D0102.4)。
+
+## JQS-STD-01 — J-Quants Standard Capability Re-Probe(Read-Only Live Audit、本番Code変更なし)
+
+### 背景
+
+前Round(JQS-STD-01A、未Commit)は、「J-QuantsをLightからStandardへ
+Upgradeした」という前提のもとClean-up実行を指示されたが、その前提を
+裏付けるAudit記録がRepository内(DECISIONS.md・git history・
+Repository内Doc)のどこにも存在しないことを確認したためSTOPした。
+本Roundはその欠落していたAudit自体を実施し、結果をここに記録する。
+
+**このSession自身のEgressについての訂正**: `lib/data_sources/base.py`
+`lib/data_sources/jquants.py`の既存Docstringは「このSessionは
+J-Quants公式ドキュメント・APIへのEgressが一切できない」と記述して
+いるが(D0031時点の記録)、本Roundで`api.jquants.com`への実HTTP
+Requestが成功することを確認した(後述、`curl`によるUnauthenticated
+Requestで403、認証込みRequestで200)。この制約記述は少なくとも現在の
+Session環境については古い(Historical Recordとしては訂正しない、
+D0031自体の記述はそのSession当時の観測として正しい可能性がある)。
+
+### 手法(Safety)
+
+- 既存`.env`の`JQUANTS_API_KEY`を読み込み、`requests`で直接HTTP GET
+  したのみ(`lib/`のAdapter Codeは一切変更していない)。
+- 全RequestでThrottle 1.1秒/回を挟んだ(既存Adapterの
+  `_RATE_LIMIT_INTERVAL_SEC=1.05秒`と同水準)。
+- 日付境界確認は狭いWindow(1週間以内)のみ、全件Pagination追跡は
+  行っていない(Bulk Downloadなし)。
+- APIキー・Raw Payload全文はこの記録・Repositoryいずれにも含めない
+  (Status Code・Field名・件数・日付境界のみ記録)。
+- H0001・Backtest・Production Code変更は一切行っていない。
+
+### 実効History境界(CONFIRMED、複数独立Endpointで一致)
+
+`GET /v2/equities/bars/daily`(code=7203)へ古い日付を指定すると、
+APIが自らこう返す:
+
+```
+{"message": "Your subscription covers the following dates: 2016-09-08 ~ . ..."}
+```
+
+`from=2016-09-07`は同じ400 Errorを返し、`from=2016-09-08`は
+200で該当日1件を返すことをExact Dateで確認した。同じ境界
+(2016-09-08)を`GET /v2/indices/bars/daily/topix`でも独立に確認した
+(2016-09-01〜09-10のWindowで09-08以降のみ200)。`GET /v2/equities/
+investor-types`をParam無しで呼んだ場合の最古Recordの`PubDate`も
+`2016-09-08`で一致した。`GET /v2/fins/summary`(code=7203)は
+Pagination無しで41件返り、最古`DiscDate=2016-11-08`・最新
+`DiscDate=2026-08-04`(旧Light Planでの観測はD0043時点で20件・
+2021-11-04〜2026-08-04だったため、History Windowが拡大している)。
+
+結論: **現在の契約の実効History境界は2016-09-08(Price/Index系)**。
+旧`LIGHT_PLAN_ASSUMED`策定時に参照されていた2021-08-28という数字とは
+明確に異なる(旧数字自体がD0048時点でUser申告・未検証だった点に留意、
+両者は「別時点の別契約状態」であり、旧記録を誤りとして書き換える
+必要はない)。
+
+### Positioning系Endpoint(CONFIRMED_AVAILABLE、5件)
+
+`lib/positioning/catalog.py`の既存4候補はSEARCH-SNIPPET-DERIVED
+(未検証)なEndpoint Path推測を含んでいたが、実際にProbeした結果、
+**推測Pathの大半は誤りで、実Pathは異なっていた**:
+
+| 用途 | catalog.py旧推測Path | 実際に200を返したPath | 状態 |
+|---|---|---|---|
+| 週次信用取引残高 | `/v2/markets/weekly_margin_interest` | `/v2/markets/margin-interest` | 旧推測は403「Endpoint自体が存在しない」、実Pathで200確認 |
+| 日次信用取引残高高水準銘柄(Alert) | (catalog未記載) | `/v2/markets/margin-alert`(`code`必須) | 200確認(対象銘柄・期間ではAlert 0件、Endpoint自体は疎通確認済み) |
+| 業種別空売り比率 | `/v2/markets/short-ratio` | `/v2/markets/short-ratio`(`date`または`s33`必須) | Path自体は旧推測通り、200確認 |
+| 個別銘柄空売り残高報告 | `/v2/markets/short-sale-report`または`/v2/markets/short_selling_positions`(2候補で矛盾) | `/v2/markets/short-sale-report` | 前者が正、後者は403「Endpoint自体が存在しない」 |
+| 投資部門別売買状況(投資家別売買) | `/v2/markets/trades_spec` | `/v2/equities/investor-types` | 旧推測は403「Endpoint自体が存在しない」、実Pathで200確認(最古PubDate=2016-09-08) |
+
+**未確認のまま残る点(重要、ここでUnknownをFalseにしない)**: 上記は
+いずれも「Endpointが200を返す・最小限のField名が見える」ことのみ
+確認した。Publication Lag(観測期間終了から実際にAPIで見えるまでの
+遅延)・Revision表現・Wire Schema全Field・PIT安全な`available_at`
+導出方法は一切確認していない。`VALIDATION_STATUS`はいずれも引き続き
+`PENDING`(Adapter未実装、本Roundでは実装しない、下記§参照)。
+
+### 引き続きAccess不可・未確認のDataset
+
+**CONFIRMED_PLAN_GATED(Endpoint自体は存在するが403で明示的に
+Subscription外と返る、3件)**:
+
+- `GET /v2/fins/details`(詳細財務諸表BS/PL/CF推測Path):
+  `{"message": "This API is not available on your subscription. ..."}`
+  → `/v2/fins/summary`(Financial Summary、決算短信サマリ)とは別に
+  詳細BS/PL/CFのEndpoint自体は存在するが、現在の契約では利用不可と
+  API自身が明示。**EDINETへの依存はこのRoundで解消されない**
+  (§EDINET Impact参照)。
+- `GET /v2/fins/dividend`(配当推測Path): 同上、Endpoint自体は存在
+  するが契約外。
+- `GET /v2/markets/breakdown`(取引内訳推測Path): 同上。
+
+**UNCONFIRMED(Path推測自体が誤りの可能性が高く、Endpointの存在
+そのものが未確認、Guess違いとPlan制限を区別できていない)**:
+
+- 先物OHLC(`/v2/derivatives/bars/daily`等、複数Path推測いずれも
+  403「Endpoint自体が存在しない」)
+- 一般Option OHLC・日経225 Option(`/v2/derivatives/options/*`
+  `/v2/indices/options/*`、いずれも同上)
+- 前場(Morning Session)株価(`/v2/equities/bars/daily/morning`は
+  403「存在しない」、既存Endpointへの`session=morning`Query
+  Parameter付与は200だがEmpty配列で解釈確定できず)
+
+これらは「利用不可」と断定せず`UNKNOWN`のまま記録する(公式Doc
+site(`jpx.gitbook.io`)はJS描画のためWebFetchで内容取得できず、
+正しいPath名を裏付ける一次資料に到達できていない)。
+
+### Financial Summary vs 詳細BS/PL/CFの区別(CONFIRMED)
+
+`/v2/fins/summary`(引き続き200・41件に拡大)と`/v2/fins/details`
+(403・契約外)は明確に別Endpointであり、現在の契約でも詳細BS/PL/CF
+そのものは取得できないことをAPI自身のResponseで確認した。
+
+### EDINET Impact
+
+**変化なし、EDINETは引き続き必要**。詳細BS/PL/CF・配当の少なくとも
+一部はStandard Planでも直接取得できないことを本Roundで確認した
+(上記CONFIRMED_PLAN_GATED)。J-Quants Standard化は「詳細財務諸表の
+取得元をEDINETからJ-Quantsへ置き換えられる」ことを意味しない。
+
+### Historical Valuation Impact
+
+本Roundは`historical_context_builder.py`・Valuation Model・PIT Anchor
+Logicのいずれも読んでも変更してもいない。Price/TOPIX/Financial
+SummaryのHistory Windowが2016-09-08まで拡大したことは「入力として
+使えるHistoryが増えた」事実のみであり、Builder自体のRoic/Semantics
+変更を要求するものではないと考えるが、これはHistorical Valuation側の
+Roundで別途判断されるべきであり、本Roundでは判断しない。
+
+### Positioning Opportunities
+
+上記5 Endpointが実際に200を返すことが確認できたため、`lib/
+positioning/catalog.py`の4候補記述(Endpoint Path・Cost/Plan
+Dependency欄)は現在の記述内容が古い。ただし本Roundでは`catalog.py`
+を含む一切のTracked Code/Docを変更しない(§Scope参照)。次のCleanup
+Round(JQS-STD-01A相当)でPath・Cost/Plan Dependency欄の記述更新を
+行うことを想定する。Adapter実装・Normalizer・EvidenceRecord化は
+このRoundでも次Roundでも行わない(PENDING継続)。
+
+### Repository内の古いLight-era記述(識別のみ、変更なし)
+
+- `lib/data_sources/base.py`の`LIGHT_PLAN_ASSUMED.general_indices=
+  False`は、本Roundで`/v2/indices/bars/daily`(code=0000)が200を
+  返すことを確認したため古い。
+- `lib/data_sources/jquants.py`のClass Docstring
+  「現在の契約プランはLight(ユーザー申告)」は古い。
+- `lib/data_sources/base.py`/`jquants.py`の「このSessionは外部API・
+  公式ドキュメントへの疎通が一切できない」は、少なくとも
+  `api.jquants.com`への疎通については本Roundで反証された。
+- `lib/positioning/catalog.py`の4Dataset記述(Endpoint Path・Cost/
+  Plan Dependency)は上表の通り実態と異なる。
+- `VALIDATION_BACKLOG.md`のJ-Quants Positioning関連項目
+  (`weekly_margin_interest`・`trades_spec`等)はEndpoint存在自体の
+  疑問は解消されたが、Publication Lag/Revision Semantics/PIT
+  安全性は未解決のまま。
+
+上記はいずれも本Roundでは**変更しない**(§Scope: 変更許可Fileは
+本DECISIONS.mdエントリ追記のみ)。
+
+### Production Code変更・Commit対象
+
+`Japanese_Equity_Lab/DECISIONS.md`(本追記)のみ。`lib/`・`scripts/`・
+`13_tests/`・`lib/positioning/catalog.py`・`VALIDATION_BACKLOG.md`は
+いずれも無変更。H0001は実行していない。
