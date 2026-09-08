@@ -14868,3 +14868,194 @@ Field追加のみ)。
 本体は書き換えていない)のみ。`lib/`・`scripts/`・`13_tests/`・
 Prompt File・SDK・実Model呼び出しはいずれも無し。H0001は実行して
 いない。
+
+## D0102.4.1 — Deterministic Faithfulness Verification Core(実装、実Model不使用)
+
+D0102.4/D0102.4A(`READY_FOR_IMPLEMENTATION`)で確定した設計の
+Deterministic半分をそのままcode化した。新規Module
+`lib/disclosures/faithfulness.py`(1本のみ)・新規Test
+`13_tests/test_faithfulness.py`(44 Test関数)を追加。**実Model/Vendor
+SDKへの接続はこのModuleに一切存在しない**(`MODEL_CALL_SITES = 0`、
+Grepで確認済み)。`lib/disclosures/normalization.py`・`semantic_
+claims.py`・`candidate_extraction.py`はいずれも無変更(Frozen)。
+
+### 実装した型(D0102.4 §7、最小限の新設)
+
+`FaithfulnessDimension`(8軸、Frozen)・`FaithfulnessDimensionOutcome`
+(PASS/FAIL/AMBIGUOUS/NOT_APPLICABLE)・`FaithfulnessCheckMethod`
+(DETERMINISTIC/MODEL、本Roundでは常にDETERMINISTICのみ生成)・
+`FaithfulnessReasonCode`(Closed StrEnum、D0102.4.1の最小列挙+
+`BUSINESS_RISK_TAXONOMY_INELIGIBLE`を1件追加、Test #24で実使用)・
+`FaithfulnessVerificationStatus`(`SUCCESS`/`CANDIDATE_INTEGRITY_
+FAILED`/`SOURCE_REVALIDATION_FAILED`を本Roundで実際に生成、
+`VERIFIER_CONTRACT_VIOLATION`/`VERIFIER_ERROR`はD0102.4.2向けに
+Schemaへ既に含めるが未到達)・`FaithfulnessDimensionResult`(frozen
+dataclass、Strict Runtime型検証、自由文字列Reasonを持たない)・
+`FaithfulnessVerificationResult`(frozen dataclass、
+`verification_version`+`verified_at`必須[D0102.4A修正4]、
+`overall_outcome: FaithfulnessOutcome | None`のStatus/Outcome
+Invariant強制)。既存`FaithfulnessOutcome`/`AiDerivedProvenance`は
+無変更のまま再利用(重複型を作っていない)。
+
+### Gate順序(D0102.4 §9/§10)
+
+Candidate Integrity Gate(`isinstance(candidate, SemanticClaimCandidate)`、
+不正Objectは`CANDIDATE_INTEGRITY_FAILED`・`overall_outcome=None`) →
+Source Revalidation Gate(`revalidate_evidence_span() ==
+RevalidationResult.VALID`をVerification直前に必須再実行、Extraction
+時点のValidationを信頼しない、`SemanticClaimSchemaError`も
+`SOURCE_REVALIDATION_FAILED`へ変換) → Deterministic Dimension
+Checks(8軸) → Deterministic Aggregation → `FaithfulnessVerification
+Result(status=SUCCESS)`。
+
+### Direction Consistency(D0102.4A修正1、9番目のDimensionは追加せず)
+
+`_check_direction_consistency()`が`PROPOSITION_IDENTITY`の一部として
+実装。増加Marker(`増加`/`増収`/`上昇`)・減少Marker(`減少`/`減収`/
+`低下`)の狭いVocabularyのみ使用、両方同時検出時は「単一の明確な
+Marker無し」として`None`扱い(保守的単純化)。`改善`は意図的に
+Marker Listから除外し、単体でINCREASEへ変換しないことをTestで直接
+確認した(`test_improvement_word_alone_does_not_imply_increase`)。
+
+### Quantity Parser(D0102.4.1 §15、Decimal専用)
+
+`_ParsedQuantity`(private dataclass)+`_try_parse_quantity()`で
+`4.0%`・`△3.7%`・`△950億円`・`950億円`・`2兆4,642億円`・`18万8千台`
+等をDecimal比較専用表現へ変換する(Source Text自体は一切変更しない)。
+数値・符号・単位/Percentを区別して比較する
+`_match_quantity_against_evidence()`は、QUANTITY_INVENTED/VALUE_
+MISMATCH/UNIT_MISMATCH/SIGN_MISMATCHを以下の優先順位で判定する:
+①同じ単位Categoryかつ同じ値→一致、②同じ単位Categoryだが符号違いの
+絶対値一致→SIGN_MISMATCH、③同じ単位Categoryだが値が違う→VALUE_
+MISMATCH、④単位Categoryは違うが生の数値が一致→UNIT_MISMATCH、
+⑤いずれも該当なし→INVENTED。実装中に「950億円 vs 950%」(同じ桁の
+数字だが桁の実際の大きさが全く異なる)はUNIT_MISMATCHではなく
+INVENTEDと判定されることをTest過程で確認し(意図した挙動、`同じ生の
+数値`という定義上、Scale適用後の実値が一致しない限りUNIT_MISMATCH
+とは判定しない)、UNIT_MISMATCH専用Testは同じScaleを持たない例
+(`500台` vs `500円`)へ差し替えた。
+
+### Negation/Causal/Certainty/Temporal(D0102.4.1 §17-§20、Marker Tier)
+
+Negationは`ない`/`ありません`/`なかった`/`認められない`/`変更はない`の
+出現回数(2件以上は`NEGATION_AMBIGUOUS`、1件のみで両側の有無が食い違えば
+`NEGATION_INVERTED`)。Causal StrengthはTier付きMarker(`唯一の原因`>
+`主に`>`一因`/`寄与`>`などにより`/`影響`)、Certainty/CommitmentはD0102
+(D0102.1)で既に確定済みのEpistemic Tier(`可能性がある`/`見込み`/
+`予想`、Marker不在側はHedge無し=最高Tierとして比較)+Commitment Tier
+(`検討`/`予定`/`決定`/`実施`、Marker不在は0として比較)の独立2軸。
+Temporal ScopeはHISTORICAL(`当中間連結会計期間`/`当連結会計年度`/
+`前年同期`/`現在`)/FUTURE(`今後`/`翌期`/`将来`/`継続的`)の2 Rank
+Mapping、Rank相違はCategory Mismatch。いずれも「Marker語彙が両側に
+無ければNOT_APPLICABLE、片側のみにあればAMBIGUOUS、両側にあり
+Tier/Category上方書き換えを検出できればFAIL」という一貫した構造。
+
+### Subject/Scope/Proposition Paraphrase(D0102.4.1 §21/§22、疑似Deterministic化せず)
+
+`SUBJECT_ATTRIBUTION`/`SCOPE`は「Candidate TextがEvidence Textの
+部分文字列として一致する場合のみTrivial PASS、それ以外は常に
+`AMBIGUOUS`(`SEMANTIC_VERIFICATION_REQUIRED`)」という2値Logicのみ
+実装した(D0102.4の一般NOT_APPLICABLE原則をこの2軸へ本Roundでは
+適用しない、Scope修飾語の有無自体の判定にSemantic Judgmentが必要
+なため、D0102.4.2でModel-assisted Verifierが揃ってから導入する)。
+`PROPOSITION_IDENTITY`の一般的なProposition同一性(Paraphrase)判定も
+同様、Exact Match以外は常にAMBIGUOUS(D0102.4 §22)。
+
+### Claim-Type Structural Eligibility(D0102.4A修正5)
+
+`BUSINESS_RISK`のみ既存`BUSINESS_RISK_ELIGIBLE_TAXONOMY_NAMES`
+(`candidate_extraction.py`、再利用のみ、重複Allowlistは作っていない)
+による判定可能。他5 Claim TypeはD0102.4.1時点でDeterministicな
+Structural Eligibility判定手段が無いため、`PROPOSITION_IDENTITY`は
+常に`AMBIGUOUS`側へ倒れる。結果として**D0102.4.1時点で`ACCEPT`へ
+到達しうるのは実質`BUSINESS_RISK`(かつAllowlist対象Taxonomy)の
+Candidateのみ**であることをTest(`test_fully_consistent_business_
+risk_candidate_accepts`)で直接確認した——これは意図した保守的挙動
+であり(Automation NOT_READY、実Model無しでACCEPT範囲を広げない)、
+バグではない。
+
+### Claim-Type別必須軸のOverride(D0102.4 §25)
+
+`_REQUIRED_DIMENSIONS_BY_CLAIM_TYPE`(6 Claim Type × 該当軸)を実装し、
+該当軸がNOT_APPLICABLEになる場合はAMBIGUOUS(Dimension固有の
+`_REQUIRES_SEMANTIC_REVIEW`Reason Code、QUANTITYのみ専用Codeが無い
+ため`SEMANTIC_VERIFICATION_REQUIRED`へFallback)へ上書きする。「表を
+満たすためだけにPASSを捏造しない」というD0102.4.1 §24の制約を
+`_apply_required_dimension_override()`で機械的に強制する。
+
+### Aggregation(D0102.4 §15、Hidden Weighting無し)
+
+`_aggregate()`が4段階Ruleをそのまま実装: ① Hard-Fail軸
+(PROPOSITION_IDENTITY/SUBJECT_ATTRIBUTION/NEGATION/QUANTITY)の
+いずれかがFAIL→即REJECT。② Soft軸(SCOPE/CAUSAL_STRENGTH/
+CERTAINTY_AND_COMMITMENT/TEMPORAL_SCOPE)のDeterministic FAIL→
+REJECT。③ いずれかがAMBIGUOUS、またはSoft軸のModel-Only FAIL(本
+Roundでは到達しない、D0102.4.2向けに実装のみ用意)→REVIEW_REQUIRED。
+④ それ以外→ACCEPT。Deterministic Hard-FailがAMBIGUOUSと同時に存在
+する場合でもREJECTが優先されること(REVIEWへ緩和されないこと)を
+`test_17_deterministic_hard_fail_overrides_ambiguous_review`で直接
+確認した。
+
+### candidate_reference(D0102.4A修正3、既存Identity Algorithm無変更)
+
+`compute_candidate_reference()`は`evidence_span_identity_fields()`
+(既存関数、再利用)+`claim_type`+`normalized_claim_text`+`direction`
+から`CANDREF_`Prefixで導出する。`claim_id`/`semantic_identity_key`
+とは異なるHash Input(`direction`を含み`schema_version`を含まない)・
+異なるPrefixであり、既存`compute_semantic_identity_key()`/
+`compute_claim_id()`は1行も変更していない。`verification_version`/
+`verified_at`/`verification_provenance`はHash Inputに一切含めない
+(D0102.4A修正3で確定済み)。
+
+### Verification Provenance / PIT境界(D0102.4A修正4)
+
+`verified_at`(UTC・tz-aware必須、他TZは`FaithfulnessSchemaError`)・
+`verification_version`(既定`DETERMINISTIC_FAITHFULNESS_VERSION =
+"faithfulness-det-v1"`)を必須Fieldとして実装した。Deterministic-Only
+Success時は`verification_provenance=None`を`__post_init__`で強制
+(Model-assisted Checkが1件も無いのに`AiDerivedProvenance`が設定
+されていればSchema Errorとして拒否)。`FaithfulnessVerificationResult`
+のField名一覧に`market_public_at`/`provider_available_at`/
+`available_at`が存在しないことをTestで構造的に確認した
+(`test_verified_at_never_used_as_pit_availability_field_name`)。
+`VERIFICATION_TIMESTAMP_IS_NOT_PIT_AVAILABILITY = TRUE`をModule
+Docstringに明記(D0102の`EXTRACTION_TIMESTAMP_IS_NOT_PIT_
+AVAILABILITY = TRUE`と対になる命名Invariant)。
+
+### Promotion / Evidence統合(未実装、D0102.4.2のScope)
+
+`build_semantic_claim()`はこのModuleから一切呼び出していない
+(`PROMOTION_IMPLEMENTED = NO`)。`EvidenceRecord`/`EvidenceRelation`/
+`ResearchArtifact`統合・Bull/Base/Bear・Expected Return・Decision・
+Portfolio・Automation Orchestratorはいずれも未実装。
+
+### Test Matrix(44 Test関数、指定された24件を全てCover)
+
+`13_tests/test_faithfulness.py`に指定された24 Test Caseを全て実装
+した上で、Dimension単体の境界(NOT_APPLICABLE/AMBIGUOUS遷移・
+Claim-Type必須Override・candidate_reference決定性・PIT Field名
+非存在)を追加Testとして補強した(「Add more only where implementation
+exposes meaningful boundaries」)。実装中に1件のTest前提の誤り
+(QUANTITY_UNIT_MISMATCHの想定Pair)を発見・修正した(上記Quantity
+Parser節参照)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`: 新規2 File(`lib/disclosures/
+faithfulness.py`・`13_tests/test_faithfulness.py`)いずれもPass。
+`mypy --strict`(`lib/disclosures/faithfulness.py`のみ): Success, no
+issues found in 1 source file。Targeted Pytest: `test_faithfulness.py`
+(44 Test)・`test_disclosures_semantic_claims.py`・`test_candidate_
+extraction.py`・`test_disclosures_normalization.py`合計**189 Test
+全てPass**(既存Test無変化・無退行、Frozen Boundary無変更を実測で
+確認)。Full Repository Suite/H0001はいずれも実行していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/faithfulness.py`(新規)・
+`Japanese_Equity_Lab/13_tests/test_faithfulness.py`(新規)・この
+DECISIONS.md追記をCommit対象とする。`lib/disclosures/normalization.py`
+・`semantic_claims.py`・`candidate_extraction.py`・その他既存
+`lib/`・既存`13_tests/`はいずれも無変更。`AUTOMATION_READINESS =
+NOT_READY`のまま(変更なし)。H0001は実行していない。次Round
+(未着手)はModel-assisted Verifier実装(D0102.4.2)。
