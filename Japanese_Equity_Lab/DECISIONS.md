@@ -13781,3 +13781,139 @@ Naming Debtとして記録するのみ(widening禁止の指示通り)。Position
 Adapter/Normalizer/EvidenceRecord化・PIT Publication Timing Logic・
 Historical Acquisitionはいずれも本Roundでは実施していない。H0001は
 実行していない。
+
+## JQS-STD-02 — 7203 Historical Valuation Standard-Era Re-Measurement
+
+### 背景
+
+JQS-STD-01でPrice/Financial Summaryの実効History境界拡張を確認し、
+JQS-STD-01Aで関連するStale Light Runtime Surfaceを削除した。本Roundは
+この拡張履歴が既存のHistorical Valuation Context(Stage 3.15、D0089/
+D0090)の実測Coverageをどう変えるかを測定する、測定専用のRoundである。
+
+### Frozen Stage 3.15の扱い
+
+`scripts/verify_stage3_15_7203_closure.py`・`01_data/raw/local_snapshot_
+input/`・そのExpected値(n=30、2022-05-31〜2024-10-31、DECISIONS.md
+D0089-D0093)は一切変更・再実行していない。本Roundは完全に別のRaw
+Snapshot(`SNAP_JQS_STD_02_7203_*`)・別Script(`scripts/jqs_std02_7203_
+historical_valuation_remeasurement.py`)による独立した測定。
+
+### 新規取得Raw Snapshot(Immutable、`lib.snapshot.RawSnapshotStore`経由)
+
+`lib.data_sources.jquants.JQuantsAdapter`(Live)で取得し、`RawSnapshotStore.
+save()`で`01_data/raw/jquants/`(Gitignore対象、Force-Addしていない)へ
+保存した。APIキーはSnapshot・Manifest・本記録いずれにも含めていない。
+
+| snapshot_id | record_count | content_hash(sha256) |
+|---|---|---|
+| `SNAP_JQS_STD_02_7203_equity_bars` | 2051 | `10e5d4953a5e4e147bd99887460fc613be13379b37859db5425fc36ca7d69ad9` |
+| `SNAP_JQS_STD_02_7203_trading_calendar` | 3068 | `29182c3595c48232ff7149e0d5fffcbc75896a192482d79e3ce58b963b72f31c` |
+| `SNAP_JQS_STD_02_7203_financial_summary` | 41 | `ba6c339b043a43220018542a1628b1442ae8ace90d0b4d79cf384699ee43582e` |
+
+Price/Calendar: 2016-09-08〜2025-01-31。Financial Summary: `from`/`to`は
+実際には絞り込まれない(D0043/JQS-STD-01確認済み)ため2016-01-01〜
+2026-12-31を指定し、実際には2016-11-08〜の41件全件が返った。
+
+### Existing Builder再利用状況(§5、PRODUCTION_CODE_CHANGE=NO)
+
+`lib/valuation/*`・`lib/fundamentals/*`はいずれも無変更で呼び出しのみ
+行った(`build_latest_reported_fy_per()`・`build_latest_reported_fy_per_
+historical_context()`・`fundamentals_as_of()`・`parse_financial_summary_
+payload()`・`build_revision_histories()`)。
+
+**発見した1件の呼び出し側課題(Production Code変更は不要と判断)**:
+拡張履歴には、Toyotaの会計基準移行(旧DocType`*_Consolidated_US`が
+`parse_financial_summary_payload()`の既知DocTypeパターンに一致せず
+`accounting_standard=UNKNOWN`へfail closedする、既存Parserの意図した
+挙動)により、実績FY EPSの`series_id`が2件に分岐していることを観測した
+(`actual_eps_series_count=2`)。Frozen Stage 3.15 Harnessは単一Series
+前提(`assert len(actual_eps_series_ids) == 1`)だが、これは2020-2026の
+狭いWindowでは会計基準移行前のDataが含まれず問題化しなかっただけである。
+本Roundの測定Scriptでは、各Anchor時点でSeries横断的に`current_period_end`
+が最大のVersionを採用する選定Helperを追加した——これは
+`historical_context_builder.py`自身のDocstringが明示する「Anchor選定・
+EPS/Price取得はOrchestration側の責務」「複数のFY Denominator Regimeを
+Historical Distributionへ混在させること自体はMetric Semantics上正しい」
+という既存設計方針の範囲内であり、`lib/valuation/*`・`lib/fundamentals/*`
+は1行も変更していない。
+
+### 測定結果(旧 n=30 vs 新 n=82)
+
+| 指標 | 旧(Frozen Stage 3.15) | 新(JQS-STD-02) |
+|---|---|---|
+| sample_count | 30 | 82 |
+| first observation | 2022-05-31T15:00 JST | 2017-05-31T15:00 JST |
+| last observation | 2024-10-31T15:00 JST | 2024-10-31T15:00 JST(不変) |
+| 表現期間 | 約2.42年 | 約7.42年 |
+| historical_min | 6.947860304968027545499262174 | 同一(不変) |
+| historical_median | 10.23607659698874433562344686 | 10.24322267606404264701257864 |
+| historical_max | 21.12887947846436730372764250 | 同一(不変) |
+| current_per | 7.285347324698037929715253867 | 同一(不変、25桁以上完全一致、強いInternal Consistency Check) |
+| current_percentile | 3.333333333333333333333333333% | 1.219512195121951219512195122% |
+| current_minus_historical_median | -2.950729272290706405908192993 | -2.957875351366004717297324773 |
+| context_status | PARTIAL | PARTIAL(不変) |
+| distinct_denominator_regime_count | 3 | 8(FY2017/3〜FY2024/3) |
+
+内訳(`attempted_anchor_count=98` = `excluded_future_anchor_count`(0) +
+`unavailable_denominator_count`(8) + `corporate_action_excluded_count`
+(8) + `sample_count`(82)、Builder自身のBookkeeping Checkで整合性確認済み):
+
+- `unavailable_denominator_count=8`: 2016-09〜2017-04の8か月、FY2017/3
+  実績報告(市場公表 ~2017-05)がまだ利用可能でないため除外。
+- `corporate_action_excluded_count=8`: Toyotaの2021-10-01 Share Split
+  (推定)関連。FY2021/3実績(period_end=2021-03-31)を分母とするAnchorの
+  うちSplitを跨ぐWindowを持つものが`has_share_basis_action_in_window()`
+  Guardにより除外され、FY2021/3 Regimeは本来12件に達しうるところ4件に
+  留まった(Guardを緩めていない、Raw/Adjusted Price混在防止が正しく機能)。
+
+### Rejected Observations(§10/§11)
+
+- Corporate Action Rejection: 上記8件(FY2021/3 Regime、2021-10-01 Split
+  推定要因)。
+- `duplicate_period_vintages_observed = true`: PL系Metric(sales/
+  operating_profit/net_profit/ordinary_profit/eps)の少なくとも1つの
+  Seriesで、同一series_idに複数Versionが存在することを実測した(拡張
+  履歴で新たに可視化、狭いWindowでは出現しなかった)。
+- `revision_relationship_resolved = false`: `build_revision_histories()`
+  は設計上常に`supersedes_version_id=None`(「関係不明」として保持、
+  D0043)。これは既存設計通りであり、本Roundで新たに発見した欠陥ではない。
+
+### Coverage Classification(§9)
+
+`lib.valuation.model.HistoricalContextStatus`のDocstringに、v1 Builderは
+`PARTIAL`のみを生成し`SUPPORTED`昇格基準は「このStageでは未定義・未実装」
+と既に明記されている(D0079/D0087/D0088から継続)。したがって
+`COVERAGE_CLASSIFICATION_RULE_MISSING = NO`(既存Ruleをそのまま適用)。
+`OLD_COVERAGE_STATUS = PARTIAL`、`NEW_COVERAGE_STATUS = PARTIAL`
+(Sample数が2.7倍になってもRule通りPARTIALのまま、これは異常ではない)。
+
+### Bottleneck Re-Measurement(§15)= PARTIALLY_RESOLVED
+
+Stage 3.15 Artifactが記録していたDataGap(「Historical Contextは存在
+するが約2.4年のみ」)は実測ベースで解消した(約2.4年→約7.4年、n=30→82)。
+一方、`context_status`(PARTIAL/SUPPORTED)というArtifact自体の
+Completeness分類は、Sample数・Window長を理由に変わる設計になっておらず
+(v1 Builderの既存Docstringで明示的にDeferred)、これはStandardへの
+Upgradeでは解決できない別のBottleneck(SUPPORTED昇格基準の未策定)で
+ある。副次的に会計基準移行によるSeries分岐・Duplicate Period Vintageが
+可視化されたが、既存Guardが正しく機能した結果であり隠れた欠陥ではない。
+
+### Efficiency Decision(§16)= A(既存Builderをそのまま再利用、追加のValuation Code変更は不要)
+
+`lib/valuation/*`・`lib/fundamentals/*`は無変更で拡張履歴を正しく受理
+した。会計基準Series分岐への対処はOrchestration層(測定Script)の責務内
+で完結した。`SUPPORTED`昇格基準の策定は別Topicであり本Round(測定のみ)
+のScopeでは着手しない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/DECISIONS.md`(本追記)・`Japanese_Equity_Lab/
+12_reports/experiment/JQS_STD_02_7203_HISTORICAL_VALUATION_2026-09-08_
+report.md`(新規)・`scripts/jqs_std02_7203_historical_valuation_
+remeasurement.py`(新規)をCommit対象とする。新規Raw Snapshot
+(`01_data/raw/jquants/SNAP_JQS_STD_02_7203_*`)はGitignore対象のため
+Force-Addしていない。`lib/`・`13_tests/`・Frozen Stage 3.15 Artifact・
+`01_data/raw/local_snapshot_input/`・`02_company_research/`・EDINET・
+Faithfulness・Positioningはいずれも無変更。H0001(2025 Locked Test含む)
+は実行していない。
