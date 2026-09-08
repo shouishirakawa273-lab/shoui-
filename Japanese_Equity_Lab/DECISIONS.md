@@ -13917,3 +13917,690 @@ Force-Addしていない。`lib/`・`13_tests/`・Frozen Stage 3.15 Artifact・
 `01_data/raw/local_snapshot_input/`・`02_company_research/`・EDINET・
 Faithfulness・Positioningはいずれも無変更。H0001(2025 Locked Test含む)
 は実行していない。
+
+## D0102.4 — Faithfulness Verification Boundary Design(設計+Adversarial Self-Audit のみ、実装なし)
+
+### 0. 前提・Scope
+
+`lib/disclosures/candidate_extraction.py`(D0102.3.1/D0102.3.2、Frozen)・
+`lib/disclosures/semantic_claims.py`(D0102.2、Frozen)を実際に読み、
+既存Symbolを列挙した上で設計した(推測でEnum値を書かない、§5要件)。
+本Roundは`Japanese_Equity_Lab/DECISIONS.md`以外のいかなるFileも変更
+していない。`lib/`・`scripts/`・`13_tests/`・Prompt File・SDK・実Model
+呼び出しはいずれも無し。H0001は実行していない。
+
+**Core Principle(既にD0102で確定済み、再確認のみ)**: `CANDIDATE_
+GENERATION_IS_NOT_FAITHFULNESS_CERTIFICATION = TRUE`
+(`candidate_extraction.py`のModule Docstringに既存)。`SemanticClaim
+Candidate`は`claim_id`/`semantic_identity_key`/`FaithfulnessOutcome`
+のいずれも持たず(既存Schema確認済み)、抽出に使ったModelと同一呼び出し
+内でCandidateが自己証明することはない。本Roundはこの境界の**次の層**
+(Candidate + EvidenceSpan → 実際にACCEPT/REJECT/REVIEW_REQUIREDを
+判定するVerification Layer)を設計する。
+
+### 1. 既存Schema確認(§5、実測)
+
+実際に`lib/disclosures/semantic_claims.py`を読んで確認した既存Symbol:
+
+- `SemanticClaimType`(6種、Frozen、追加禁止): `PERFORMANCE_CHANGE`・
+  `PERFORMANCE_DRIVER`・`BUSINESS_RISK`・`MANAGEMENT_EXPLANATION`・
+  `OUTLOOK`・`CAPITAL_ALLOCATION`。
+- `ClaimDirection`: `INCREASE`/`DECREASE`/`UNSPECIFIED`。
+- `FaithfulnessOutcome`(既存、3値、**新設不要**): `ACCEPT`/`REJECT`/
+  `REVIEW_REQUIRED`——タスク文中の"REVIEW"はこの既存`REVIEW_REQUIRED`
+  へそのまま対応させる(新しい値は作らない)。
+- `RevalidationResult`: `VALID`/`NEEDS_REVALIDATION`。
+- `EvidenceSpan`(`document_id`/`source_raw_canonical_content_hash`/
+  `source_normalizer_version`/`member_path`/`taxonomy_element_name`/
+  `occurrence_index`/`char_start`/`char_end`/`supporting_quote`、
+  `from_text_block()`経由構築推奨、単数のみ)。
+- `SemanticClaim`(`claim_id`/`semantic_identity_key`/`claim_type`/
+  `normalized_claim_text`/`direction`/`evidence_span`/
+  `faithfulness_outcome`/`faithfulness_review_required`/
+  `extraction_version`/`schema_version`/`extraction_provenance`/
+  `supersedes_claim_id`)。**`__post_init__`が`REJECT`のみを構築
+  拒否し、`REVIEW_REQUIRED`は`SemanticClaim`として構築可能**(重要な
+  既存仕様、§28で詳述)。
+- `revalidate_evidence_span(span, *, document)`(既存関数、そのまま
+  再利用)・`build_semantic_claim(...)`(既存Helper、そのまま再利用)・
+  `compute_semantic_identity_key()`/`compute_claim_id()`(既存Hash
+  Helper、`extraction_version`のみを含み`verification_version`は
+  含まない、§29で詳述)。
+- `AiDerivedProvenance`(`lib.evidence.model`、D0040、既存の汎用
+  Provenance型: `model_provider`/`model_name`/`model_version`/
+  `prompt_version`/`prompt_hash`/`input_evidence_ids`/
+  `retrieval_plan_hash`/`generated_at`)——**新しいProvenance型は作らず、
+  Verification Provenanceにもこの既存型をそのまま再利用する**(§27)。
+- `SemanticClaimCandidate`(`candidate_extraction.py`、
+  `claim_type`/`normalized_claim_text`/`direction`/`evidence_span`/
+  `extraction_version`/`extraction_provenance`/`schema_version`、
+  `claim_id`/`semantic_identity_key`/`FaithfulnessOutcome`は**持たない**)。
+- `CandidateExtractionModel`(Protocol、`extract(*, taxonomy_element_
+  name, source_text)`)・`CandidateExtractionStatus`(`SUCCESS`/
+  `NO_CANDIDATES`/`SOURCE_REVALIDATION_FAILED`/
+  `TOO_LONG_FOR_EXTRACTION`/`MODEL_CONTRACT_VIOLATION`/`MODEL_ERROR`)
+  ——本Roundの`FaithfulnessVerificationStatus`はこのStatus設計
+  Patternをそのまま踏襲する(新しいPattern言語を発明しない)。
+
+`FaithfulnessOutcome`/`AiDerivedProvenance`は既存のまま再利用し、
+`FaithfulnessDimension`/`FaithfulnessDimensionOutcome`/
+`FaithfulnessReasonCode`/`FaithfulnessDimensionResult`/
+`FaithfulnessVerificationResult`/`FaithfulnessVerificationStatus`/
+`FaithfulnessVerifier`(Protocol)/`FaithfulnessVerifierInput`が
+最小限の新設Typeである。
+
+### 2. 8軸Verification Dimension(D0102で既に確定済みの名称、§3)
+
+`FaithfulnessDimension`(StrEnum、D0102の「6→8軸拡張」でC01/C02
+Closeとして既に確定済みの名称をそのままEnum化):
+
+`PROPOSITION_IDENTITY` / `SUBJECT_ATTRIBUTION` / `SCOPE` /
+`CAUSAL_STRENGTH` / `CERTAINTY_AND_COMMITMENT` / `TEMPORAL_SCOPE` /
+`QUANTITY` / `NEGATION`。
+
+各軸の判定Outcomeは`FaithfulnessDimensionOutcome`
+(`PASS`/`FAIL`/`AMBIGUOUS`/`NOT_APPLICABLE`)。
+
+**NOT_APPLICABLE統一原則(Hidden Weighting防止のため全軸共通の1原則
+のみを適用、軸ごとに個別のAd-hoc Ruleを作らない)**:
+
+- `PROPOSITION_IDENTITY`・`SUBJECT_ATTRIBUTION`・`NEGATION`は
+  **`NOT_APPLICABLE`を一切許可しない**(全てのCandidateは必ず何らかの
+  Proposition/Subjectを主張し、必ず肯定/否定いずれかであるため、
+  構造的に「該当なし」は存在しない——Modelが自己判断でこの3軸を
+  `NOT_APPLICABLE`として回避することを防ぐ)。
+- `SCOPE`・`CAUSAL_STRENGTH`・`CERTAINTY_AND_COMMITMENT`・
+  `TEMPORAL_SCOPE`・`QUANTITY`は、**その軸に関する内容が
+  EvidenceにもCandidateにも一切存在しない場合に限り**
+  `NOT_APPLICABLE`を許可する。Evidence/Candidateいずれか一方にでも
+  その軸に関する内容(数値・因果語彙・確度語彙・時制語彙・
+  Scope修飾語)が現れた時点で、その軸は`NOT_APPLICABLE`ではなく
+  必ずPASS/FAIL/AMBIGUOUSのいずれかで評価する(Candidateが数値を
+  捏造した場合に`QUANTITY=NOT_APPLICABLE`で回避することを構造的に
+  禁止する、§18)。
+
+`reason_code`(`FaithfulnessReasonCode`、Closed StrEnum、自由文字列
+ではない、§7「No unrestricted string reason as authoritative decision
+logic」)を各`FaithfulnessDimensionResult`に必須で持たせる。例:
+`EXACT_QUOTE_MATCH`・`PARAPHRASE_EQUIVALENT_CONFIRMED`・
+`PROPERTY_SUBSTITUTION_DETECTED`・`SUBJECT_MISMATCH_DETECTED`・
+`SCOPE_QUALIFIER_DROPPED`・`SCOPE_QUALIFIER_ADDED`・
+`CAUSAL_TIER_UPGRADED`・`CERTAINTY_TIER_UPGRADED`・
+`COMMITMENT_TIER_UPGRADED`・`TEMPORAL_CATEGORY_MISMATCH`・
+`QUANTITY_VALUE_MISMATCH`・`QUANTITY_UNIT_MISMATCH`・
+`QUANTITY_INVENTED`・`NEGATION_INVERTED`・`AMBIGUOUS_ATTACHMENT`・
+`NO_ISSUE_DETECTED`——正確な列挙は実装Round(D0102.4.1)で確定する
+(本Roundは列挙が「Closed Enumである」という制約のみを決定する)。
+
+各`FaithfulnessDimensionResult`は追加で`checked_by`
+(`DETERMINISTIC`/`MODEL`のClosed Enum)を持ち、その軸の判定が
+どちらの経路で決まったかを記録する(§15の集約Ruleがこれを参照する)。
+
+### 3. Dimension別 判定Policy(§18-§24)
+
+**QUANTITY(§18、Deterministic中心)**: 独自の`ParsedQuantity`相当の
+比較専用表現(value: Decimal・sign・unit・is_percent・元Text)を
+Verification内部でのみ構築し、**Source Text自体は一切変更しない**
+(比較用の一時表現であり、正規化Textの置き換えではない)。
+`2兆4,642億円`・`18万8千台`・`4.0％`・`△950億円`(`△`=負号)・
+`△3.7％`のような日本語表記のParseは既存`Decimal`規律(Repository
+全体でDecimal専用、`RESEARCH_RULES.md`)を踏襲する。Candidateの数値が
+Evidence中に存在しない場合は`QUANTITY_INVENTED`で**Deterministic
+FAIL**(Model判断を待たない)。単位不一致・符号不一致も同様に
+Deterministic FAIL。
+
+**DIRECTION(§19)**: 既存`ClaimDirection`はSchema Validation(Enum
+値であること)のみ持ち、Source Faithfulness自体はこのSchemaでは検証
+されていない(既存確認済み)。本Roundでは新しいDirection Faithfulness
+軸は追加しない——`増加`→`INCREASE`/`減少`→`DECREASE`のような明示的
+Marker語彙の不一致は`QUANTITY`(数値方向)または`NEGATION`(損失が
+`減少`=改善の方向)Dimensionの`reason_code`(例:
+`QUANTITY_VALUE_MISMATCH`のSign不一致)として吸収する。`改善`単体は
+自動的に`INCREASE`と同一視しない(汎用日本語NLPを作り込まない、
+Marker語彙が無ければ`AMBIGUOUS`)。
+
+**NEGATION(§20、Deterministic中心)**: `ない`/`ありません`/
+`なかった`/`認められない`/`変更はない`等の高価値Marker語彙による
+Deterministic Checkを優先する。明確な極性反転(Evidence`ない`↔
+Candidate肯定)は`NEGATION_INVERTED`でDeterministic FAIL。入れ子否定
+(二重否定等)でParseが不確実な場合は`AMBIGUOUS`(REVIEW側、Reject
+しない)。
+
+**CAUSAL_STRENGTH(§21、Hybrid)**: `〜により`/`〜が寄与`/`〜の影響`/
+`〜などにより`/`主に〜により`/`一因`等をTier化したMarker Word List
+(例: `SOLE_CAUSE` > `MAIN_CONTRIBUTOR` > `CONTRIBUTOR` >
+`ASSOCIATION` > `MANAGEMENT_EXPLANATION`)による**Deterministic
+Tier比較**を優先する。「一因」→「唯一の原因」のようなTier上方
+書き換えはMarker Word Listのみで検出できるため**Deterministic
+FAIL**(`CAUSAL_TIER_UPGRADED`)。Evidence側にMarker語彙が一切
+見当たらないがCandidateが因果関係を主張する場合のみModelへ
+Fallback。`PERFORMANCE_DRIVER`はこの軸を`NOT_APPLICABLE`にできない
+(§25)。
+
+**CERTAINTY_AND_COMMITMENT(§22、D0102.1で既に確定済みのDeterministic
+Mechanismをそのまま採用)**: D0102(DECISIONS.md、上記1.参照)が既に
+「Epistemic Tier(可能性がある/見込み/断定)とCommitment
+Tier(検討中/予定/決定/実施)を独立2軸の機械的Marker Word Listで
+check し、いずれの軸もEvidence以上には強化させない」と確定している。
+**本Roundはこれをそのまま踏襲し、CERTAINTY_AND_COMMITMENTは
+Deterministic中心の軸として設計する**(タスク文§8の例示は
+"certainty/modality preservation"をModel-assisted Checkの例として
+挙げていたが、既に確定済みのD0102 Mechanismの方を優先し、そちらとは
+整合させない——本Entryで明示的に上書きしない、この分岐を意図的な
+継続性の選択として記録する)。`可能性がある`→`発生する`はEpistemic
+Tier上方書き換えとして**Deterministic FAIL**(`CERTAINTY_TIER_
+UPGRADED`)。Marker語彙が両側とも無ければ暗黙Tierは`REPORTED_FACT`
+同士としてPASS(`NOT_APPLICABLE`にはしない、§2の統一原則通り)。
+
+**TEMPORAL_SCOPE(§23、Hybrid)**: `当中間連結会計期間`/`前年同期`/
+`当連結会計年度`/`現在`/`今後`/`翌期`/`将来`等をClosed Category
+(`HISTORICAL_PERIOD`/`CURRENT_PERIOD`/`FUTURE_OUTLOOK`/
+`RECURRING_OR_CONTINUOUS`)へMappingするMarker Word Listによる
+Deterministic Checkを優先する。`HISTORICAL_PERIOD`(Evidence)→
+`FUTURE_OUTLOOK`/`RECURRING_OR_CONTINUOUS`(Candidate)のような
+Category跳躍は`TEMPORAL_CATEGORY_MISMATCH`でDeterministic FAIL
+(タスク§4の例と一致)。Marker語彙が両側で不明瞭な場合はModelへ
+Fallback、それでも不確実なら`AMBIGUOUS`。
+
+**SCOPE(§24、Model-assisted中心)**: company-wide/segment-specific/
+region-specific/product-specific/consolidated/non-consolidated/
+quarter/cumulative等のQualifierの脱落・追加を検出する。決定的な
+Marker語彙(業種名・地域名Token)がCandidate側にもEvidence側にも
+存在するかは補助的にDeterministic Checkできるが、「重要な限定を
+黙って落としたかどうか」という判断自体は一般にModel-assisted
+Semantic Judgeへ委ねる。Qualifier脱落を`SCOPE_QUALIFIER_DROPPED`と
+して自動ACCEPTしない(タスク§4のExample通り、"北米事業"限定を
+落とした一般化は既定でFAIL/REVIEW側、Silent ACCEPT禁止)。
+
+**SUBJECT_ATTRIBUTION(§16のHard-Fail軸)**: Model-assisted中心。
+Candidate文中の明示的Segment/Entity Tokenが、Evidence
+`supporting_quote`中に一切出現しない場合(単純な文字列非存在
+Check)は、Model判定を補強するDeterministic Corroborating Signalとして
+使う(単独では確定させない、日本語の言い換えによる誤検出を避ける
+ため)。
+
+**PROPOSITION_IDENTITY(§16のHard-Fail軸、D0102.1既定Mechanism)**:
+D0102(上記1.)が既に「LLMによるProperty Label抽出(Advisory Inputの
+み)+ Deterministicな承認済み同義語TableでのCheck」という
+Mechanismを確定させている。本Roundはこれをそのまま採用する:
+ModelはEvidence/Candidateそれぞれについて短いProperty Label(例:
+「営業利益の増減」)を提案するのみ(Advisory)。Verifier Aggregation
+Layerは、reason_code=`PARAPHRASE_EQUIVALENT_CONFIRMED`を採用するには、
+提案された2つのProperty Labelの組が事前承認済みの同義語Table
+(実装Roundで構築、v1は空でも安全側——Table未収載の組は自動的に
+`AMBIGUOUS`へ倒れ、勝手にPASSしない)に含まれることをDeterministic
+に確認する。ModelのPASS宣言単独を最終権威としない(D0102.1の核心
+方針をそのまま維持)。
+
+### 4. Deterministic + Model Hybrid・Aggregation Rule(§8/§15/§16)
+
+**Deterministic Checks(Model呼び出し前・呼び出しなしで解決可能)**:
+- Candidate Integrity Gate(§10 = `SemanticClaimCandidate`型検証、
+  既存`__post_init__`をそのまま信頼)。
+- Source Revalidation Gate(§9 = 既存`revalidate_evidence_span()`を
+  Verification直前に再実行、既存関数の再利用のみ)。
+- EvidenceSpan Revalidation(上記と同じ関数)。
+- Candidate/Source空判定(既存`validate_claim_text()`を再利用)。
+- `QUANTITY`(数値/単位/符号Mismatch・捏造数値検出)。
+- `NEGATION`(高価値Marker語彙による極性反転検出)。
+- `CERTAINTY_AND_COMMITMENT`(2軸Marker Word Listによる Tier比較、
+  D0102.1既定Mechanism)。
+- `CAUSAL_STRENGTH`(Marker Word ListによるTier比較)。
+- `TEMPORAL_SCOPE`(Marker Word/Category ListによるCategory比較)。
+- BUSINESS_RISK等のStructural Claim-Type適格性(既存
+  `BUSINESS_RISK_ELIGIBLE_TAXONOMY_NAMES`Allowlistを`candidate_
+  extraction.py`から再利用、Verification側で再定義しない)。
+- Exact Match(`candidate.normalized_claim_text` が `evidence_span.
+  supporting_quote`のPart/Wholeと文字列一致)の場合の内容系8軸の
+  Trivial PASS(`EXACT_QUOTE_MATCH`)——ただし§31の通り`claim_type`/
+  `direction`は免除しない。
+
+**Model-assisted Checks(Deterministicで解決できない場合のみ)**:
+- `PROPOSITION_IDENTITY`のProperty Label提案(Advisory、最終判定は
+  Deterministic同義語Table)。
+- `SUBJECT_ATTRIBUTION`のSemantic一致判定。
+- `SCOPE`のQualifier脱落/追加のSemantic判定。
+- `CAUSAL_STRENGTH`/`TEMPORAL_SCOPE`/`CERTAINTY_AND_COMMITMENT`の
+  Marker語彙が両側とも見当たらない場合のFallback。
+
+**Aggregation Rule(§15、完全Deterministic、Hidden Weighting無し)**:
+
+1. `Hard-Fail Dimensions` = `{PROPOSITION_IDENTITY, SUBJECT_
+   ATTRIBUTION, NEGATION, QUANTITY}`(§16、タスクの"Likely"一覧を
+   採用)。このいずれかが`FAIL`(`checked_by`がDETERMINISTIC/MODEL
+   いずれでも)なら、他の結果に関わらず**Overall = REJECT**
+   (最優先、`DETERMINISTIC_HARD_FAIL > MODEL_PASS`の一般化——
+   Hard-Fail軸ではModelもDeterministicも対称に扱うが、他のいかなる
+   PASSにも上書きされない)。
+2. `Soft Dimensions` = `{CAUSAL_STRENGTH, CERTAINTY_AND_COMMITMENT,
+   TEMPORAL_SCOPE, SCOPE}`。このいずれかが`FAIL`かつ`checked_by=
+   DETERMINISTIC`(Marker Word Listで機械的に検出済み)なら
+   **Overall = REJECT**(「一因」→「唯一の原因」・「可能性がある」→
+   「発生する」はこの経路でREJECTになる、タスク§4/§21/§22のExample
+   通り)。
+3. 上記いずれにも該当せず、(a) いずれかの軸が`AMBIGUOUS`、または
+   (b) Soft Dimensionのいずれかが`FAIL`かつ`checked_by=MODEL`
+   (Deterministic裏付けなしのModel単独FAIL)であれば
+   **Overall = REVIEW_REQUIRED**。
+4. 上記いずれにも該当しない(評価された全軸がPASSまたは§2の統一
+   原則に基づく正当な`NOT_APPLICABLE`)場合のみ **Overall = ACCEPT**。
+
+`DETERMINISTIC_HARD_FAIL > MODEL_PASS`は上記1./2.によって常に
+成立する(Modelが対応する軸をPASSと報告しても、Deterministic Checkが
+既にFAILを確定させていれば、そのDeterministic結果を`checked_by=
+DETERMINISTIC`として記録し、Model呼び出し自体をSkipするか[§WHEN_
+MODEL_VERIFICATION_REQUIRED]、呼び出したとしてもAggregationは
+Deterministic側を採用する)。
+
+### 5. Independent Verifier・Input Authority(§11/§12)
+
+`GENERATOR_VERIFIER_INDEPENDENCE = STRUCTURAL_SEPARATION_V1`
+(Multi-Provider必須化はv1では行わない、タスク§11の指示通り)。
+`extract_candidates()`とは物理的に別の公開Entrypoint・別のPrompt/
+`prompt_hash`・別の`FaithfulnessVerifier` Protocol Call経由でのみ
+Model-assisted Checkを行う。同一Extraction呼び出し内でのSelf-
+Certificationは構造的に不可能(別関数・別Provenance)。将来的に
+別Provider/別Model Familyへ差し替える場合も`FaithfulnessVerifier`
+Protocolを満たす別実装を注入するだけでよい(`CandidateExtractionModel`
+Protocolと同型のAdapter Injection Pattern)。
+
+```
+class FaithfulnessVerifier(Protocol):
+    def verify(self, *, verifier_input: FaithfulnessVerifierInput) -> object: ...
+```
+
+**Verifier Input Authority(§12、Narrow Allowlist)**——
+`FaithfulnessVerifierInput`(新設、明示的な5 Field限定Struct、
+`candidate`/`evidence_span`をそのまま丸ごと渡さない):
+
+```
+candidate.claim_type
+candidate.normalized_claim_text
+candidate.direction
+evidence_span.supporting_quote
+evidence_span.taxonomy_element_name
+```
+
+Ticker・企業名・市場価格・Valuation・Bull/Bear Case・期待Return・
+投資Thesis・外部News、いずれも渡さない(タスク§12通り)。構造体を
+明示的なAllowlist Shapeにすることで、将来の実装Roundで`candidate`/
+`evidence_span`オブジェクトをうっかり丸ごと渡すFieldリーク事故を
+構造的に防ぐ。
+
+### 6. Gate順序(§9/§10)
+
+```
+SemanticClaimCandidate integrity check(型・Enum Runtime検証、
+    既存__post_init__を信頼)
+        ↓ 失敗
+    FaithfulnessVerificationStatus.CANDIDATE_INTEGRITY_FAILED
+        ↓ 成功
+revalidate_evidence_span(candidate.evidence_span, document=document)
+    == RevalidationResult.VALID を「Verification直前に」再確認
+    (Extraction時点のValidationを信頼しない、§9)
+        ↓ VALID以外(NEEDS_REVALIDATION/Exception)
+    FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED
+    (Verification自体を実行しない、ACCEPTになる経路が一切無い)
+        ↓ VALID
+Deterministic Dimension Checks(§4、全8軸のうち可能な限り)
+        ↓ Hard-Fail Dimension が既にFAIL確定
+    Model呼び出しをSkipして Overall = REJECT(§WHEN_MODEL_
+    VERIFICATION_REQUIRED、コスト最適化)
+        ↓ 未解決の軸が残る(Deterministic不可)
+FaithfulnessVerifier.verify(verifier_input) 呼び出し
+    (Model Output Contract、下記7.)
+        ↓ 契約違反/例外/Timeout
+    FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION /
+    VERIFIER_ERROR(Overall_outcomeはNoneのまま、下記8.)
+        ↓ 契約遵守
+Deterministic Aggregation(§4のRule、Model結果を追加入力として)
+        ↓
+FaithfulnessVerificationResult(status=SUCCESS, overall_outcome=
+    ACCEPT/REJECT/REVIEW_REQUIRED)
+```
+
+### 7. Model Output Contract(§14)
+
+```json
+{
+  "dimensions": [
+    {"dimension": "SUBJECT_ATTRIBUTION", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED"}
+  ]
+}
+```
+
+Model-assisted対象の軸のみをRequestし、Modelはその全軸について
+必ず1件ずつEntryを返す(省略=Malformed、`NOT_APPLICABLE`は明示的に
+返す必要がある——Modelが黙って省略することを許さない)。
+Candidate Extraction Boundary(`candidate_extraction.py`)と同型の
+`WHOLE_RESPONSE_FATAL`判定を適用する: Top-level非dict・`dimensions`
+以外のKey・非List・重複Dimension・未知Dimension名・4値以外の
+`outcome`・未知`reason_code`・Candidate Rewrite系Field
+(`corrected_claim_text`/`better_claim`/`summary`等)・信頼度Score・
+投資Sentiment・Source Identity・EvidenceSpan相当Field・不明Fieldの
+いずれかが1つでも混入していれば**Response全体をReject**
+(`VERIFIER_CONTRACT_VIOLATION`、Candidate単位のSkipではない、Silent
+Ignore禁止、`FORBIDDEN_MODEL_OUTPUT_FIELDS`と同型のForbidden Set
+をVerification側にも新設する)。
+
+**Model Can Rewrite Candidate = NO(§13)**。Verifierは既存Candidateを
+判定するのみ。`corrected_claim_text`/`better_claim`/`summary`/投資
+解釈/強気弱気/目標株価、いずれも受け取らず、返された場合は上記の
+Whole-Response-Fatalとして扱う。修正が必要な候補はREJECTし、修正は
+別の新規Extraction経路(D0102.3の範囲、本Roundでは扱わない)に委ねる。
+
+### 8. Verification Result Schema・Provenance(§26/§27)
+
+```
+FaithfulnessVerificationStatus(StrEnum、CandidateExtractionStatusと
+同型のPattern):
+    SUCCESS
+    CANDIDATE_INTEGRITY_FAILED
+    SOURCE_REVALIDATION_FAILED
+    VERIFIER_CONTRACT_VIOLATION
+    VERIFIER_ERROR
+
+FaithfulnessVerificationResult(frozen dataclass):
+    status: FaithfulnessVerificationStatus
+    overall_outcome: FaithfulnessOutcome | None   # SUCCESS時のみ非None
+    dimension_results: tuple[FaithfulnessDimensionResult, ...]
+    candidate_reference: <candidateを一意に指す何らかのReference、
+        claim_id/semantic_identity_keyはCandidate自体が持たないため、
+        evidence_span identity fields(evidence_span_
+        identity_fields()を既存再利用)+ claim_type +
+        normalized_claim_text の組で参照する>
+    verification_version: str
+    verification_provenance: AiDerivedProvenance | None
+        (Model-assisted Checkが1件でも発生した場合のみ非None、
+        既存AiDerivedProvenance型をそのまま再利用、新Provenance型
+        は作らない、§27)
+    reason: str | None   # Gate/System Failure時の診断用自由文字列
+        (Authoritativeではない、`status`のみがAuthoritative)
+```
+
+`overall_outcome: FaithfulnessOutcome | None`——`None`は「Verification
+自体が完走しなかった」ことを表し、`REVIEW_REQUIRED`(判定した上で
+保留)とは意味的に区別する(このRepositoryの既存原則「Unknownは0
+でもfalseでもない」をそのまま踏襲、`status != SUCCESS`のときのみ
+`None`)。
+
+**Verification ProvenanceはExtraction Provenanceを上書きしない
+(§27)**。`SemanticClaimCandidate.extraction_provenance`
+(`AiDerivedProvenance`)はそのまま保持し、
+`FaithfulnessVerificationResult.verification_provenance`は**別の
+`AiDerivedProvenance`Instance**として並存させる。`SemanticClaim`
+自体には(既存Schema通り)`extraction_provenance`のみが乗る——
+Verification Provenanceは`FaithfulnessVerificationResult`側で保持
+し、`SemanticClaim`Schema自体は変更しない(§43、`lib/`変更禁止の
+本Round制約とも整合)。
+
+### 9. Promotion Gate・既存Schemaとの整合(§28、重要な発見)
+
+**発見(既存Schemaの再確認で判明、タスクの想定と部分的に異なる)**:
+`SemanticClaim.__post_init__`は`faithfulness_outcome=REJECT`のみを
+構築拒否し、`REVIEW_REQUIRED`は`SemanticClaim`として**構築可能**
+(既存Schema、変更しない)。タスク§28は「REVIEW: no promotion」と
+求めているが、これは「`SemanticClaim`オブジェクトを構築できるか」
+(既存Schemaが既にREVIEW_REQUIREDを許可している)と「Evidence/
+ResearchArtifactへ実際に組み込んでよいか」(まだ実装されていない
+将来Layer、§35)という**2つの異なる意味のPromotion**を区別すること
+で整合させる:
+
+1. **`SemanticClaim`構築可否**(既存Schema、無変更): `ACCEPT`→
+   通常構築。`REVIEW_REQUIRED`→構築可能(Human Review Queueとして
+   永続化する価値があるため、既存Schemaはこれを意図的に許容して
+   いると解釈する、§30「retain structured verification result for
+   reproducibility/error analysis」と整合)。`REJECT`→Schema自体が
+   拒否(既存Enforcement)。REJECTされたCandidateについては
+   `build_semantic_claim()`を呼び出さず、`FaithfulnessVerification
+   Result`(status=SUCCESS, overall_outcome=REJECT)自体のみを保持・
+   記録する(§30)。
+2. **Evidence/ResearchArtifact組み込み可否**(未実装、将来Round、
+   §35 Boundary): `ACCEPT`の`SemanticClaim`のみが対象。
+   `REVIEW_REQUIRED`の`SemanticClaim`が存在しても、Evidence
+   統合Layer(未実装)は`faithfulness_outcome==ACCEPT`でFilterする
+   ことを本Roundで明文化しておく——**将来のEvidence統合Roundが
+   この区別を見落とすと、REVIEW_REQUIREDのSemanticClaimが誤って
+   ResearchArtifactへ混入するRiskがある**(既存Schemaレベルでは
+   構造的に阻止されていない、REJECTとは非対称)。これを§41の
+   Residual Riskとして明記する。
+
+Promotionが`build_semantic_claim()`へ渡す`normalized_claim_text`/
+`claim_type`/`direction`/`evidence_span`/`extraction_version`/
+`extraction_provenance`は、Verification開始時にCandidateが既に
+持っていた値をそのまま渡す(Verifierは書き換え不可、§13により
+そもそも書き換え候補すら受け取らないため、Silent Mutationの余地が
+構造的に無い)。
+
+### 10. Semantic Identity Compatibility(§29)
+
+**新しいIdentity Algorithmは作らない(既存確認済み)**。
+`compute_semantic_identity_key()`は`extraction_version`を含まず、
+`compute_claim_id()`は`semantic_identity_key + extraction_version`
+のみで決まる(既存確認済み)。`SemanticClaimCandidate`は
+`build_semantic_claim()`が呼ばれて**初めて**`claim_id`/
+`semantic_identity_key`が計算される——つまりVerificationは
+Identity計算より**前**のStageであり、`verification_version`は
+Identity Hash Inputに構造的に一度も現れない(変更不要、Preferred
+Defaultと一致)。
+
+**再検証(Re-Verification)時の扱い**: 同一Candidateを異なる
+`verification_version`で再評価し、異なる`overall_outcome`を得た
+場合、`claim_id`は(`verification_version`を含まないため)**変わら
+ない**。これは`SemanticClaim`をRegistryへ`register()`する層
+(未実装)で「同一claim_idに対する2件目の書き込み」という衝突を
+起こしうる。**v1方針**: Verificationは`SemanticClaim`構築より
+必ず先に1回だけ実行し、再実行が必要な場合(例: Verifier改善後の
+再評価)は既存`supersedes_claim_id`Field(既に`SemanticClaim`に
+存在、新設不要)を使って新しい`extraction_version`を発行し直す
+ことで新しい`claim_id`を得る——`verification_version`という新しい
+軸をHashへ追加しない(既存Field再利用を優先、新Identity次元を
+発明しない)。
+
+### 11. Claim-Type別 必須軸(§25、新Typeは追加しない)
+
+全8軸は常に評価対象(§2)だが、Claim Typeごとに「NOT_APPLICABLEを
+許さない」追加軸を明示する(Hidden Weightingを避けるため、これは
+「その軸がNOT_APPLICABLEになりえない」という制約のみを追加し、
+Aggregation Rule自体は変更しない):
+
+| SemanticClaimType(既存6種) | NOT_APPLICABLE禁止の追加軸 |
+|---|---|
+| `PERFORMANCE_CHANGE` | `QUANTITY`・`TEMPORAL_SCOPE` |
+| `PERFORMANCE_DRIVER` | `CAUSAL_STRENGTH`(§21明示) |
+| `BUSINESS_RISK` | `CERTAINTY_AND_COMMITMENT`・`NEGATION` |
+| `MANAGEMENT_EXPLANATION` | `SUBJECT_ATTRIBUTION`・`CERTAINTY_AND_COMMITMENT` |
+| `OUTLOOK` | `TEMPORAL_SCOPE`・`CERTAINTY_AND_COMMITMENT` |
+| `CAPITAL_ALLOCATION` | `QUANTITY`・`SUBJECT_ATTRIBUTION`・`CERTAINTY_AND_COMMITMENT` |
+
+### 12. Exact Match Fast Path(§31)= NO
+
+`candidate.normalized_claim_text == evidence_span.supporting_quote`
+(またはその部分文字列)であっても**Overall ACCEPTを自動確定しない**。
+理由: `claim_type`/`direction`はTextから独立した構造化Labelであり、
+文字列一致だけでは正しさを保証できない(Verbatim Quoteに誤った
+`claim_type`や逆の`direction`を付与することは構造的に可能)。
+Exact Matchは内容系8軸の**Trivial PASS**(`EXACT_QUOTE_MATCH`
+reason_code、Deterministic)を許すコスト最適化に留め、`claim_type`
+適格性(既存BUSINESS_RISK Allowlist等)自体の再確認は省略しない。
+
+### 13. When Model Verification Required(§32)
+
+1. Candidate Integrity Gate・Source Revalidation Gateをまず通す
+   (§6)。
+2. Deterministic Checksを全軸について試みる。
+3. Hard-Fail Dimensionのいずれかが既にDeterministic FAIL確定 →
+   Model呼び出しをSkipしOverall=REJECT(コスト最適化、§37)。
+4. `candidate.normalized_claim_text`がEvidence`supporting_quote`と
+   完全一致し、かつDeterministic Checksが全て解決済み → Model呼び出し
+   不要(Overall=ACCEPT、§12のExact Match Trivial PASSが8軸全てを
+   満たした場合のみ)。
+5. 上記いずれでもない(Paraphraseであり、かつHard-Fail未確定)
+   → **Model呼び出し必須**(Cost削減のために必要なSemantic
+   Verificationを省略しない、§32明示要件)。
+
+### 14. Failure Handling(§33、全てFail Closed)
+
+| 事象 | status | overall_outcome |
+|---|---|---|
+| Verifier例外 | `VERIFIER_ERROR` | `None` |
+| 契約違反(不明Field/未知Enum/欠落/重複Dimension) | `VERIFIER_CONTRACT_VIOLATION` | `None` |
+| Timeout | `VERIFIER_ERROR` | `None` |
+| Stale EvidenceSpan(Revalidation失敗) | `SOURCE_REVALIDATION_FAILED` | `None` |
+| Candidate型不正 | `CANDIDATE_INTEGRITY_FAILED` | `None` |
+
+いずれも`overall_outcome=None`(ACCEPTは一切発生しない、§33)。
+`None`はPromotion Gate(§9項)で`ACCEPT`と誤認されない
+(明示的に`FaithfulnessOutcome`型ではないため、型システムレベルで
+混同不可能)。
+
+### 15. Review Policy(§17/§36)
+
+REVIEWは狭く: 文法的Ambiguity・複数の妥当なSubject付着・Scope付着
+不明瞭・因果解釈不明瞭・Deterministic/Model不一致(いずれも矛盾を
+証明できない場合)のみ。自動Promotion禁止・無限Retry禁止(本Round
+では一切のRetry Loopを設計しない)・ResearchArtifact Evidenceへの
+自動混入禁止(§9項参照)。Human-Gated(誰が・どうReviewするかの
+Workflow自体は本Roundでは設計しない、将来Round)。
+
+### 16. Cost Control(§37)
+
+Flow: Candidate Integrity Gate → Source Revalidation Gate →
+Deterministic Hard/Soft Checks(全軸を可能な限り) → Hard-Fail確定
+済みならModel呼び出しSkip → 未解決軸のみModelへ(全8軸を毎回
+送らない、Deterministic済み軸は結果を再利用) → Deterministic
+Aggregation。Safetyを常に優先し(§13「Model呼び出し必須」条件を
+満たす限りSkipしない)、コスト最適化はあくまで「既に答えが出ている
+場合の重複作業を省く」ことに限定する。
+
+### 17. Toyota Acceptance Plan(§38、設計のみ)
+
+D0102.3.2で確立済みの「Toyota S100UP32、Gitignored Raw File、
+Commit対象外、Deterministic Fake Modelのみ・実LLM不使用」という
+既存Pattern(DECISIONS.md D0102.3.2参照)をFaithfulness側にも
+そのまま踏襲する。実装Round(D0102.4.2)で、タスク§34のAdversarial
+Case A〜Oに対応する手動Curated Fixture(短いEvidenceSpan抜粋+
+手作りCandidate Text+期待Outcome+期待Dimension別Outcome)を
+Deterministic Fake Verifierで駆動する。長い開示本文は一切
+永続化しない(タスク§38明示制約)。実LLMを介したToyota Acceptanceは
+さらに別の将来Round(D0102.4.2の結果次第でD0102.4.3等)とする。
+本Roundでは実Model呼び出しを一切行っていない。
+
+### 18. Adversarial Cases(§34、設計上の期待Outcome一覧)
+
+| Case | 内容 | 期待Overall | 主要根拠 |
+|---|---|---|---|
+| A | Exact Supported Quote | ACCEPT | §12 Trivial PASS(内容系)+claim_type/direction再確認PASS |
+| B | Faithful Paraphrase | ACCEPT(通常) | Model-assisted全軸PASS、Deterministic FAIL無し |
+| C | Wrong Subject | REJECT | `SUBJECT_ATTRIBUTION=FAIL`(Hard-Fail軸) |
+| D | Opposite Direction | REJECT | `QUANTITY`(符号)または`NEGATION`のDeterministic FAIL(Hard-Fail軸) |
+| E | Negation Inversion | REJECT | `NEGATION=FAIL`(Deterministic、Hard-Fail軸) |
+| F | Wrong Time Period | REJECT(Deterministic検出時)/REVIEW(Model-onlyの場合) | `TEMPORAL_SCOPE=FAIL`(Soft軸、§4 Rule2/3) |
+| G | 「一因」→「唯一の原因」 | REJECT | `CAUSAL_STRENGTH=FAIL`、Deterministic Tier比較(§4 Rule2) |
+| H | 「可能性がある」→「発生する」 | REJECT | `CERTAINTY_AND_COMMITMENT=FAIL`、Deterministic Tier比較(§4 Rule2) |
+| I | Invented Number | REJECT | `QUANTITY=FAIL`(`QUANTITY_INVENTED`、Deterministic、Hard-Fail軸) |
+| J | Genuinely Ambiguous Evidence | REVIEW_REQUIRED | いずれかの軸`AMBIGUOUS`(§4 Rule3) |
+| K | Malformed Verifier Output | status=`VERIFIER_CONTRACT_VIOLATION`、overall_outcome=`None` | §14 |
+| L | Verifier Exception | status=`VERIFIER_ERROR`、overall_outcome=`None` | §14 |
+| M | Stale EvidenceSpan | status=`SOURCE_REVALIDATION_FAILED`、overall_outcome=`None` | §6/§9 |
+| N | Correct Text, Wrong claim_type | REJECT または REVIEW(Model-assisted claim_type適格性判定次第) | §12(Exact Matchでも免除しない) |
+| O | Correct Proposition, Materially Broadened Scope | REJECT(Deterministic Marker検出時)/REVIEW(Model-onlyの場合) | `SCOPE=FAIL`(Soft軸、§4 Rule2/3) |
+
+### 19. Adversarial Self-Audit(§41、残存Risk)
+
+1. **Self-Certification**: 別関数・別Prompt・別Provenanceで構造的に
+   分離済み。ただしv1は同一Provider/Model Familyを許容
+   (`GENERATOR_VERIFIER_INDEPENDENCE = STRUCTURAL_SEPARATION_V1`)
+   のため、Provider共通のBlind Spotは残存(許容Risk、タスク§11の
+   明示指示通り)。
+2. **Source Identity Drift**: Verification直前の必須
+   `revalidate_evidence_span()`再実行で対応済み(§9、既存関数
+   再利用)。
+3. **Candidate Rewriting**: Model Output ContractにRewrite系Fieldが
+   構造的に存在しない(§13/§14)。Promotionも既存Candidate値を
+   そのまま渡すのみ。
+4. **LLM Authority Creep**: `PROPOSITION_IDENTITY`はAdvisory Property
+   Label+Deterministic同義語Tableで抑制。ただし`SUBJECT_ATTRIBUTION`
+   ・`SCOPE`は同等に強いDeterministic裏付け機構が無く、Model単独の
+   FAIL/PASSが実質的な決定力を持つ(`SUBJECT_ATTRIBUTION`はHard-Fail
+   軸のため、Model単独FAILがREJECTを確定させうる)——**明示的な
+   受容Risk**として記録する。
+5. **Confidence-Score Creep**: `FaithfulnessVerificationResult`/
+   `FaithfulnessDimensionResult`いずれにも数値Score Fieldを設けない
+   (Schema上の明示的禁止としてこのEntryに記録、将来Roundが追加
+   する場合は本Entryへの言及・再検討を要する)。
+6. **External Knowledge Contamination**: Verifier InputはNarrow
+   Allowlist(§5項)。ただしBase Model自身が保持する自動車業界一般
+   知識がPrompt外からの混入経路で漏れ出す可能性はInput制限だけでは
+   排除できない(D0102自身が既に認めている「Faithfulness 8軸
+   ChecklistはConservative Gateであり、Formal Proofではない」と
+   同種の残存Risk)。
+7. **REVIEW Auto-Promotion**: 本Round・将来のEvidence統合Roundいずれ
+   でも自動Promotionを行わない方針を明記(§9項)。ただし既存Schemaは
+   `REVIEW_REQUIRED`の`SemanticClaim`構築自体は許すため、**将来の
+   Evidence統合Roundが`faithfulness_outcome==ACCEPT`Filterを実装
+   し忘れるRisk**を具体的な要注意事項としてここに明記する(§9項、
+   最重要の発見の1つ)。
+8. **Deterministic Hard-Fail Overridden by Model**: Aggregation Rule
+   (§4)の構造上、Model PASSがDeterministic FAILを上書きすることは
+   ない。ただし将来の実装Round自体にBugが混入するRiskは残る——
+   実装Round(D0102.4.2)のToyota Acceptance Fixtureに「Model=PASS
+   だがDeterministic=FAILのCase」を明示的に含めることを推奨する。
+9. **Identity Mutation**: `verification_version`はIdentity Hashに
+   一切含めない(§10項で確定済み)。将来Engineerが「Traceabilityの
+   ため」Hashへ追加したくなるRiskに備え、本Entryで明示的に禁止する。
+10. **PIT Confusion**: 既存`EXTRACTION_TIMESTAMP_IS_NOT_PIT_
+    AVAILABILITY = TRUE`と対になる`VERIFICATION_TIMESTAMP_IS_NOT_
+    PIT_AVAILABILITY = TRUE`を新たな命名Invariantとして追加する。
+    Schema Levelでは強制できず、運用的対策(命名・Module分離)に
+    留まる点もD0102と同様。
+11. **Unbounded Free-Form Model Fields**: `reason_code`はClosed
+    Enumのみ(§2/§7)。自由文字列の`reason`/`detail`相当のFieldは
+    `FaithfulnessDimensionResult`には**設けない方針を推奨**する
+    (Authoritative判断に使われる誘惑自体を構造的に除去する——
+    診断用が必要になった場合は実装Roundで別途検討し、その場合も
+    「非Authoritative」であることをSchema Docstringで明記する)。
+
+### 20. Implementation Round設計(§39)
+
+2 Round構成(タスクの推奨通り、不要なMicro-Stage化を避ける):
+
+**D0102.4.1**: 型定義一式(`FaithfulnessDimension`/
+`FaithfulnessDimensionOutcome`/`FaithfulnessReasonCode`/
+`FaithfulnessDimensionResult`/`FaithfulnessVerificationStatus`/
+`FaithfulnessVerificationResult`/`FaithfulnessVerifierInput`/
+`FaithfulnessVerifier` Protocol)。Deterministic Checks実装
+(QUANTITY Parser・NEGATION/CERTAINTY_AND_COMMITMENT/CAUSAL_STRENGTH/
+TEMPORAL_SCOPE Marker Word List)。Candidate Integrity Gate・Source
+Revalidation Gate配線(既存関数再利用)。Deterministic-Onlyの
+Aggregation Path(Model未配線、Model必須Caseは安全側で
+`REVIEW_REQUIRED`に倒す)。Targeted Test(実Model呼び出し無し)。
+
+**D0102.4.2**: `FaithfulnessVerifier`のModel-assisted実装(Narrow
+Structured Contract、`CandidateExtractionModel`と同型のAdapter
+Injection)。完全Aggregation(Deterministic Hard-Fail優先+Model
+Fallback)。Promotion Gate配線(`build_semantic_claim()`呼び出し
+Orchestration、REJECTは呼ばない・REVIEW_REQUIREDはEvidence
+統合Filter前提を明記するのみで統合自体は実装しない)。Toyota
+Curated Acceptance Fixture(Deterministic Fake Verifier、実LLM
+不使用)。
+
+実LLMを介したToyota Acceptance・Evidence統合(EvidenceRecord
+Adapter・EvidenceRelation・ResearchArtifact統合・Bull/Base/Bear・
+Expected Return・Decision・Portfolio)はいずれもD0102.4.2にも含め
+ない(§35、明確に別Round)。
+
+### 21. Automation Boundary(§40)
+
+`AUTOMATION_READINESS = NOT_READY`(D0102/D0102.2/D0102.3.1/
+D0102.3.2から継続、変更なし)。Faithfulnessが実装・受入完了する
+までSemantic Pipelineの自動化は行わない。Orchestrator Codeは
+本Roundでも作成していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/DECISIONS.md`(本追記)のみ。`lib/`・
+`scripts/`・`13_tests/`・Prompt File・SDK・実Model呼び出しはいずれも
+無し。Candidate Extraction(D0102.3.1/D0102.3.2)・Semantic Claim
+Schema(D0102.2)・Faithfulness Boundary DocstringはFrozenのまま
+無変更。H0001は実行していない。
