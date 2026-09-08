@@ -265,14 +265,47 @@ class FaithfulnessVerificationResult:
     reason: str | None = None
 
     def __post_init__(self) -> None:
+        # D0102.4.1.1 F06 Closure: Truthy Checkのみ(`not self.field`)では
+        # 型不正な値(例: 数値やList等、Type Hintを無視した直接構築)を
+        # 検出できない。Constructor Level(Public API境界)でRuntime型
+        # 検証を行う既存Pattern(`SemanticClaimCandidate.__post_init__()`
+        # 等)をこのSchemaにも一貫適用する。
         if not isinstance(self.status, FaithfulnessVerificationStatus):
             raise FaithfulnessSchemaError(f"status は FaithfulnessVerificationStatus である必要があります: {self.status!r}")
-        if not self.verification_version:
-            raise FaithfulnessSchemaError("verification_version は空にできません")
+        if not isinstance(self.verification_version, str) or not self.verification_version:
+            raise FaithfulnessSchemaError("verification_version は空でないstrである必要があります")
         if self.verified_at.tzinfo is None or self.verified_at.utcoffset() is None:
             raise FaithfulnessSchemaError("verified_at はtz-awareである必要があります")
         if self.verified_at.utcoffset() != timedelta(0):
             raise FaithfulnessSchemaError("verified_at はUTCである必要があります(他Timezoneは許可しません)")
+        if not isinstance(self.candidate_reference, str):
+            raise FaithfulnessSchemaError(f"candidate_reference は str である必要があります: {self.candidate_reference!r}")
+        if self.reason is not None and not isinstance(self.reason, str):
+            raise FaithfulnessSchemaError(f"reason は str または None である必要があります: {self.reason!r}")
+        if self.verification_provenance is not None and not isinstance(self.verification_provenance, AiDerivedProvenance):
+            raise FaithfulnessSchemaError(
+                f"verification_provenance は AiDerivedProvenance または None である必要があります: "
+                f"{self.verification_provenance!r}"
+            )
+
+        # D0102.4.1.1 F06 Closure: dimension_resultsがTuple以外
+        # (List/Generator等)で渡された場合、または要素の一部が
+        # FaithfulnessDimensionResultでない場合を検出する。既存
+        # `SemanticClaim.__post_init__()`のEvidenceSpan単数性検証と
+        # 同じ「Type Hintだけに頼らずRuntimeでも保証する」方針を踏襲。
+        if not isinstance(self.dimension_results, tuple):
+            raise FaithfulnessSchemaError(
+                f"dimension_results は tuple である必要があります: {type(self.dimension_results).__name__}"
+            )
+        for r in self.dimension_results:
+            if not isinstance(r, FaithfulnessDimensionResult):
+                raise FaithfulnessSchemaError(
+                    f"dimension_results の各要素は FaithfulnessDimensionResult である必要があります: {r!r}"
+                )
+        dimensions_seen = [r.dimension for r in self.dimension_results]
+        if len(dimensions_seen) != len(set(dimensions_seen)):
+            duplicates = sorted({d.value for d in dimensions_seen if dimensions_seen.count(d) > 1})
+            raise FaithfulnessSchemaError(f"dimension_results に同一Dimensionの重複Entryがあります: {duplicates}")
 
         if self.status == FaithfulnessVerificationStatus.SUCCESS:
             if self.overall_outcome is None:
@@ -355,13 +388,39 @@ def _apply_required_dimension_override(
 _INCREASE_MARKERS: tuple[str, ...] = ("増加", "増収", "上昇")
 _DECREASE_MARKERS: tuple[str, ...] = ("減少", "減収", "低下")
 
+# D0102.4.1.1 F04 Closure: 「増加した」だけでなく「増加しなかった」の
+# ような否定接続もMarker文字列自体には含まれるため、単純なSubstring
+# Searchでは否定形(Marker自体は逆方向を意味しない)を誤って肯定的な
+# 方向Markerとして検出していた(例:「売上高は増加しなかった。」を
+# `has_increase=True`と誤判定)。Marker直後にこれらの否定Suffixが続く
+# 出現のみを除外する狭いChecker(汎用日本語NLPではなく、Marker語彙+
+# 隣接する既知の否定活用形のみを見る決定論的Pattern)。
+_NEGATED_MOVEMENT_SUFFIXES: tuple[str, ...] = ("しなかった", "しない", "しませんでした", "しません")
+
+
+def _has_unnegated_marker(text: str, marker: str) -> bool:
+    """`marker`が出現するが、直後に既知の否定Suffixが続く箇所は
+    「その出現は否定されている」として除外する。少なくとも1件、
+    否定されていない出現があれば`True`(D0102.4.1.1 F04)。"""
+    start = 0
+    while True:
+        idx = text.find(marker, start)
+        if idx == -1:
+            return False
+        after = text[idx + len(marker) :]
+        if any(after.startswith(suffix) for suffix in _NEGATED_MOVEMENT_SUFFIXES):
+            start = idx + len(marker)
+            continue
+        return True
+
 
 def _explicit_movement_marker(text: str) -> ClaimDirection | None:
-    """Textから明示的な増減Markerを検出する。増加/減少Markerが両方
-    存在する(混在)場合は「単一の明確なMarker」とは言えないため`None`
-    を返す(D0102.4.1の保守的な単純化)。"""
-    has_increase = any(marker in text for marker in _INCREASE_MARKERS)
-    has_decrease = any(marker in text for marker in _DECREASE_MARKERS)
+    """Textから明示的な増減Markerを検出する(否定形の出現は除外、
+    F04 Closure)。増加/減少Markerが両方存在する(混在)場合は「単一の
+    明確なMarker」とは言えないため`None`を返す(D0102.4.1の保守的な
+    単純化)。"""
+    has_increase = any(_has_unnegated_marker(text, marker) for marker in _INCREASE_MARKERS)
+    has_decrease = any(_has_unnegated_marker(text, marker) for marker in _DECREASE_MARKERS)
     if has_increase and not has_decrease:
         return ClaimDirection.INCREASE
     if has_decrease and not has_increase:
@@ -523,9 +582,24 @@ _SCALE_KANJI: dict[str, Decimal] = {
 }
 _ALLOWED_QUANTITY_UNIT_SUFFIXES: tuple[str, ...] = ("円", "台")
 _NUMERAL_SEGMENT_RE = re.compile(r"[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?(?:兆|億|万|千)?")
+# D0102.4.1.1 F02 Closure: 旧Regexは負号として`△`のみを認識しており、
+# ASCII/全角のMinus(`-`/`－`)がSign無しのまま数字の直前に現れると、
+# Regex Engineがその負号を単に読み飛ばして残りの数字部分だけを
+# 「符号無しの正の数量」として抽出していた(例:「-950億円」から符号を
+# 落として`950億円`[正]を誤抽出、実際の値の符号を静かに破棄する
+# Unsafe Partial Extraction)。`-`/`－`を`△`と同じSign文字として明示的に
+# Pattern化し、かつ「認識済みのSign/数字文字の直後から始まるMatch」を
+# 否定Lookbehindで拒否することで、認識できないPrefixを黙って読み飛ばして
+# 部分一致することを構造的に防ぐ(Match全体が失敗すれば、後段の
+# `_try_parse_quantity()`が`None`を返し、Ambiguous経路[§16「Never
+# silently discard unparsed numeric text」]で扱われる)。
+_QUANTITY_SIGN_CHARS = "△\\-－"
 # D0102.4.1 §15: Percent/円/台で終わる「数量らしい部分文字列」を検出する
 # 粗いSpan(この後 _try_parse_quantity() で厳密Parseする)。
-_QUANTITY_SPAN_RE = re.compile(r"△?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?(?:兆|億|万|千)?)+(?:%|％|円|台)")
+_QUANTITY_SPAN_RE = re.compile(
+    rf"(?<![0-9{_QUANTITY_SIGN_CHARS}])[{_QUANTITY_SIGN_CHARS}]?"
+    r"(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?(?:兆|億|万|千)?)+(?:%|％|円|台)"
+)
 
 
 def _parse_numeral(text: str) -> Decimal | None:
@@ -573,7 +647,7 @@ def _try_parse_quantity(text: str) -> _ParsedQuantity | None:
         if not unit:
             return None
     sign = Decimal(1)
-    if body.startswith("△"):
+    if body[:1] in ("△", "-", "－"):
         sign = Decimal(-1)
         body = body[1:]
     magnitude = _parse_numeral(body)
@@ -594,21 +668,36 @@ def _find_quantities(text: str) -> list[_ParsedQuantity | None]:
 
 def _match_quantity_against_evidence(
     candidate_q: _ParsedQuantity, evidence_parsed: list[_ParsedQuantity]
-) -> FaithfulnessReasonCode | None:
-    """`None`は一致(PASS相当)を意味する。"""
+) -> tuple[FaithfulnessDimensionOutcome, FaithfulnessReasonCode]:
+    """候補の数量1件をEvidence中の数量群と比較する。
+
+    D0102.4.1.1 F03 Closure(Cross-Proposition Quantity Borrowing):
+    Evidenceが同一Category(単位/Percent種別)内に複数の異なる値を含む
+    場合(例:「売上高は4.0%増加し、営業利益は12.0%減少した。」)、
+    候補の値がそのうちの1件と一致しているだけでは、その数字が実際に
+    候補のPropositionに属するものか(=正しい数値をBorrowしたのではなく
+    別の数値を無断でBorrowしていないか)をDeterministicには確認できない。
+    このため、同一Category内に**複数の異なる値**が存在する場合は、値が
+    一致していても`AMBIGUOUS`(Semantic Verification必須)へ倒す。
+    Category内の値が単一(または全て同一)であれば、一致は曖昧さなく
+    `PASS`にできる。
+    """
     same_category = [e for e in evidence_parsed if e.is_percent == candidate_q.is_percent and e.unit == candidate_q.unit]
+    distinct_same_category_values = {e.value for e in same_category}
     for e in same_category:
         if e.value == candidate_q.value:
-            return None
+            if len(distinct_same_category_values) > 1:
+                return FaithfulnessDimensionOutcome.AMBIGUOUS, FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED
+            return FaithfulnessDimensionOutcome.PASS, FaithfulnessReasonCode.NO_ISSUE_DETECTED
     for e in same_category:
         if abs(e.value) == abs(candidate_q.value):
-            return FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH
+            return FaithfulnessDimensionOutcome.FAIL, FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH
     if same_category:
-        return FaithfulnessReasonCode.QUANTITY_VALUE_MISMATCH
+        return FaithfulnessDimensionOutcome.FAIL, FaithfulnessReasonCode.QUANTITY_VALUE_MISMATCH
     for e in evidence_parsed:
         if e.value == candidate_q.value:
-            return FaithfulnessReasonCode.QUANTITY_UNIT_MISMATCH
-    return FaithfulnessReasonCode.QUANTITY_INVENTED
+            return FaithfulnessDimensionOutcome.FAIL, FaithfulnessReasonCode.QUANTITY_UNIT_MISMATCH
+    return FaithfulnessDimensionOutcome.FAIL, FaithfulnessReasonCode.QUANTITY_INVENTED
 
 
 def _check_quantity(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
@@ -629,11 +718,19 @@ def _check_quantity(*, evidence_text: str, candidate: SemanticClaimCandidate) ->
         )
 
     evidence_parsed = [t for t in evidence_tokens if t is not None]
+    token_results = []
     for cq in candidate_tokens:
         assert cq is not None  # noqa: S101 -- 直前のAny(None)Checkで既に排除済み(mypy Narrowing用)
-        mismatch_reason = _match_quantity_against_evidence(cq, evidence_parsed)
-        if mismatch_reason is not None:
-            return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.FAIL, mismatch_reason)
+        token_results.append(_match_quantity_against_evidence(cq, evidence_parsed))
+
+    # FAILがAMBIGUOUSより優先(D0102.4 §15 Deterministic Hard-Fail
+    # Precedenceの精神をDimension内部の複数Token集約にも一貫適用する)。
+    for outcome, reason in token_results:
+        if outcome == FaithfulnessDimensionOutcome.FAIL:
+            return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.FAIL, reason)
+    for outcome, reason in token_results:
+        if outcome == FaithfulnessDimensionOutcome.AMBIGUOUS:
+            return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.AMBIGUOUS, reason)
 
     return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.PASS, FaithfulnessReasonCode.NO_ISSUE_DETECTED)
 
@@ -642,11 +739,19 @@ def _check_quantity(*, evidence_text: str, candidate: SemanticClaimCandidate) ->
 # Negation(D0102.4.1 §17)
 # ============================================================
 
+# D0102.4.1.1 F01 Closure: 短いMarker(`ない`)が長いMarker(`変更はない`/
+# `認められない`)の部分文字列であるため、単純な`str.count()`合算は同一の
+# 実際の否定表現を2重にCountしていた(例:「重要な変更はない。」は`ない`と
+# `変更はない`の両方に一致し、実際には1件の否定しか無いのにCount=2となり
+# 誤ってNEGATION_AMBIGUOUSへ倒れていた)。より長いMarkerを先に試す1本の
+# 結合Regex + `finditer()`(Non-Overlapping Match)へ置き換え、同一箇所の
+# 二重Countを構造的に防ぐ。
 _NEGATION_MARKERS: tuple[str, ...] = ("ない", "ありません", "なかった", "認められない", "変更はない")
+_NEGATION_MARKER_RE = re.compile("|".join(re.escape(m) for m in sorted(_NEGATION_MARKERS, key=len, reverse=True)))
 
 
 def _negation_marker_count(text: str) -> int:
-    return sum(text.count(marker) for marker in _NEGATION_MARKERS)
+    return len(_NEGATION_MARKER_RE.findall(text))
 
 
 def _check_negation(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
@@ -804,30 +909,38 @@ _TEMPORAL_CATEGORY_MARKERS: tuple[tuple[str, str], ...] = (
 _TEMPORAL_RANK: dict[str, int] = {"HISTORICAL": 0, "FUTURE": 1}
 
 
-def _temporal_category(text: str) -> str | None:
-    for category, marker in _TEMPORAL_CATEGORY_MARKERS:
-        if marker in text:
-            return category
-    return None
+def _temporal_ranks_present(text: str) -> frozenset[int]:
+    """D0102.4.1.1 F05 Closure(Multi-Temporal False Rejection):
+    旧実装は最初に一致したCategoryのみを返しており、EvidenceがHISTORICAL
+    とFUTURE双方のMarkerを同時に含む(例:「当中間連結会計期間の実績を
+    踏まえ、今後も同様の傾向が続く見通しである。」のような、実績報告+
+    先行き言及が同一Text内に共存する一般的なPattern)場合に、実際には
+    Evidence自身がFUTURE言及も含んでいるにもかかわらず、Candidateの
+    FUTURE言及がHISTORICALとのRank不一致として誤ってFAIL(False
+    Rejection)していた。Textに現れる**全ての**Rankを集合として返し、
+    呼び出し側でRank集合同士のIntersectionによって判定する(単一
+    Categoryへの安易な収斂をやめる、汎用NLPは追加しない——既存Marker
+    Listをそのまま複数一致させるのみ)。"""
+    return frozenset(_TEMPORAL_RANK[category] for category, marker in _TEMPORAL_CATEGORY_MARKERS if marker in text)
 
 
 def _check_temporal_scope(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
-    evidence_category = _temporal_category(evidence_text)
-    candidate_category = _temporal_category(candidate.normalized_claim_text)
+    evidence_ranks = _temporal_ranks_present(evidence_text)
+    candidate_ranks = _temporal_ranks_present(candidate.normalized_claim_text)
 
-    if evidence_category is None and candidate_category is None:
+    if not evidence_ranks and not candidate_ranks:
         return _dim(
             FaithfulnessDimension.TEMPORAL_SCOPE,
             FaithfulnessDimensionOutcome.NOT_APPLICABLE,
             FaithfulnessReasonCode.NOT_APPLICABLE_NO_RELEVANT_CONTENT,
         )
-    if evidence_category is None or candidate_category is None:
+    if not evidence_ranks or not candidate_ranks:
         return _dim(
             FaithfulnessDimension.TEMPORAL_SCOPE,
             FaithfulnessDimensionOutcome.AMBIGUOUS,
             FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW,
         )
-    if _TEMPORAL_RANK[evidence_category] != _TEMPORAL_RANK[candidate_category]:
+    if not (evidence_ranks & candidate_ranks):
         return _dim(
             FaithfulnessDimension.TEMPORAL_SCOPE,
             FaithfulnessDimensionOutcome.FAIL,

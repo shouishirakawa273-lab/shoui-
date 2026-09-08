@@ -743,3 +743,291 @@ def test_verified_at_never_used_as_pit_availability_field_name() -> None:
     assert "provider_available_at" not in field_names
     assert "available_at" not in field_names
     assert "verified_at" in field_names
+
+
+# ============================================================
+# D0102.4.1.1 — Codex Adversarial Audit Closure(F01-F06)
+#
+# 各TestはPublic Entrypoint(`verify_candidate_deterministically()`、
+# F06のみSchema Constructor直接)を通じてFindingを再現・修正確認する。
+# ============================================================
+
+
+def test_f01_overlapping_negation_markers_no_longer_double_counted() -> None:
+    """F01: `変更はない`/`認められない`は`ない`のSuperstringであり、旧
+    実装は`str.count()`合算でこれらを2重Countしていた(実際には1件の
+    否定表現しかないTextがCount=2となりNEGATION_AMBIGUOUSへ誤って
+    倒れていた)。同一極性(共に否定)のEvidence/Candidateであれば
+    PASSすることを確認する。"""
+    text = "重要な変更はない。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    negation = _dim_result(result, FaithfulnessDimension.NEGATION)
+    assert negation.outcome == FaithfulnessDimensionOutcome.PASS
+    assert negation.reason_code == FaithfulnessReasonCode.NO_ISSUE_DETECTED
+
+
+def test_f01_overlapping_negation_marker_ninth_word_also_fixed() -> None:
+    text = "重要な事項は認められない。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    negation = _dim_result(result, FaithfulnessDimension.NEGATION)
+    assert negation.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_f01_genuine_double_negation_still_ambiguous() -> None:
+    # F01のFixが「Overlapping Markerの誤Count」のみを閉じ、真の二重否定
+    # (2件の独立した否定表現)まで塞がないことを確認する回帰Test。
+    text = "問題は認められないわけではない。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.PERFORMANCE_DRIVER, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    negation = _dim_result(result, FaithfulnessDimension.NEGATION)
+    assert negation.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert negation.reason_code == FaithfulnessReasonCode.NEGATION_AMBIGUOUS
+
+
+def test_f02_ascii_minus_sign_is_parsed_not_silently_dropped() -> None:
+    """F02: 旧実装は`△`のみを負号として認識しており、ASCII Minus(`-`)は
+    Regexに無関係な文字として読み飛ばされ、`-950億円`から符号だけが
+    静かに脱落して`950億円`(正)として誤抽出されていた。"""
+    text = "利益は-950億円となった。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_f02_ascii_minus_sign_mismatch_now_detected() -> None:
+    """符号脱落Bugが直ったことの直接証拠: Evidence`-950億円`に対し、
+    Candidateが符号を落とした`950億円`を主張した場合、旧実装では
+    両者とも(誤って)+950億円へParseされ一致=PASSしていたが、修正後は
+    QUANTITY_SIGN_MISMATCHでFAILする。"""
+    doc, span = _doc_and_span("利益は-950億円となった。")
+    candidate = _candidate(evidence_span=span, text="利益は950億円となった。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert quantity.reason_code == FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH
+
+
+def test_f02_fullwidth_minus_sign_also_recognized() -> None:
+    doc, span = _doc_and_span("利益は－950億円となった。")
+    candidate = _candidate(evidence_span=span, text="利益は950億円となった。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.reason_code == FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH
+
+
+def test_f03_cross_proposition_quantity_borrowing_no_longer_passes() -> None:
+    """F03: Evidenceが複数の異なる数量(売上高4.0%増加・営業利益12.0%
+    減少)を含む場合、Candidateが無関係な12.0%を「売上高」の数値として
+    無断Borrowしても、旧実装は値の存在だけを見てPASSしていた。"""
+    doc, span = _doc_and_span("売上高は4.0%増加し、営業利益は12.0%減少した。")
+    candidate = _candidate(evidence_span=span, text="売上高は12.0%増加した。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert quantity.reason_code == FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+
+def test_f03_single_quantity_in_category_still_passes_confidently() -> None:
+    # F03のFixが必要以上に保守化していないことの回帰Test:
+    # Evidence中の該当Categoryの数量が1件のみであれば、一致は
+    # 曖昧さなくPASSできる(既存test_10と同型だが、F03修正後の
+    # 挙動として明示的に再確認する)。
+    text = "利益は4.0%増加した。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_f04_negated_increase_marker_no_longer_matches_increase_direction() -> None:
+    """F04: `増加しなかった`(否定形)にも`増加`という部分文字列が含まれる
+    ため、旧実装はEvidenceが増加を否定しているにもかかわらず
+    `evidence_marker=INCREASE`と誤判定し、`candidate.direction=INCREASE`
+    と(誤って)一致させていた。"""
+    text = "売上高は増加しなかった。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert prop.reason_code == FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW
+
+
+def test_f04_mixed_marker_occurrences_uses_the_unnegated_one() -> None:
+    # 「否定形の出現もあるが、肯定形の出現も別途存在する」Mixed Caseでは
+    # 肯定形の出現を正しく検出できることを確認する(F04修正が過剰に
+    # 保守化していないことの回帰Test)。
+    text = "前期は増加しなかったが、当期は増加した。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_f05_multi_temporal_evidence_no_longer_falsely_rejects_future_candidate() -> None:
+    """F05: Evidenceが実績報告(HISTORICAL)と先行き言及(FUTURE)を同一
+    Text内に併記する一般的なPatternで、旧実装は最初に一致した
+    Categoryのみを採用しHISTORICALへ収斂していたため、Evidence自身が
+    支持しているFUTURE言及のCandidateまでMismatchでFAILしていた。"""
+    doc, span = _doc_and_span(
+        "当中間連結会計期間の実績を踏まえ、今後も同様の傾向が続く見通しである。", taxonomy_name=_BUSINESS_RISK_TAXONOMY
+    )
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.OUTLOOK, text="今後も同様の傾向が続く見通しである。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_f05_genuinely_unsupported_future_claim_still_rejects() -> None:
+    # F05のFixが必要以上に緩くなっていないことの回帰Test: Evidenceが
+    # 純粋にHISTORICALのみでFUTURE言及が一切無い場合、Candidateの
+    # FUTURE主張は引き続きMismatchでFAILする(既存test_15と同型)。
+    doc, span = _doc_and_span("当中間連結会計期間の業績は堅調であった。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.OUTLOOK, text="今後も継続的に堅調である。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert temporal.reason_code == FaithfulnessReasonCode.TEMPORAL_CATEGORY_MISMATCH
+
+
+def _valid_dimension_result() -> FaithfulnessDimensionResult:
+    return FaithfulnessDimensionResult(
+        dimension=FaithfulnessDimension.NEGATION,
+        outcome=FaithfulnessDimensionOutcome.PASS,
+        reason_code=FaithfulnessReasonCode.NO_ISSUE_DETECTED,
+        checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+    )
+
+
+def test_f06_dimension_results_must_be_a_tuple() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=FaithfulnessOutcome.ACCEPT,
+            dimension_results=[_valid_dimension_result()],  # type: ignore[arg-type]
+            candidate_reference="CANDREF_x",
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+        )
+
+
+def test_f06_dimension_results_elements_must_be_dimension_result_type() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=FaithfulnessOutcome.ACCEPT,
+            dimension_results=({"dimension": "NEGATION"},),  # type: ignore[arg-type]
+            candidate_reference="CANDREF_x",
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+        )
+
+
+def test_f06_duplicate_dimension_entries_rejected() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=FaithfulnessOutcome.ACCEPT,
+            dimension_results=(_valid_dimension_result(), _valid_dimension_result()),
+            candidate_reference="CANDREF_x",
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+        )
+
+
+def test_f06_candidate_reference_must_be_str() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=FaithfulnessOutcome.ACCEPT,
+            candidate_reference=12345,  # type: ignore[arg-type]
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+        )
+
+
+def test_f06_verification_version_must_be_str() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=FaithfulnessOutcome.ACCEPT,
+            candidate_reference="CANDREF_x",
+            verification_version=12345,  # type: ignore[arg-type]
+            verified_at=_VERIFIED_AT,
+        )
+
+
+def test_f06_verification_provenance_must_be_ai_derived_provenance_type() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.CANDIDATE_INTEGRITY_FAILED,
+            overall_outcome=None,
+            candidate_reference="",
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+            verification_provenance="not a real provenance",  # type: ignore[arg-type]
+        )
+
+
+def test_f06_reason_must_be_str_or_none() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.CANDIDATE_INTEGRITY_FAILED,
+            overall_outcome=None,
+            candidate_reference="",
+            verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+            verified_at=_VERIFIED_AT,
+            reason=12345,  # type: ignore[arg-type]
+        )
+
+
+def test_f06_valid_construction_with_dimension_results_still_succeeds() -> None:
+    # F06のFixが正当なConstructionまで壊していないことの回帰Test。
+    result = FaithfulnessVerificationResult(
+        status=FaithfulnessVerificationStatus.SUCCESS,
+        overall_outcome=FaithfulnessOutcome.ACCEPT,
+        dimension_results=(_valid_dimension_result(),),
+        candidate_reference="CANDREF_x",
+        verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+        verified_at=_VERIFIED_AT,
+    )
+    assert result.status == FaithfulnessVerificationStatus.SUCCESS

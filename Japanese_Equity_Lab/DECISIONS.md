@@ -15160,3 +15160,191 @@ Stdout生成側にのみあった)。既存Scriptの全Executable/File Path参�
 変更)・このDECISIONS.md追記のみ。`lib/*`・`scripts/*`・`13_tests/*`・
 投資Logic・Faithfulness Code・J-Quants Codeはいずれも無変更。H0001は
 実行していない。
+
+## D0102.4.1.1 — Deterministic Faithfulness Closure Fix(F01-F06)
+
+### 背景・重要な手続き上の注記
+
+このRoundはCodex Adversarial Auditの指摘(F01-F06)を閉じる指示として
+与えられたが、**このSession自身は元のCodex Audit Reportの本文を一度も
+受け取っていない**(F01-F06それぞれの1行Titleのみが指示文中に含まれて
+いた)。そのため本Roundでは、各Titleを手がかりに`lib/disclosures/
+faithfulness.py`(D0102.4.1、Commit `4edb260`)の実Codeを直接読み、
+各Finding候補について**実際に問題を再現する具体的なInput/Output**を
+先に確認してから修正した(推測でCodeを書き換えていない)——各Fixに
+対応するReproduction Testを`13_tests/test_faithfulness.py`へ追加し、
+Fix前に実際にBugを再現し、Fix後にPublic Entrypoint(`verify_candidate_
+deterministically()`、F06のみSchema Constructor直接)経由でClosedを
+確認した。
+
+### F01 — Overlapping Negation Markers(CLOSED)
+
+**再現**: `_NEGATION_MARKERS`の`ない`は`変更はない`/`認められない`の
+部分文字列であるため、旧`_negation_marker_count()`(`str.count()`の
+単純合算)は同一箇所を2重にCountしていた。実測: `重要な変更はない。`
+→ Count=2(`ない`×1+`変更はない`×1、実際の否定表現は1件のみ)。この
+誤Countにより、否定を1件しか含まないTextがNEGATION_AMBIGUOUSへ
+誤って倒れうる状態だった。
+
+**修正**: 長いMarkerを先に試す1本の結合Regex(`re.finditer()`、
+Non-Overlapping Match)へ置き換え、同一箇所の二重Countを構造的に防いだ。
+
+**確認**: `test_f01_overlapping_negation_markers_no_longer_double_
+counted`・`test_f01_overlapping_negation_marker_ninth_word_also_fixed`
+がPASS(単一否定表現がPASSと正しく判定される)。既存の真の二重否定
+Test(`test_f01_genuine_double_negation_still_ambiguous`)も維持され、
+Fixが過剰に緩くなっていないことも確認した。
+
+### F02 — ASCII Minus / Unsafe Partial Numeric Extraction(CLOSED)
+
+**再現**: 旧`_QUANTITY_SPAN_RE`/`_try_parse_quantity()`は負号として
+`△`のみを認識していた。`-950億円`のようにASCII Minus(`-`)が前置
+される場合、Regex Engineが認識できない`-`を単に読み飛ばし、残りの
+`950億円`のみを**符号を落とした正の数量**として抽出していた(実測:
+`_find_quantities('利益は-950億円となった。')` → `value=95000000000`
+[符号無し]、実際の値の符号がSilentに破棄されるUnsafe Partial
+Extraction)。
+
+**修正**: `-`(ASCII)/`－`(全角)を`△`と同じ負号として認識するよう
+Span Regex・Sign判定を拡張し、さらに「認識済みのSign/数字文字の直後
+から始まるMatch」を否定Lookbehindで拒否することで、未知のPrefixを
+黙って読み飛ばして部分一致することを構造的に防いだ。
+
+**確認**: `test_f02_ascii_minus_sign_is_parsed_not_silently_dropped`
+(符号込みで正しくPASS)・`test_f02_ascii_minus_sign_mismatch_now_
+detected`(符号を落としたCandidateが今はQUANTITY_SIGN_MISMATCHで
+正しくFAIL・Overall REJECTになることを直接確認)・`test_f02_
+fullwidth_minus_sign_also_recognized`がPASS。
+
+### F03 — Cross-Proposition Quantity Borrowing(CLOSED)
+
+**再現**: 旧`_match_quantity_against_evidence()`はCandidateの数量が
+Evidence中の**どこかに**同じ値で存在すれば一致(PASS相当)としていた。
+実測: Evidence`売上高は4.0%増加し、営業利益は12.0%減少した。`に対し、
+Candidate`売上高は12.0%増加した。`(無関係な営業利益の12.0%を売上高の
+数値として無断Borrowし、さらに方向も反転)が`match result: None`
+(=PASS扱い)を返していた。
+
+**修正**: `_match_quantity_against_evidence()`をTupleではなく
+`(FaithfulnessDimensionOutcome, FaithfulnessReasonCode)`を返すよう
+拡張し、Evidence中の同一Category(単位/Percent種別)に**複数の異なる
+値**が存在する場合、値が一致していても`AMBIGUOUS`
+(`SEMANTIC_VERIFICATION_REQUIRED`)へ倒すようにした(新しいDimensionは
+追加していない、既存QUANTITY軸内部のLogic強化のみ)。Category内の値が
+単一であれば引き続き曖昧さなくPASSする。
+
+**確認**: `test_f03_cross_proposition_quantity_borrowing_no_longer_
+passes`(AMBIGUOUS・Overall REVIEW_REQUIREDへ変化)・`test_f03_single_
+quantity_in_category_still_passes_confidently`(単一数量Caseの
+PASSは維持)。
+
+### F04 — Mixed / Negated Direction Markers(CLOSED)
+
+**再現**: `増加しなかった`(否定形)にも`増加`という部分文字列が含まれる
+ため、旧`_explicit_movement_marker()`はEvidenceが増加を**否定**して
+いるにもかかわらず`evidence_marker=INCREASE`と誤検出していた(実測:
+`_explicit_movement_marker('売上高は増加しなかった。')` →
+`ClaimDirection.INCREASE`、本来は「明確なMarker無し」であるべき)。
+
+**修正**: Marker出現ごとに直後が`しなかった`/`しない`/`しませんでした`/
+`しません`等の既知の否定Suffixで始まっていないかを確認する
+`_has_unnegated_marker()`を新設し、否定形の出現のみを除外した
+(Marker語彙+隣接する既知の否定活用形のみを見る決定論的Pattern、
+汎用日本語NLPは追加していない)。同一Marker語に肯定形・否定形の出現が
+混在するCaseでも、肯定形の出現が正しく検出される。
+
+**確認**: `test_f04_negated_increase_marker_no_longer_matches_
+increase_direction`(AMBIGUOUS・DIRECTION_REQUIRES_SEMANTIC_REVIEWへ
+変化)・`test_f04_mixed_marker_occurrences_uses_the_unnegated_one`
+(Mixed CaseでもPASS)。
+
+### F05 — Multi-Temporal False Rejection(CLOSED)
+
+**再現**: 旧`_temporal_category()`はTextから最初に一致した
+Categoryのみを返していた。実績報告(HISTORICAL)と先行き言及(FUTURE)を
+同一Text内に併記するEvidence(例:「当中間連結会計期間の実績を踏まえ、
+今後も同様の傾向が続く見通しである。」、実務上一般的なPattern)は
+HISTORICALへ収斂し、Evidence自身がFUTURE言及も含んでいるにも
+かかわらず、FUTURE Candidateが誤ってTEMPORAL_CATEGORY_MISMATCHで
+FAILしていた(実測確認済み)。
+
+**修正**: `_temporal_category()`を`_temporal_ranks_present()`
+(Text中に現れる**全て**のRankを`frozenset[int]`で返す)へ置き換え、
+判定をRank集合同士のIntersectionへ変更した(Evidenceが複数のRankを
+含む場合、Candidateのrankがそのいずれかと一致すればPASS)。既存
+Marker Listをそのまま複数一致させるのみで、汎用NLPは追加していない。
+
+**確認**: `test_f05_multi_temporal_evidence_no_longer_falsely_
+rejects_future_candidate`(PASSへ変化)・`test_f05_genuinely_
+unsupported_future_claim_still_rejects`(FUTURE言及が皆無のEvidenceに
+対する誤ったFUTURE主張は引き続き正しくFAIL、既存test_15と同型の
+回帰確認)。
+
+### F06 — FaithfulnessVerificationResult Runtime Validation(CLOSED)
+
+**再現(Code Review、実際にConstructorへ不正な値を渡して確認)**:
+`FaithfulnessVerificationResult.__post_init__()`は`status`/
+`overall_outcome`/`verified_at`のみ型検証しており、`dimension_
+results`がTuple以外(List等)・要素が`FaithfulnessDimensionResult`
+以外・同一Dimensionの重複Entry・`candidate_reference`/`verification_
+version`が非str・`verification_provenance`が`AiDerivedProvenance`
+以外・`reason`が非strのいずれも検出せずConstruction可能だった
+(既存`SemanticClaimCandidate.__post_init__()`等が確立しているRuntime
+型検証Patternが、この新設Typeには未適用だった)。
+
+**修正**: 上記7項目全てについてConstructor Level(`__post_init__`)での
+Runtime型検証を追加した(新しいField・新しいSemanticsは追加せず、
+既存Fieldの型安全性を強化するのみ)。
+
+**確認**: `test_f06_dimension_results_must_be_a_tuple`・`test_f06_
+dimension_results_elements_must_be_dimension_result_type`・`test_f06_
+duplicate_dimension_entries_rejected`・`test_f06_candidate_reference_
+must_be_str`・`test_f06_verification_version_must_be_str`・`test_f06_
+verification_provenance_must_be_ai_derived_provenance_type`・`test_f06_
+reason_must_be_str_or_none`がいずれも期待通り`FaithfulnessSchemaError`
+を送出することを確認。`test_f06_valid_construction_with_dimension_
+results_still_succeeds`で正当なConstructionが壊れていないことも確認。
+
+### Closure Summary
+
+```
+F01 CLOSED
+F02 CLOSED
+F03 CLOSED
+F04 CLOSED
+F05 CLOSED
+F06 CLOSED
+```
+
+HIGH Findingが未Closeのまま残っている項目は無い。
+
+### Architecture再Openなし(確認)
+
+Model-assisted Verifier・新Dimension・汎用日本語NLP・Promotion
+Helper・Evidence統合・Automationのいずれも追加していない。既存8軸
+(`FaithfulnessDimension`)・既存Aggregation Rule(Hard-Fail Dimension
+集合・Soft-Fail Dimension集合)・既存Gate順序(Candidate Integrity →
+Source Revalidation → Deterministic Checks → Aggregation)はいずれも
+無変更。`MODEL_CALL_SITES = 0`のまま(Grep再確認済み)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`lib/disclosures/faithfulness.py`・
+`13_tests/test_faithfulness.py`): 両File Pass。`mypy --strict`
+(`lib/disclosures/faithfulness.py`): Success, no issues found in 1
+source file。Targeted Pytest: `test_faithfulness.py`(64 Test、既存44+
+新規20)・`test_disclosures_semantic_claims.py`・`test_candidate_
+extraction.py`・`test_disclosures_normalization.py`合計**209 Test
+全てPass**(既存Frozen Boundary無変更・無退行)。Full Repository
+Suite/H0001はいずれも実行していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/faithfulness.py`(F01-F06修正)・
+`Japanese_Equity_Lab/13_tests/test_faithfulness.py`(F01-F06
+Reproduction Test追加)・このDECISIONS.md追記のみ。`lib/disclosures/
+normalization.py`・`semantic_claims.py`・`candidate_extraction.py`・
+その他既存`lib/`・既存`13_tests/`(faithfulness以外)はいずれも
+無変更。`PROMOTION_IMPLEMENTED = NO`・`EVIDENCE_INTEGRATION = NO`・
+`AUTOMATION_READINESS = NOT_READY`のまま(変更なし)。H0001は実行して
+いない。
