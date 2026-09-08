@@ -7,17 +7,19 @@ V1の ``token/auth_user`` / ``token/auth_refresh`` によるリフレッシュ�
 
 重要な既知の制約:
 - このAdapterはユーザーがセッション内で明示したJ-Quants API V2の仕様(Endpoint・
-  Field名)をCanonical Specificationとして実装している。**このセッションは
-  ネットワークポリシーにより外部API・J-Quants公式ドキュメントへの疎通が一切できない
-  環境で開発されており、実レスポンスでの検証は行えていない**(README.md の
-  既知の制約、DECISIONS.md D0031参照)。本番投入前に必ずローカル環境で疎通確認し、
-  Field名が異なる場合は`lib/data_sources/convert.py`を実際のレスポンスに合わせて
-  修正すること。
+  Field名)をCanonical Specificationとして実装している。実レスポンスでの検証は
+  JQS-STD-01(DECISIONS.md参照)でRead-Only Live Probeにより一部確認済みだが、
+  本Moduleの全Field・全Endpointを網羅した検証ではない。挙動が異なる場合は
+  `lib/data_sources/convert.py`を実際のレスポンスに合わせて修正すること。
 - 認証情報(APIキー)はログ・例外メッセージ・Snapshotのいずれにも出力しない。
-- 現在の契約プランはLight(ユーザー申告)。`capabilities`(`DataSourceCapabilities`)は
-  Lightプランでの利用可否についての未検証の推測を含む。契約プラン上利用できない
-  Datasetを、このAdapterが他Providerへsilent fallbackすることはない
-  (該当Endpointの呼び出しはそのままJ-Quantsのエラーとして`DataSourceError`に変換される)。
+- 契約プラン(Light/Standard等)による利用可否は、このAdapter自身では事前判定
+  しない。契約プラン上利用できないDatasetを、このAdapterが他Providerへsilent
+  fallbackすることはない(該当Endpointの呼び出しはそのままJ-Quantsのエラーとして
+  `DataSourceError`に変換される)。`capabilities`プロパティは
+  `lib.sources.providers.ProviderCapabilities`(Phase3D/D0040の共通
+  Capability-based Design)で「このAdapterが構造的に扱えるDataCapabilityの種類」を
+  表すのみで、契約プラン名や利用可否の断定は行わない。実効History境界・
+  現在確認済みのAccess可否はJQS-STD-01(DECISIONS.md)を参照すること。
 """
 
 from __future__ import annotations
@@ -30,8 +32,10 @@ from datetime import UTC, date, datetime
 
 import requests
 
-from lib.data_sources.base import LIGHT_PLAN_ASSUMED, DataSourceCapabilities, RawFetchResult
+from lib.data_sources.base import RawFetchResult
 from lib.errors import DataSourceError
+from lib.sources.catalog import DataCapability, SourceAuthorityClass
+from lib.sources.providers import ProviderCapabilities
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +70,16 @@ class JQuantsAdapter:
         return bool(self._api_key)
 
     @property
-    def capabilities(self) -> DataSourceCapabilities:
-        return LIGHT_PLAN_ASSUMED
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider_name="JQUANTS",
+            capabilities=frozenset({DataCapability.MARKET_PRICE}),
+            authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+            notes=(
+                "実効History境界・現在確認済みのAccess可否はJQS-STD-01"
+                "(DECISIONS.md)を参照。契約プラン名・利用可否はここでは断定しない。"
+            ),
+        )
 
     def _throttle(self) -> None:
         elapsed = time.monotonic() - self._last_request_at

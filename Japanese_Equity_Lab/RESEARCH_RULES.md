@@ -89,15 +89,17 @@ Schemaのみ用意する)。詳細は`EVIDENCE_MODEL.md`参照。
   (`equity_bars_<code>.json`、`trading_calendar.json`、`topix_bars.json`、
   `equities_master.json`。詳細は`local_snapshot.py`のモジュールdocstring)で1つの
   ディレクトリへ配置し、`--local-snapshot-dir`で渡す。これは「実データそのもの」を
-  扱う経路であり、fixtureのような合成データではないが、**このセッション自身は
-  一度もJ-Quantsへ(APIにもドキュメントにも)疎通していない**ため、このAdapterが
-  実レスポンスの形状を正しく扱えるかどうかはユーザーがローカルで実行して確認する
-  必要がある(D0025〜D0028、D0031〜D0033、`LOCAL_DATA_FETCH_GUIDE.md`参照)。
-- 現在の契約プランはLight(ユーザー申告)。`DataSourceCapabilities`
-  (`lib/data_sources/base.py`)がLightプランでの利用可否についての未検証の推測を
-  保持するが、これは警告目的であり、Adapterは契約プランを理由に`fetch_*`呼び出しを
-  事前ブロックしない(実際のAPIが返すエラーをそのまま伝える)。利用不可と判明した
-  Datasetを他Providerへsilent fallbackすることは禁止する。
+  扱う経路であり、fixtureのような合成データではない。JQS-STD-01(DECISIONS.md参照)
+  でこのSession環境自身からも`api.jquants.com`への疎通が可能であることを確認したが、
+  環境やネットワークポリシーが異なる場合に備え、このAdapterは引き続き利用可能
+  (D0025〜D0028、D0031〜D0033、`LOCAL_DATA_FETCH_GUIDE.md`参照)。
+- 契約プラン(Light/Standard等)による利用可否は、Adapter自身では事前判定しない
+  (実効History境界・現在確認済みのAccess可否はJQS-STD-01、DECISIONS.md参照)。
+  `capabilities`プロパティ(`lib.sources.providers.ProviderCapabilities`、
+  `lib/data_sources/base.py`)は「Adapterが構造的に扱えるDataCapabilityの種類」を
+  表すのみで、契約プラン名や利用可否の断定は行わない。Adapterは契約プランを理由に
+  `fetch_*`呼び出しを事前ブロックしない(実際のAPIが返すエラーをそのまま伝える)。
+  利用不可と判明したDatasetを他Providerへsilent fallbackすることは禁止する。
 
 ## Pipeline全体の構成 (`scripts/jquants_lab_pipeline.py`)
 

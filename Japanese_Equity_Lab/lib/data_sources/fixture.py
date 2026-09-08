@@ -16,7 +16,9 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from lib.data_sources.base import LIGHT_PLAN_ASSUMED, DataSourceCapabilities, RawFetchResult
+from lib.data_sources.base import RawFetchResult
+from lib.sources.catalog import DataCapability, SourceAuthorityClass
+from lib.sources.providers import ProviderCapabilities
 
 RESPONSE_SCHEMA_VERSION = "fixture-v2(synthetic)"
 
@@ -36,8 +38,13 @@ class FixtureDataSourceAdapter:
         self._data: dict[str, Any] = json.loads(fixture_path.read_text(encoding="utf-8"))
 
     @property
-    def capabilities(self) -> DataSourceCapabilities:
-        return LIGHT_PLAN_ASSUMED
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider_name="FIXTURE",
+            capabilities=frozenset({DataCapability.MARKET_PRICE}),
+            authority_class=SourceAuthorityClass.USER_SUPPLIED,
+            notes="合成Fixture Data(実際の株価ではない)。Backtest Engine配線検証専用。",
+        )
 
     def fetch_equity_bars(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         all_bars: dict[str, list[dict[str, Any]]] = self._data.get("equity_bars", {})

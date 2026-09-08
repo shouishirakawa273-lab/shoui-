@@ -33,9 +33,11 @@ from lib.sources.catalog import DataCapability, SourceAuthorityClass
 class ProviderCapabilities:
     """Providerが自己申告する提供可能Capability(D0040)。
 
-    契約プラン等により実際に呼び出せるかどうかまでは保証しない
-    (`lib.data_sources.base.DataSourceCapabilities`と同様、事前ブロック用途には使わない。
-    実際の可否は呼び出し自体の成否で判断する)。
+    契約プラン等により実際に呼び出せるかどうかまでは保証しない(事前ブロック用途には
+    使わない。実際の可否は呼び出し自体の成否で判断する。旧`lib.data_sources.base.
+    DataSourceCapabilities`はこの構造体と役割が重複していたためJQS-STD-01A
+    (DECISIONS.md参照)で削除し、`lib.data_sources.*`側の全Adapterはこの
+    `ProviderCapabilities`を返す形へ統一した)。
     """
 
     provider_name: str

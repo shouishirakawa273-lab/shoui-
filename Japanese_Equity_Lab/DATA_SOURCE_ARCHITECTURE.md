@@ -86,7 +86,7 @@ provider_identifier, as_of)`はPIT対応(社名変更・コード変更で有効
 | Authority | PRIMARY_OFFICIAL |
 | PIT semantics | `/v2/equities/master`の`date`パラメータは実データ確認済みでPIT対応(D0039、6502実データ)。株価はAdjFactorによるPIT-safe As-of Adjustment実装済み(D0034/D0035)。財務諸表(`/v2/fins/summary`)はmarket_public_at(DiscDate+DiscTime、tz-aware)を実装、provider_available_atは実観測ログが無いため常にUNKNOWN(D0043) |
 | Current Implementation Status | 株価/Master/Calendar/TOPIX: CONNECTED(実データE2E検証済み、Phase3B)。Financial Summary(`/v2/fins/summary`): CONNECTED(Phase4A COMPLETE、D0043。2026-08-16に4銘柄(7203/6758/8056/3626)でLocal Real Data Validation完了)。Dividend/需給: NOT_IMPLEMENTED |
-| Cost/Plan dependency | Light Plan(ユーザー申告)、60req/分(D0039確認済み)。`/v2/fins/summary`はEndpoint固有60req/分と仮定し`effective_limit=min(60,60)=60`(D0043、未検証) |
+| Cost/Plan dependency | 契約プラン名はここでは断定しない(Adapter自身も事前判定しない、`lib/data_sources/base.py`参照)。JQS-STD-01(2026-09-08、DECISIONS.md参照)のRead-Only Live Probeで実効History境界=2016-09-08(株価・TOPIX・Financial Summary共通)を確認済み。Rate LimitはD0039確認時点の60req/分のまま(JQS-STD-01では未再検証)。`/v2/fins/summary`はEndpoint固有60req/分と仮定し`effective_limit=min(60,60)=60`(D0043、未検証) |
 | Known limitations | 商品区分(ProdCat)・市場区分(Mkt)の値の意味は未検証。全市場規模のBulk取得方式は未接続(D0039)。`/v2/fins/summary`のField名・DocType一覧の一部はLocal Real Data Validationで確認済み(D0043追記)だがPagination仕様・Rate Limit実挙動・JGAAP/USGAAPのDocType値は未検証。`code`指定クエリは`from`/`to`で絞り込まれず対象Codeの全履歴を返すことを確認済み(D0043追記) |
 
 ### 2. EDINET

@@ -54,62 +54,21 @@ class RawFetchResult:
     payload: Any
 
 
-@dataclass(frozen=True)
-class DataSourceCapabilities:
-    """契約プランによって利用可能なDatasetが異なることを明示するための構造体。
-
-    **既知の制約(重要)**: このセッションはJ-Quantsの公式ドキュメント・契約者向け
-    ダッシュボードへ一切疎通できない(README.md参照)。以下の既定値
-    (`LIGHT_PLAN_ASSUMED`)は、ユーザーが「現在の契約プランはLight」と述べたことを
-    踏まえた**一般的な理解に基づく最善の推測**であり、公式ドキュメントで検証した
-    ものではない。実際にどのEndpointが利用可能かは、必ずユーザー自身の契約状況
-    (J-Quants会員ページ等)で確認すること。
-
-    この構造体は「利用可能と想定しているかどうか」を明示・警告するためのものであり、
-    Adapterの`fetch_*`メソッドを事前にブロックする用途には使わない
-    (=実際にJ-Quants APIを呼び出し、契約プラン上利用できない場合はAPI自身が
-    返すエラーをそのまま`DataSourceError`として伝える。憶測で「使えないはず」と
-    決めつけて事前に遮断すると、実際には使えるDatasetまで誤って使えなくして
-    しまうリスクがあるため)。利用不可と判明したDatasetについて、他Providerへ
-    silent fallbackすることも禁止する(RESEARCH_RULES.md参照)。
-    """
-
-    daily_prices: bool
-    trading_calendar: bool
-    topix: bool
-    listed_master: bool
-    general_indices: bool
-    note: str = ""
-
-
-LIGHT_PLAN_ASSUMED = DataSourceCapabilities(
-    daily_prices=True,
-    trading_calendar=True,
-    topix=True,
-    listed_master=True,
-    general_indices=False,
-    note=(
-        "J-Quants Lightプランでの利用可否は、このセッションでは公式ドキュメントを"
-        "取得して検証できていない(未検証の推測)。daily_prices/trading_calendar/"
-        "topix/listed_masterはLightプランでも基本機能として提供されていると想定し"
-        "Trueとしたが、general_indices(TOPIX以外の指数)はより上位プラン限定の"
-        "可能性があると考えTrueとはしていない。実際の可否はユーザーの契約情報で"
-        "確認すること。"
-    ),
-)
-
-
 class DataSourceAdapter(Protocol):
     """日次株価データソースが実装すべきInterface(J-Quants API V2ベース)。
 
     Phase3A.1でV1から全面移行した。Fundamental Data(決算等)はまだこのInterfaceに
     含めない。
-    """
 
-    @property
-    def capabilities(self) -> DataSourceCapabilities:
-        """契約プラン上、利用可能と想定しているDatasetの一覧(未検証の推測を含む)。"""
-        ...
+    **Capability自己申告について**: 契約プラン等によりどのDatasetが利用可能かの
+    自己申告は、このProtocol自体では持たない(旧`DataSourceCapabilities`/
+    `LIGHT_PLAN_ASSUMED`はJQS-STD-01Aで削除、DECISIONS.md参照)。実装は
+    `lib.sources.providers.MarketDataProvider`(`capabilities -> ProviderCapabilities`、
+    Phase3D/D0040の共通Capability-based Design)を構造的に満たすことでこれを表現する
+    (`13_tests/test_source_providers.py`で確認)。実際に呼び出し可能かどうかは
+    事前判定せず、常にAPI呼び出し自体の成否(`DataSourceError`)で判断する
+    (RESEARCH_RULES.md、他Providerへのsilent fallback禁止)。
+    """
 
     def fetch_equity_bars(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """``GET /v2/equities/bars/daily``: 指定銘柄群の日次Bar(Raw + Adjusted両方)を取得する。"""

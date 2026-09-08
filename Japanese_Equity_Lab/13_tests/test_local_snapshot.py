@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from lib.data_sources.local_snapshot import LocalSnapshotAdapter
 from lib.errors import DataSourceError
+from lib.sources.catalog import DataCapability
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -117,7 +118,7 @@ def test_missing_snapshot_dir_raises_immediately() -> None:
         LocalSnapshotAdapter(Path("/nonexistent/path/that/does/not/exist"))
 
 
-def test_capabilities_reports_light_plan_assumption(tmp_path: Path) -> None:
+def test_capabilities_reports_market_price_capability(tmp_path: Path) -> None:
     adapter = LocalSnapshotAdapter(tmp_path)
-    assert adapter.capabilities.topix is True
-    assert adapter.capabilities.general_indices is False
+    assert DataCapability.MARKET_PRICE in adapter.capabilities.capabilities
+    assert adapter.capabilities.provider_name == "JQUANTS_LOCAL_SNAPSHOT"

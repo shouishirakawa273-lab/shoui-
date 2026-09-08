@@ -1,11 +1,10 @@
 """ユーザーがローカル環境で取得したJ-Quants API V2の生レスポンスを読み込む DataSourceAdapter。
 
-このセッションはネットワークポリシーによりJ-Quants等の外部APIへ疎通できない
-(api.jquants.com/jpx.gitbook.io(ドキュメント)/Yahoo Finance/example.com いずれも
-拒否されることを確認済み)。そのため、ユーザーがネットワーク接続可能な別環境
-(ローカルPC等)で取得したJ-Quants V2の生レスポンス(JSON、日次BarのみCSVも可)を
-ファイルとして受け取り、Snapshot保存・変換・Backtest実行以降をこの環境で行うための
-Adapter。
+JQS-STD-01(DECISIONS.md参照)でこのSession環境自体からも`api.jquants.com`への
+疎通が可能であることを確認したが、環境やネットワークポリシーが異なる場合に備え、
+ユーザーがネットワーク接続可能な別環境(ローカルPC等)で取得したJ-Quants V2の
+生レスポンス(JSON、日次BarのみCSVも可)をファイルとして受け取り、Snapshot保存・
+変換・Backtest実行以降をこの環境で行うためのAdapterとして引き続き提供する。
 
 **ディレクトリ内のファイル命名規約**(このAdapterが読みに行くファイル名):
 
@@ -37,8 +36,10 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from lib.data_sources.base import LIGHT_PLAN_ASSUMED, DataSourceCapabilities, RawFetchResult
+from lib.data_sources.base import RawFetchResult
 from lib.errors import DataSourceError
+from lib.sources.catalog import DataCapability, SourceAuthorityClass
+from lib.sources.providers import ProviderCapabilities
 
 RESPONSE_SCHEMA_VERSION = "jquants-v2(local, 未検証)"
 _DATA_KEY = "data"
@@ -54,8 +55,13 @@ class LocalSnapshotAdapter:
         self._retrieved_at_override = retrieved_at
 
     @property
-    def capabilities(self) -> DataSourceCapabilities:
-        return LIGHT_PLAN_ASSUMED
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(
+            provider_name="JQUANTS_LOCAL_SNAPSHOT",
+            capabilities=frozenset({DataCapability.MARKET_PRICE}),
+            authority_class=SourceAuthorityClass.PRIMARY_OFFICIAL,
+            notes="J-Quants生レスポンスをローカルファイルから読み込む(originating_source=JQUANTS、delivery_provider=LOCAL_SNAPSHOT)。",
+        )
 
     def _retrieved_at_for(self, path: Path) -> datetime:
         if self._retrieved_at_override is not None:

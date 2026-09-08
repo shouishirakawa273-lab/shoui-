@@ -13609,3 +13609,175 @@ Round(JQS-STD-01A相当)でPath・Cost/Plan Dependency欄の記述更新を
 `Japanese_Equity_Lab/DECISIONS.md`(本追記)のみ。`lib/`・`scripts/`・
 `13_tests/`・`lib/positioning/catalog.py`・`VALIDATION_BACKLOG.md`は
 いずれも無変更。H0001は実行していない。
+
+## JQS-STD-01A — Stale Light Capability Surfaceの削除 + Current Metadata Rebaseline
+
+### 背景
+
+JQS-STD-01(直前のEntry、2026-09-08)がRepository-Grounded Basisを確立した
+ことを受け、旧Light-era Runtime Surfaceを削除し、Positioning Catalog等の
+Current-State Metadataを実測値へRebaseした。本番挙動(Adapter実装状況・
+EDINET依存・Historical Valuation)は変更していない。
+
+### DataSourceCapabilities / LIGHT_PLAN_ASSUMEDの削除、及び発見した実際の依存関係
+
+当初の想定(`.capabilities`プロパティは無consumerのDead Surface)は誤り
+だった。Consumer再調査の結果、`lib.sources.providers.MarketDataProvider`
+(`@runtime_checkable` Protocol、Phase3D/D0040)が`capabilities`属性の存在を
+`isinstance()`で構造的に要求しており、`13_tests/test_source_providers.py`の
+`test_jquants_adapter_satisfies_market_data_provider_without_modification`
+等2件がこれに依存していた(`runtime_checkable` Protocolは属性の型までは
+検査せず存在のみ検査するため、当初は問題が顕在化していなかった)。
+
+このためユーザー判断を仰ぎ、「既存の`ProviderCapabilities`/`DataCapability`
+設計(Phase3D/D0040)へ移行する」方針を採用した(新しいCapability抽象は導入
+しない、Subscription Plan Enum・Plan名分岐も導入しない、という制約を維持):
+
+- `lib/data_sources/base.py`: `DataSourceCapabilities`Dataclass・
+  `LIGHT_PLAN_ASSUMED`定数を削除。`DataSourceAdapter` Protocolから
+  `capabilities`要件を削除(このProtocol自体は`@runtime_checkable`ではなく
+  isinstanceで検査されたことが無いため、実質的な契約は元々
+  `MarketDataProvider`側にあった)。
+- `lib/data_sources/jquants.py`・`fixture.py`・`local_snapshot.py`:
+  `.capabilities`プロパティの戻り値を`lib.sources.providers.
+  ProviderCapabilities`(`provider_name`/`capabilities: frozenset[
+  DataCapability]`/`authority_class`/`notes`)へ変更。3 Adapterとも
+  `DataCapability.MARKET_PRICE`を申告する。Authority ClassはJQuants/
+  LocalSnapshotは`PRIMARY_OFFICIAL`(実データ由来)、Fixtureのみ
+  `USER_SUPPLIED`(合成Test Data)とし、実際の性質を偽装しない。
+  `base.py`が`lib.sources.providers`をImportする形にはしていない
+  (Circular Import: `providers.py`は既に`lib.data_sources.base`から
+  `RawFetchResult`をImportしているため、逆方向Importは循環になる。
+  実際に`python -c "import lib.data_sources.base; ..."`で無事Import
+  できることを確認済み)。
+- `13_tests/test_data_sources.py`・`test_local_snapshot.py`: 旧
+  `.capabilities.daily_prices`等Field-Level Assertionを削除し、
+  `DataCapability.MARKET_PRICE in adapter.capabilities.capabilities`・
+  `provider_name`の新Assertionへ置き換えた(Dead-Codeテストの単純削除では
+  なく、実装が変わったことに対応する意味のあるCoverageとして残した)。
+
+Targeted Test(`test_data_sources.py`・`test_local_snapshot.py`・
+`test_source_providers.py`・`test_positioning_catalog.py`・
+`test_pipeline_integration.py`・`test_pit_as_of_adjustment.py`・
+`test_phase5_v1_1_real_data_script.py`、計64件)は全てPass。Targeted
+Ruff Check/Format Checkも全てPass。Targeted Mypyは変更した`lib/`配下5
+FileでSuccess(該当Test File経由でmypy実行するとNumpy Stub側の既知の
+環境Issue [`numpy/__init__.pyi`がPython 3.12構文を使用、`pyproject.toml`
+の`mypy.python_version=3.11`と非互換] が出るが、これは変更前のOriginal
+Fileでも同一に再現することをgit stashで確認済みの既存Issueであり、本
+Roundの変更が原因ではない)。
+
+### Runtime Light Warningの削除
+
+`scripts/jquants_lab_pipeline.py`の`run_pipeline()`内、`source == "jquants"`
+実行時に印字していた「現在の契約プランはLightと申告されています…」という
+Print文を削除した。「Standard plan active.」等への置き換えは行っていない
+(契約プランをHardcodeしない方針)。冒頭Docstringの「クラウドのセッション
+からは外部API・公式ドキュメントへ接続できないことがある」という記述も、
+JQS-STD-01でこのSession環境自身から`api.jquants.com`への疎通を確認できた
+ことを踏まえて更新した(「常に接続できない」という誤った含意を除去しつつ、
+環境依存で接続できない場合に備えたLocal実行手順自体は維持)。
+
+### Current-State Documentation修正
+
+以下のFileで、CURRENT Runtime Stateを記述している箇所のみ修正した(過去の
+DECISIONS Entry・D0025/D0031/D0033/D0039/D0043/D0048/D0062/D0064/D0065等の
+Historical Recordは一切書き換えていない):
+
+- `lib/data_sources/base.py`・`jquants.py`・`local_snapshot.py`:
+  「このSessionは外部API・公式ドキュメントへの疎通が一切できない」という
+  記述を削除・訂正(JQS-STD-01で反証済み)。`jquants.py`の「現在の契約
+  プランはLight」記述も削除。
+- `RESEARCH_RULES.md`: J-Quants Local Snapshot節のEgress記述・Capability
+  記述を訂正。
+- `LOCAL_DATA_FETCH_GUIDE.md`: 冒頭の「一切疎通できない」記述、Light Plan
+  記述を訂正(Local実行手順自体は環境依存のFallbackとして維持)。
+- `PHASE5_V1_LOCAL_VALIDATION_GUIDE.md`: 冒頭のEgress記述を訂正。過去の
+  Real Data Validation観測Table(D0065、Light Plan時点で約5年境界を観測)は
+  書き換えず、「この観測は過去のものであり、現在はJQS-STD-01で解消済み」
+  という追記のみ行った。
+- `DATA_SOURCE_ARCHITECTURE.md`: J-QuantsのCost/Plan dependency行から
+  「Light Plan(ユーザー申告)」記述を削除し、契約プラン名を断定しない形へ
+  修正、JQS-STD-01への参照を追加(Rate Limit数値60req/分自体は今回再検証
+  していないためそのまま維持、TDnet Add-on行の「Lightプラン以上」は
+  Standardでも成立する記述のため変更不要と判断し触っていない)。
+- `lib/sources/providers.py`: `ProviderCapabilities`のDocstringが参照して
+  いた削除済み`DataSourceCapabilities`への言及を、削除の経緯説明へ更新。
+
+`EVIDENCE_MODEL.md`・`RESEARCH_RULES.md`の`AvailabilitySemantics`説明中の
+「J-Quants Light経由では18:00に」という記述、および`RESEARCH_RULES.md`
+「J-Quants Light Planでの既知の未確認事項(Phase3C、D0038/D0039)」節は、
+Phase3C当時の具体的な観測・説明用の例示であり、修正しなかった
+(HISTORICAL_REFERENCE/LEGITIMATE_REFERENCEと分類、書き換え不要)。
+`TDNET_SOURCE_ONBOARDING.md`のLight Plan言及もTDnet Add-onの最低必要
+Tierの記述であり、Standardでも成立するため変更不要(TDnetはScope外)。
+
+### Positioning Catalog Rebaseline
+
+`lib/positioning/catalog.py`の5 Descriptor(旧4件+新規1件)をJQS-STD-01の
+実測Endpoint Pathへ更新した。実装状況は全て引き続き`NOT_IMPLEMENTED`
+(Adapter・Normalizer・EvidenceRecord化はいずれも本Roundでも実施しない)。
+Descriptor Schema自体(`DatasetDescriptor`)は変更せず、確認状況は
+`known_limitations`/`cost_or_plan_dependency`/`notes`の自由記述Fieldへ
+`ENDPOINT_CONFIRMED`/`IMPLEMENTATION_PENDING`/`PIT_PENDING`という文言で
+記録した(新しいStatus Enumは追加していない):
+
+| dataset_id | 対象 | 旧推測Path(誤り) | JQS-STD-01確認Path |
+|---|---|---|---|
+| `jquants_weekly_margin_interest` | 銘柄別信用取引週末残高 | `/v2/markets/weekly_margin_interest`(403) | `/v2/markets/margin-interest` |
+| `jquants_margin_alert`(新規) | 日々公表銘柄・信用取引残高高水準Alert | (旧Catalogに候補記述無し) | `/v2/markets/margin-alert` |
+| `jquants_short_ratio` | 業種別空売り比率 | (Path自体は旧記述通り) | `/v2/markets/short-ratio` |
+| `jquants_short_sale_report` | 個別銘柄空売り残高報告 | `/markets/short_selling_positions`(403、競合候補として誤って併記) | `/v2/markets/short-sale-report` |
+| `jquants_investor_type_trading`(旧`jquants_trades_spec`から改称) | 投資部門別売買状況 | `/v2/markets/trades_spec`(403) | `/v2/equities/investor-types` |
+
+`build_jquants_trades_spec_dataset_descriptor()`/`dataset_id=
+"jquants_trades_spec"`は`build_jquants_investor_type_trading_dataset_
+descriptor()`/`"jquants_investor_type_trading"`へ改称した(旧Pathが実際
+には存在しない誤りだったため、概念自体を実在Endpointへ差し替える改称と
+判断、単なるPath修正では済まないケースと整理した)。`13_tests/
+test_positioning_catalog.py`を新規5件構成(旧4件+`margin_alert`)へ更新し、
+登録件数Assertionを5→6件へ修正。7 Test全てPass。
+
+`POSITIONING_ARCHITECTURE.md`のSource候補Tableも同じ内容へ更新した。
+
+### VALIDATION_BACKLOG更新
+
+項目#5〜#8(旧4候補)のStatus・阻害要因を「Endpoint Path未確認」から
+「Endpoint PathはJQS-STD-01でENDPOINT_CONFIRMED、残りはPublication
+Lag/Revision表現/PIT安全なavailable_at導出方法が未確認」へ更新した。
+新規`jquants_margin_alert`を項目#34として追加(既存番号は他Fileから多数
+参照されているため`renumbering`は行わず、末尾に追加する形にした)。
+Publication Lag/Revision/Wire Schema/PIT-Pendingという共通の残Issueを
+個別Endpoint発見Taskとして維持する代わりに、`STANDARD_POSITIONING_
+SOURCE_ONBOARDING`という1つの将来Work Itemへ集約する参照行を追加した
+(項目番号無しの集約行として追加、既存番号体系を壊さない)。Publication
+Lag・Revision Semantics・PIT-Safe available_atは未解決のまま維持し、
+解決済みとはマークしていない。
+
+### 自己監査(§14相当)
+
+`LIGHT_PLAN_ASSUMED`・`DataSourceCapabilities`・`.capabilities`の削除後
+Grep結果を全件確認し、残る参照を分類した: DECISIONS.md内(D0033・
+JQS-STD-01本体)はHISTORICAL_REFERENCE、`base.py`/`providers.py`の新規
+Docstring内言及(削除の経緯説明)はLEGITIMATE_REFERENCEであり、
+STALE_RUNTIME_REFERENCEは0件だった。
+
+### Historical Valuation / Price-Derived Positioning / EDINET / Faithfulness
+
+いずれも本Roundでは未変更。`historical_context_builder.py`・Valuation
+Model・Corporate Action Guard・PIT Anchor Logic・Decimal計算・
+Denominator Lineageは無変更。`lib/positioning/derived/price_derived.py`
+は無変更(削除・弱体化していない)。EDINET関連Code・`lib/disclosures/
+candidate_extraction.py`等Faithfulness関連Codeも無変更。詳細BS/PL/CF・
+配当が現在の契約でも取得不可であることをJQS-STD-01で確認済みのため、
+EDINETへの依存は今後も継続する。
+
+### 明示的な未実装確認
+
+`fetch_financial_statements`という名称(実体はFinancial Summaryであり
+詳細BS/PL/CFではない)は、JQS-STD-01でMisleadingと確認済みだが、複数の
+Frozen Script/Adapterに影響するため本Roundではリネームせず、Deferred
+Naming Debtとして記録するのみ(widening禁止の指示通り)。Positioning
+Adapter/Normalizer/EvidenceRecord化・PIT Publication Timing Logic・
+Historical Acquisitionはいずれも本Roundでは実施していない。H0001は
+実行していない。

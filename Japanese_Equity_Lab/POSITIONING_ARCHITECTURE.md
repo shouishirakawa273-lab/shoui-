@@ -64,23 +64,26 @@ Rawから算出、単日)と`VOLUME_MOVING_AVERAGE_ND`(トレーリングN日平
 ## Source候補(未実装、NOT_IMPLEMENTED)
 
 Phase4C開始時点で`data-source-researcher` Agentが調査した4件のJ-Quants
-Positioning Endpoint候補(`lib/positioning/catalog.py`に`NOT_IMPLEMENTED`
-Descriptorとして登録済み):
+Positioning Endpoint候補は、JQS-STD-01(2026-09-08、DECISIONS.md参照)の
+Read-Only Live Probeで5件へ更新・Endpoint Path自体はいずれもConfirmed
+(`lib/positioning/catalog.py`に`NOT_IMPLEMENTED` Descriptorとして登録済み、
+`jquants_trades_spec`は`jquants_investor_type_trading`へ改称):
 
-| dataset_id | 対象 | 判明した制約 |
-|---|---|---|
-| `jquants_weekly_margin_interest` | 銘柄別信用取引週末残高 | Standard Plan以上が必要(未検証)、Publication Lag不明 |
-| `jquants_short_ratio` | 業種別空売り比率 | Standard Plan以上が必要(未検証)、業種単位で銘柄別ではない |
-| `jquants_short_sale_report` | 個別銘柄空売り残高報告(0.5%以上) | Endpoint Path自体が2つの検索結果で矛盾、未解決 |
-| `jquants_trades_spec` | 投資部門別売買状況 | 唯一Light Plan(現契約)で利用可能な可能性、ただし単一の未検証情報源のみ |
+| dataset_id | 対象 | JQS-STD-01確認Path | 判明した制約 |
+|---|---|---|---|
+| `jquants_weekly_margin_interest` | 銘柄別信用取引週末残高 | `/v2/markets/margin-interest` | Endpoint/Field名は確認済み、Publication Lag・Revision表現は未確認 |
+| `jquants_margin_alert` | 日々公表銘柄・信用取引残高高水準Alert | `/v2/markets/margin-alert` | Endpoint疎通のみ確認(Probe対象銘柄では0件のためField名未確認) |
+| `jquants_short_ratio` | 業種別空売り比率 | `/v2/markets/short-ratio` | Endpoint/Field名は確認済み、業種単位で銘柄別ではない |
+| `jquants_short_sale_report` | 個別銘柄空売り残高報告(0.5%以上) | `/v2/markets/short-sale-report` | 旧競合候補Pathは403で存在しないことを確認、矛盾解消。Publication Lag日数分布は未確認 |
+| `jquants_investor_type_trading`(旧`jquants_trades_spec`) | 投資部門別売買状況 | `/v2/equities/investor-types` | Endpoint/Field名は確認済み、旧推測Path(`/markets/trades_spec`)は誤りと判明 |
 
-いずれも実装しなかった理由: 全ての情報がWebSearch由来のSEARCH-SNIPPET-
-DERIVED(UNVERIFIED)であり、公式Documentへ直接接続できていない(このSession
-自身のNetwork Egressが一貫してBlockされているため、`EDINET_SOURCE_
-ONBOARDING.md`と同じ制約)。Field名・Wire Schema・Publication Lag・Revision
-表現のいずれも未確認のまま実装すると、Fundamentals(Phase4A)で実際に発生した
-Field名推測ミスと同種のRiskを繰り返すことになる(推測禁止原則、Phase4C要件
-§5/§28)。詳細は`DECISIONS.md`「D0054」・`VALIDATION_BACKLOG.md`参照。
+いずれも実装していない理由: Endpoint Path・存在自体はJQS-STD-01で実際に
+200 Responseを得て確認したが、Field名はごく一部の確認に留まり、Wire Schema
+全体・Publication Lag・Revision表現・PIT安全な`available_at`導出方法は
+未確認のまま。これらを未確認のまま実装すると、Fundamentals(Phase4A)で
+実際に発生したField名推測ミスと同種のRiskを繰り返すことになる(推測禁止
+原則、Phase4C要件§5/§28)。詳細は`DECISIONS.md`「D0054」「JQS-STD-01」
+「JQS-STD-01A」・`VALIDATION_BACKLOG.md`参照。
 
 JPX(東証)がこれらのDataを自社Website上で直接公開していることも確認した
 (信用取引残高・空売り集計・投資部門別売買状況、いずれもPUBLIC_BUT_MANUAL、

@@ -2,10 +2,13 @@
 
 ## なぜこの手順が必要か
 
-このセッションはJ-Quants公式APIへ接続できない(EGRESS_BLOCKED、
+過去のSessionはJ-Quants公式APIへ接続できなかった(EGRESS_BLOCKED、
 `api.jquants.com:443`/`jpx.gitbook.io:443`双方でCONNECTがPolicy Denial
 (403)により拒否されることをProxy Status Endpoint経由で確認済み、
-`DECISIONS.md` D0062/D0064参照)。そのため`scripts/phase5_v1_short_term_
+`DECISIONS.md` D0062/D0064参照)。JQS-STD-01(2026-09-08、DECISIONS.md
+参照)でこのSession環境自身からも`api.jquants.com`への疎通が可能で
+あることを確認したが、環境やネットワークポリシーが異なる場合に備え、
+以下のローカル実行手順は引き続き提供する。`scripts/phase5_v1_short_term_
 reversal.py`(合成Fixture専用)で実行した一連のTrain/Validation/Locked
 Testは、**Smoke Run(Pipeline配線・Infrastructure Validationであり、
 投資判断のEvidenceではない**
@@ -79,7 +82,11 @@ Phase5 v1.1要件§8。この段階では行/日付Coverage・欠損Bar・PIT Un
 このセッションが確認したものではない**(公式Docへの接続自体が
 EGRESS_BLOCKED)。上表の「結果」列のみがこのRepositoryが直接確認した
 Observed API Behaviorであり、「過去5年」という数字はUser-reported Plan
-Constraintとして区別して扱う(DECISIONS.md D0065参照)。
+Constraintとして区別して扱う(DECISIONS.md D0065参照)。**この観測は
+過去(Light Plan時点)のもので、上書きしない。** JQS-STD-01
+(2026-09-08、DECISIONS.md参照)で現在の実効History境界=2016-09-08
+(株価・TOPIX共通)をこのSession自身が直接Live Probeで確認済みであり、
+現在この制約は解消されている。
 
 **マルチイヤーRequestは既に確認済み(D0066)**: `_load_real_price_
 data()`は`train_period_start`から**そのSplit自身のend_session**まで

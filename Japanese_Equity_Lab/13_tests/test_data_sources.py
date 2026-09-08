@@ -11,6 +11,7 @@ from lib.data_sources.fixture import FixtureDataSourceAdapter
 from lib.data_sources.jquants import JQuantsAdapter
 from lib.errors import DataSourceError
 from lib.market_calendar import TradingCalendarResolutionError
+from lib.sources.catalog import DataCapability
 
 _FIXTURE_PAYLOAD = {
     "equity_bars": {
@@ -82,10 +83,10 @@ def test_fixture_adapter_fetch_equities_master_defaults_to_empty_without_breakin
     assert result.payload == []
 
 
-def test_fixture_adapter_capabilities_reports_light_plan_assumption(fixture_path: Path) -> None:
+def test_fixture_adapter_capabilities_reports_market_price_capability(fixture_path: Path) -> None:
     adapter = FixtureDataSourceAdapter(fixture_path)
-    assert adapter.capabilities.daily_prices is True
-    assert adapter.capabilities.general_indices is False
+    assert DataCapability.MARKET_PRICE in adapter.capabilities.capabilities
+    assert adapter.capabilities.provider_name == "FIXTURE"
 
 
 def test_jquants_adapter_unconfigured_raises_data_source_error_for_all_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:

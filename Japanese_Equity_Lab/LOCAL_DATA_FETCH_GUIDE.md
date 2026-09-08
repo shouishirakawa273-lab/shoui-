@@ -2,22 +2,25 @@
 
 ## なぜこの手順が必要か
 
-この開発セッション(クラウド環境)はネットワークポリシーにより`api.jquants.com`・
-`jpx.gitbook.io`(公式ドキュメント)を含む外部ホストへ一切疎通できない
-(いずれもCONNECTが拒否されることを確認済み、`DECISIONS.md` D0012・D0025・D0031参照)。
-そのためPhase3Aの「実J-Quants API V2データを投入してもPipelineがEnd-to-Endで動作するか」
-という検証は、**ネットワーク接続可能なあなたのローカル環境で以下を実行して初めて完了する。**
+過去のSession(クラウド環境)はネットワークポリシーにより`api.jquants.com`・
+`jpx.gitbook.io`(公式ドキュメント)を含む外部ホストへ疎通できなかった(D0012・
+D0025・D0031参照)。JQS-STD-01(DECISIONS.md参照)でこのSession環境自身からも
+`api.jquants.com`への疎通・認証済みRequestが可能であることを確認したが、環境や
+ネットワークポリシーが異なる場合に備え、Phase3Aの「実J-Quants API V2データを
+投入してもPipelineがEnd-to-Endで動作するか」という検証はローカル環境でも実行
+できるよう、以下の手順を引き続き提供する。
 
 さらに、このAdapterのEndpoint・Field名(V2)は、ユーザーがセッション内で明示した仕様を
-Canonical Specificationとして実装したものであり、このセッション自身が公式ドキュメントや
-実APIで検証したものではない。実行中にエラーやField不整合が出た場合は、下記「手順4」の
-通り実レスポンスの構造を教えてもらえれば`lib/data_sources/convert.py`だけを修正できる
-(`BacktestEngine`側の変更は不要な設計になっている)。
+Canonical Specificationとして実装したものであり、JQS-STD-01で一部Endpointは
+Read-Only Live Probeにより確認済みだが、全Field・全Endpointを網羅した検証ではない。
+実行中にエラーやField不整合が出た場合は、下記「手順4」の通り実レスポンスの構造を
+教えてもらえれば`lib/data_sources/convert.py`だけを修正できる(`BacktestEngine`側の
+変更は不要な設計になっている)。
 
-現在の契約プランはLight(ユーザー申告)。`daily_prices` / `trading_calendar` / `topix` /
-`listed_master`はLightプランでも利用可能と想定しているが未検証(`DataSourceCapabilities`、
-DECISIONS.md D0033参照)。利用不可の場合はJ-Quants自身がエラーを返すので、その内容を
-そのまま確認できる(他Providerへのsilent fallbackはしない)。
+契約プラン(Light/Standard等)による利用可否は、Adapter自身では事前判定しない。
+実効History境界・現在確認済みのAccess可否はJQS-STD-01(DECISIONS.md参照)を参照
+すること。利用不可の場合はJ-Quants自身がエラーを返すので、その内容をそのまま
+確認できる(他Providerへのsilent fallbackはしない)。
 
 ## 手順1: APIキーを取得する
 

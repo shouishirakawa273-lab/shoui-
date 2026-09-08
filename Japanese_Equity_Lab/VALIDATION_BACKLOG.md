@@ -17,10 +17,10 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 2 | Company IR Live Validation #1 | `CODE_COMPLETE_AWAITING_LOCAL_LIVE_VALIDATION` | このSession自身のNetwork Egressが組織Policyにより一貫してBlocked(`EGRESS_BLOCKED`、2026-08-18確認)。Compliance確認込みでUserのローカル環境が必要 | `COMPANY_IR_LOCAL_VALIDATION_GUIDE.md`、DECISIONS.md D0053追記 |
 | 3 | Company IR Live Validation #2(if needed) | 未着手 | #1と同じ | 同上 |
 | 4 | EDINET Forward Snapshot Observation | 未着手(PoC設計のみ) | 継続的な観測実行そのものが未実施 | `EDINET_LOCAL_VALIDATION_GUIDE.md` §J |
-| 5 | J-Quants `weekly_margin_interest`(信用取引週末残高) | `NOT_IMPLEMENTED`(Adapter未着手) | Endpoint仕様が全てSEARCH-SNIPPET-DERIVED(UNVERIFIED)。Standard Plan以上が必要という情報あり(未検証)、Publication Lag不明 | `POSITIONING_ARCHITECTURE.md`、`lib/positioning/catalog.py`、DECISIONS.md D0054 |
-| 6 | J-Quants `short-ratio`(業種別空売り比率) | `NOT_IMPLEMENTED`(Adapter未着手) | 同上 | 同上 |
-| 7 | J-Quants `short-sale-report`(個別銘柄空売り残高報告) | `NOT_IMPLEMENTED`(Adapter未着手) | Endpoint Path自体が未解決の矛盾(2検索結果が不一致) | 同上 |
-| 8 | J-Quants `trades_spec`(投資部門別売買状況) | `NOT_IMPLEMENTED`(Adapter未着手) | 唯一Light Plan利用可能の可能性(単一の未検証情報源)、認証済みDashboard確認またはLocal接続確認が最優先候補 | 同上 |
+| 5 | J-Quants `margin-interest`(信用取引週末残高、旧`weekly_margin_interest`) | `NOT_IMPLEMENTED`(Adapter未着手)、Endpoint PathはJQS-STD-01で`ENDPOINT_CONFIRMED`(2026-09-08) | Publication Lag・Revision表現・PIT安全な`available_at`導出方法が未確認 → `STANDARD_POSITIONING_SOURCE_ONBOARDING`へ集約 | `POSITIONING_ARCHITECTURE.md`、`lib/positioning/catalog.py`、DECISIONS.md D0054・JQS-STD-01・JQS-STD-01A |
+| 6 | J-Quants `short-ratio`(業種別空売り比率) | `NOT_IMPLEMENTED`(Adapter未着手)、Endpoint PathはJQS-STD-01で`ENDPOINT_CONFIRMED` | 同上 → `STANDARD_POSITIONING_SOURCE_ONBOARDING`へ集約 | 同上 |
+| 7 | J-Quants `short-sale-report`(個別銘柄空売り残高報告) | `NOT_IMPLEMENTED`(Adapter未着手)、Endpoint PathはJQS-STD-01で`ENDPOINT_CONFIRMED`(旧競合候補`short_selling_positions`は403で不存在と確認、矛盾解消) | Publication Lag日数分布・Revision表現が未確認 → `STANDARD_POSITIONING_SOURCE_ONBOARDING`へ集約 | 同上 |
+| 8 | J-Quants `investor-types`(投資部門別売買状況、旧`trades_spec`) | `NOT_IMPLEMENTED`(Adapter未着手)、Endpoint PathはJQS-STD-01で`ENDPOINT_CONFIRMED`(旧推測Path`trades_spec`は403で不存在と判明、`/v2/equities/investor-types`が正) | 同上 → `STANDARD_POSITIONING_SOURCE_ONBOARDING`へ集約 | 同上 |
 | 9 | JPX直接公開の需給統計(信用取引残高・空売り集計・投資部門別売買状況) | 未着手(候補として記録のみ) | URL Pattern・Format(PDF/Excel)がScript化に適しているか未確認、Index Page Scrapeが必要な可能性 | `POSITIONING_ARCHITECTURE.md`、DECISIONS.md D0054 |
 | 10 | Positioning Price-derived Metric(price_derived_liquidity) Local Real Data Validation | `CONNECTED`(Code)/`FIXTURE_VALIDATED`(Validation) | 合成Bar Dataでの検証のみ実施、実J-Quants Priceに対するEnd-to-End確認は未実施(上流のRawOHLCVBar自体は別Phaseで既にReal Data確認済み) | `POSITIONING_ARCHITECTURE.md`、DECISIONS.md D0054 |
 | 11 | e-Stat CPI(全国CPI総合・コアCPI・コアコアCPI) | `NOT_IMPLEMENTED`(Adapter未着手) | 全情報がSEARCH-SNIPPET-DERIVED(UNVERIFIED)。5候補中最も裏付けが強いが、Wire Schema・認証Parameter・Rate Limit・Timestamp Field未確認。Local Spec Verification最優先候補 | `MACRO_ARCHITECTURE.md`、`lib/macro/catalog.py`、DECISIONS.md D0055 |
@@ -46,6 +46,8 @@ Authoritative Docへのリンクのみを持ち、内容を重複して書き直
 | 31 | FactSet Estimates PIT Consensus License/Timestamp仕様確認 | 未着手(Catalog未登録、Architecture Doc参照用) | ENTERPRISE専用と判断され`lib/consensus/catalog.py`への登録を見送った(skeptic-reviewer Finding、Phase4E-4: 他ENTERPRISE専用候補への除外基準と統一)。Timestamp Semantics(Local Midnight基準のTimezone)・実際のPricing・個人向けTierの有無、いずれも未確認のまま`CONSENSUS_ARCHITECTURE.md`にのみ記録 | `CONSENSUS_ARCHITECTURE.md`、DECISIONS.md D0060 |
 | 32 | IFIS Japan Bulk Data Service仕様・個人向けTier確認 | `NOT_IMPLEMENTED`(Adapter未着手) | Wire Schema・API有無(Bulk/File配信のみの可能性)・License/Redistribution Terms・個人向けTierの有無、いずれも未確認。PIT/Vintage主張自体が他候補より弱い | 同上 |
 | 33 | Consensus `entity_id`(Canonical Entity Registry)へのMapping手法設計 | 未着手 | Provider固有Symbol/Ticker/企業IDをEntity Registryへ安全にMapping する手法が未設計(実Adapter実装時の課題) | `CONSENSUS_ARCHITECTURE.md`、DECISIONS.md D0060 |
+| 34 | J-Quants `margin-alert`(日々公表銘柄・信用取引残高高水準Alert) | `NOT_IMPLEMENTED`(Adapter未着手)、Endpoint PathはJQS-STD-01で`ENDPOINT_CONFIRMED`(2026-09-08、旧Catalogには候補記述自体が無かった新規項目) | Probe対象銘柄でAlert 0件だったためField名(Wire Schema)自体が未確認、Publication Lag・Revision表現も未確認 → `STANDARD_POSITIONING_SOURCE_ONBOARDING`へ集約 | `POSITIONING_ARCHITECTURE.md`、`lib/positioning/catalog.py`、JQS-STD-01A |
+| — | `STANDARD_POSITIONING_SOURCE_ONBOARDING`(#5・#6・#7・#8・#34の集約先) | 未着手 | 上記5 DatasetはいずれもEndpoint Path/存在確認(JQS-STD-01)は完了したが、Publication Lag・Revision/訂正表現・Wire Schema全体・PIT安全な`available_at`導出方法はいずれも未確認。個別のEndpoint発見Taskとしてではなく、この1項目でLocal Validation・Adapter実装の優先順位付けを行う | `POSITIONING_ARCHITECTURE.md`、`lib/positioning/catalog.py`、DECISIONS.md JQS-STD-01A |
 
 ## 運用ルール
 

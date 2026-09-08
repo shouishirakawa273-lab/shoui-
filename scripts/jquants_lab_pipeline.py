@@ -3,9 +3,10 @@
 Data -> Feature -> Signal -> Decision -> Execution -> Return -> Benchmark比較 ->
 Experiment Registry を一本通しで実行し、Raw SnapshotとProvenanceを記録する。
 
---source jquants はローカル環境で(.envにJQUANTS_API_KEYを設定した上で)実行すること
-(クラウドのセッションからは外部API・公式ドキュメントへ接続できないことがある。
-README.md参照)。
+--source jquants は(.envにJQUANTS_API_KEYを設定した上で)実行する。クラウドの
+Session環境からの`api.jquants.com`疎通はJQS-STD-01(Japanese_Equity_Lab/
+DECISIONS.md参照)で確認済みだが、環境やネットワークポリシーによっては引き続き
+接続できない場合があるため、その場合はローカル環境で実行すること(README.md参照)。
 --source local は、ネットワーク接続できる別環境で取得済みのJ-Quants V2生レスポンス
 (JSON/CSV)をこの環境へ持ち込んで実行するためのモード
 (lib/data_sources/local_snapshot.LocalSnapshotAdapter、ファイル命名規約はdocstring参照。
@@ -114,13 +115,6 @@ def run_pipeline(
         "一方、Price Series連続化(Case B)はPIT-safeに実装済みで、--price-adjustment pit\n"
         "(既定)により decision_atごとに正しく適用されます(DECISIONS.md D0034/D0035)。\n"
     )
-    if is_real_source and source == "jquants":
-        print(
-            "現在の契約プランはLightと申告されています。daily_prices/trading_calendar/"
-            "topix/listed_masterはLightプランでも利用可能と想定していますが未検証です"
-            "(DataSourceCapabilities、DECISIONS.md D0033参照)。\n"
-        )
-
     load_dotenv()
     adapter = _build_adapter(source, fixture_path, local_snapshot_dir)
     snapshot_store = RawSnapshotStore(_LAB_DIR / "01_data" / "raw")

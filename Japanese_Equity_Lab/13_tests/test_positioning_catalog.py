@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import pytest
 from lib.positioning.catalog import (
+    build_jquants_investor_type_trading_dataset_descriptor,
+    build_jquants_margin_alert_dataset_descriptor,
     build_jquants_short_ratio_dataset_descriptor,
     build_jquants_short_sale_report_dataset_descriptor,
-    build_jquants_trades_spec_dataset_descriptor,
     build_jquants_weekly_margin_interest_dataset_descriptor,
     build_price_derived_liquidity_dataset_descriptor,
 )
@@ -19,16 +20,17 @@ from lib.sources.catalog import DataCapability, ImplementationStatus, SourceCata
 _ALL_BUILDERS = (
     build_price_derived_liquidity_dataset_descriptor,
     build_jquants_weekly_margin_interest_dataset_descriptor,
+    build_jquants_margin_alert_dataset_descriptor,
     build_jquants_short_ratio_dataset_descriptor,
     build_jquants_short_sale_report_dataset_descriptor,
-    build_jquants_trades_spec_dataset_descriptor,
+    build_jquants_investor_type_trading_dataset_descriptor,
 )
 
 
 def test_all_positioning_datasets_register_without_duplicate_id_conflict() -> None:
     catalog = SourceCatalog([builder() for builder in _ALL_BUILDERS])
     found = catalog.find(capability=DataCapability.POSITIONING)
-    assert len(found) == 5
+    assert len(found) == 6
 
 
 def test_price_derived_liquidity_is_connected_and_pit_available() -> None:
@@ -43,9 +45,10 @@ def test_unimplemented_jquants_candidates_are_not_implemented_and_not_pit_availa
     """未検証Sourceを`LIVE_VALIDATED`/`CONNECTED`と記録しない(Phase4C要件§37)。"""
     unimplemented_builders = (
         build_jquants_weekly_margin_interest_dataset_descriptor,
+        build_jquants_margin_alert_dataset_descriptor,
         build_jquants_short_ratio_dataset_descriptor,
         build_jquants_short_sale_report_dataset_descriptor,
-        build_jquants_trades_spec_dataset_descriptor,
+        build_jquants_investor_type_trading_dataset_descriptor,
     )
     for builder in unimplemented_builders:
         descriptor = builder()
@@ -58,9 +61,10 @@ def test_unimplemented_candidates_known_limitations_disclose_unverified_status()
     正直に開示していることを直接確認する(推測をConfirmedのように書かない)。"""
     unimplemented_builders = (
         build_jquants_weekly_margin_interest_dataset_descriptor,
+        build_jquants_margin_alert_dataset_descriptor,
         build_jquants_short_ratio_dataset_descriptor,
         build_jquants_short_sale_report_dataset_descriptor,
-        build_jquants_trades_spec_dataset_descriptor,
+        build_jquants_investor_type_trading_dataset_descriptor,
     )
     for builder in unimplemented_builders:
         descriptor = builder()
