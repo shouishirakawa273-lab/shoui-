@@ -15348,3 +15348,186 @@ normalization.py`・`semantic_claims.py`・`candidate_extraction.py`・
 無変更。`PROMOTION_IMPLEMENTED = NO`・`EVIDENCE_INTEGRATION = NO`・
 `AUTOMATION_READINESS = NOT_READY`のまま(変更なし)。H0001は実行して
 いない。
+
+## D0102.4.1.2 — Final Deterministic Faithfulness Closure(F02/F04/F05)
+
+### 背景
+
+D0102.4.1.1(Commit `ac7d451`)のClosureに対する狭Scope Narrow Codex
+Adversarial Re-Audit(D0102.4.1.1.1相当のNarrow Closure Audit)により、
+F01/F03/F06はCLOSED、F02/F04/F05は**Public Entrypoint経由で実際に
+到達可能なFalse ACCEPT/不当なPASSが残っている**として再OPENと判定
+された。本Roundはこの3件のみをFixするNarrow Correctness Roundであり、
+F01/F03/F06のLogicおよび8軸Architectureそのものには一切手を入れて
+いない。
+
+適用した共通原則: `PRESENCE_IS_NOT_PROPOSITION_BINDING = TRUE`
+——EvidenceSpan中のどこかにMarker/数量/時制表現が存在することは、
+Candidateが表すPropositionにそれが帰属することを一切証明しない。
+Deterministicに局所的なBindingを証明できない場合は必ず`AMBIGUOUS`
+(`REVIEW_REQUIRED`)へFail Closedする(汎用日本語NLPは追加しない)。
+
+### F02 — Unsafe Partial Numeric Extraction(再OPEN→CLOSED)
+
+**再現(再Audit実測)**: `_QUANTITY_SPAN_RE`の否定Lookbehindは数字・
+既知Sign文字の直後からのMatch開始のみを拒否しており、Comma直後は
+拒否対象に含まれていなかった。Malformed Comma区切りの`1,23円`
+(Comma後が3桁でない)に対し、厳密Regexの`+`繰返しGroupが`1`のみで
+Backoffし、その後Suffix不一致でMatch全体が失敗、Regex Engineが
+Comma直後から再Matchして`23円`だけを独立した正当な数量として抽出
+していた。実測で`verify_candidate_deterministically()`を通し、
+Evidence`損失は1,23円になる可能性がある。`・Candidate(そのTailの
+Exact Quote)`23円になる可能性がある。`が`overall_outcome=ACCEPT`に
+到達することを確認した(先頭`1,`がSilentに破棄され、Fabricateされて
+いない値の一致という誤った確信でACCEPTしていた)。
+
+**修正**: 厳密Parser用Regexとは別に、より緩いCharacter Class(全角
+数字・任意桁のComma区切り・未対応Scale Kanji`百`/`十`を許容)で
+「数量らしいSpan全体」を検出する`_NUMERIC_LOOKING_SPAN_RE`+
+`_has_unparsed_numeric_content()`を新設した。緩いSpanが厳密Parserの
+一致Spanと完全一致しない箇所が1件でもあれば、`_check_quantity()`は
+(a)両側とも厳密Tokenが皆無なら`NOT_APPLICABLE`ではなく`AMBIGUOUS`
+(新設`UNPARSED_NUMERIC_CONTENT` Reason Code)へ、(b)厳密Token同士が
+偶然PASSしていてもFAIL判定の直後・既存AMBIGUOUS集約の直前で同じく
+`AMBIGUOUS`へ倒すよう変更した(既存の`QUANTITY_INVENTED`/`_MISMATCH`
+系FAIL判定は一切変更せず、FAILが引き続き最優先)。汎用Locale数値
+Parserは実装していない。
+
+**確認**: `test_d0102412_f02_1`(ASCII Minus Sign Mismatch、既存
+Behavior無変更でREJECT維持)・`test_d0102412_f02_2`(Malformed Comma
+Numeral、`QUANTITY=AMBIGUOUS/UNPARSED_NUMERIC_CONTENT`・
+`overall≠ACCEPT`)・`test_d0102412_f02_3`(全角`４.０％`)・
+`test_d0102412_f02_4`(未対応`3百万円`)がいずれも期待通り
+Fail Closedすることを確認。上記のFull ACCEPT Exploit再現Scriptを
+Fix後に再実行し、`overall_outcome`が`REVIEW_REQUIRED`
+(`QUANTITY=AMBIGUOUS/UNPARSED_NUMERIC_CONTENT`)へ変化したことを
+Public Entrypoint経由で直接確認した(pytestのみに頼らず確認)。
+
+### F04 — Mixed Direction Silent PASS(再OPEN→CLOSED)
+
+**再現(再Audit実測)**: 旧`_explicit_movement_marker()`は「Marker
+無し」と「増加/減少Marker双方が存在(混在)」という意味的に異なる
+2状態をどちらも`None`へCollapseしていた。`_check_direction_
+consistency()`は`evidence_marker is None`かつ`direction=UNSPECIFIED`
+の場合にAMBIGUOUS分岐が一つも発火せずTrivial PASSへ落ちる構造で
+あったため、混在Evidence(例:「売上高は増加し、利益は減少する
+可能性がある。」)をVerbatim QuoteしたCandidate(`direction=
+UNSPECIFIED`)が、BUSINESS_RISK Eligible Taxonomyの下で`PROPOSITION_
+IDENTITY=PASS`・`overall_outcome=ACCEPT`に到達することを実測確認
+した(Deterministic Subject-to-Direction Bindingが存在しないにも
+かかわらずSilent ACCEPTしていた)。
+
+**修正**: 内部専用のClosed State`_MovementState`(`NONE`/`INCREASE`/
+`DECREASE`/`MIXED`、新しい`FaithfulnessDimension`は追加しない)を
+新設し、`_movement_state()`が増加/減少Marker双方の存在を`MIXED`
+として明示的に区別するよう変更した。`_check_direction_consistency()`
+に`movement == MIXED`の専用分岐を追加し、`candidate.direction`の値に
+かかわらず(UNSPECIFIED/INCREASE/DECREASEいずれでも)常に`AMBIGUOUS`
+(`DIRECTION_REQUIRES_SEMANTIC_REVIEW`)へFail Closedするよう変更した。
+既存の否定Suffix除外Logic(`_has_unnegated_marker()`、F04 D0102.4.1.1
+部分)・単一明確Markerに対するPASS/FAIL判定はいずれも無変更。
+
+**確認**: `test_d0102412_f04_5`(混在+UNSPECIFIED→REVIEW_REQUIRED)・
+`test_d0102412_f04_6`(混在+INCREASE→AMBIGUOUS)・`test_d0102412_f04_7`
+(否定+INCREASE→引き続きAMBIGUOUS、既存Fix無退行)・`test_d0102412_
+f04_8`(単一明確なINCREASE→引き続きPASS)・`test_d0102412_f04_9`
+(明確な矛盾→引き続きFAIL/REJECT)。Full ACCEPT Exploit再現Scriptを
+Fix後に再実行し、`overall_outcome`が`REVIEW_REQUIRED`
+(`PROPOSITION_IDENTITY=AMBIGUOUS/DIRECTION_REQUIRES_SEMANTIC_REVIEW`)
+へ変化したことをPublic Entrypoint経由で直接確認した。
+
+### F05 — Temporal Borrowing(再OPEN→CLOSED)
+
+**再現(再Audit実測)**: D0102.4.1.1で導入された`_temporal_ranks_
+present()`はEvidence全体からRank集合を返し、`_check_temporal_scope()`
+は全体Rank集合同士のIntersectionが非空であれば無条件にPASSしていた。
+このため、Evidence中の**無関係な別Proposition**に係るFUTURE Marker
+(`今後`)が、Candidateの主張する別PropositionのFUTURE Scopeを誤って
+証明してしまう(実測: Evidence`現在の販売は堅調である。今後、別事業
+では損失が生じる可能性がある。`・Candidate`今後、販売は堅調である。`
+に対し`TEMPORAL_SCOPE=PASS/NO_ISSUE_DETECTED`)。この特定の実測Case
+ではCERTAINTY_AND_COMMITMENT側の偶発的なFAIL[同種のWhole-Text Marker
+借用、下記Residual Risk参照]がOverallをREJECTへ救っていたが、
+TEMPORAL_SCOPE自体のFalse PASSは`verify_candidate_deterministically()`
+経由で再現確認された、Dimension単位の実バグだった。
+
+**修正**: 句点(`。`)のみを境界とするConservative Sentence-Level
+Split(`_split_into_clauses()`、依存構造解析・汎用NLPは実装しない)と、
+既存の`in`によるExact Substring Containment(他Dimensionと同じ機構を
+再利用、独自のFuzzy/数値内部開始判定は追加しない)を用いた
+`_locally_bound_temporal_ranks()`を新設した。`_check_temporal_scope()`
+は、Evidenceが複数のTemporal Category(`len(evidence_ranks) > 1`)を
+含む場合のみ、全体Intersectionを「Signal」として扱うに留め、
+Candidate Textが Evidence の単一Sentence-Level Clause内にExactに
+Containされ、かつそのClause内のRankがCandidateのRankと一致する
+場合に限り`PASS`とし、Local Bindingが証明できなければ`AMBIGUOUS`
+(`TEMPORAL_REQUIRES_SEMANTIC_REVIEW`)へ倒す。Evidenceが単一Category
+のみの場合(既存の大多数のCase)は従来のIntersection判定のみで
+Aggregation・分岐構造は無変更。
+
+**確認**: `test_d0102412_f05_10`(元のFalse Reject Repro、Candidateが
+そのClause自身のためLocal Binding成立・`overall≠REJECT`維持、
+D0102.4.1.1のClosureを退行させていないことを確認)・`test_d0102412_
+f05_11`(Temporal Borrowing Repro、`TEMPORAL_SCOPE=AMBIGUOUS/
+TEMPORAL_REQUIRES_SEMANTIC_REVIEW`・`overall≠ACCEPT`)・
+`test_d0102412_f05_12`(純HISTORICAL Evidence+未対応FUTURE主張は
+引き続きFAIL、既存test_15と同型の回帰確認)・`test_d0102412_f05_13`
+(複数Temporal Category+Local Binding不成立→AMBIGUOUS、別Claim
+Typeでの追加確認)。Public Entrypoint経由でTemporal Borrowing Repro
+を再実行し、`TEMPORAL_SCOPE`が`PASS`から`AMBIGUOUS`へ変化したことを
+直接確認した。
+
+### Residual Risk(意図的に本Roundでは修正しない)
+
+再AuditはCERTAINTY_AND_COMMITMENTにも同種のWhole-Text Marker借用
+Pattern(Evidence全体から`_epistemic_tier_or_none()`/`_commitment_
+tier_or_none()`をScanしており、無関係なPropositionのHedge Marker
+[例: 上記F05実測Caseの「可能性がある」]がCERTAINTY判定に混入しうる)
+が存在する可能性を指摘した。本Roundでは指示(§6)通りこれを新規Finding
+としては扱わず、`_locally_bound_temporal_ranks()`のような共有Local
+Binding Helperを自然に再利用してTrivialに解決できる範囲にも含めて
+いない(CERTAINTY_AND_COMMITMENTのTier比較Logic自体は今回一切
+変更していない)。将来のModel-Assisted Verifier Boundary(D0102.4.2
+以降)導入時に、この境界も含めて再検討する対象としてここに記録する。
+D0102.4.1.2時点でCERTAINTY_AND_COMMITMENTのArchitecture・Logicを
+再Openしたことはない。
+
+### Closure Summary(D0102.4.1.2時点)
+
+```
+F01 CLOSED(無変更、Smoke Test再確認のみ)
+F02 CLOSED
+F03 CLOSED(無変更、Smoke Test再確認のみ)
+F04 CLOSED
+F05 CLOSED
+F06 CLOSED(無変更、Smoke Test再確認のみ)
+```
+
+### Architecture Guard(確認)
+
+`MODEL_CALL_SITES = 0`・`PROMOTION_IMPLEMENTED = NO`・
+`EVIDENCE_INTEGRATION = NO`・新しい`FaithfulnessDimension`追加数`0`・
+汎用日本語NLP追加なし・`AUTOMATION_READINESS = NOT_READY`のまま
+(いずれも変更なし、Grep/Diff再確認済み)。H0001は実行していない。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`lib/disclosures/faithfulness.py`・
+`13_tests/test_faithfulness.py`): 両File Pass。`mypy --strict`
+(`lib/disclosures/faithfulness.py`): Success, no issues found in 1
+source file。Targeted Pytest: `test_faithfulness.py`(**77 Test**、
+既存64+新規13)・`test_disclosures_semantic_claims.py`・`test_
+candidate_extraction.py`・`test_disclosures_normalization.py`合計
+**222 Test全てPass**(F01/F03/F06のFrozen Boundary無変更・無退行を
+含む)。Full Repository Suite/H0001はいずれも実行していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/faithfulness.py`(F02/F04/F05
+修正のみ)・`Japanese_Equity_Lab/13_tests/test_faithfulness.py`
+(F02/F04/F05 Reproduction Test追加)・このDECISIONS.md追記のみ。
+`lib/disclosures/normalization.py`・`semantic_claims.py`・
+`candidate_extraction.py`・その他既存`lib/`・既存`13_tests/`
+(faithfulness以外)はいずれも無変更。`PROMOTION_IMPLEMENTED = NO`・
+`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
+まま(変更なし)。H0001は実行していない。

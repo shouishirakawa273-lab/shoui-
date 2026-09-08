@@ -1031,3 +1031,204 @@ def test_f06_valid_construction_with_dimension_results_still_succeeds() -> None:
         verified_at=_VERIFIED_AT,
     )
     assert result.status == FaithfulnessVerificationStatus.SUCCESS
+
+
+# ============================================================
+# D0102.4.1.2 — Final Deterministic Faithfulness Closure(F02/F04/F05)
+#
+# D0102.4.1.1閉鎖後のNarrow Codex Adversarial Audit(D0102.4.1.1.1)で
+# 再発見されたF02(Unsafe Partial Numeric Extraction)・F04(Mixed
+# Direction Silent PASS)・F05(Temporal Borrowing)の3件を、Public
+# Entrypoint経由でDimension単位でも直接Assertする。
+# ============================================================
+
+
+# ---- F02: Malformed Numeric Partial Extraction Guard ----
+
+
+def test_d0102412_f02_1_ascii_minus_sign_mismatch_remains_rejected() -> None:
+    doc, span = _doc_and_span("-3.7%の損失が生じる可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="3.7%の損失が生じる可能性がある。"
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert quantity.reason_code == FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_d0102412_f02_2_malformed_comma_numeral_cannot_partially_become_trusted() -> None:
+    # 「1,23円」の先頭「1,」を黙って読み飛ばして「23円」だけを信頼できる
+    # 数量として扱うことを禁止する(D0102.4.1.2 §3B)。Candidateが偶然その
+    # Tailと一致していても、overallはACCEPTしてはならない。
+    doc, span = _doc_and_span("損失は1,23円になる可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="23円になる可能性がある。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert quantity.reason_code == FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_d0102412_f02_3_fullwidth_percent_unsupported_fails_closed() -> None:
+    text = "４.０％の増加があった。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert quantity.reason_code == FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_d0102412_f02_4_unsupported_scale_kanji_fails_closed() -> None:
+    text = "3百万円の増加があった。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, text=text)
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    quantity = _dim_result(result, FaithfulnessDimension.QUANTITY)
+    assert quantity.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert quantity.reason_code == FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+# ---- F04: Mixed Direction Must Be an Explicit State ----
+
+
+def test_d0102412_f04_5_mixed_direction_with_unspecified_reviews_not_accepts() -> None:
+    text = "売上高は増加し、利益は減少する可能性がある。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.UNSPECIFIED
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert prop.reason_code == FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_d0102412_f04_6_mixed_direction_with_increase_reviews_not_passes() -> None:
+    text = "売上高は増加し、利益は減少した。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert prop.reason_code == FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW
+
+
+def test_d0102412_f04_7_negated_increase_with_increase_direction_remains_review() -> None:
+    text = "リスクは増加しない。対策を実施している。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome != FaithfulnessDimensionOutcome.PASS
+    assert prop.reason_code == FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_d0102412_f04_8_single_clean_increase_still_passes() -> None:
+    text = "売上高は増加した。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_d0102412_f04_9_clean_direction_contradiction_still_rejects() -> None:
+    text = "利益は減少した。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.INCREASE
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert prop.reason_code == FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+# ---- F05: Temporal Local Binding ----
+
+
+def test_d0102412_f05_10_original_multi_temporal_false_reject_stays_closed() -> None:
+    doc, span = _doc_and_span("現在のリスクを分析した。今後損失が生じる可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="今後損失が生じる可能性がある。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome != FaithfulnessDimensionOutcome.FAIL
+    assert result.overall_outcome != FaithfulnessOutcome.REJECT
+
+
+def test_d0102412_f05_11_unrelated_future_marker_cannot_certify_sales_proposition() -> None:
+    # F05 Temporal Borrowing Repro: 「今後」は別事業のRiskにのみ係っており、
+    # 販売のFUTURE Scopeを証明しない(D0102.4.1.2 §5D)。
+    doc, span = _doc_and_span(
+        "現在の販売は堅調である。今後、別事業では損失が生じる可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY
+    )
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.OUTLOOK, text="今後、販売は堅調である。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert temporal.reason_code == FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_d0102412_f05_12_pure_historical_future_claim_still_fails() -> None:
+    doc, span = _doc_and_span("当中間連結会計期間の業績は堅調であった。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.OUTLOOK, text="今後も継続的に堅調である。")
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert temporal.reason_code == FaithfulnessReasonCode.TEMPORAL_CATEGORY_MISMATCH
+
+
+def test_d0102412_f05_13_multiple_categories_without_local_binding_is_ambiguous() -> None:
+    # 「販売」節にはHISTORICALしか係っておらず、別節の「今後」をBorrowして
+    # FUTUREのSubject Attribution Claimを証明することはできない。
+    doc, span = _doc_and_span("現在の販売は堅調である。今後、他事業の縮小を検討している。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.MANAGEMENT_EXPLANATION, text="今後、販売の縮小を検討している。"
+    )
+
+    result = verify_candidate_deterministically(candidate=candidate, document=doc, verified_at=_VERIFIED_AT)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert temporal.reason_code == FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT

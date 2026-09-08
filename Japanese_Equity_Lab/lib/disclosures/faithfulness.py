@@ -143,6 +143,11 @@ class FaithfulnessReasonCode(StrEnum):
     QUANTITY_UNIT_MISMATCH = "QUANTITY_UNIT_MISMATCH"
     QUANTITY_SIGN_MISMATCH = "QUANTITY_SIGN_MISMATCH"
     QUANTITY_INVENTED = "QUANTITY_INVENTED"
+    # D0102.4.1.2 F02 Closure(§3A): 数量らしいTextは検出できたが厳密Parser
+    # では安全にParseしきれなかった場合専用のReason Code(Malformed Comma
+    # 区切り・全角数字・未対応Scale Kanji等、Silent Partial Extraction/
+    # Silent Disappearの禁止)。
+    UNPARSED_NUMERIC_CONTENT = "UNPARSED_NUMERIC_CONTENT"
     NEGATION_INVERTED = "NEGATION_INVERTED"
     NEGATION_AMBIGUOUS = "NEGATION_AMBIGUOUS"
     CAUSAL_TIER_UPGRADED = "CAUSAL_TIER_UPGRADED"
@@ -414,52 +419,79 @@ def _has_unnegated_marker(text: str, marker: str) -> bool:
         return True
 
 
-def _explicit_movement_marker(text: str) -> ClaimDirection | None:
-    """Textから明示的な増減Markerを検出する(否定形の出現は除外、
-    F04 Closure)。増加/減少Markerが両方存在する(混在)場合は「単一の
-    明確なMarker」とは言えないため`None`を返す(D0102.4.1の保守的な
-    単純化)。"""
+class _MovementState(StrEnum):
+    """D0102.4.1.2 F04 Closure: 旧`_explicit_movement_marker()`は「Marker
+    無し」と「増加/減少Marker双方が存在(混在)」の2つの意味的に異なる
+    状態をどちらも`None`へ Collapseしており、`direction=UNSPECIFIED`の
+    候補に対してはどちらも同じ「Trivially一致(PASS)」経路へ落ちていた
+    (混在Evidenceには実際にはDeterministicなProposition-to-Direction
+    Bindingが存在しないにもかかわらず、Silent PASSしていた)。この内部
+    専用State(新しいFaithfulnessDimensionは追加しない)で両状態を区別する。"""
+
+    NONE = "NONE"
+    INCREASE = "INCREASE"
+    DECREASE = "DECREASE"
+    MIXED = "MIXED"
+
+
+def _movement_state(text: str) -> _MovementState:
+    """Textから増減Markerの状態を検出する(否定形の出現は除外、F04
+    Closure)。増加/減少Markerが両方存在する場合はMIXEDを返す(単一の
+    明確なMarkerとしてCollapseしない、D0102.4.1.2)。"""
     has_increase = any(_has_unnegated_marker(text, marker) for marker in _INCREASE_MARKERS)
     has_decrease = any(_has_unnegated_marker(text, marker) for marker in _DECREASE_MARKERS)
-    if has_increase and not has_decrease:
-        return ClaimDirection.INCREASE
-    if has_decrease and not has_increase:
-        return ClaimDirection.DECREASE
-    return None
+    if has_increase and has_decrease:
+        return _MovementState.MIXED
+    if has_increase:
+        return _MovementState.INCREASE
+    if has_decrease:
+        return _MovementState.DECREASE
+    return _MovementState.NONE
 
 
 def _check_direction_consistency(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
     """D0102.4A 修正1: PROPOSITION_IDENTITYの一部としてDirection
     Consistencyを検証する(9番目のDimensionは追加しない)。"""
-    evidence_marker = _explicit_movement_marker(evidence_text)
+    movement = _movement_state(evidence_text)
     direction = candidate.direction
 
-    if evidence_marker == ClaimDirection.INCREASE and direction == ClaimDirection.DECREASE:
+    if movement == _MovementState.INCREASE and direction == ClaimDirection.DECREASE:
         return _dim(
             FaithfulnessDimension.PROPOSITION_IDENTITY,
             FaithfulnessDimensionOutcome.FAIL,
             FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED,
         )
-    if evidence_marker == ClaimDirection.DECREASE and direction == ClaimDirection.INCREASE:
+    if movement == _MovementState.DECREASE and direction == ClaimDirection.INCREASE:
         return _dim(
             FaithfulnessDimension.PROPOSITION_IDENTITY,
             FaithfulnessDimensionOutcome.FAIL,
             FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED,
         )
-    if evidence_marker is not None and direction == ClaimDirection.UNSPECIFIED:
-        return _dim(
-            FaithfulnessDimension.PROPOSITION_IDENTITY,
-            FaithfulnessDimensionOutcome.AMBIGUOUS,
-            FaithfulnessReasonCode.DIRECTION_UNSPECIFIED_WITH_EXPLICIT_SOURCE,
-        )
-    if evidence_marker is None and direction in (ClaimDirection.INCREASE, ClaimDirection.DECREASE):
+    if movement == _MovementState.MIXED:
+        # D0102.4.1.2 F04 Closure: Evidenceに増加/減少Markerが両方存在する
+        # =複数のMovement Propositionが同一Span内に混在しており、
+        # Deterministic Subject-to-Direction Bindingが存在しない。
+        # `candidate.direction`(UNSPECIFIED/INCREASE/DECREASEいずれでも)
+        # によらず、Trivial PASSへ倒さずAMBIGUOUSへFail Closedする。
         return _dim(
             FaithfulnessDimension.PROPOSITION_IDENTITY,
             FaithfulnessDimensionOutcome.AMBIGUOUS,
             FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW,
         )
-    # evidence_marker == direction(両方Increase/Decreaseで一致)、または
-    # 両方 None/UNSPECIFIED(いずれも主張なし)のいずれか——Trivially一致。
+    if movement != _MovementState.NONE and direction == ClaimDirection.UNSPECIFIED:
+        return _dim(
+            FaithfulnessDimension.PROPOSITION_IDENTITY,
+            FaithfulnessDimensionOutcome.AMBIGUOUS,
+            FaithfulnessReasonCode.DIRECTION_UNSPECIFIED_WITH_EXPLICIT_SOURCE,
+        )
+    if movement == _MovementState.NONE and direction in (ClaimDirection.INCREASE, ClaimDirection.DECREASE):
+        return _dim(
+            FaithfulnessDimension.PROPOSITION_IDENTITY,
+            FaithfulnessDimensionOutcome.AMBIGUOUS,
+            FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW,
+        )
+    # movement == direction(両方Increase/Decreaseで一致)、または
+    # 両方 NONE/UNSPECIFIED(いずれも主張なし)のいずれか——Trivially一致。
     return _dim(
         FaithfulnessDimension.PROPOSITION_IDENTITY, FaithfulnessDimensionOutcome.PASS, FaithfulnessReasonCode.NO_ISSUE_DETECTED
     )
@@ -601,6 +633,24 @@ _QUANTITY_SPAN_RE = re.compile(
     r"(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?(?:兆|億|万|千)?)+(?:%|％|円|台)"
 )
 
+# D0102.4.1.2 F02 Closure(§3A/§3B、Unsafe Partial Numeric Extraction Guard):
+# 上記`_QUANTITY_SPAN_RE`(厳密Parser用)はComma区切りが厳密に3桁でない・
+# 全角数字・未対応Scale Kanji(百/十等)を含むMalformed Numeric Textに対して
+# Regex Engineが内部から部分一致してしまう(例:「1,23円」で先頭の「1,」を
+# 黙って読み飛ばし「23円」だけを一致させる)。この`_NUMERIC_LOOKING_SPAN_RE`
+# は同じLeading Sign/Unit Suffix構造を維持しつつ、本文字列(桁区切り・
+# 小数点・未対応Scale Kanjiも含む)をより緩いCharacter Classで検出する
+# 「数量らしいSpan全体」検出専用Regexである(値のParseは一切行わない、
+# 検出専用)。この緩いSpanが厳密Parserの一致Spanと完全一致しない場合、
+# その数値らしいTextの一部がSilentに読み飛ばされたことを意味する
+# (`_has_unparsed_numeric_content()`参照、汎用Locale数値Parserは実装しない)。
+_NUMERIC_LOOKING_CONTINUATION_CHARS = f"0-9０-９{_QUANTITY_SIGN_CHARS}，,"
+_NUMERIC_LOOKING_BODY_CHARS = "0-9０-９，,．.兆億万千百十"
+_NUMERIC_LOOKING_SPAN_RE = re.compile(
+    rf"(?<![{_NUMERIC_LOOKING_CONTINUATION_CHARS}])[{_QUANTITY_SIGN_CHARS}]?"
+    rf"[0-9０-９][{_NUMERIC_LOOKING_BODY_CHARS}]*(?:%|％|円|台)"
+)
+
 
 def _parse_numeral(text: str) -> Decimal | None:
     pos = 0
@@ -666,6 +716,19 @@ def _find_quantities(text: str) -> list[_ParsedQuantity | None]:
     return results
 
 
+def _has_unparsed_numeric_content(text: str) -> bool:
+    """D0102.4.1.2 F02 Closure(§3A): `_NUMERIC_LOOKING_SPAN_RE`(緩い検出用)
+    が見つけた「数量らしいSpan」のうち、厳密`_QUANTITY_SPAN_RE`+
+    `_try_parse_quantity()`が**全く同じSpan**を安全にParseできていない
+    ものが1件でもあれば`True`を返す。Malformed Comma区切り(`1,23円`)・
+    全角数字(`４.０％`)・未対応Scale Kanji(`3百万円`)のいずれも、
+    厳密Parserが部分一致で「一部だけ」を信頼できる数量として扱うことを
+    防ぐ(Silent Partial Extraction/Silent Disappearをどちらも禁止する、
+    汎用Locale数値Parserは実装しない)。"""
+    strict_spans = {(m.start(), m.end()) for m in _QUANTITY_SPAN_RE.finditer(text) if _try_parse_quantity(m.group(0)) is not None}
+    return any((m.start(), m.end()) not in strict_spans for m in _NUMERIC_LOOKING_SPAN_RE.finditer(text))
+
+
 def _match_quantity_against_evidence(
     candidate_q: _ParsedQuantity, evidence_parsed: list[_ParsedQuantity]
 ) -> tuple[FaithfulnessDimensionOutcome, FaithfulnessReasonCode]:
@@ -703,8 +766,21 @@ def _match_quantity_against_evidence(
 def _check_quantity(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
     evidence_tokens = _find_quantities(evidence_text)
     candidate_tokens = _find_quantities(candidate.normalized_claim_text)
+    # D0102.4.1.2 F02 Closure(§3A): 厳密Tokenとは別に、緩い検出で
+    # 見つかった数量らしいSpanが厳密Parserで完全にCoverされていない
+    # 箇所(Malformed Comma区切り・全角数字・未対応Scale Kanji等)が
+    # Evidence/Candidateのどちらかに存在するかを独立して判定する。
+    has_unparsed_numeric = _has_unparsed_numeric_content(evidence_text) or _has_unparsed_numeric_content(
+        candidate.normalized_claim_text
+    )
 
     if not evidence_tokens and not candidate_tokens:
+        if has_unparsed_numeric:
+            return _dim(
+                FaithfulnessDimension.QUANTITY,
+                FaithfulnessDimensionOutcome.AMBIGUOUS,
+                FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT,
+            )
         return _dim(
             FaithfulnessDimension.QUANTITY,
             FaithfulnessDimensionOutcome.NOT_APPLICABLE,
@@ -728,6 +804,18 @@ def _check_quantity(*, evidence_text: str, candidate: SemanticClaimCandidate) ->
     for outcome, reason in token_results:
         if outcome == FaithfulnessDimensionOutcome.FAIL:
             return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.FAIL, reason)
+
+    # D0102.4.1.2 F02 Closure(§3A): 認識できたTokenが偶然一致していても、
+    # 同じEvidence/Candidate中にParseしきれなかった数量らしいTextが
+    # 残っている場合、それを黙って無視してPASSへ倒さない(Unsafe Partial
+    # Extraction、FAIL Precedenceの直後・既存AMBIGUOUS集約の直前に置く)。
+    if has_unparsed_numeric:
+        return _dim(
+            FaithfulnessDimension.QUANTITY,
+            FaithfulnessDimensionOutcome.AMBIGUOUS,
+            FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT,
+        )
+
     for outcome, reason in token_results:
         if outcome == FaithfulnessDimensionOutcome.AMBIGUOUS:
             return _dim(FaithfulnessDimension.QUANTITY, FaithfulnessDimensionOutcome.AMBIGUOUS, reason)
@@ -924,9 +1012,38 @@ def _temporal_ranks_present(text: str) -> frozenset[int]:
     return frozenset(_TEMPORAL_RANK[category] for category, marker in _TEMPORAL_CATEGORY_MARKERS if marker in text)
 
 
+# D0102.4.1.2 F05 Closure(§5B): 句点(。)のみを安全な境界として使う
+# Conservative Sentence-Level Split(依存構造解析・汎用日本語NLPは実装
+# しない)。句点の直後で分割し、句点自体は直前のClauseへ残す。
+_CLAUSE_SPLIT_RE = re.compile(r"(?<=。)")
+
+
+def _split_into_clauses(text: str) -> list[str]:
+    parts = [p for p in _CLAUSE_SPLIT_RE.split(text) if p]
+    return parts if parts else [text]
+
+
+def _locally_bound_temporal_ranks(*, evidence_text: str, candidate_text: str) -> frozenset[int] | None:
+    """D0102.4.1.2 F05 Closure(§5B、Temporal Borrowing対策): Candidateの
+    Textが Evidence の単一Sentence-Level Clause内に文字通りContain
+    されている場合のみ、そのClause内(Evidence全体ではない)のTemporal
+    Rankを返す(既存`in`によるExact Substring Containment、他Dimension
+    [PROPOSITION_IDENTITY等]と同じ機構を再利用、独自のFuzzy/数値内部
+    開始判定は行わない)。Local Bindingが証明できない場合は`None`を返し、
+    呼び出し側でAMBIGUOUSへFail Closedする(無関係なClauseからのMarker
+    借用を構造的に禁止する)。"""
+    if not candidate_text:
+        return None
+    for clause in _split_into_clauses(evidence_text):
+        if candidate_text in clause:
+            return _temporal_ranks_present(clause)
+    return None
+
+
 def _check_temporal_scope(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
+    candidate_text = candidate.normalized_claim_text
     evidence_ranks = _temporal_ranks_present(evidence_text)
-    candidate_ranks = _temporal_ranks_present(candidate.normalized_claim_text)
+    candidate_ranks = _temporal_ranks_present(candidate_text)
 
     if not evidence_ranks and not candidate_ranks:
         return _dim(
@@ -946,6 +1063,22 @@ def _check_temporal_scope(*, evidence_text: str, candidate: SemanticClaimCandida
             FaithfulnessDimensionOutcome.FAIL,
             FaithfulnessReasonCode.TEMPORAL_CATEGORY_MISMATCH,
         )
+
+    # D0102.4.1.2 F05 Closure(§5A、PRESENCE_IS_NOT_PROPOSITION_BINDING):
+    # EvidenceにTemporal Categoryが複数存在する場合、全体Intersectionが
+    # 非空というだけでは「Candidateが主張するTemporal Scopeが実際に
+    # 無関係な別Propositionの Marker を借用しているだけではないか」を
+    # 排除できない。この場合はClause-Local Bindingが証明できた場合のみ
+    # PASSする(証明できなければAMBIGUOUS、Borrowを禁止する)。
+    if len(evidence_ranks) > 1:
+        local_ranks = _locally_bound_temporal_ranks(evidence_text=evidence_text, candidate_text=candidate_text)
+        if local_ranks is None or not (local_ranks & candidate_ranks):
+            return _dim(
+                FaithfulnessDimension.TEMPORAL_SCOPE,
+                FaithfulnessDimensionOutcome.AMBIGUOUS,
+                FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW,
+            )
+
     return _dim(FaithfulnessDimension.TEMPORAL_SCOPE, FaithfulnessDimensionOutcome.PASS, FaithfulnessReasonCode.NO_ISSUE_DETECTED)
 
 
