@@ -55,13 +55,33 @@ if [ -z "$PY" ]; then
   exit 2
 fi
 
-# Fast GateはruffのみをUseする(mypy/pytestはTargeted/Full Acceptanceへ
-# 移したため、ここではImport検証もruffのみに限定する、DECISIONS.md D0098)。
-if ! "$PY" -c "import ruff" >/dev/null 2>&1; then
-  echo "[hook] ${PY} にruffが見つかりません。" >&2
-  echo "[hook] 例: ${PY} -m pip install ruff" >&2
-  echo "[hook] (Repository-local .venvへインストールしてください、Global Pythonへは切り替えません)" >&2
-  exit 2
+# DEV-HOOK-01: ruffは可能な限りVenv直下の専用Executable(ruff.exe/ruff)を
+# 直接呼ぶ(`"$PY" -m ruff`より実測約4倍高速、`python.exe`起動自体を
+# ruff呼び出し2回分[check/format --check]から完全に排除できるため)。
+# 見つからない場合のみ`"$PY" -m ruff`へFallbackする(Global Pythonへは
+# 引き続き切り替えない、Deterministic Toolchain Policyは変更しない)。
+RUFF=""
+for candidate in ".venv/Scripts/ruff.exe" ".venv/bin/ruff"; do
+  if [ -x "$candidate" ]; then
+    RUFF="$candidate"
+    break
+  fi
+done
+
+if [ -n "$RUFF" ]; then
+  ruff_check() { "$RUFF" check "$@"; }
+  ruff_format_check() { "$RUFF" format --check "$@"; }
+else
+  # Fast GateはruffのみをUseする(mypy/pytestはTargeted/Full Acceptanceへ
+  # 移したため、ここではImport検証もruffのみに限定する、DECISIONS.md D0098)。
+  if ! "$PY" -c "import ruff" >/dev/null 2>&1; then
+    echo "[hook] ${PY} にruffが見つかりません(.venv/Scripts/ruff.exe相当も見つかりません)。" >&2
+    echo "[hook] 例: ${PY} -m pip install ruff" >&2
+    echo "[hook] (Repository-local .venvへインストールしてください、Global Pythonへは切り替えません)" >&2
+    exit 2
+  fi
+  ruff_check() { "$PY" -m ruff check "$@"; }
+  ruff_format_check() { "$PY" -m ruff format --check "$@"; }
 fi
 
 # Tool Inputから変更対象file_pathを取得する(Unicode-safe: Stdinを一度
@@ -134,10 +154,10 @@ fi
 fail=0
 
 echo "[hook] ruff check (changed file only) ..."
-"$PY" -m ruff check "$file_path" || fail=1
+ruff_check "$file_path" || fail=1
 
 echo "[hook] ruff format --check (changed file only) ..."
-"$PY" -m ruff format --check "$file_path" || fail=1
+ruff_format_check "$file_path" || fail=1
 
 if [ "$fail" -ne 0 ]; then
   echo "[hook] Fast Gateに失敗しました。上記のエラーを修正してください。" >&2

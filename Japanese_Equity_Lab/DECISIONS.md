@@ -15059,3 +15059,104 @@ DECISIONS.md追記をCommit対象とする。`lib/disclosures/normalization.py`
 `lib/`・既存`13_tests/`はいずれも無変更。`AUTOMATION_READINESS =
 NOT_READY`のまま(変更なし)。H0001は実行していない。次Round
 (未着手)はModel-assisted Verifier実装(D0102.4.2)。
+
+## DEV-HOOK-01 — Post-Edit Hook Python Toolchain調査 + ruff.exe直接呼び出し化
+
+### 背景
+
+Post-Edit Fast Gate(`.claude/hooks/post_edit_quality_gate.sh`、D0098
+Layer A)が「HookはFast Gateの失敗を報告するが、同じFileに対する手動
+`ruff check`/`ruff format --check`は成功する」という再現性の低い
+症状を繰り返しているとの指摘があり、原因調査+開発環境固有の実行問題
+のみの修正を行った。
+
+### 調査結果: Hook自体の欠陥は再現できなかった
+
+実際のClaude Code PostToolUse呼び出しを模したStdin JSON(`tool_input.
+file_path`にRepository Root配下の実File[`C:\Users\白川正威\shoui-\...`
+のようなJapanese文字を含む実際のWindows Path]を指定)を複数パターン
+(最小Payload・Session/Cwd/Tool Name/Tool Response等を含むFull
+Payload)で構築し、`bash .claude/hooks/post_edit_quality_gate.sh`へ
+直接投入して検証した。いずれのCaseでも:
+
+- `.venv/Scripts/python.exe`が正しく解決される。
+- `tool_input.file_path`(Japanese文字を含むPathを含む)が正しく
+  抽出される。
+- `ruff check`/`ruff format --check`の結果が、同じFileへの手動実行
+  結果と完全に一致する(Cleanな既存Fileでは常にPASS、意図的に
+  壊したFileでは常に正しくFAILし、実際のRuff Diagnosticsが出力
+  される)。
+- 非`.py`File・Repository外Path(Scratchpad等)はいずれも正しく
+  skip(exit 0)される。
+
+**調査中に判明した1件の自己誘発的な誤検出**: 最初の再現試行で
+「Hookへの入力Payload自体」を`.venv/Scripts/python.exe -c "print(json.
+dumps(...))"`のText Mode Stdout経由で生成したところ、`sys.stdout.
+encoding`がこの環境では既定で`cp932`であることが判明し、Payload内の
+Japanese文字(白川正威)がHookへ渡る**前**にCP932へ文字化けしていた
+(Hook自身のBugではなく、調査用Test Fixtureの生成方法自体の不備)。
+`sys.stdout.buffer.write(value.encode("utf-8"))`(Bytes明示Write)で
+再生成したPayloadでは問題なく動作した。**Hook自身のfile_path抽出
+Logicは既にこの落とし穴を回避する設計になっている**(Stdin全体を
+Temp Fileへ一度書き出し、Python側で`rb`+明示`.decode("utf-8")`する
+既存実装、Script冒頭のComment参照)——直していない。
+
+`ROOT_CAUSE`: **再現できなかった**。報告された症状は、恐らく
+複数StepにわたるFile編集の途中経過(1回のEdit直後に一時的な
+Ruff Violationが存在し、直後の別Editで修正した)を、離れたTimingで
+の手動再確認と比較したことによる見かけ上の不一致であった可能性が
+高いが、これを確定的に証明する記録は無い。
+
+### 適用した変更(欠陥修正ではなく、事前承認済みの強化)
+
+Task指示(§5「If ruff has its own executable in the venv, prefer
+calling that directly instead of `python -m ruff`」)に基づき、
+欠陥の有無に関わらず正当な改善として、Ruff呼び出しを`.venv/Scripts/
+ruff.exe`(POSIX Venvでは`.venv/bin/ruff`)へ直接切り替えた
+(Python Module経由`"$PY" -m ruff`は、専用Executableが見つからない
+場合のみFallbackとして維持、Global Pythonへの切り替えはこれまで通り
+一切行わない)。
+
+実測(同一File、3回平均): `"$PY" -m ruff check`が約0.20秒/回、
+`.venv/Scripts/ruff.exe check`が約0.05秒/回(約4倍高速)。Hookは
+Ruffを1回のEditにつき2回(`check`+`format --check`)呼ぶため、
+1回のEditあたり約0.3秒の短縮+ `python.exe`起動2回分の排除
+(D0098の「Fast Execution」要件、`python.exe`解決経路自体を減らす
+ことで将来のToolchain解決問題の発生面積も縮小する)。
+
+### D0098/D0098.1 Invariant(維持を確認、いずれも無変更)
+
+変更後のFileを再読し、以下を目視確認した: 変更対象File限定(`file_
+path`単体のみ)・Repository外Scratchpad Skip・`ruff check`+`format
+--check`のみ(mypy/pytest呼び出し無し)・Repository全体Scan無し・
+自己再起動(Recursion)無し・Global Python Fallback無し
+(`.venv/Scripts/ruff.exe`が見つからない場合も`"$PY" -m ruff`への
+Fallbackのみで、Global Pythonへは切り替わらない)。
+
+### Windows Path Safety
+
+Repository Path自体がJapanese文字を含む(`C:\Users\白川正威\shoui-`)
+ため、`repo_root`をArgvとして`.venv/Scripts/python.exe`(Native
+Windows Exe)へ渡した際にMSYS/Git Bashが文字化けさせないかを個別に
+検証した——`sys.argv[1].encode("utf-8").hex()`で実際のByte列を確認し、
+正しいUTF-8 Byte列(`白川正威`の正しいEncoding)がそのまま渡っている
+ことを確認した(Argv経路のCorruptionは無い、問題は前述のText Mode
+Stdout生成側にのみあった)。既存Scriptの全Executable/File Path参照は
+既に適切にQuoteされている(`"$PY"`・`"$file_path"`・`"$RUFF"`等、
+今回追加した`$RUFF`も同じQuoting Patternを踏襲)。
+
+### Test Matrix(手動実行、実際のHook Scriptに対して)
+
+| Case | 期待 | 実測 |
+|---|---|---|
+| 有効な既存.py File(Japanese Path含む) | ruff.exe経由でPASS | PASS(Exit 0) |
+| 非.py File(DECISIONS.md) | Silent Skip | Skip(Exit 0、無出力) |
+| Repository外Path(Scratchpad) | Skip + Message | Skip(Exit 0、Message出力) |
+| 意図的に壊した.py File | 実Diagnosticsと共にFAIL | FAIL(Exit 2、I001/F401/unformatted等の実際のRuff出力) |
+
+### Persistence / Commit対象・Scope
+
+`.claude/hooks/post_edit_quality_gate.sh`(Ruff直接Executable解決へ
+変更)・このDECISIONS.md追記のみ。`lib/*`・`scripts/*`・`13_tests/*`・
+投資Logic・Faithfulness Code・J-Quants Codeはいずれも無変更。H0001は
+実行していない。
