@@ -14604,3 +14604,267 @@ D0102.3.2から継続、変更なし)。Faithfulnessが実装・受入完了す�
 無し。Candidate Extraction(D0102.3.1/D0102.3.2)・Semantic Claim
 Schema(D0102.2)・Faithfulness Boundary DocstringはFrozenのまま
 無変更。H0001は実行していない。
+
+## D0102.4A — Faithfulness Design Closure Amendment(D0102.4の4件の境界修正のみ、設計のみ)
+
+D0102.4(直前のEntry)は概ね受理されたが、実装着手前に埋めるべき4件の
+境界問題が指摘されたため、この4件のみを修正する。**D0102.4本体は
+書き換えない**(Append-Only、この4件以外は一切Reopenしない: 8軸・
+Deterministic/Model Hybrid・NOT_APPLICABLE統一原則・QUANTITY Parser・
+NEGATION・CAUSAL_STRENGTH Tier・CERTAINTY/COMMITMENT Tier・
+TEMPORAL_SCOPE Policy・Source Revalidation・Candidate Integrity・
+Verifier Input Allowlist・Model Output Contract・Whole-Response-Fatal
+Policy・Confidence-Score禁止・Candidate Rewrite禁止・Toyota
+Acceptance Plan・2 Round構成、いずれも無変更のまま維持する)。本
+Roundも`Japanese_Equity_Lab/DECISIONS.md`以外は無変更。Production
+Code・Test・実Model呼び出し・H0001はいずれも無し。
+
+### 修正1: Direction Faithfulness(D0102.4の不備を修正)
+
+D0102.4は「Direction FaithfulnessはQUANTITY/NEGATIONへ吸収する」と
+していたが、以下のCounterexampleでSilently擦り抜ける:
+
+```
+Evidence: "営業利益は増加した"
+Candidate normalized_claim_text: "営業利益は増加した"
+candidate.direction: DECREASE
+```
+
+Textが完全一致・数値もNegationも登場しないため、QUANTITY/NEGATION
+いずれの軸でも検出できない。**9番目のDimensionは追加しない**
+(D0102の8軸拡張という既に確定した判断を維持)。代わりに、増減方向は
+`PROPOSITION_IDENTITY`の一部として明示的に位置づけ直す
+(「増加した」と「減少した」はPropositionそのものが異なるため、
+PROPOSITION_IDENTITYの範囲内という整理が正しい、QUANTITY/NEGATIONは
+数値・極性のCheckに専念させる)。Deterministic reason_codeを1件
+追加する: `DIRECTION_MISMATCH_DETECTED`。
+
+**Direction Consistency Rule(PROPOSITION_IDENTITY軸の一部、
+Deterministic優先)**:
+
+- Evidence中に明示的な増加Marker(`増加`/`増収`/`上昇`等)があり、
+  `candidate.direction == DECREASE` → `PROPOSITION_IDENTITY = FAIL`
+  (`DIRECTION_MISMATCH_DETECTED`)→ **REJECT**(PROPOSITION_IDENTITYは
+  Hard-Fail軸、D0102.4 §4 Rule1のまま)。
+- Evidence中に明示的な減少Marker(`減少`/`減収`/`低下`等)があり、
+  `candidate.direction == INCREASE` → 同様に`PROPOSITION_IDENTITY =
+  FAIL` → **REJECT**。
+- Evidence中に明示的な増減Marker(増加/減少いずれか)があり、
+  `candidate.direction == UNSPECIFIED` → **保守的Policyを明示する**:
+  Evidenceが明確な方向を主張しているにもかかわらずCandidateが
+  `UNSPECIFIED`を選んだ場合、これは「主張を弱めた」ケースであり
+  Fabricationではないため`FAIL`ではなく`AMBIGUOUS`
+  (`checked_by=DETERMINISTIC`)として扱い、他の軸がPASSであれば
+  Overall `REVIEW_REQUIRED`に倒す(D0102.4 §4 Rule3、Silent
+  ACCEPTはしない——`UNSPECIFIED`への弱化を無条件PASSにもしない)。
+- `candidate.direction`が明確な方向(INCREASE/DECREASE)を主張して
+  いるが、Evidence`supporting_quote`中に信頼できるMovement Marker
+  が一切見当たらない場合 → **Silent PASSを禁止する**。Marker
+  Word Listで解決できないため、`PROPOSITION_IDENTITY`のこの部分は
+  Model-assisted Semantic Verification(Evidenceが暗黙的に方向を
+  含意しているかのJudgment)へFallbackするか、それでも不確実なら
+  `AMBIGUOUS`(REVIEW_REQUIRED側)とする。
+- `改善`単体は自動的に`INCREASE`と同一視しない(D0102.4 §19の既定
+  方針をそのまま維持、Direction Consistency Ruleでも同じ抑制を
+  適用する)。
+
+**Exact-Match Fast PathでもこのDirection Consistency Checkは省略
+しない**(D0102.4 §31「claim_type/directionは免除しない」の対象に、
+本修正で明確化したDirection Consistency Ruleそのものが含まれることを
+明示する——Exact Matchは内容系8軸のTrivial PASSを許すのみで、
+`candidate.direction`という独立した構造化Labelの正しさは別途必ず
+検証する、既存方針との矛盾なし)。
+
+### 修正2: Promotion Gate(既存Schemaの許容 ≠ 新Boundaryの許可)
+
+D0102.4は正しく「既存`SemanticClaim.__post_init__`は
+`REVIEW_REQUIRED`の構築を許容する」ことを発見したが、これは
+**Schemaが技術的に構築を拒否しない**という事実であり、**新設する
+Faithfulness Promotion Boundaryがその構築を実際に行ってよいという
+許可ではない**。この2つを混同しない。
+
+**新Promotion Policy(D0102.4より厳格化、Orchestration Boundary側の
+制約として導入、既存Schemaは無変更)**:
+
+- `ACCEPT` → `build_semantic_claim()`を呼び出す資格がある(唯一の
+  資格ケース)。
+- `REVIEW_REQUIRED` → `build_semantic_claim()`を呼び出す資格が
+  **無い**。`FaithfulnessVerificationResult`のみを保持し、Human
+  Review Queueとして参照する(`SemanticClaim`オブジェクト自体は
+  作らない)。
+- `REJECT` → 同様に`build_semantic_claim()`を呼び出す資格が
+  **無い**(既存SchemaもREJECTは構造的に拒否するため、ここは
+  従来通り)。`FaithfulnessVerificationResult`のみ保持する。
+
+```
+REVIEW_PROMOTION_ALLOWED = NO
+REJECT_PROMOTION_ALLOWED = NO
+```
+
+既存`SemanticClaim` Schema自体は変更しない(`REVIEW_REQUIRED`を
+構築できるという既存Capability自体には触れない——単に、D0102.4.2の
+新Promotion Helper/Boundaryが`ACCEPT`以外では`build_semantic_
+claim()`を**呼び出さない**という、呼び出し側の規律として実装する)。
+これにより、D0102.4 §41で指摘した残存Risk(「将来のEvidence統合
+RoundがACCEPTフィルタを実装し忘れる」)そのものの発生確率を、
+そもそも`REVIEW_REQUIRED`の`SemanticClaim`インスタンスが生成
+されないようにすることで実質的に低減する(Evidence統合Layer側の
+Filter実装ミスというRiskだけに依存しなくなる、Defense-in-depth)。
+
+### 修正3: Re-Verification Semantics(extraction_versionの誤用を修正)
+
+D0102.4は「再検証時は新しい`extraction_version`を発行し直す」と
+していたが、これは誤り。訂正する:
+
+- `extraction_version` = **どうやってCandidateが生成されたか**
+  (Candidate Extraction、D0102.3の責務)。
+- `verification_version` = **その既に生成済みのCandidateがどう
+  検証されたか**(Faithfulness Verification、D0102.4の責務)。
+
+**Verifierを変更しただけで`extraction_version`を書き換える
+ことは、Extraction Provenance自体を偽ることになるため禁止する**
+(Candidateは実際には再生成されていないのに、あたかも再生成された
+かのような`extraction_version`変化を作ってはならない)。
+
+**v1 Preferred Rule(修正版)**:
+
+- `SemanticClaim` Promotion**前**は、同一Candidate(candidate
+  reference = evidence_span identity fields + claim_type +
+  normalized_claim_text、D0102.4 §26で既定)に対して、複数の
+  `FaithfulnessVerificationResult`をAppend-Onlyで保持してよい
+  (`candidate reference + verification_version`で一意に識別する)。
+  同一Candidateを異なるVerifier/Verifier改善版で複数回検証した
+  Historyをそのまま残す設計とする(上書きしない)。
+- Promotionは、それら複数のVerification Resultのうち「どれを採用
+  するか」を明示的なDeterministicまたはHuman-Controlled Policyで
+  選択する(本Roundはこの選択Policy自体の詳細設計はしない、次
+  実装Roundで確定する——ただし選択が暗黙・偶然であってはならない
+  という制約のみをここで明記する)。
+- `SemanticClaim` Promotion**後**の自動再検証・Revocation Semantics
+  (例: 後からVerifierがバグ発見・REJECTへ変わった場合に既存
+  `SemanticClaim`をどう扱うか)は**v1ではDeferする**(今回は解決
+  しない、将来Round)。
+- `verification_version`を`semantic_identity_key`にも`claim_id`にも
+  追加しない(D0102.4 §29/§10の既存結論を維持)。
+- Verifierが変わっただけという理由で`supersedes_claim_id`を誤用
+  しない(`supersedes_claim_id`はExtraction自体が実際に変わった
+  場合[新しい`extraction_version`が正当に発行された場合]にのみ
+  使う、既存Semanticsのまま)。
+- 真にExtractionそのものが再実行された場合(Model/Prompt変更等、
+  D0102.3の責務範囲)にのみ、新しい`extraction_version`が正当に
+  発行され、結果として新しい`claim_id`が生まれうる——これはD0102.4
+  で確認済みの既存Identity Model通りであり、本修正で変更しない。
+
+### 修正4: Deterministic Verification Audit Metadata
+
+Model-assisted Verificationは既存`AiDerivedProvenance`(別Instance、
+D0102.4 §27のまま)を使うが、Deterministic-Only Verification
+(Model呼び出しが一度も発生しなかったCase)には`AiDerivedProvenance`
+は意味的に不適切(Model Provider/Model Name等が存在しない)。ただし
+**Deterministic-Onlyの検証結果も再現可能でなければならない**。
+
+`FaithfulnessVerificationResult`(D0102.4 §26)に、既存で挙げていた
+`verification_version`に加え、**新規必須Field**
+`verified_at: datetime`(UTC、tz-aware)を追加する:
+
+```
+FaithfulnessVerificationResult(frozen dataclass):
+    status: FaithfulnessVerificationStatus
+    overall_outcome: FaithfulnessOutcome | None
+    dimension_results: tuple[FaithfulnessDimensionResult, ...]
+    candidate_reference: <D0102.4 §26のまま>
+    verification_version: str            # 必須(Deterministic-Onlyでも必須)
+    verified_at: datetime                # 必須・UTC・tz-aware(新規、D0102.4Aで追加)
+    verification_provenance: AiDerivedProvenance | None
+        # Model-assisted Checkが1件でも発生した場合のみ非None
+        # (D0102.4 §27のまま)。Deterministic-Onlyの場合は None。
+    reason: str | None
+```
+
+`verification_version`はDeterministicなRuleset/実装Versionを
+一意に識別できる粒度で発行する(例: Marker Word List・Tier定義・
+QUANTITY Parser実装のVersionを含むIdentifier、正確なFormatは
+実装Round[D0102.4.1]で確定する——本Roundは「再現性に十分な粒度で
+なければならない」という要件のみを確定する)。`verification_
+provenance=None`のDeterministic-Only Caseでも`verification_
+version`+`verified_at`は省略不可(両方Mandatory、D0102.4A本文で
+明示)。
+
+**明示的Invariant(新規)**:
+
+```
+VERIFICATION_TIMESTAMP_IS_NOT_PIT_AVAILABILITY = TRUE
+```
+
+`verified_at`(および`AiDerivedProvenance.generated_at`がVerification
+文脈で使われる場合も同様)は、以下のいずれにも**絶対にならない**:
+`market_public_at`・`provider_available_at`・`available_at`・
+Evidence PIT可用性判定。既存`EXTRACTION_TIMESTAMP_IS_NOT_PIT_
+AVAILABILITY = TRUE`(D0102)と対になる命名Invariantとして追加する。
+D0102.4 §41で既に述べた通り、Schema Levelでは強制できず、命名・
+Module分離という運用的対策に留まる(この限界自体もD0102.4から
+変更しない)。
+
+### 修正5: Exact Match時のClaim-Type再確認(Mechanism境界の明確化)
+
+D0102.4 §31は既に「Exact Text一致でもclaim_type Checkを免除しない」
+と述べていたが、その**具体的なMechanism**を明確化する:
+
+- `BUSINESS_RISK`は既存Deterministic Taxonomy Allowlist
+  (`BUSINESS_RISK_ELIGIBLE_TAXONOMY_NAMES`、`candidate_extraction.py`
+  既存、D0102.4 §4で既に再利用方針明示)をそのまま維持する
+  (Deterministic、追加のModel呼び出し不要)。
+- Deterministic Structural Eligibility Checkが存在しないその他の
+  `claim_type`(`PERFORMANCE_CHANGE`/`PERFORMANCE_DRIVER`/
+  `MANAGEMENT_EXPLANATION`/`OUTLOOK`/`CAPITAL_ALLOCATION`)について
+  は、Text完全一致だけでは「その構造化`claim_type`ラベル自体が
+  正しい」ことを立証できない(Textの一致はProposition内容の一致を
+  示すのみで、それをどのTaxonomy Categoryへ分類するかは独立した
+  判断のため)。
+- したがって、これらの`claim_type`のSemantic Compatibility
+  (Evidenceの内容が実際にその`claim_type`に該当するか)は、
+  Semantic Verifier(Model-assisted、D0102.4.2)による判定に委ねる
+  か、判定できなければ`REVIEW_REQUIRED`のまま維持する。
+
+**明示的に禁止する経路**: 「Exact Quote一致 + 任意の(誤った)
+claim_type」→ `ACCEPT`。この経路は構造的に存在してはならない
+(D0102.4 §12「Exact Match Fast Path = NO」の直接的な帰結を、
+claim_type次元について具体的にMechanism化したもの)。
+
+### 更新後 実装Round構成(2 Round構成のまま、D0102.4 §39/§20を維持)
+
+**D0102.4.1**(変更点のみ追記、D0102.4の元内容は維持):
+型定義一式・Deterministic Checks・Candidate Integrity Gate・Source
+Revalidation Gate・Deterministic-Only Aggregation Path、に加えて
+本AmendmentのDirection Consistency Check(PROPOSITION_IDENTITY軸内、
+Deterministic部分)・`verification_version`+`verified_at`の必須化を
+含める。実Model呼び出しなし。
+
+**D0102.4.2**(変更点のみ追記): Model-assisted Verifier実装・
+完全Aggregation・Toyota Curated Acceptanceに加えて、本Amendmentの
+Claim-Type Semantic Compatibility判定(BUSINESS_RISK以外)・
+ACCEPT-Only Promotion Gate(修正2)を含める。実Model呼び出しなし
+(Toyota AcceptanceはD0102.4 §38のまま、Deterministic Fake
+Verifier)。
+
+### 最終判定
+
+4件の修正はいずれもOrchestration Boundary側の制約追加・新規Field
+追加(`FaithfulnessVerificationResult`という**未実装**の新設Type
+への追加、D0102.4本Roundでも実装していない)であり、既存Frozen
+Schema(`SemanticClaim`/`SemanticClaimCandidate`/`EvidenceSpan`/
+`AiDerivedProvenance`/`compute_semantic_identity_key`/
+`compute_claim_id`)のいずれとも矛盾しない。修正2([Promotion Gate
+厳格化]は既存Schemaを変更せず呼び出し側の規律として実装可能、
+修正3[Re-Verification]は既存`supersedes_claim_id`Semanticsを保護
+する方向の修正、修正4[Audit Metadata]は未実装の新設Typeへの
+Field追加のみ)。
+
+`READY_FOR_IMPLEMENTATION`。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/DECISIONS.md`(本追記、D0102.4Aのみ・D0102.4
+本体は書き換えていない)のみ。`lib/`・`scripts/`・`13_tests/`・
+Prompt File・SDK・実Model呼び出しはいずれも無し。H0001は実行して
+いない。
