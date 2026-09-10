@@ -1,0 +1,39 @@
+{
+  "task_id": "D0103-SEMANTIC-CLAIM-EVIDENCE-INTEGRATION-PILOT",
+  "purpose": "SemanticClaim -> Evidence Integration: connect only Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary while preserving provenance and relation semantics. This manifest is a DRY-RUN PILOT ONLY for DEV-AUTO-02 (task requires_independent_review because Evidence integration is a high-risk epistemic boundary). It intentionally must NOT be executed for real in this round: no H0001, no Locked Test rerun, no BUY/SELL signal generation, no expected-return calculation, no portfolio construction, no strategy search or backtest, no ResearchArtifact conclusion mutation, no external news treated as Evidence, and no changes to the raw Toyota untracked research directory.",
+  "expected_head": "1802a49e8742c4d7db08705ed2af2d8a7f0f6500",
+  "allowed_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "Japanese_Equity_Lab/13_tests/test_evidence_integration.py"
+  ],
+  "frozen_files": [
+    "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+    "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+    "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+    "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+    "Japanese_Equity_Lab/lib/evidence/model.py"
+  ],
+  "targeted_tests": [
+    "python -m pytest Japanese_Equity_Lab/13_tests/test_evidence_integration.py -q"
+  ],
+  "static_checks": [
+    "ruff check Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "mypy --strict Japanese_Equity_Lab/lib/disclosures/evidence_integration.py"
+  ],
+  "forbidden_actions": [
+    "no H0001",
+    "no Locked Test rerun",
+    "no BUY/SELL signal generation",
+    "no expected return calculation",
+    "no portfolio construction",
+    "no strategy search or backtest",
+    "no ResearchArtifact conclusion mutation",
+    "no external news treated as Evidence",
+    "no changes under Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/",
+    "no force push",
+    "no git reset --hard",
+    "no branch deletion"
+  ],
+  "requires_independent_review": true,
+  "requires_human_approval": false
+}

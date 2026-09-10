@@ -24,6 +24,12 @@ Japanese_Equity_Lab/01_data/raw/jquants_local/
 # J-Quants生レスポンス(Phase3A LOCAL_DATA_FETCH_GUIDE.md参照)。実データのため追跡しない。
 Japanese_Equity_Lab/01_data/raw/local_snapshot_input/
 
+# Japanese Equity Research Lab: DEV-AUTO-02 Development Workflow
+# Orchestratorの実行時Run Record(JSON、DB不使用・Secretは含まないが
+# 実行のたびに生成される一時State のため追跡しない)。
+Japanese_Equity_Lab/scripts/.dev_workflow_runs/
+.dev_workflow_runs/
+
 # Streamlit
 .streamlit/secrets.toml
 

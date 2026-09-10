@@ -1,0 +1,481 @@
+"""DEV-AUTO-02 §1: Capability-Based Agent Execution Orchestrator。
+
+`run_task()`が唯一のSanctioned Orchestration Flow。Open-endedな自律
+Loopは実装しない——Closure Roundは`max_closure_rounds`(既定2)で
+必ず打ち切り、超過すれば`HUMAN_ATTENTION_REQUIRED`を返す(DEV-AUTO-02
+§7)。Human Approval Boundary(H0001含む)は最初にChecked、該当すれば
+**いかなるAgentも一切実行しない**(DEV-AUTO-02 §9)。Reviewer実行は
+実行前後のGit状態Snapshotを比較し、差分があれば無条件に`STOP`する
+(DEV-AUTO-02 §6、Reviewerの評決自体を信用しない)。
+"""
+
+from __future__ import annotations
+
+import subprocess
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from uuid import uuid4
+
+from .acceptance import evaluate_acceptance, narrow_to_open_findings, open_blocking_findings
+from .agent_results import ReviewerResult, WriterResult, WriterStatus
+from .executor import AgentExecutionResult, AgentExecutor, ExecutionCapability, ExecutorRegistry
+from .gates import GateResult, check_expected_head, check_scope, list_changed_paths
+from .human_gate import requires_human_approval
+from .model import AcceptanceVerdict, Finding, Role, TaskManifest
+from .prompts import build_closure_reviewer_prompt, build_closure_writer_prompt, build_reviewer_prompt, build_writer_prompt
+from .run_record import RunRecord, RunState, save_run_record
+
+MAX_CLOSURE_ROUNDS = 2
+
+
+class OrchestratorOutcome(StrEnum):
+    ACCEPT_CANDIDATE = "ACCEPT_CANDIDATE"
+    STOP = "STOP"
+    HUMAN_APPROVAL_REQUIRED = "HUMAN_APPROVAL_REQUIRED"
+    HUMAN_ATTENTION_REQUIRED = "HUMAN_ATTENTION_REQUIRED"
+    DRY_RUN = "DRY_RUN"
+
+
+@dataclass(kw_only=True, frozen=True)
+class DryRunReport:
+    """DEV-AUTO-02 §11。Agentを一切呼び出さずに生成する完全なPreview。"""
+
+    manifest_task_id: str
+    human_gate_reason: str | None
+    head_check: GateResult
+    scope_check: GateResult
+    writer_prompt: str
+    reviewer_prompt: str
+    writer_command_preview: tuple[str, ...] | None
+    reviewer_command_preview: tuple[str, ...] | None
+
+
+@dataclass(kw_only=True, frozen=True)
+class OrchestratorResult:
+    outcome: OrchestratorOutcome
+    reason: str
+    run_record: RunRecord
+    acceptance_verdict: AcceptanceVerdict | None = None
+    dry_run_report: DryRunReport | None = None
+    executor_invocations: int = 0
+
+
+def _safe_execute(executor: AgentExecutor, *, role: Role, prompt: str, working_directory: Path) -> AgentExecutionResult:
+    """Executorが直接Exceptionを送出した場合でもOrchestrator自体を
+    Crashさせず、構造化された失敗Resultへ変換する(DEV-AUTO-02 §1、
+    Writer/Reviewer実行の失敗はいずれもTyped Resultとして扱い、生
+    Exceptionを外へ漏らさない)。`LocalCommandExecutor`自体は既に
+    Subprocess例外を内部でCatch済みだが、Protocol契約に反してException
+    を送出するCustom Executor実装にも備える。"""
+    try:
+        return executor.execute(role=role, prompt=prompt, working_directory=working_directory)
+    except Exception as exc:  # noqa: BLE001 -- 意図的なBroad Catch(Executor実装の異常系をTyped Resultへ変換する)。
+        return AgentExecutionResult(returncode=-1, stdout="", stderr=f"executor raised {type(exc).__name__}: {exc}")
+
+
+def _preview_command(executor: AgentExecutor | None) -> tuple[str, ...] | None:
+    command = getattr(executor, "command", None)
+    if isinstance(command, tuple) and all(isinstance(part, str) for part in command):
+        return command
+    return None
+
+
+def run_targeted_validation(commands: tuple[str, ...], *, repo_root: Path, timeout_seconds: float = 900.0) -> GateResult:
+    """`manifest.targeted_tests`/`manifest.static_checks`の各Entryを
+    Shell Commandとして実行する。Manifestは人間が作成・管理する信頼済み
+    Configurationであり(任意の外部/未検証入力ではない)、CI Config
+    (`run:` Step)と同種の前提を置く。空Listは無条件でPASS扱い
+    (DEV-AUTO-01からの既存契約、`tests_passed`/`static_checks_passed`
+    は呼び出し側があらかじめ確定させる値という設計を、ここでは
+    Command文字列を実行することで具体化する)。"""
+    if not commands:
+        return GateResult(passed=True, reason="no commands configured")
+    for command in commands:
+        try:
+            completed = subprocess.run(
+                command,
+                shell=True,  # noqa: S602 -- Manifestは人間が管理するTrusted Configuration(CI Config相当)。
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return GateResult(passed=False, reason=f"command timed out: {command}")
+        if completed.returncode != 0:
+            return GateResult(
+                passed=False,
+                reason=f"command failed (exit {completed.returncode}): {command}\n{completed.stdout}\n{completed.stderr}",
+            )
+    return GateResult(passed=True, reason="all commands passed")
+
+
+def _merge_closure_findings(current: tuple[Finding, ...], closure_updates: tuple[Finding, ...]) -> tuple[Finding, ...]:
+    updates_by_id = {f.finding_id: f for f in closure_updates}
+    current_ids = {f.finding_id for f in current}
+    merged = tuple(updates_by_id.get(f.finding_id, f) for f in current)
+    new_findings = tuple(f for f in closure_updates if f.finding_id not in current_ids)
+    return merged + new_findings
+
+
+def _build_dry_run_report(
+    manifest: TaskManifest,
+    *,
+    repo_root: Path,
+    executors: ExecutorRegistry,
+) -> DryRunReport:
+    return DryRunReport(
+        manifest_task_id=manifest.task_id,
+        human_gate_reason=requires_human_approval(manifest),
+        head_check=check_expected_head(repo_root, manifest.expected_head),
+        scope_check=check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files),
+        writer_prompt=build_writer_prompt(manifest),
+        reviewer_prompt=build_reviewer_prompt(manifest),
+        writer_command_preview=_preview_command(executors.get(ExecutionCapability.CAN_EXECUTE_WRITER)),
+        reviewer_command_preview=_preview_command(executors.get(ExecutionCapability.CAN_EXECUTE_READ_ONLY_REVIEWER)),
+    )
+
+
+def run_task(
+    *,
+    manifest: TaskManifest,
+    repo_root: Path,
+    executors: ExecutorRegistry,
+    runs_dir: Path,
+    run_id: str | None = None,
+    dry_run: bool = False,
+    max_closure_rounds: int = MAX_CLOSURE_ROUNDS,
+) -> OrchestratorResult:
+    """DEV-AUTO-02 §1の唯一のSanctioned Orchestration Flow。"""
+    run_id = run_id or f"run-{uuid4().hex[:12]}"
+    invocations = 0
+
+    def _record(
+        state: RunState,
+        *,
+        reason: str = "",
+        writer_result: WriterResult | None = None,
+        review_result: ReviewerResult | None = None,
+        open_findings: tuple[Finding, ...] = (),
+        closure_round: int = 0,
+    ) -> RunRecord:
+        record = RunRecord(
+            run_id=run_id,
+            task_id=manifest.task_id,
+            starting_head=manifest.expected_head,
+            state=state,
+            writer_result=writer_result,
+            review_result=review_result,
+            open_findings=open_findings,
+            closure_round=closure_round,
+            reason=reason,
+        )
+        save_run_record(record, runs_dir=runs_dir)
+        return record
+
+    # DEV-AUTO-02 §11: Dry-Runは常にAgentを一切呼び出さず、Manifest/両
+    # Prompt/Command Preview/Human Gate/Acceptance Logicの完全なPreview
+    # を返す(Executor未設定でも常に完走する)。
+    if dry_run:
+        report = _build_dry_run_report(manifest, repo_root=repo_root, executors=executors)
+        record = _record(RunState.DRY_RUN, reason="dry-run: no agent invoked")
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.DRY_RUN,
+            reason="dry-run completed; zero agent invocations",
+            run_record=record,
+            dry_run_report=report,
+            executor_invocations=0,
+        )
+
+    # DEV-AUTO-02 §9: いかなるAgent実行より先にHuman Approval Boundaryを
+    # 確認する。該当すれば無条件にここで停止し、Writer/Reviewerいずれも
+    # 一切呼び出さない(No agent may bypass this)。
+    human_gate_reason = requires_human_approval(manifest)
+    if human_gate_reason is not None:
+        record = _record(RunState.HUMAN_APPROVAL_REQUIRED, reason=human_gate_reason)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED,
+            reason=human_gate_reason,
+            run_record=record,
+            executor_invocations=0,
+        )
+
+    # DEV-AUTO-02 §1 Step1: Repository Validation(既存Head/Scope Gate)。
+    head_result = check_expected_head(repo_root, manifest.expected_head)
+    if not head_result.passed:
+        record = _record(RunState.REPOSITORY_GATE_FAILED, reason=head_result.reason)
+        return OrchestratorResult(outcome=OrchestratorOutcome.STOP, reason=head_result.reason, run_record=record)
+
+    writer_executor = executors.get(ExecutionCapability.CAN_EXECUTE_WRITER)
+    reviewer_executor = executors.get(ExecutionCapability.CAN_EXECUTE_READ_ONLY_REVIEWER)
+    if writer_executor is None:
+        reason = "no executor configured for CAN_EXECUTE_WRITER"
+        record = _record(RunState.STOPPED, reason=reason)
+        return OrchestratorResult(outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record)
+    if reviewer_executor is None:
+        reason = "no executor configured for CAN_EXECUTE_READ_ONLY_REVIEWER"
+        record = _record(RunState.STOPPED, reason=reason)
+        return OrchestratorResult(outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record)
+
+    # ---- Writer ----
+    _record(RunState.WRITER_RUNNING)
+    writer_prompt = build_writer_prompt(manifest)
+    writer_exec_result = _safe_execute(writer_executor, role=Role.WRITER, prompt=writer_prompt, working_directory=repo_root)
+    invocations += 1
+    if writer_exec_result.returncode != 0 or writer_exec_result.timed_out:
+        reason = f"writer execution failed (returncode={writer_exec_result.returncode}, timed_out={writer_exec_result.timed_out})"
+        record = _record(RunState.WRITER_FAILED, reason=reason)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+
+    try:
+        writer_result = WriterResult.from_raw_output(writer_exec_result.stdout)
+    except ValueError as exc:
+        reason = f"malformed writer result: {exc}"
+        record = _record(RunState.WRITER_FAILED, reason=reason)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+    if writer_result.status != WriterStatus.SUCCESS:
+        reason = f"writer reported FAILED: {writer_result.blocking_issue or writer_result.summary}"
+        record = _record(RunState.WRITER_FAILED, reason=reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+    _record(RunState.WRITER_DONE, writer_result=writer_result)
+
+    # DEV-AUTO-02 §10: Acceptance前のScope Gate(Frozen File未変更・
+    # Allowed File範囲内)を必ず確認する——Writer出力を無条件に信頼しない。
+    scope_result = check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files)
+    if not scope_result.passed:
+        record = _record(RunState.STOPPED, reason=scope_result.reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
+        )
+
+    tests_result = run_targeted_validation(manifest.targeted_tests, repo_root=repo_root)
+    static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
+
+    # ---- Reviewer(Read-Only、実行前後のGit状態を比較する) ----
+    pre_review_tracked, pre_review_untracked = list_changed_paths(repo_root)
+    pre_review_head = check_expected_head(repo_root, manifest.expected_head).reason
+
+    _record(RunState.REVIEWING, writer_result=writer_result)
+    reviewer_prompt = build_reviewer_prompt(manifest)
+    reviewer_exec_result = _safe_execute(
+        reviewer_executor, role=Role.REVIEWER, prompt=reviewer_prompt, working_directory=repo_root
+    )
+    invocations += 1
+
+    post_review_tracked, post_review_untracked = list_changed_paths(repo_root)
+    post_review_head = check_expected_head(repo_root, manifest.expected_head).reason
+    if (pre_review_tracked, pre_review_untracked, pre_review_head) != (
+        post_review_tracked,
+        post_review_untracked,
+        post_review_head,
+    ):
+        reason = "reviewer modified the repository (git state changed); reviewer verdict rejected"
+        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+
+    if reviewer_exec_result.returncode != 0 or reviewer_exec_result.timed_out:
+        reason = (
+            f"reviewer execution failed (returncode={reviewer_exec_result.returncode}, "
+            f"timed_out={reviewer_exec_result.timed_out})"
+        )
+        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+
+    try:
+        review_result = ReviewerResult.from_raw_output(reviewer_exec_result.stdout)
+    except ValueError as exc:
+        reason = f"malformed reviewer result: {exc}"
+        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
+    _record(RunState.REVIEW_DONE, writer_result=writer_result, review_result=review_result)
+
+    current_findings = review_result.findings
+    verdict = evaluate_acceptance(
+        manifest=manifest,
+        reviewer_verdict=review_result.verdict,
+        findings=current_findings,
+        tests_passed=tests_result.passed,
+        static_checks_passed=static_result.passed,
+        scope_clean=scope_result.passed,
+    )
+
+    if verdict == AcceptanceVerdict.ACCEPT:
+        record = _record(RunState.ACCEPT_CANDIDATE, writer_result=writer_result, review_result=review_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.ACCEPT_CANDIDATE,
+            reason="all gates passed; reviewer accepted",
+            run_record=record,
+            acceptance_verdict=verdict,
+            executor_invocations=invocations,
+        )
+    if verdict == AcceptanceVerdict.HUMAN_APPROVAL_REQUIRED:
+        record = _record(RunState.HUMAN_APPROVAL_REQUIRED, writer_result=writer_result, review_result=review_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED,
+            reason="human approval boundary detected during acceptance evaluation",
+            run_record=record,
+            acceptance_verdict=verdict,
+            executor_invocations=invocations,
+        )
+    if verdict == AcceptanceVerdict.STOP:
+        record = _record(RunState.STOPPED, writer_result=writer_result, review_result=review_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP,
+            reason="reviewer verdict was STOP",
+            run_record=record,
+            acceptance_verdict=verdict,
+            executor_invocations=invocations,
+        )
+
+    # ---- Bounded Closure Loop(DEV-AUTO-02 §7/§8) ----
+    closure_round = 0
+    while closure_round < max_closure_rounds:
+        closure_round += 1
+        blockers = open_blocking_findings(current_findings)
+        _record(RunState.CLOSURE_ROUND, closure_round=closure_round, open_findings=narrow_to_open_findings(current_findings))
+
+        closure_writer_prompt = build_closure_writer_prompt(manifest, blockers)
+        closure_writer_exec = _safe_execute(
+            writer_executor, role=Role.WRITER, prompt=closure_writer_prompt, working_directory=repo_root
+        )
+        invocations += 1
+        if closure_writer_exec.returncode != 0 or closure_writer_exec.timed_out:
+            reason = f"closure writer execution failed at round {closure_round}"
+            record = _record(RunState.WRITER_FAILED, reason=reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+        try:
+            closure_writer_result = WriterResult.from_raw_output(closure_writer_exec.stdout)
+        except ValueError as exc:
+            reason = f"malformed closure writer result at round {closure_round}: {exc}"
+            record = _record(RunState.WRITER_FAILED, reason=reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+        if closure_writer_result.status != WriterStatus.SUCCESS:
+            reason = f"closure writer reported FAILED at round {closure_round}"
+            record = _record(
+                RunState.WRITER_FAILED, reason=reason, writer_result=closure_writer_result, closure_round=closure_round
+            )
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+
+        scope_result = check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files)
+        if not scope_result.passed:
+            record = _record(RunState.STOPPED, reason=scope_result.reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
+            )
+
+        tests_result = run_targeted_validation(manifest.targeted_tests, repo_root=repo_root)
+        static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
+
+        open_for_closure_review = narrow_to_open_findings(current_findings)
+        pre_tracked, pre_untracked = list_changed_paths(repo_root)
+        closure_reviewer_prompt = build_closure_reviewer_prompt(manifest, open_for_closure_review)
+        closure_review_exec = _safe_execute(
+            reviewer_executor, role=Role.REVIEWER, prompt=closure_reviewer_prompt, working_directory=repo_root
+        )
+        invocations += 1
+        post_tracked, post_untracked = list_changed_paths(repo_root)
+        if (pre_tracked, pre_untracked) != (post_tracked, post_untracked):
+            reason = f"closure reviewer modified the repository at round {closure_round}"
+            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+        if closure_review_exec.returncode != 0 or closure_review_exec.timed_out:
+            reason = f"closure reviewer execution failed at round {closure_round}"
+            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+        try:
+            closure_review_result = ReviewerResult.from_raw_output(closure_review_exec.stdout)
+        except ValueError as exc:
+            reason = f"malformed closure reviewer result at round {closure_round}: {exc}"
+            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
+
+        current_findings = _merge_closure_findings(current_findings, closure_review_result.findings)
+        verdict = evaluate_acceptance(
+            manifest=manifest,
+            reviewer_verdict=closure_review_result.verdict,
+            findings=current_findings,
+            tests_passed=tests_result.passed,
+            static_checks_passed=static_result.passed,
+            scope_clean=scope_result.passed,
+        )
+
+        if verdict == AcceptanceVerdict.ACCEPT:
+            record = _record(
+                RunState.ACCEPT_CANDIDATE,
+                writer_result=closure_writer_result,
+                review_result=closure_review_result,
+                closure_round=closure_round,
+            )
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.ACCEPT_CANDIDATE,
+                reason=f"accepted after closure round {closure_round}",
+                run_record=record,
+                acceptance_verdict=verdict,
+                executor_invocations=invocations,
+            )
+        if verdict in (AcceptanceVerdict.STOP, AcceptanceVerdict.HUMAN_APPROVAL_REQUIRED):
+            state = RunState.STOPPED if verdict == AcceptanceVerdict.STOP else RunState.HUMAN_APPROVAL_REQUIRED
+            outcome = (
+                OrchestratorOutcome.STOP if verdict == AcceptanceVerdict.STOP else OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED
+            )
+            record = _record(
+                state, writer_result=closure_writer_result, review_result=closure_review_result, closure_round=closure_round
+            )
+            return OrchestratorResult(
+                outcome=outcome,
+                reason=f"closure round {closure_round} verdict was {verdict.value}",
+                run_record=record,
+                acceptance_verdict=verdict,
+                executor_invocations=invocations,
+            )
+        # verdict == FIX_REQUIRED -> loop again if rounds remain.
+
+    reason = f"blocking findings remain OPEN after {max_closure_rounds} closure round(s)"
+    record = _record(
+        RunState.HUMAN_ATTENTION_REQUIRED,
+        reason=reason,
+        open_findings=narrow_to_open_findings(current_findings),
+        closure_round=closure_round,
+    )
+    return OrchestratorResult(
+        outcome=OrchestratorOutcome.HUMAN_ATTENTION_REQUIRED,
+        reason=reason,
+        run_record=record,
+        executor_invocations=invocations,
+    )
+
+
+__all__ = [
+    "MAX_CLOSURE_ROUNDS",
+    "DryRunReport",
+    "OrchestratorOutcome",
+    "OrchestratorResult",
+    "run_targeted_validation",
+    "run_task",
+]

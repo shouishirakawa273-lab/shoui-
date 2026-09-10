@@ -16,6 +16,22 @@ def _bulleted(label: str, items: tuple[str, ...]) -> list[str]:
     return [f"{label}:", *[f"  - {item}" for item in items]]
 
 
+_WRITER_RESULT_FORMAT = (
+    "- Report your result as the LAST line of your output, as a single JSON object with exactly "
+    'these fields: status ("SUCCESS" or "FAILED"), files_changed (array of repo-relative paths), '
+    "tests (short text summary of test results), static_checks (short text summary), blocking_issue "
+    "(string, or null if none), summary (short text). Do not add any other top-level field.\n"
+)
+
+_REVIEWER_RESULT_FORMAT = (
+    "- Report your result as the LAST line of your output, as a single JSON object with exactly "
+    'these fields: status ("COMPLETED"), verdict ("ACCEPTED", "NEEDS_FIX", or "STOP"), findings '
+    "(array of objects, each with finding_id, severity [HIGH/MEDIUM/LOW/NOTE], status [OPEN/CLOSED], "
+    "summary, location, reproducer, expected, actual, blocking [true/false]). Do not add any other "
+    "top-level field.\n"
+)
+
+
 def _common_header(manifest: TaskManifest) -> str:
     lines = [
         f"# Task: {manifest.task_id}",
@@ -44,8 +60,7 @@ def build_writer_prompt(manifest: TaskManifest) -> str:
         "- Never perform any action listed under Forbidden actions.\n"
         "- Run every test listed under Targeted tests and every check listed under Static checks "
         "before reporting the change as done.\n"
-        "- You may not commit, push, or independently declare acceptance. Report your diff and "
-        "test/static results for review.\n"
+        "- You may not commit, push, or independently declare acceptance.\n" + _WRITER_RESULT_FORMAT
     )
 
 
@@ -64,7 +79,39 @@ def build_reviewer_prompt(manifest: TaskManifest) -> str:
         "task's specific correctness claim).\n"
         "- Classify each finding using severity HIGH/MEDIUM/LOW/NOTE and mark it blocking or "
         "not blocking.\n"
-        "- Return one verdict: ACCEPTED, NEEDS_FIX, or STOP.\n"
+        "- Return one verdict: ACCEPTED, NEEDS_FIX, or STOP.\n" + _REVIEWER_RESULT_FORMAT
+    )
+
+
+def build_closure_writer_prompt(manifest: TaskManifest, open_blocking_findings: tuple[Finding, ...]) -> str:
+    """DEV-AUTO-02 §1/§8: Fix Round専用のNarrow Writer Prompt。渡された
+    `open_blocking_findings`(通常`open_blocking_findings()`の戻り値)
+    のみをFix対象として明示し、既にCLOSEDのFinding・非Blocking
+    Findingへは触れないよう指示する(Closure Efficiency、DEV-AUTO-01
+    §11をFix側にも適用する)。"""
+    if open_blocking_findings:
+        finding_lines = [
+            f"  - {f.finding_id} [{f.severity.value}]: {f.summary}\n"
+            f"      location: {f.location}\n"
+            f"      expected: {f.expected}\n"
+            f"      actual: {f.actual}"
+            for f in open_blocking_findings
+        ]
+    else:
+        finding_lines = ["  (no specific blocking finding was provided; see Targeted tests/Static checks above)"]
+    return (
+        f"{_common_header(manifest)}\n\n"
+        "## Role: WRITER (Closure Round)\n"
+        "Capabilities: CAN_EDIT_REPO, CAN_RUN_TESTS\n\n"
+        "- Verify the repository HEAD matches Expected HEAD before editing. STOP if it differs.\n"
+        "- Edit only the files listed under Allowed files. Never touch files listed under Frozen files.\n"
+        "- Fix ONLY the following remaining OPEN blocking findings. Do not make unrelated changes:\n"
+        + "\n".join(finding_lines)
+        + "\n"
+        "- Do not re-open or re-litigate any finding not listed above.\n"
+        "- Run every test listed under Targeted tests and every check listed under Static checks "
+        "before reporting the change as done.\n"
+        "- You may not commit, push, or independently declare acceptance.\n" + _WRITER_RESULT_FORMAT
     )
 
 
@@ -85,9 +132,15 @@ def build_closure_reviewer_prompt(manifest: TaskManifest, open_findings: tuple[F
         "- Re-test ONLY the following remaining OPEN findings:\n" + "\n".join(finding_lines) + "\n"
         "- Do not restart a full/broad audit unless this fix changed shared architecture that "
         "the original findings did not cover.\n"
-        "- Return, for each listed finding, CLOSED or OPEN, plus one overall verdict: "
-        "ACCEPTED, NEEDS_FIX, or STOP.\n"
+        "- Return, for each listed finding above, an entry in findings with the SAME finding_id "
+        "and its updated status (CLOSED or OPEN), plus one overall verdict: ACCEPTED, NEEDS_FIX, "
+        "or STOP.\n" + _REVIEWER_RESULT_FORMAT
     )
 
 
-__all__ = ["build_closure_reviewer_prompt", "build_reviewer_prompt", "build_writer_prompt"]
+__all__ = [
+    "build_closure_reviewer_prompt",
+    "build_closure_writer_prompt",
+    "build_reviewer_prompt",
+    "build_writer_prompt",
+]

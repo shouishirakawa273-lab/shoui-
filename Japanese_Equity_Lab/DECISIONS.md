@@ -16107,3 +16107,175 @@ Module)・既存`13_tests/`(test_dev_workflow.py以外)はいずれも無変更�
 `EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
 まま(変更なし、このAutomation自体はEngineering Process用でInvestment
 Automationではない)。H0001は実行していない。
+
+## DEV-AUTO-02 — Capability-Based Agent Execution Orchestrator
+
+DEV-AUTO-01(`1802a49`)は既にACCEPTED/FROZEN。DEV-AUTO-01が実装した
+TaskManifest/Role/Prompt Rendering/Deterministic Acceptance/Closure
+Narrowing/Human Approval Gate/Git SafetyはいずれもFrozenのまま
+無変更。本Roundは「Writer Prompt生成→手動送信→結果Copy→Reviewer
+Prompt生成→手動送信→Findings Copy→手動でNarrow Fix依頼→Closure
+Reviewer手動実行→次の一手を人間が判断」という残存する手作業Handoffを
+排除する、最小の実行/Orchestration Layerを追加した。**投資判断・
+市場Data取得・Backtest・BUY/SELL生成・ResearchArtifact作成・
+SemanticClaim→Evidence統合・実Model API呼び出し・Trading・Portfolio
+Automationはこのpackage自身も本Round自体もいずれも行わない**
+(`INVESTMENT_LOGIC_CHANGED = NO`)。新規Dependency・外部Agent
+Frameworkはいずれも追加していない(標準Library
+[`dataclasses`/`enum`/`json`/`subprocess`/`argparse`/`pathlib`/
+`uuid`]のみ)。
+
+### 実行環境調査(§3、推測ではなくRead-Only Discovery)
+
+`where claude`/`claude --help`で実際に確認: `claude`はLocalに
+Installされており、`-p/--print`(非対話Print & Exit)・
+`--output-format json`(構造化単一JSON出力)・
+`--permission-mode`(`acceptEdits`/`manual`/`bypassPermissions`等)・
+`--disallowedTools`(Tool名のDeny List)・`--restricted`(Bash/
+PowerShell/REPL等のCode実行系Toolを除去)といった、非対話実行に必要な
+Flagが実在することを確認した。`codex`はLocalにInstallされていない
+(`where codex`が失敗)。**これらのFlagをこのPackage自体にHard-code
+することはしない**(§3「Do NOT invent unsupported CLI flags」+
+本Roundの安全側判断: 本OrchestratorはClaude Code自身によって開発
+されており、Orchestrator ExecutorのDefaultとして無条件に`claude`
+Subprocessを起動する設計は、自己言及的な多重起動Riskを増やすため
+意図的に避けた)。したがって`LocalCommandExecutor`はCommand Template
+を常に外部Configuration(`--executor-config`のJSON File、または
+呼び出し側Codeが明示的に渡す`ExecutorRegistry`)から受け取る汎用
+Subprocess Adapterとして実装し、**Default設定は空(`ExecutorRegistry.
+empty()`)**——実行対象Backendは常に人間が明示的に指定する。
+
+### Executor抽象化(§2/§3)
+
+`ExecutionCapability`(`CAN_EXECUTE_WRITER`/`CAN_EXECUTE_READ_ONLY_
+REVIEWER`、Product/Plan名ではない)・`AgentExecutor`(Protocol、
+`execute(*, role, prompt, working_directory) -> AgentExecutionResult`)
+・`LocalCommandExecutor`(frozen dataclass、Command Tuple+
+`prompt_via`["arg"/"stdin"]をConstructor Argumentとして受け取る汎用
+Subprocess Adapter、Subprocess自体のException/Timeoutは内部でCatchし
+`AgentExecutionResult(returncode=-1, ...)`へ変換する)・
+`ExecutorRegistry`(Capability→Executor Mapping、`load_executor_
+registry_from_json()`でRepo-Local JSON Configから構築、APIキー/
+Token/Password等のSecretは一切扱わない、Command配列のみ)を実装した。
+実End-to-End Smoke Test(自動Test Suiteには含めない、手動確認)として
+`python`製のFake Writer/Reviewer Scriptを`LocalCommandExecutor`経由で
+実際にSubprocess起動し、Writer→Reviewer→ACCEPT_CANDIDATEまで
+一気通貫で動作することを確認した(実`claude`/`codex`は一切呼び出して
+いない)。
+
+### 構造化Agent Result(§5、Fail Closed)
+
+`WriterResult`(`status`/`files_changed`/`tests`/`static_checks`/
+`blocking_issue`/`summary`)・`ReviewerResult`(`status`/`verdict`/
+`findings`、`findings`は既存DEV-AUTO-01`Finding`をそのまま再利用)を
+新設した。`from_raw_output()`はAgent出力全体、失敗時は最後の非空行を
+JSONとしてParseし、いずれも失敗すれば`ValueError`(呼び出し側が
+`STOP`へMap、生のPython Exceptionが公開APIの外へ漏れることはない)。
+自由形式のProseを推測でParseする経路は存在しない。
+
+### Reviewer Independence(§6、実行前後のGit State比較)
+
+`run_task()`はReviewer実行の直前に`git status`のTracked/Untracked
+Path集合+HEAD一致状態をSnapshotし、実行直後に再度同じSnapshotを取って
+比較する。1つでも差分があれば(Reviewerが1 FileでもWrite/Create/
+Deleteした場合)、Reviewerの評決を採用せず無条件に`STOP`する
+(「Reviewerを信用しない」という明示的Design、Reviewer自身が
+`CAN_COMMIT`/`CAN_PUSH`を持たないRole定義[DEV-AUTO-01]の実行時
+Enforcementに相当する)。同じ比較をClosure Reviewer実行でも行う。
+
+### Bounded Closure Loop(§7/§8)
+
+`MAX_CLOSURE_ROUNDS = 2`(超過すれば`HUMAN_ATTENTION_REQUIRED`、
+無限Loopは構造的に存在しない)。各Roundは`open_blocking_findings()`
+(既存DEV-AUTO-01)で抽出したBlocking FindingのみをClosure Writer
+Prompt(新設`build_closure_writer_prompt()`)へ渡し、Closure Reviewは
+`narrow_to_open_findings()`(既存)が返すOPEN Finding全件のみを対象と
+する——既にCLOSEDのFindingを再Openする経路は無い。Closure Reviewerの
+応答(同一`finding_id`で更新されたStatus)は`_merge_closure_findings()`
+でMergeし、次のAcceptance評価にそのまま反映する。
+
+### Human Approval Boundary(§9、いかなるAgentも一切実行しない)
+
+`run_task()`は(Dry-Runを除き)いかなるAgent実行より先に既存
+`requires_human_approval()`(DEV-AUTO-01)を確認する。該当すれば
+Writer/Reviewerいずれも一度も呼び出さず(`executor_invocations=0`を
+Testで直接確認済み)`HUMAN_APPROVAL_REQUIRED`を返す。H0001/2025
+Locked Test/Force Push等、DEV-AUTO-01で確立済みのClosed Pattern List
+は本Roundでも一切変更していない。
+
+### Git/Commit Policy(§10)
+
+Writer実行後・各Closure Round後、既存`check_scope()`(DEV-AUTO-01)で
+Frozen File未変更・Allowed File範囲内であることを必ず確認し、逸脱が
+あれば無条件に`STOP`する(Writer自己申告[`files_changed`]を信用
+しない)。`manifest.targeted_tests`/`static_checks`は人間が管理する
+信頼済みConfiguration(CI Config相当)としてShell経由で実際に実行し、
+その結果(Bool)のみをAcceptance Gateへ渡す。**本Round自体は`git add`
+/`commit`/`push`のいずれも一切実行しない**(§10「For v1, prefer
+leaving final commit/push as an explicit acceptance action」を採用、
+`ACCEPT_CANDIDATE`到達後の実際のCommit/Pushは人間の別の明示的操作)。
+
+### Dry-Run(§11)
+
+`run_task(dry_run=True)`はManifest・両Prompt(Writer/Reviewer)・
+Command Preview(設定されていれば)・Human Gate結果・Head/Scope Check
+結果を含む`DryRunReport`を返し、**Executorを一切呼び出さない**
+(`ExecutorRegistry.empty()`でも常に完走することをTestで確認済み)。
+Human Gateに該当するManifestであってもDry-Runは完走し、その旨を
+`human_gate_reason`Fieldとして表示するのみに留める(Preview自体を
+Blockしない、§11「displays... human gates... without invoking any
+agent」の要件通り)。
+
+### Resume / Crash Safety(§12、自動Resumeは実装しない)
+
+`RunRecord`(`run_id`/`task_id`/`starting_head`/`state`/
+`writer_result`/`review_result`/`open_findings`/`closure_round`/
+`reason`)をJSON 1File(`<run_id>.json`)として各State遷移の都度
+永続化する(DB不使用)。Secret相当のFieldが存在しないことをTestで
+確認済み。**自動Resumeは意図的に実装していない**——`status <run-id>`
+はRecordをRead-Onlyで表示するのみで、実際にやり直す場合は人間が
+新しい`run-id`で`run`を明示的に再実行する(§12「must not silently
+restart at a destructive stage」の最も保守的な充足: 自動継続経路
+自体を作らない)。
+
+### D0103 Pilot Manifest(§14/§15、実行しない)
+
+`scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json`
+を新設した(`requires_independent_review=true`、Evidence統合は
+High-Risk Epistemic Boundaryのため)。`purpose`/`forbidden_actions`に
+「no H0001」「no Locked Test rerun」等を明示した結果、既存
+`requires_human_approval()`のKeyword Scanが該当し、**このManifestに
+対する非Dry-Run `run`は常に`executor_invocations=0`で
+`HUMAN_APPROVAL_REQUIRED`になる**ことをTestで直接確認した(意図した
+副作用——D0103が誤って実行される経路が構造的に存在しない)。Dry-Run
+は正常に完走し、Zero Executionのまま全Previewを表示することも確認
+した。**D0103本体(SemanticClaim→Evidence統合の実装コード)は本Round
+では一切実装していない**(`D0103_EXECUTED = NO`)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`scripts/dev_workflow.py`・
+`scripts/dev_workflow_lib/*.py`・`13_tests/test_dev_workflow*.py`):
+全File Pass。`mypy --strict`(`scripts/dev_workflow.py`+
+`scripts/dev_workflow_lib/*.py`、Production File 11本): Success, no
+issues found。Targeted Pytest: `test_dev_workflow_orchestrator.py`
+(**26 Test全てPass**)、`test_dev_workflow.py`(42 Test、無変更)との
+合計68 Test Pass。`13_tests/`全体(1752 Test)もCross-Contamination
+無しでPass確認済み(Full Repository Suite/H0001は実行していない)。
+
+### Persistence / Commit対象・Scope
+
+新規: `Japanese_Equity_Lab/scripts/dev_workflow_lib/executor.py`・
+`agent_results.py`・`run_record.py`・`orchestrator.py`・
+`Japanese_Equity_Lab/scripts/manifests/d0103_semantic_claim_
+evidence_integration_pilot.json`・`Japanese_Equity_Lab/13_tests/
+test_dev_workflow_orchestrator.py`。変更: `scripts/dev_workflow.py`
+(`run`/`status` Subcommand追加)・`scripts/dev_workflow_lib/
+prompts.py`(`build_closure_writer_prompt()`追加+JSON出力Format
+指示追加)・`scripts/dev_workflow_lib/__init__.py`(Docstring更新)。
+既存`lib/`(Faithfulness/Normalization/Semantic Claims/Candidate
+Extraction、いずれもFrozen Investment Module)・DEV-AUTO-01の既存
+5 File(`model.py`/`gates.py`/`human_gate.py`/`acceptance.py`の
+Logic本体)・既存`13_tests/`(`test_dev_workflow.py`以外)はいずれも
+無変更。`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS =
+NOT_READY`のまま(変更なし)。H0001は実行していない。
