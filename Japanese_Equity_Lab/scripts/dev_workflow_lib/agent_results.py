@@ -28,7 +28,13 @@ def _extract_json_object(raw_output: str) -> dict[str, Any]:
     非空行をJSONとしてParseし直す(Agent実行Toolが前後にLog/Banner等の
     余分な出力を混ぜる場合への最小限の許容、それでも失敗すれば必ず
     `ValueError`)。Fenced Code Block等の複雑なExtractionは行わない
-    (推測によるParseを増やさない)。"""
+    (推測によるParseを増やさない)。
+
+    DEV-AUTO-02.2 §4: `raw_output`が`str`でない場合(例: Executor
+    実装の不備で`None`が渡った場合)も、`AttributeError`をExternalへ
+    漏らさず、ここでFail Closedの`ValueError`に変換する。"""
+    if not isinstance(raw_output, str):
+        raise ValueError(f"agent output must be a string, got {type(raw_output).__name__}")
     stripped = raw_output.strip()
     if not stripped:
         raise ValueError("agent output is empty")

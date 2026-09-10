@@ -344,6 +344,52 @@ def test_malformed_reviewer_result_stops(tmp_path: Path) -> None:
     assert "malformed" in result.reason.lower()
 
 
+@dataclass
+class _NoneStdoutExecutor:
+    """DEV-AUTO-02.2 §8: 実際のD0103 Crashが辿った経路(不良な
+    `AgentExecutor`実装が`AgentExecutionResult.stdout=None`を返す)を
+    再現するTest Double。`AgentExecutionResult`はDataclassの型Hintのみで
+    Runtime強制されないため、この経路は理論上ありうる——Public
+    Orchestration Boundary(`run_task()`)がここでもSTOPし、
+    `AttributeError`/`TypeError`をExternalへ漏らさないことを確認する。"""
+
+    calls: list[str] = field(default_factory=list)
+
+    def execute(self, *, role: Role, prompt: str, working_directory: Path) -> AgentExecutionResult:
+        del role, working_directory
+        self.calls.append(prompt)
+        return AgentExecutionResult(returncode=0, stdout=None, stderr="")  # type: ignore[arg-type]
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)
+
+
+def test_none_stdout_from_writer_executor_stops_without_raising(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = _NoneStdoutExecutor()
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "malformed" in result.reason.lower()
+    assert reviewer.call_count == 0
+
+
+def test_none_stdout_from_reviewer_executor_stops_without_raising(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = _NoneStdoutExecutor()
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "malformed" in result.reason.lower()
+
+
 def test_writer_execution_failure_stops(tmp_path: Path) -> None:
     repo, head = _init_temp_repo(tmp_path)
     manifest = _manifest(expected_head=head)

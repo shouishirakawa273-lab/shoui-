@@ -16640,3 +16640,151 @@ Read-Only確認のみ)。
 `lib/`(Faithfulness/Normalization/Semantic Claims/Candidate
 Extraction、Frozen Investment Module)はいずれも無変更。H0001は
 実行していない。
+
+## DEV-AUTO-02.2 — Windows UTF-8 Subprocess Hardening
+
+DEV-AUTO-02.1.1(`7af19f2`)はACCEPTED/FROZENのまま。本Roundも新機能を
+追加せず、実際のD0103 Orchestrator Runで顕在化したExecution Boundary
+Bugのみを修復した。**投資判断・市場Data取得・Backtest・BUY/SELL生成・
+ResearchArtifact作成・SemanticClaim→Evidence統合・実Model API呼び出し
+(本Roundの唯一の例外はSmoke Test用の無害な単発`claude -p`呼び出しのみ、
+下記参照)・Trading/Portfolio Automationは本Round自体もいずれも行わない**
+(`INVESTMENT_LOGIC_CHANGED = NO`)。D0103は本Roundでも一切実装・実行
+していない(`D0103_EXECUTED = NO`)。
+
+### 実D0103 RunでのCrash(§0-§1)
+
+実際のD0103 Orchestrator Runで、Claude CLIが利用可能になりWriter
+Subprocessが起動された直後、親Python ProcessがSubprocess Output読み取り
+中に`UnicodeDecodeError: 'cp932' codec can't decode byte ...`でCrashした。
+根本原因は`LocalCommandExecutor.execute()`が`subprocess.run(..., text=True)`
+を使っており、Windows既定のANSI Code Page(`locale.getpreferredencoding()`
+→ 本環境では`cp932`)でSubprocess Outputを暗黙にDecodeしていたこと。
+Claude CLIはUTF-8でJSON/Textを出力するため、Non-ASCII文字(例:
+`検証結果`・`→`・`✓`)を含むOutputでDecodeが失敗する。Decode自体が
+Subprocess Reader Thread内で発生し例外がそこで失われるため、後続の
+`writer_exec_result.stdout`が実質的に空/欠落Data化し、
+`WriterResult.from_raw_output(...)` → `_extract_json_object()` →
+`raw_output.strip()`で`AttributeError`としてCLI外へ露出していた。
+これはExecution Transport Bugであり、D0103のSemantic Bugではない
+(Faithfulness/Evidence/SemanticClaim等のLogicには一切触れていない)。
+
+### 修正(§2-§5): Explicit UTF-8 + Fail Closed
+
+`scripts/dev_workflow_lib/executor.py`の`LocalCommandExecutor.execute()`
+を、`subprocess.run(..., text=True)`(Ambient Locale依存)から
+`capture_output=True`のみ(`text`未指定、Raw Bytes Capture)へ変更し、
+`stdout`/`stderr`を新設した`_decode_utf8_strict()`ヘルパーで明示的に
+`bytes.decode("utf-8", errors="strict")`する設計へ変更した(選択肢B、
+`locale.getpreferredencoding()`・Windows ANSI Code Page・`PYTHONUTF8`
+環境変数のいずれにも依存しないDeterministic Contract)。`prompt_via=
+"stdin"`側も`prompt.encode("utf-8")`でBytesとして送信するよう変更し、
+入出力双方をUTF-8固定にした。
+
+Decode失敗(不正なUTF-8 Byte列)は`UnicodeDecodeError`を`errors=
+"ignore"`等でSilentに握りつぶさず、`returncode=-1`・空`stdout`・
+診断可能な`stderr`メッセージを持つ構造化`AgentExecutionResult`へ
+変換してFail Closedする(通常のSubprocess異常終了・Timeout・
+起動失敗[`OSError`]と同じ形の失敗ChannelへUnicodeDecodeErrorを
+合流させた——新しいError分類は増やしていない)。Timeout発生時
+(`subprocess.TimeoutExpired`)の部分出力Decodeにも同じStrict Decode
++Fail Closedを適用した。
+
+これにより`orchestrator.py`側の既存Contract(`writer_exec_result.
+returncode != 0`ならWriter Result Parserへ到達する前にSTOP)がDecode
+失敗Caseでもそのまま成立し、`WriterResult`/`ReviewerResult`の
+Parserが不正なOutputで呼ばれる経路自体が発生しなくなった。
+
+念のためParser境界自体(`agent_results.py`の`_extract_json_object()`)
+にも`raw_output`が`str`でない場合(例: 契約に反する`AgentExecutor`
+実装が`None`を返した場合)の明示Guardを追加し、`AttributeError`では
+なく制御された`ValueError`(既存Contract通り`orchestrator.py`が
+`STOP`へMapする)にFail Closedするようにした。
+
+### Writer/Reviewer/Closure共通(§9)
+
+`LocalCommandExecutor.execute()`はRoleごとの分岐を持たない設計
+(`del role`)のまま変更していないため、修正は共有Adapter1箇所のみで
+Writer・Reviewer・Closure Writer・Closure Reviewerの4経路全てに
+一律適用される。個別Roleごとの修正は行っていない。
+
+### D0103 Partial Working Tree Preservation(§10)
+
+本Round開始時点で`Japanese_Equity_Lab/lib/disclosures/
+evidence_integration.py`・`Japanese_Equity_Lab/13_tests/
+test_evidence_integration.py`がUntrackedとして存在していた(失敗した
+実D0103 Writerによる部分出力の可能性)。本Roundではこれらを削除・
+Reset・Checkout・編集・Stageのいずれも行っていない。DEV-AUTO-02.2の
+Commitにも含めていない(§15参照)。同様に`.agents/`・`.codex/`・
+`AGENTS.md`・`Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/`
+にも一切触れていない。
+
+### Regression Test(§6-§8)
+
+新設`13_tests/test_dev_workflow_executor.py`(10 Test): 実Subprocess
+(`sys.executable -c ...`)を`LocalCommandExecutor`経由で実際に起動し、
+(1) cp932では表現できないUTF-8文字(`検証結果 → ✓`)を含むStdout/Stdin
+往復が正しくDecodeされること、(2) 意図的に不正なUTF-8 Byte列を出力する
+Child ProcessでStdout/Stderr双方が`UnicodeDecodeError`を外部へ漏らさず
+`returncode=-1`のFail Closedへ変換されること、(3) `WriterResult`/
+`ReviewerResult.from_raw_output(None)`および非`str`入力が`AttributeError`
+ではなく`ValueError`になること、(4) `AgentExecutionResult.stdout`が
+Decode失敗後も常に`str`型であること、(5) WRITER/REVIEWER両Roleで
+挙動が同一であることを確認する。
+
+`13_tests/test_dev_workflow_orchestrator.py`に`_NoneStdoutExecutor`
+(実D0103 Crashと同型の`stdout=None`を返す不良`AgentExecutor`Double)を
+追加し、`test_none_stdout_from_writer_executor_stops_without_raising`・
+`test_none_stdout_from_reviewer_executor_stops_without_raising`の2 Test
+を新設: Public Orchestration Boundary(`run_task()`)がこの経路でも
+`AttributeError`/`TypeError`をRaiseせず`OrchestratorOutcome.STOP`を
+返すことを確認する(Writer側はReviewer未起動でZero Invocationのまま
+STOPすることも合わせて確認)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`scripts/dev_workflow_lib/
+executor.py`・`agent_results.py`・`13_tests/test_dev_workflow_
+executor.py`・`test_dev_workflow_orchestrator.py`): 全File Pass。
+`mypy --strict`(`executor.py`・`agent_results.py`、変更した
+Production File 2本): Success, no issues found。Targeted Pytest:
+`test_dev_workflow.py`(50 Test)・`test_dev_workflow_orchestrator.py`
+(38 Test、既存36+新規2)・`test_dev_workflow_executor.py`(10 Test、
+新設)、合計98 Test全てPass。
+
+### Real Smoke Test(§13)
+
+`LocalCommandExecutor(command=("claude", "-p", "--output-format",
+"json"))`経由で実際のClaude CLIへ`"Reply with exactly: UTF8_OK_検証"`
+を送信し(D0103は起動せず、非編集・単発の無害なPrompt)、
+`returncode=0`・`timed_out=False`・`stdout`がJSONとして正しく
+Parse可能であることを確認した。返された`result`Fieldの文字列を
+Codepoint単位で検証し(`検証` = 「検証」)、`cp932` Decode
+Errorが一切発生していないことを確認した。
+
+### D0103 Execution Confirmation
+
+`D0103_EXECUTED = NO`。本Roundで`evidence_integration.py`・
+`test_evidence_integration.py`はいずれも作成・変更していない
+(既存のUntracked状態をそのまま保持、§10参照)。本Round内で実際に
+D0103のWriter/Reviewer Roleを起動したのは上記Real Smoke Test
+(無害な単発Prompt、Repository編集Capability無し)のみであり、
+D0103 Manifestに基づくRunそのものは実行していない。
+
+### Persistence / Commit対象・Scope
+
+変更: `scripts/dev_workflow_lib/executor.py`
+(`LocalCommandExecutor.execute()`をRaw Bytes Capture+明示UTF-8 Strict
+Decode+Fail Closedへ変更、`_decode_utf8_strict()`新設)・
+`scripts/dev_workflow_lib/agent_results.py`
+(`_extract_json_object()`に非`str`Guard追加)・
+`13_tests/test_dev_workflow_executor.py`(新設)・
+`13_tests/test_dev_workflow_orchestrator.py`
+(`_NoneStdoutExecutor`+Regression Test2件追加)・本`DECISIONS.md`。
+`scripts/dev_workflow.py`・`dev_workflow_lib/model.py`/`gates.py`/
+`orchestrator.py`/`human_gate.py`/`acceptance.py`/`prompts.py`/
+`run_record.py`・既存`lib/`(Faithfulness/Normalization/Semantic
+Claims/Candidate Extraction、Frozen Investment Module)はいずれも
+無変更。`Japanese_Equity_Lab/lib/disclosures/evidence_integration.py`・
+`Japanese_Equity_Lab/13_tests/test_evidence_integration.py`は本Commitに
+含めない(§10)。H0001は実行していない。

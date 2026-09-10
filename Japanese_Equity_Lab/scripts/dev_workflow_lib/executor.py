@@ -41,12 +41,28 @@ class AgentExecutor(Protocol):
     def execute(self, *, role: Role, prompt: str, working_directory: Path) -> AgentExecutionResult: ...
 
 
+def _decode_utf8_strict(data: bytes) -> str:
+    """DEV-AUTO-02.2 §2: SubprocessのRaw Byte OutputをUTF-8として厳密に
+    Decodeする。`locale.getpreferredencoding()`・Windows ANSI Code Page
+    (cp932)・`PYTHONUTF8`環境変数には一切依存しない(Deterministic
+    Windows Behavior)。不正なUTF-8であれば`UnicodeDecodeError`をそのまま
+    Raiseし、呼び出し側がFail Closedで扱う(DEV-AUTO-02.2 §3、
+    `errors="ignore"`は使わない)。"""
+    return data.decode("utf-8", errors="strict")
+
+
 @dataclass(kw_only=True, frozen=True)
 class LocalCommandExecutor:
     """DEV-AUTO-02 §3: Command TemplateはConfigurationとして明示的に
     供給される汎用Subprocess Adapter(特定のVendor CLIをHard-codeしない、
     どのCommandでも動作する)。`prompt_via="arg"`はPromptをCommand末尾の
     Positional Argumentとして渡し、`"stdin"`はStandard Input経由で渡す。
+
+    DEV-AUTO-02.2 §2: `subprocess.run`は`text=True`を使わずRaw Bytesで
+    Captureし(Windows既定Codec cp932への暗黙依存を避ける)、`stdout`/
+    `stderr`はこのAdapterが明示的にUTF-8としてDecodeする。Decode失敗は
+    §3の通りFail Closed(`AgentExecutionResult.stdout`が`None`になる
+    経路も、非`str`がParserへ渡る経路も存在しない)。
     """
 
     command: tuple[str, ...]
@@ -63,10 +79,10 @@ class LocalCommandExecutor:
         del role  # このAdapter自体はRoleごとの差異を持たない(Prompt文字列側で表現済み)。
         if self.prompt_via == "arg":
             argv = [*self.command, prompt]
-            stdin_input: str | None = None
+            stdin_input: bytes | None = None
         else:
             argv = list(self.command)
-            stdin_input = prompt
+            stdin_input = prompt.encode("utf-8")
 
         try:
             completed = subprocess.run(
@@ -74,18 +90,37 @@ class LocalCommandExecutor:
                 cwd=working_directory,
                 input=stdin_input,
                 capture_output=True,
-                text=True,
                 timeout=self.timeout_seconds,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
-            stdout = exc.stdout if isinstance(exc.stdout, str) else ""
-            stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+            stdout_bytes = exc.stdout if isinstance(exc.stdout, bytes) else b""
+            stderr_bytes = exc.stderr if isinstance(exc.stderr, bytes) else b""
+            try:
+                stdout = _decode_utf8_strict(stdout_bytes)
+                stderr = _decode_utf8_strict(stderr_bytes)
+            except UnicodeDecodeError as decode_exc:
+                return AgentExecutionResult(
+                    returncode=-1,
+                    stdout="",
+                    stderr=f"executor timed out and output was not valid UTF-8: {decode_exc}",
+                    timed_out=True,
+                )
             return AgentExecutionResult(returncode=-1, stdout=stdout, stderr=stderr, timed_out=True)
         except OSError as exc:
             return AgentExecutionResult(returncode=-1, stdout="", stderr=f"failed to launch command: {exc}")
 
-        return AgentExecutionResult(returncode=completed.returncode, stdout=completed.stdout, stderr=completed.stderr)
+        try:
+            stdout = _decode_utf8_strict(completed.stdout)
+            stderr = _decode_utf8_strict(completed.stderr)
+        except UnicodeDecodeError as exc:
+            # DEV-AUTO-02.2 §3: Decode失敗はCrashさせず、構造化された
+            # 失敗Resultとして返す(呼び出し側`orchestrator.py`は
+            # `returncode != 0`のPathでSTOPし、`WriterResult`/
+            # `ReviewerResult`のParserには到達しない)。
+            return AgentExecutionResult(returncode=-1, stdout="", stderr=f"executor output was not valid UTF-8: {exc}")
+
+        return AgentExecutionResult(returncode=completed.returncode, stdout=stdout, stderr=stderr)
 
 
 @dataclass(kw_only=True, frozen=True)
