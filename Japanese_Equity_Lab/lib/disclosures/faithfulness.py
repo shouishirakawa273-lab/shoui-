@@ -258,6 +258,93 @@ _REQUIRED_OVERRIDE_REASON: dict[FaithfulnessDimension, FaithfulnessReasonCode] =
     FaithfulnessDimension.TEMPORAL_SCOPE: FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW,
 }
 
+# D0102.4.2.1 D42-N01 Closure: dimension/outcome/reason_codeは個別には
+# 正当なEnum値でも、その組合せ自体が無意味な場合(例:
+# SUBJECT_ATTRIBUTION+PASS+QUANTITY_INVENTED)を拒否するための閉じた
+# Mapping。既存Code(上記各`_check_*()`の`_dim()`呼び出し・
+# `_REQUIRED_OVERRIDE_REASON`)が実際に生成する組合せのみを機械的に
+# 抽出したもの(推測・汎用Rules Engineは作らない)。`FaithfulnessDimension
+# Result.__post_init__()`から参照され、Deterministic Path・
+# Model-Assisted Path双方の全Construction経路に一貫適用される
+# (Model Response Validationはこの同じExceptionをCatchしてWhole-
+# Response-Fatalへ変換する、§5B)。
+_REASON_CODE_ALLOWED_DIMENSIONS: dict[FaithfulnessReasonCode, frozenset[FaithfulnessDimension]] = {
+    FaithfulnessReasonCode.EXACT_QUOTE_MATCH: frozenset(
+        {FaithfulnessDimension.PROPOSITION_IDENTITY, FaithfulnessDimension.SUBJECT_ATTRIBUTION, FaithfulnessDimension.SCOPE}
+    ),
+    # NO_ISSUE_DETECTEDは全軸のPASS(Deterministic/Model-Assisted問わず)で
+    # 共通使用する汎用Reason Code(既存Deterministic Code+D0102.4.2
+    # Toyota Fixtureの両方で実際に使用されている)。
+    FaithfulnessReasonCode.NO_ISSUE_DETECTED: frozenset(FaithfulnessDimension),
+    FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.DIRECTION_UNSPECIFIED_WITH_EXPLICIT_SOURCE: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.BUSINESS_RISK_TAXONOMY_INELIGIBLE: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.PARAPHRASE_EQUIVALENT_CONFIRMED: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.PROPOSITION_SEMANTIC_MISMATCH_DETECTED: frozenset({FaithfulnessDimension.PROPOSITION_IDENTITY}),
+    FaithfulnessReasonCode.SUBJECT_MISMATCH_DETECTED: frozenset({FaithfulnessDimension.SUBJECT_ATTRIBUTION}),
+    FaithfulnessReasonCode.SCOPE_QUALIFIER_DROPPED: frozenset({FaithfulnessDimension.SCOPE}),
+    FaithfulnessReasonCode.QUANTITY_VALUE_MISMATCH: frozenset({FaithfulnessDimension.QUANTITY}),
+    FaithfulnessReasonCode.QUANTITY_UNIT_MISMATCH: frozenset({FaithfulnessDimension.QUANTITY}),
+    FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH: frozenset({FaithfulnessDimension.QUANTITY}),
+    FaithfulnessReasonCode.QUANTITY_INVENTED: frozenset({FaithfulnessDimension.QUANTITY}),
+    FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT: frozenset({FaithfulnessDimension.QUANTITY}),
+    FaithfulnessReasonCode.NEGATION_INVERTED: frozenset({FaithfulnessDimension.NEGATION}),
+    FaithfulnessReasonCode.NEGATION_AMBIGUOUS: frozenset({FaithfulnessDimension.NEGATION}),
+    FaithfulnessReasonCode.CAUSAL_TIER_UPGRADED: frozenset({FaithfulnessDimension.CAUSAL_STRENGTH}),
+    FaithfulnessReasonCode.CAUSAL_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimension.CAUSAL_STRENGTH}),
+    FaithfulnessReasonCode.CERTAINTY_TIER_UPGRADED: frozenset({FaithfulnessDimension.CERTAINTY_AND_COMMITMENT}),
+    FaithfulnessReasonCode.COMMITMENT_TIER_UPGRADED: frozenset({FaithfulnessDimension.CERTAINTY_AND_COMMITMENT}),
+    FaithfulnessReasonCode.CERTAINTY_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimension.CERTAINTY_AND_COMMITMENT}),
+    FaithfulnessReasonCode.TEMPORAL_CATEGORY_MISMATCH: frozenset({FaithfulnessDimension.TEMPORAL_SCOPE}),
+    FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimension.TEMPORAL_SCOPE}),
+    FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED: frozenset(
+        {
+            FaithfulnessDimension.PROPOSITION_IDENTITY,
+            FaithfulnessDimension.SUBJECT_ATTRIBUTION,
+            FaithfulnessDimension.SCOPE,
+            FaithfulnessDimension.QUANTITY,
+        }
+    ),
+    FaithfulnessReasonCode.NOT_APPLICABLE_NO_RELEVANT_CONTENT: frozenset(
+        {
+            FaithfulnessDimension.QUANTITY,
+            FaithfulnessDimension.CAUSAL_STRENGTH,
+            FaithfulnessDimension.CERTAINTY_AND_COMMITMENT,
+            FaithfulnessDimension.TEMPORAL_SCOPE,
+        }
+    ),
+}
+
+_REASON_CODE_ALLOWED_OUTCOMES: dict[FaithfulnessReasonCode, frozenset[FaithfulnessDimensionOutcome]] = {
+    FaithfulnessReasonCode.EXACT_QUOTE_MATCH: frozenset({FaithfulnessDimensionOutcome.PASS}),
+    FaithfulnessReasonCode.NO_ISSUE_DETECTED: frozenset({FaithfulnessDimensionOutcome.PASS}),
+    FaithfulnessReasonCode.PARAPHRASE_EQUIVALENT_CONFIRMED: frozenset({FaithfulnessDimensionOutcome.PASS}),
+    FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.QUANTITY_VALUE_MISMATCH: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.QUANTITY_UNIT_MISMATCH: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.QUANTITY_SIGN_MISMATCH: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.QUANTITY_INVENTED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.NEGATION_INVERTED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.CAUSAL_TIER_UPGRADED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.CERTAINTY_TIER_UPGRADED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.COMMITMENT_TIER_UPGRADED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.TEMPORAL_CATEGORY_MISMATCH: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.BUSINESS_RISK_TAXONOMY_INELIGIBLE: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.PROPOSITION_SEMANTIC_MISMATCH_DETECTED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.SUBJECT_MISMATCH_DETECTED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.SCOPE_QUALIFIER_DROPPED: frozenset({FaithfulnessDimensionOutcome.FAIL}),
+    FaithfulnessReasonCode.DIRECTION_UNSPECIFIED_WITH_EXPLICIT_SOURCE: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.DIRECTION_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.NEGATION_AMBIGUOUS: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.CAUSAL_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.CERTAINTY_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.UNPARSED_NUMERIC_CONTENT: frozenset({FaithfulnessDimensionOutcome.AMBIGUOUS}),
+    FaithfulnessReasonCode.NOT_APPLICABLE_NO_RELEVANT_CONTENT: frozenset({FaithfulnessDimensionOutcome.NOT_APPLICABLE}),
+}
+
 
 @dataclass(kw_only=True, frozen=True)
 class FaithfulnessDimensionResult:
@@ -281,6 +368,22 @@ class FaithfulnessDimensionResult:
         if self.outcome == FaithfulnessDimensionOutcome.NOT_APPLICABLE and self.dimension in _NEVER_NOT_APPLICABLE:
             raise FaithfulnessSchemaError(
                 f"{self.dimension.value} は NOT_APPLICABLE を許可しません(D0102.4 §16、構造的に該当なしが存在しない軸)"
+            )
+
+        # D0102.4.2.1 D42-N01 Closure: dimension/outcome/reason_codeは
+        # 個別にはEnumとして正当でも、その組合せ自体が無意味な場合
+        # (例: SUBJECT_ATTRIBUTION+PASS+QUANTITY_INVENTED)を拒否する。
+        allowed_dimensions_for_reason = _REASON_CODE_ALLOWED_DIMENSIONS.get(self.reason_code)
+        if allowed_dimensions_for_reason is not None and self.dimension not in allowed_dimensions_for_reason:
+            raise FaithfulnessSchemaError(
+                f"reason_code={self.reason_code.value} は dimension={self.dimension.value} では使用できません"
+                f"(許可されるDimension: {sorted(d.value for d in allowed_dimensions_for_reason)})"
+            )
+        allowed_outcomes_for_reason = _REASON_CODE_ALLOWED_OUTCOMES.get(self.reason_code)
+        if allowed_outcomes_for_reason is not None and self.outcome not in allowed_outcomes_for_reason:
+            raise FaithfulnessSchemaError(
+                f"reason_code={self.reason_code.value} は outcome={self.outcome.value} では使用できません"
+                f"(許可されるOutcome: {sorted(o.value for o in allowed_outcomes_for_reason)})"
             )
 
 
@@ -348,21 +451,59 @@ class FaithfulnessVerificationResult:
                 raise FaithfulnessSchemaError(
                     f"overall_outcome は FaithfulnessOutcome である必要があります: {self.overall_outcome!r}"
                 )
+
+            # D0102.4.2.1 D42-F01 Closure(§2A): status=SUCCESSの場合、
+            # dimension_resultsは全8軸を過不足無く含む「完全な」検証結果
+            # である必要がある(片手落ちのResultをSUCCESSとして構築
+            # できてしまうと、次のAggregation Invariant Checkが誤った
+            # 前提[欠落軸]の上で動いてしまう)。
+            dimensions_present = {r.dimension for r in self.dimension_results}
+            if dimensions_present != set(FaithfulnessDimension):
+                missing = sorted(d.value for d in set(FaithfulnessDimension) - dimensions_present)
+                raise FaithfulnessSchemaError(
+                    f"status=SUCCESS の場合 dimension_results は全{len(FaithfulnessDimension)}軸を"
+                    f"含む必要があります(欠落: {missing})"
+                )
+
+            # D0102.4.2.1 D42-F01 Closure(§2A): overall_outcomeは呼び出し側が
+            # 自由に指定できるFieldではなく、dimension_resultsから既存の
+            # 正準Aggregator(`_aggregate()`、Aggregation Logic自体は
+            # 一切複製しない)で機械的に導出される値と厳密に一致しなければ
+            # ならない。外部から与えられたoverall_outcomeを無条件に信頼
+            # しない(SCOPE=AMBIGUOUSなのにACCEPT、NEGATION=FAILなのに
+            # ACCEPT等のForged/Internally-Inconsistent Resultを構造的に
+            # 拒否する)。
+            expected_overall_outcome = _aggregate(self.dimension_results)
+            if self.overall_outcome != expected_overall_outcome:
+                raise FaithfulnessSchemaError(
+                    f"overall_outcome({self.overall_outcome.value}) が dimension_results から導出される"
+                    f"正しいAggregation結果({expected_overall_outcome.value})と一致しません"
+                    "(Forged/Internally-Inconsistent Result、D0102.4.2.1 D42-F01 Closure)"
+                )
+
+            # D0102.4.2.1 D42-F01 Closure(§2B): MODEL Provenance双方向
+            # Invariant。MODEL Checkが1件でもあれば`verification_
+            # provenance`は必須(Model呼び出しの事実を証明できない
+            # Forged Resultを拒否する)、逆にMODEL Checkが1件も無ければ
+            # `verification_provenance`は必ずNone(D0102.4A修正4、既存
+            # 挙動を維持)。
+            has_model_dimension = any(r.checked_by == FaithfulnessCheckMethod.MODEL for r in self.dimension_results)
+            if has_model_dimension and self.verification_provenance is None:
+                raise FaithfulnessSchemaError(
+                    "dimension_results に MODEL Checkが含まれるのに verification_provenance が None です"
+                    "(D0102.4.2.1 D42-F01 Closure、Model-Assisted Checkの実施をAiDerivedProvenanceで"
+                    "証明できないForged Resultを拒否する)"
+                )
+            if not has_model_dimension and self.verification_provenance is not None:
+                raise FaithfulnessSchemaError(
+                    "Model-assisted Checkが1件も無いのに verification_provenance が設定されています"
+                    "(D0102.4A修正4、Deterministic-Onlyの場合は None である必要があります)"
+                )
         elif self.overall_outcome is not None:
             raise FaithfulnessSchemaError(
                 f"status={self.status.value} の場合 overall_outcome は必ず None である必要があります"
                 "(D0102.4 §26/§33、Verificationが完走しなかったことを明示するため)"
             )
-
-        # D0102.4A修正2: Deterministic-Only Success時はverification_provenanceを持たない
-        # (D0102.4A修正4、Model-assisted Checkが無ければAiDerivedProvenanceは意味的に不適切)。
-        if self.status == FaithfulnessVerificationStatus.SUCCESS and self.verification_provenance is not None:
-            checked_by_methods = {r.checked_by for r in self.dimension_results}
-            if FaithfulnessCheckMethod.MODEL not in checked_by_methods:
-                raise FaithfulnessSchemaError(
-                    "Model-assisted Checkが1件も無いのに verification_provenance が設定されています"
-                    "(D0102.4A修正4、Deterministic-Onlyの場合は None である必要があります)"
-                )
 
         # D0102.4A修正2: CANDIDATE_INTEGRITY_FAILED以外は candidate_reference が必須
         # (Candidate自体がInvalidな場合のみ、有効なReferenceを計算できないため許容する)。
@@ -402,14 +543,24 @@ def _apply_required_dimension_override(
 ) -> FaithfulnessDimensionResult:
     """D0102.4 §25/D0102.4.1 §24: Claim Typeが当該軸を必須としている場合、
     NOT_APPLICABLEをAMBIGUOUSへ上書きする(「表を満たすためだけにPASSを
-    捏造しない」、AMBIGUOUSのみへ倒す)。"""
+    捏造しない」、AMBIGUOUSのみへ倒す)。
+
+    D0102.4.2.1 D42-F03 Closure: 上書き後も`result.checked_by`をそのまま
+    引き継ぐ(以前はDeterministic既定[`_dim()`の既定引数]に無条件で
+    固定していたため、Model-Assisted Checkが`NOT_APPLICABLE`を返した
+    必須軸を上書きした結果が誤って`checked_by=DETERMINISTIC`に
+    Relabelされ、Model呼び出しの事実[Provenance整合性]がSilentに
+    失われていた。判定の出所[Model-Assistedか否か]はOverride Rule
+    自体の決定論性とは独立した情報であり、保持する)。Deterministic
+    Pathでは`result.checked_by`は元々常にDETERMINISTICのため、この
+    変更はDeterministic-Only挙動には一切影響しない。"""
     if result.outcome != FaithfulnessDimensionOutcome.NOT_APPLICABLE:
         return result
     required = _REQUIRED_DIMENSIONS_BY_CLAIM_TYPE.get(claim_type, frozenset())
     if result.dimension not in required:
         return result
     override_reason = _REQUIRED_OVERRIDE_REASON[result.dimension]
-    return _dim(result.dimension, FaithfulnessDimensionOutcome.AMBIGUOUS, override_reason)
+    return _dim(result.dimension, FaithfulnessDimensionOutcome.AMBIGUOUS, override_reason, checked_by=result.checked_by)
 
 
 # ============================================================
@@ -1367,11 +1518,20 @@ def _determine_model_required_dimensions(
 ) -> frozenset[FaithfulnessDimension]:
     """D0102.4 §32「When Model Verification Required」: Deterministic
     Checksが`AMBIGUOUS`のまま残した`_MODEL_ROUTABLE_DIMENSIONS`のみを
-    収集する。追加で(a)CERTAINTY_AND_COMMITMENTは`NOT_APPLICABLE`でない
-    限り`_certainty_requires_model_routing()`のProposition-Binding
-    判定を適用する(§13)、(b)SCOPEは`_check_scope()`が完全一致ではない
-    部分文字列一致でTrivial PASSした場合でも、Qualifier脱落の可能性を
-    排除するためModel-Assisted Verificationへ回す(§11)。"""
+    収集する。追加で(a)CERTAINTY_AND_COMMITMENTがPASSの場合のみ
+    `_certainty_requires_model_routing()`のProposition-Binding判定を
+    適用する(§13)、(b)SCOPEは`_check_scope()`が完全一致ではない部分
+    文字列一致でTrivial PASSした場合でも、Qualifier脱落の可能性を
+    排除するためModel-Assisted Verificationへ回す(§11)。
+
+    D0102.4.2.1 D42-F02 Closure(DETERMINISTIC_HARD_FAIL_PRECEDENCE /
+    DETERMINISTIC_SOFT_FAIL_PRECEDENCE): 既に確立したDeterministic
+    `FAIL`は、いかなる追加TriggerによってもModel-Replaceable対象へ
+    絶対に含めない。個々のSpecial Trigger(Certainty Local-Binding・
+    Scope Qualifier-Drop等)がこの制約を各自Reimplementするのではなく、
+    末尾で`FAIL`を一括除外する1本のExplicit Guardとして強制する
+    (将来のTriggerが追加されてもこの不変条件を独立に守る必要が無い)。
+    """
     by_dimension = {r.dimension: r for r in deterministic_results}
     required = {
         dimension
@@ -1379,7 +1539,7 @@ def _determine_model_required_dimensions(
         if by_dimension[dimension].outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
     }
     certainty_result = by_dimension[FaithfulnessDimension.CERTAINTY_AND_COMMITMENT]
-    if certainty_result.outcome != FaithfulnessDimensionOutcome.NOT_APPLICABLE and _certainty_requires_model_routing(
+    if certainty_result.outcome == FaithfulnessDimensionOutcome.PASS and _certainty_requires_model_routing(
         evidence_text=evidence_text, candidate_text=candidate.normalized_claim_text
     ):
         required.add(FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
@@ -1388,6 +1548,11 @@ def _determine_model_required_dimensions(
         normalized_claim_text=candidate.normalized_claim_text, evidence_text=evidence_text
     ):
         required.add(FaithfulnessDimension.SCOPE)
+
+    # D42-F02 Explicit Guard: 上記いずれのTriggerを経由したかに関わらず、
+    # Deterministic FAILが確立している軸は最終的に一切Model-Required
+    # 対象へ含めない(Defense in Depth、単一の強制Point)。
+    required = {dimension for dimension in required if by_dimension[dimension].outcome != FaithfulnessDimensionOutcome.FAIL}
     return frozenset(required)
 
 
@@ -1751,11 +1916,27 @@ def promote_verified_candidate(
     `direction`/`evidence_span`/`extraction_version`/`schema_version`/
     `extraction_provenance`)はVerification開始時点の値をそのまま渡す
     (Verifierは書き換え不可、Silent Mutationの余地が構造的に無い、
-    §13/§19)。"""
+    §13/§19)。
+
+    D0102.4.2.1 D42-F01 Closure(§2C、Defense in Depth): `Faithfulness
+    VerificationResult.__post_init__`が既にCanonical Aggregation
+    Invariantを強制しているため、この関数へ到達する時点で`overall_
+    outcome`は`dimension_results`と既に整合しているはずである。ただし
+    Promotionは唯一のACCEPT Gateであるため、その前提を無条件に信頼せず
+    ここでも独立に`_aggregate()`を再実行して確認する(Silent Repairは
+    行わない、不整合ならPromotionをFail Closedで拒否する)。"""
     if verification_result.status != FaithfulnessVerificationStatus.SUCCESS:
         return None
     if verification_result.overall_outcome != FaithfulnessOutcome.ACCEPT:
         return None
+
+    recomputed_outcome = _aggregate(verification_result.dimension_results)
+    if recomputed_outcome != FaithfulnessOutcome.ACCEPT:
+        raise FaithfulnessSchemaError(
+            "verification_result.overall_outcome=ACCEPT ですが、dimension_results から再計算した"
+            f"Aggregation結果は {recomputed_outcome.value} です"
+            "(Forged/Internally-Inconsistent Result、D0102.4.2.1 D42-F01 Closure、Promotionを拒否します)"
+        )
 
     expected_reference = compute_candidate_reference(candidate)
     if verification_result.candidate_reference != expected_reference:

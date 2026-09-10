@@ -21,6 +21,13 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from lib.disclosures.candidate_extraction import SemanticClaimCandidate
+
+# D0102.4.2.1 D42-F02 Closure: `_determine_model_required_dimensions()`/
+# `_run_all_dimension_checks()`はPublic APIでは無いが、「Deterministic
+# FAILが確立した軸は絶対にModel-Requiredにならない」という内部不変条件
+# 自体を直接検証するためにWhite-Box Testとしてimportする(Public
+# Entrypointだけでは`FaithfulnessVerifierInput`にRequested Dimensionの
+# 情報が含まれないため、この不変条件を外部から直接観測できない)。
 from lib.disclosures.faithfulness import (
     DETERMINISTIC_FAITHFULNESS_VERSION,
     FaithfulnessCheckMethod,
@@ -32,6 +39,8 @@ from lib.disclosures.faithfulness import (
     FaithfulnessVerificationResult,
     FaithfulnessVerificationStatus,
     FaithfulnessVerifierInput,
+    _determine_model_required_dimensions,
+    _run_all_dimension_checks,
     compute_candidate_reference,
     promote_verified_candidate,
     verify_candidate_deterministically,
@@ -944,6 +953,40 @@ def _valid_dimension_result() -> FaithfulnessDimensionResult:
     )
 
 
+def _full_accept_dimension_results() -> tuple[FaithfulnessDimensionResult, ...]:
+    # D0102.4.2.1 D42-F01 Closure: status=SUCCESSのFaithfulnessVerification
+    # Resultは全8軸を過不足無く含む必要がある(Completeness Invariant)。
+    # 全軸PASS/NOT_APPLICABLE(NEVER_NOT_APPLICABLE 3軸のみPASS)なので
+    # 正準Aggregationの結果は常にACCEPTになる。
+    not_applicable_dims = (
+        FaithfulnessDimension.CAUSAL_STRENGTH,
+        FaithfulnessDimension.CERTAINTY_AND_COMMITMENT,
+        FaithfulnessDimension.TEMPORAL_SCOPE,
+        FaithfulnessDimension.QUANTITY,
+    )
+    results = []
+    for dimension in FaithfulnessDimension:
+        if dimension in not_applicable_dims:
+            results.append(
+                FaithfulnessDimensionResult(
+                    dimension=dimension,
+                    outcome=FaithfulnessDimensionOutcome.NOT_APPLICABLE,
+                    reason_code=FaithfulnessReasonCode.NOT_APPLICABLE_NO_RELEVANT_CONTENT,
+                    checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+                )
+            )
+        else:
+            results.append(
+                FaithfulnessDimensionResult(
+                    dimension=dimension,
+                    outcome=FaithfulnessDimensionOutcome.PASS,
+                    reason_code=FaithfulnessReasonCode.NO_ISSUE_DETECTED,
+                    checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+                )
+            )
+    return tuple(results)
+
+
 def test_f06_dimension_results_must_be_a_tuple() -> None:
     with pytest.raises(FaithfulnessSchemaError):
         FaithfulnessVerificationResult(
@@ -1027,11 +1070,13 @@ def test_f06_reason_must_be_str_or_none() -> None:
 
 
 def test_f06_valid_construction_with_dimension_results_still_succeeds() -> None:
-    # F06のFixが正当なConstructionまで壊していないことの回帰Test。
+    # F06のFixが正当なConstructionまで壊していないことの回帰Test
+    # (D0102.4.2.1 D42-F01 ClosureのCompleteness/Aggregation Invariant
+    # 適用後も、全8軸を含む正当なACCEPT Resultは引き続き構築できる)。
     result = FaithfulnessVerificationResult(
         status=FaithfulnessVerificationStatus.SUCCESS,
         overall_outcome=FaithfulnessOutcome.ACCEPT,
-        dimension_results=(_valid_dimension_result(),),
+        dimension_results=_full_accept_dimension_results(),
         candidate_reference="CANDREF_x",
         verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
         verified_at=_VERIFIED_AT,
@@ -1917,3 +1962,341 @@ def test_verified_at_remains_utc_and_not_pit_metadata_model_assisted() -> None:
     assert "provider_available_at" not in field_names
     assert "available_at" not in field_names
     assert "verified_at" in field_names
+
+
+# ============================================================
+# D0102.4.2.1 — Model-Assisted Faithfulness Closure Fix
+# (D42-F01 / D42-F02 / D42-F03 / D42-N01)
+# ============================================================
+
+
+def _replace_dimension_result(
+    results: tuple[FaithfulnessDimensionResult, ...], replacement: FaithfulnessDimensionResult
+) -> tuple[FaithfulnessDimensionResult, ...]:
+    return tuple(replacement if r.dimension == replacement.dimension else r for r in results)
+
+
+def _valid_full_accept_result(candidate_reference: str = "CANDREF_x") -> FaithfulnessVerificationResult:
+    return FaithfulnessVerificationResult(
+        status=FaithfulnessVerificationStatus.SUCCESS,
+        overall_outcome=FaithfulnessOutcome.ACCEPT,
+        dimension_results=_full_accept_dimension_results(),
+        candidate_reference=candidate_reference,
+        verification_version=DETERMINISTIC_FAITHFULNESS_VERSION,
+        verified_at=_VERIFIED_AT,
+    )
+
+
+# ---- D42-F01: Forged ACCEPT Must Not Promote ----
+
+
+def test_d42_f01_forged_ambiguous_dimension_with_accept_overall_rejected() -> None:
+    valid_result = _valid_full_accept_result()
+    forged_dims = _replace_dimension_result(
+        valid_result.dimension_results,
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.SCOPE,
+            outcome=FaithfulnessDimensionOutcome.AMBIGUOUS,
+            reason_code=FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        ),
+    )
+
+    with pytest.raises(FaithfulnessSchemaError):
+        replace(valid_result, dimension_results=forged_dims)
+
+
+def test_d42_f01_forged_hard_fail_dimension_with_accept_overall_rejected() -> None:
+    valid_result = _valid_full_accept_result()
+    forged_dims = _replace_dimension_result(
+        valid_result.dimension_results,
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.NEGATION,
+            outcome=FaithfulnessDimensionOutcome.FAIL,
+            reason_code=FaithfulnessReasonCode.NEGATION_INVERTED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        ),
+    )
+
+    with pytest.raises(FaithfulnessSchemaError):
+        replace(valid_result, dimension_results=forged_dims)
+
+
+def test_d42_f01_model_dimension_without_provenance_rejected() -> None:
+    valid_result = _valid_full_accept_result()
+    forged_dims = _replace_dimension_result(
+        valid_result.dimension_results,
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.SCOPE,
+            outcome=FaithfulnessDimensionOutcome.PASS,
+            reason_code=FaithfulnessReasonCode.NO_ISSUE_DETECTED,
+            checked_by=FaithfulnessCheckMethod.MODEL,
+        ),
+    )
+
+    with pytest.raises(FaithfulnessSchemaError):
+        replace(valid_result, dimension_results=forged_dims)
+
+
+def test_d42_f01_zero_model_dimensions_with_provenance_rejected() -> None:
+    valid_result = _valid_full_accept_result()
+
+    with pytest.raises(FaithfulnessSchemaError):
+        replace(valid_result, verification_provenance=_fake_provenance())
+
+
+def test_d42_f01_valid_accept_remains_constructible_and_promotable() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した。")
+    candidate = _candidate(evidence_span=span, text="業績は堅調に推移した。")
+    valid_result = _valid_full_accept_result(candidate_reference=compute_candidate_reference(candidate))
+
+    assert valid_result.status == FaithfulnessVerificationStatus.SUCCESS
+    claim = promote_verified_candidate(candidate=candidate, verification_result=valid_result)
+
+    assert claim is not None
+    assert claim.faithfulness_outcome == FaithfulnessOutcome.ACCEPT
+
+
+def test_d42_f01_promotion_rejects_forged_accept_with_ambiguous_dimension() -> None:
+    # promote_verified_candidate()自身のDefense in Depth(§2C):
+    # Constructor Invariantを迂回した(通常は到達不能な)Objectが渡された
+    # としても、Promotion側の独立した再計算が不整合を検出する。
+    doc, span = _doc_and_span("業績は堅調に推移した。")
+    candidate = _candidate(evidence_span=span, text="業績は堅調に推移した。")
+    valid_result = _valid_full_accept_result(candidate_reference=compute_candidate_reference(candidate))
+    forged_dims = _replace_dimension_result(
+        valid_result.dimension_results,
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.SCOPE,
+            outcome=FaithfulnessDimensionOutcome.AMBIGUOUS,
+            reason_code=FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        ),
+    )
+    forged_result = object.__new__(FaithfulnessVerificationResult)
+    object.__setattr__(forged_result, "status", FaithfulnessVerificationStatus.SUCCESS)
+    object.__setattr__(forged_result, "overall_outcome", FaithfulnessOutcome.ACCEPT)
+    object.__setattr__(forged_result, "dimension_results", forged_dims)
+    object.__setattr__(forged_result, "candidate_reference", valid_result.candidate_reference)
+    object.__setattr__(forged_result, "verification_version", valid_result.verification_version)
+    object.__setattr__(forged_result, "verified_at", valid_result.verified_at)
+    object.__setattr__(forged_result, "verification_provenance", None)
+    object.__setattr__(forged_result, "reason", None)
+
+    with pytest.raises(FaithfulnessSchemaError):
+        promote_verified_candidate(candidate=candidate, verification_result=forged_result)
+
+
+# ---- D42-F02: Deterministic FAIL Is Immutable ----
+
+
+def test_d42_f02_certainty_deterministic_fail_is_immutable() -> None:
+    evidence_text = "損失が生じる可能性がある。販売は堅調である。"
+    candidate_text = "損失が生じる。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=candidate_text)
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    certainty = _dim_result(result, FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
+    assert certainty.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert certainty.checked_by == FaithfulnessCheckMethod.DETERMINISTIC
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_d42_f02_deterministic_fail_dimensions_never_model_requested() -> None:
+    cases = [
+        (
+            "重要な変更はありません。",
+            "重要な変更があった。",
+            SemanticClaimType.BUSINESS_RISK,
+            _BUSINESS_RISK_TAXONOMY,
+            ClaimDirection.UNSPECIFIED,
+            FaithfulnessDimension.NEGATION,
+        ),
+        (
+            "為替影響は一因である。",
+            "為替影響は唯一の原因である。",
+            SemanticClaimType.PERFORMANCE_DRIVER,
+            "jpcrp_cor:ManagementAnalysisTextBlock",
+            ClaimDirection.UNSPECIFIED,
+            FaithfulnessDimension.CAUSAL_STRENGTH,
+        ),
+        (
+            "損失が発生する可能性がある。",
+            "損失が発生する。",
+            SemanticClaimType.BUSINESS_RISK,
+            _BUSINESS_RISK_TAXONOMY,
+            ClaimDirection.UNSPECIFIED,
+            FaithfulnessDimension.CERTAINTY_AND_COMMITMENT,
+        ),
+        (
+            "業績は堅調に推移した。",
+            "業績は4.0%増加した。",
+            SemanticClaimType.PERFORMANCE_CHANGE,
+            "jpcrp_cor:ManagementAnalysisTextBlock",
+            ClaimDirection.UNSPECIFIED,
+            FaithfulnessDimension.QUANTITY,
+        ),
+        (
+            "当中間連結会計期間の業績は堅調であった。",
+            "今後も継続的に堅調である。",
+            SemanticClaimType.OUTLOOK,
+            "jpcrp_cor:ManagementAnalysisTextBlock",
+            ClaimDirection.UNSPECIFIED,
+            FaithfulnessDimension.TEMPORAL_SCOPE,
+        ),
+        (
+            "リスクは増加した。",
+            "リスクは増加した。",
+            SemanticClaimType.BUSINESS_RISK,
+            _BUSINESS_RISK_TAXONOMY,
+            ClaimDirection.DECREASE,
+            FaithfulnessDimension.PROPOSITION_IDENTITY,
+        ),
+    ]
+    for evidence_text, candidate_text, claim_type, taxonomy, direction, expected_fail_dim in cases:
+        doc, span = _doc_and_span(evidence_text, taxonomy_name=taxonomy)
+        candidate = _candidate(evidence_span=span, claim_type=claim_type, text=candidate_text, direction=direction)
+        deterministic_results = _run_all_dimension_checks(evidence_text=evidence_text, candidate=candidate)
+        by_dim = {r.dimension: r for r in deterministic_results}
+        assert by_dim[expected_fail_dim].outcome == FaithfulnessDimensionOutcome.FAIL, (evidence_text, candidate_text)
+
+        required = _determine_model_required_dimensions(deterministic_results, evidence_text=evidence_text, candidate=candidate)
+
+        assert expected_fail_dim not in required, (evidence_text, candidate_text, required)
+        # 一般化した不変条件: いかなるシナリオでも、Deterministic FAILの
+        # 軸がModel-Required集合に含まれることは絶対に無い。
+        for dimension, result in by_dim.items():
+            if result.outcome == FaithfulnessDimensionOutcome.FAIL:
+                assert dimension not in required, (evidence_text, candidate_text, dimension, required)
+
+
+# ---- D42-F03: Required Dimension MODEL NOT_APPLICABLE ----
+
+
+def test_d42_f03_required_dimension_model_not_applicable_does_not_crash() -> None:
+    text = "リスクについて記載する。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text)
+    verifier = FakeVerifier(response=_dims(("CERTAINTY_AND_COMMITMENT", "NOT_APPLICABLE", "NOT_APPLICABLE_NO_RELEVANT_CONTENT")))
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.SUCCESS
+    certainty = _dim_result(result, FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
+    assert certainty.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert certainty.checked_by == FaithfulnessCheckMethod.MODEL
+    assert result.verification_provenance is not None
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+
+def test_d42_f03_multiple_model_dimensions_mixed_override_and_pass() -> None:
+    evidence_text = "リスクについて説明する。"
+    candidate_text = "リスクについて解説する。"
+    doc, span = _doc_and_span(evidence_text)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.MANAGEMENT_EXPLANATION, text=candidate_text)
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "AMBIGUOUS", "SEMANTIC_VERIFICATION_REQUIRED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+            ("CERTAINTY_AND_COMMITMENT", "NOT_APPLICABLE", "NOT_APPLICABLE_NO_RELEVANT_CONTENT"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.SUCCESS
+    subject = _dim_result(result, FaithfulnessDimension.SUBJECT_ATTRIBUTION)
+    assert subject.outcome == FaithfulnessDimensionOutcome.PASS
+    assert subject.checked_by == FaithfulnessCheckMethod.MODEL
+    certainty = _dim_result(result, FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
+    assert certainty.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert certainty.checked_by == FaithfulnessCheckMethod.MODEL
+    assert result.verification_provenance is not None
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+
+# ---- D42-N01: Dimension / Outcome / Reason Compatibility ----
+
+
+def test_n01_subject_attribution_pass_with_quantity_invented_rejected() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.SUBJECT_ATTRIBUTION,
+            outcome=FaithfulnessDimensionOutcome.PASS,
+            reason_code=FaithfulnessReasonCode.QUANTITY_INVENTED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        )
+
+
+def test_n01_quantity_pass_with_negation_inverted_rejected() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.QUANTITY,
+            outcome=FaithfulnessDimensionOutcome.PASS,
+            reason_code=FaithfulnessReasonCode.NEGATION_INVERTED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        )
+
+
+def test_n01_scope_not_applicable_with_direction_mismatch_rejected() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessDimensionResult(
+            dimension=FaithfulnessDimension.SCOPE,
+            outcome=FaithfulnessDimensionOutcome.NOT_APPLICABLE,
+            reason_code=FaithfulnessReasonCode.DIRECTION_MISMATCH_DETECTED,
+            checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+        )
+
+
+def test_n01_positive_control_proposition_identity_pass_no_issue_detected() -> None:
+    result = FaithfulnessDimensionResult(
+        dimension=FaithfulnessDimension.PROPOSITION_IDENTITY,
+        outcome=FaithfulnessDimensionOutcome.PASS,
+        reason_code=FaithfulnessReasonCode.NO_ISSUE_DETECTED,
+        checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+    )
+    assert result.outcome == FaithfulnessDimensionOutcome.PASS
+
+
+def test_n01_positive_control_scope_ambiguous_semantic_verification_required() -> None:
+    result = FaithfulnessDimensionResult(
+        dimension=FaithfulnessDimension.SCOPE,
+        outcome=FaithfulnessDimensionOutcome.AMBIGUOUS,
+        reason_code=FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED,
+        checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+    )
+    assert result.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+
+
+def test_n01_positive_control_quantity_fail_quantity_invented() -> None:
+    result = FaithfulnessDimensionResult(
+        dimension=FaithfulnessDimension.QUANTITY,
+        outcome=FaithfulnessDimensionOutcome.FAIL,
+        reason_code=FaithfulnessReasonCode.QUANTITY_INVENTED,
+        checked_by=FaithfulnessCheckMethod.DETERMINISTIC,
+    )
+    assert result.outcome == FaithfulnessDimensionOutcome.FAIL
+
+
+def test_n01_contract_impossible_combination_is_violation_not_exception() -> None:
+    result = _run_with_raw_response(
+        {
+            "dimensions": [
+                {"dimension": "SUBJECT_ATTRIBUTION", "outcome": "PASS", "reason_code": "QUANTITY_INVENTED"},
+                {"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED"},
+                {"dimension": "SCOPE", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED"},
+            ]
+        }
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+    assert result.overall_outcome is None

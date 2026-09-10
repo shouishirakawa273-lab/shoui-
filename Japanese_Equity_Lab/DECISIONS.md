@@ -15742,3 +15742,192 @@ normalization.py`・`semantic_claims.py`・`candidate_extraction.py`・
 その他既存`lib/`・既存`13_tests/`(faithfulness以外)はいずれも無変更。
 `EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`のまま
 (変更なし)。H0001は実行していない。
+
+## D0102.4.2.1 — Model-Assisted Faithfulness Closure Fix
+
+D0102.4.2(`6dfd38a`)のCodex Auditで4件のFinding(D42-F01 HIGH/D42-F02
+HIGH/D42-F03 MEDIUM/D42-N01 LOW)が指摘された。本Roundはこの4件のみを
+Fix する。Deterministic F01-F06(`_check_*()`各Dimension関数の本体)は
+1行も変更していない。`normalization.py`・`semantic_claims.py`・
+`candidate_extraction.py`はいずれも無変更(Frozen)。Evidence統合・
+External Model実装・Vendor SDKは本Roundでも一切追加していない
+(`MODEL_CALL_SITES = 0`のまま、Grep再確認済み)。
+
+### D42-F01(HIGH)— Forged ACCEPT Result Promotion(CLOSED)
+
+**再現(実測)**: `FaithfulnessVerificationResult.__post_init__`は
+`status`/`overall_outcome`/`dimension_results`の型・重複のみを検証し、
+`overall_outcome`が`dimension_results`から実際に導出される値と一致
+するかを一切確認していなかった。手動構築(`dataclasses.replace()`
+経由を含む)で`SCOPE=AMBIGUOUS`かつ`overall_outcome=ACCEPT`・
+`NEGATION=FAIL`かつ`overall_outcome=ACCEPT`・`checked_by=MODEL`の
+Dimensionが存在するのに`verification_provenance=None`、のいずれも
+Construction可能であり、`promote_verified_candidate()`はこれらの
+Forged Resultを無条件にPromoteしていた。
+
+**修正**:
+1. `FaithfulnessVerificationResult.__post_init__`(status=SUCCESS時)に
+   Completeness Invariant(`dimension_results`が既存8軸を過不足無く
+   含むこと)を追加した——次のAggregation Invariant Checkが欠落軸の
+   上で誤動作しないための前提条件。
+2. 同じくstatus=SUCCESS時、既存の正準Aggregator`_aggregate()`
+   (Aggregation Logic自体は一切複製しない)を`dimension_results`に
+   適用した結果と`overall_outcome`が厳密に一致することを強制する
+   (不一致は`FaithfulnessSchemaError`)。
+3. MODEL Provenance双方向Invariant: `checked_by=MODEL`のDimensionが
+   1件でもあれば`verification_provenance`は必須(新規追加方向)、
+   逆に1件も無ければ`verification_provenance`は必ず`None`(既存
+   方向、D0102.4A修正4を維持)。
+4. `promote_verified_candidate()`にDefense in Depth(§2C)として、
+   Constructor Invariantとは独立に`_aggregate()`を再実行し、
+   `overall_outcome=ACCEPT`との不一致を`FaithfulnessSchemaError`で
+   検出する経路を追加した(Silent Repairは行わない、Promotionを
+   Fail Closedで拒否する)。
+
+**確認**: `dataclasses.replace()`によるForged Result(AMBIGUOUS
+Dimension+ACCEPT、Hard-Fail Dimension+ACCEPT、MODEL Dimension+
+Provenance=None、Provenance有り+MODEL Dimension無し)がいずれも
+Construction時点で`FaithfulnessSchemaError`を送出することを直接
+確認した(Public Entrypoint経由ではなく、Constructor/Promotion
+Boundary自体を直接呼び出すTestで検証、pytestのみに依存しない)。
+`object.__new__()`でConstructor Invariant自体を迂回した仮想的な
+Forged Instanceに対しても、`promote_verified_candidate()`独自の
+再計算がPromotionを拒否することも確認した。正当なACCEPT Resultは
+引き続きConstruction・Promotion可能であることも確認した
+(`test_d42_f01_valid_accept_remains_constructible_and_promotable`)。
+
+### D42-F02(HIGH)— Deterministic FAIL Immutability(CLOSED)
+
+**再現(実測)**: `_determine_model_required_dimensions()`の
+CERTAINTY_AND_COMMITMENT用Special Trigger条件が
+`certainty_result.outcome != NOT_APPLICABLE`となっており、`FAIL`も
+この条件を満たしていた。Evidenceが複数Clauseを含み、かつCandidateが
+単一Clauseへ安全にLocal Bindingできない場合、既に確立した
+Deterministic `FAIL`(例:`可能性がある`→`発生する`のCERTAINTY_TIER_
+UPGRADED)が誤ってModel-Required対象へ含まれ、Model側がPASSを返せば
+Deterministic FAILがMerge時に上書きされてしまう
+(`DETERMINISTIC_HARD_FAIL_PRECEDENCE`/`DETERMINISTIC_SOFT_FAIL_
+PRECEDENCE`違反)。
+
+**修正**: CERTAINTY_AND_COMMITMENT用Special Trigger条件を`== PASS`
+のみへ限定した(§3A: Special TriggerはPASS/NOT_APPLICABLEの場合にのみ
+適用可能、FAILには適用しない)。加えて、`_determine_model_required_
+dimensions()`の戻り値に対し、個々のTriggerの実装に依存しない末尾の
+Explicit Guard(「Deterministic FAILの軸を一律除外する」1行)を追加し、
+将来のTrigger追加時にもこの不変条件を各自が独立に守る必要が無いよう
+にした(§3B)。
+
+**確認**: 原文の`Evidence: "損失が生じる可能性がある。販売は堅調である。"
+Candidate: "損失が生じる。"`(FakeVerifierが要求された全軸へPASSを
+返す)で、`CERTAINTY_AND_COMMITMENT`が`FAIL`/`DETERMINISTIC`のまま
+保持され、`overall_outcome=REJECT`になることを直接確認した。加えて、
+NEGATION/CAUSAL_STRENGTH/CERTAINTY_AND_COMMITMENT/QUANTITY/
+TEMPORAL_SCOPE/PROPOSITION_IDENTITYの6種のDeterministic FAIL Scenario
+全てで、当該FAIL Dimensionが`_determine_model_required_dimensions()`
+の戻り値に一切含まれないことを一般化したTestで確認した
+(`test_d42_f02_deterministic_fail_dimensions_never_model_requested`)。
+
+### D42-F03(MEDIUM)— Required Dimension MODEL NOT_APPLICABLE Crash(CLOSED)
+
+**再現(実測)**: `_apply_required_dimension_override()`は上書き後の
+`FaithfulnessDimensionResult`を`_dim()`のDefault引数(`checked_by=
+DETERMINISTIC`)で無条件に再構築しており、Model-Assisted Checkが
+必須軸へ`NOT_APPLICABLE`を返した場合、上書き後の結果が誤って
+`checked_by=DETERMINISTIC`にRelabelされていた。この結果、`dimension_
+results`にMODEL Checkが実質的に1件も無いのに`verification_
+provenance`が設定されている(Model呼び出し自体は実際に発生したため)
+という矛盾した状態になり、Constructor(D42-F01のBidirectional
+Invariant導入前から存在した既存の片方向Check)が`FaithfulnessSchema
+Error`を送出していた——Public Entrypoint(`verify_candidate_
+faithfulness()`)がValidな入力に対して例外を送出してしまう欠陥
+だった。
+
+**修正**: `_apply_required_dimension_override()`が上書き後も
+`result.checked_by`(入力Resultの実際の出所)をそのまま引き継ぐよう
+修正した(§4A、`checked_by=MODEL`を維持する方針を採用、§4Bの代替案
+[別Audit Field追加]は不採用——既存Fieldの意味をそのまま正しく使う
+方が最小の変更)。Deterministic Path(この関数のもう1つの呼び出し元
+`_run_all_dimension_checks()`)では入力は常に`checked_by=
+DETERMINISTIC`のため、この修正はDeterministic-Only挙動に一切影響
+しない。
+
+**確認**: 原文の`Evidence == Candidate: "リスクについて記載する。"`
+(claim_type=BUSINESS_RISK、FakeVerifierがCERTAINTY_AND_COMMITMENTへ
+`NOT_APPLICABLE`/`NOT_APPLICABLE_NO_RELEVANT_CONTENT`を返す)で、
+例外が送出されず、最終的な`CERTAINTY_AND_COMMITMENT`が`AMBIGUOUS`/
+`checked_by=MODEL`のまま保持され、`verification_provenance`が
+`AiDerivedProvenance`として設定され、`overall_outcome=REVIEW_
+REQUIRED`になることを直接確認した。複数のMODEL Dimensionのうち1件が
+必須軸Override経由でAMBIGUOUSになり、別の1件が通常のPASSのまま
+共存するCase(claim_type=MANAGEMENT_EXPLANATION)でもProvenanceが
+Validなまま保たれ、例外が発生しないことも確認した。
+
+### D42-N01(LOW)— Dimension/Outcome/Reason Compatibility(CLOSED)
+
+**再現**: `FaithfulnessDimensionResult.__post_init__`は`dimension`/
+`outcome`/`reason_code`それぞれのEnum型のみを個別に検証しており、
+組合せ自体の意味的整合性(例: `SUBJECT_ATTRIBUTION`+`PASS`+
+`QUANTITY_INVENTED`)は一切検証していなかった。
+
+**修正**: 既存Deterministic Code(各`_check_*()`の`_dim()`呼び出し・
+`_REQUIRED_OVERRIDE_REASON`)が実際に生成している組合せのみを機械的に
+抽出した閉じたMapping(`_REASON_CODE_ALLOWED_DIMENSIONS`/
+`_REASON_CODE_ALLOWED_OUTCOMES`、汎用Rules Engineは作らない、推測に
+よる追加は行わない)を新設し、`FaithfulnessDimensionResult.__post_
+init__`から参照する。この1箇所への追加のみで、Deterministic Path・
+Model-Assisted Path双方の全Construction経路に一貫適用され
+(`_validate_verifier_response()`は既にこのConstructorを`try/except
+FaithfulnessSchemaError`でWrapしているため、Model応答由来の違反は
+自動的に`VERIFIER_CONTRACT_VIOLATION`として扱われる、新しいCatch
+Blockを追加する必要は無かった)、Constructor直接呼び出しの違反は
+`FaithfulnessSchemaError`をRaiseする(§5B、Whole-Response-Fatalと
+Constructor-Level Validationを同じ検証ロジックで統一)。
+
+**確認**: `SUBJECT_ATTRIBUTION+PASS+QUANTITY_INVENTED`・
+`QUANTITY+PASS+NEGATION_INVERTED`・`SCOPE+NOT_APPLICABLE+
+DIRECTION_MISMATCH_DETECTED`のいずれもConstructor直接呼び出しで
+`FaithfulnessSchemaError`を送出することを確認した。`PROPOSITION_
+IDENTITY+PASS+NO_ISSUE_DETECTED`・`SCOPE+AMBIGUOUS+SEMANTIC_
+VERIFICATION_REQUIRED`・`QUANTITY+FAIL+QUANTITY_INVENTED`の正当な
+組合せは引き続き構築可能であることも確認した(過剰なRejectが無い)。
+Model Responseが同種の不可能な組合せを返した場合、生のPython例外が
+呼び出し側へ漏れず`VERIFIER_CONTRACT_VIOLATION`(`overall_outcome=
+None`)として扱われることも確認した。
+
+### 保持した既存Boundary(再Openなし)
+
+`MODEL_ALONE_CAN_CERTIFY_PROPOSITION_EQUIVALENCE = NO`(Paraphrase
+Ratification Mechanism自体は無変更)・`VERIFIER_INPUT_NARROW = YES`・
+`SOURCE_REVALIDATION_BEFORE_MODEL = YES`・`SUBJECT_ATTRIBUTION_SAFE`
+・`SCOPE_MODEL_FAIL_POLICY_SAFE`・`MODEL_RESULT_COMPLETENESS_SAFE`
+(Whole-Response-Fatal Contract自体は無変更)・
+`CANDIDATE_REFERENCE_BINDING_SAFE`・`PROMOTED_FIELD_PRESERVATION`・
+`REVIEW_PROMOTION_ALLOWED = NO`・`REJECT_PROMOTION_ALLOWED = NO`・
+`MODEL_VENDOR_CALLS = 0`、いずれも本Roundで再検討・再Openしていない。
+Deterministic F01-F06(D0102.4.1/D0102.4.1.2)のLogic本体・8軸
+Architecture・新規`FaithfulnessDimension`追加(`0`のまま)もいずれも
+無変更。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`lib/disclosures/faithfulness.py`・
+`13_tests/test_faithfulness.py`): 両File Pass。`mypy --strict`
+(`lib/disclosures/faithfulness.py`): Success, no issues found in 1
+source file。Targeted Pytest: `test_faithfulness.py`(**135 Test**、
+既存118+新規17)・`test_disclosures_semantic_claims.py`・`test_
+candidate_extraction.py`・`test_disclosures_normalization.py`合計
+**280 Test全てPass**(Deterministic F01-F06/D0102.4.2の既存Frozen
+Boundary無変更・無退行を含む)。Full Repository Suite/H0001はいずれも
+実行していない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/faithfulness.py`(D42-F01/F02/
+F03/N01修正のみ、Deterministic `_check_*()`各Dimension関数本体は
+1行も変更していない)・`Japanese_Equity_Lab/13_tests/test_
+faithfulness.py`(D42-F01/F02/F03/N01 Regression Test追加)・この
+DECISIONS.md追記のみ。`lib/disclosures/normalization.py`・
+`semantic_claims.py`・`candidate_extraction.py`・その他既存`lib/`・
+既存`13_tests/`(faithfulness以外)はいずれも無変更。
+`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
+まま(変更なし)。H0001は実行していない。
