@@ -16279,3 +16279,206 @@ Extraction、いずれもFrozen Investment Module)・DEV-AUTO-01の既存
 Logic本体)・既存`13_tests/`(`test_dev_workflow.py`以外)はいずれも
 無変更。`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS =
 NOT_READY`のまま(変更なし)。H0001は実行していない。
+
+## DEV-AUTO-02.1 — Orchestrator Production Readiness
+
+DEV-AUTO-02(`a81d979`)はACCEPTED/FROZENのまま。本Roundは新機能を
+追加せず、DEV-AUTO-02完了時点で残っていた2件の本番運用Gapのみを
+修復した: (1) Human Gateの誤検知(Prohibition表現をRequestと誤判定
+するFalse Positive)、(2) 実在するLocal Executor Configurationが
+一度も具体化されていなかったこと。**投資判断・市場Data取得・
+Backtest・BUY/SELL生成・ResearchArtifact作成・SemanticClaim→
+Evidence統合・実Model API呼び出し・Trading/Portfolio Automationは
+本Round自体もいずれも行わない**(`INVESTMENT_LOGIC_CHANGED = NO`)。
+D0103(SemanticClaim→Evidence統合の実装コード)は本Roundでも一切
+実装・実行していない(`D0103_EXECUTED = NO`)。
+
+### Human Gate False-Positive の原因(§1)
+
+DEV-AUTO-02時点の`requires_human_approval()`/`is_h0001_request()`は
+`forbidden_actions`(禁止事項のリスト)を`purpose`/`task_id`/
+`targeted_tests`と全く同じKeyword Scan対象として扱っていた。この
+結果、`forbidden_actions: ["no H0001"]`のように安全側でH0001を
+明示的に**禁止**しているManifestが、H0001を**要求**している
+Manifestと区別できず`HUMAN_APPROVAL_REQUIRED`へ誤判定されていた
+(Prohibitionと Requestの取り違え)。DEV-AUTO-02のD0103 Pilot
+Manifestが「Dry-Runで綺麗にHuman Gate = NOを示す」ことができな
+かった直接原因はこれである。
+
+### 修正方針: Requested vs. Forbidden の区別(§1/§2)
+
+生成的なNLP Intent Classifierは追加せず、構造化Field優先+狭い
+決定論的Ruleのみで解決した(`scripts/dev_workflow_lib/human_gate.py`):
+
+1. **`forbidden_actions`はKeyword Scan対象から完全に除外**した。
+   Prohibitionは定義上「要求」ではない。H0001の実行防止自体は
+   Keyword Scanではなく、`orchestrator.py`が`manifest.targeted_tests`
+   に明示的に列挙されたCommandしか実行しない(Executorに任意Command
+   を渡さない)という既存の構造的仕組みで担保されている——D0103の
+   `targeted_tests`にはH0001関連のCommandは一切含まれていない。
+2. 新しい構造化Field`requested_actions: tuple[str, ...] = ()`を
+   `TaskManifest`(`model.py`)に追加した(Optional、既存Manifestとの
+   後方互換のためDefault空Tuple)。これは「実際にこれを実行する」と
+   明示的に宣言するFieldであり、`targeted_tests`と同様、Negation
+   判定なしで常にKeyword Scanする(このFieldに書かれていること自体が
+   「要求」の定義であるため)。
+3. 自由記述の`purpose`/`task_id`のみ、D0102.4.1.1 F04の
+   `_has_unnegated_marker()`と同型のNarrow Window Check
+   (`_is_negated_mention()`、Closed List否定Cue+固定40文字Window)を
+   適用した——Markerの直前40文字以内に`"no "`/`"not "`/`"without "`/
+   `"forbid"`/`"do not"`等の既知否定Cueがあれば、その出現は要求では
+   ないとみなす。汎用文法解析・NLP Modelは一切使わない。
+
+### H0001 Hard Guardの維持確認(§1)
+
+修正後も次を直接Testで確認した:
+`purpose="Run H0001"`→`HUMAN_APPROVAL_REQUIRED`・
+`requested_actions=("H0001",)`→`HUMAN_APPROVAL_REQUIRED`
+(いずれも`is_h0001_request()=True`)。一方
+`forbidden_actions=["H0001"]`・
+`purpose="Do not run H0001; implement documentation only"`は
+いずれもHuman Gateを一切Triggerしない(`HUMAN_APPROVAL_REQUIRED = NO`)。
+`force push`も同様にRequested/Forbiddenで対称に動作することを確認
+した。既存DEV-AUTO-01のClosed Pattern List(15種類のRegex)自体は
+一切変更していない——Scan対象Fieldの選び方とNegation判定のみを
+変更した。
+
+### D0103 Pilot Manifestの修復(§1/§14 G)
+
+`scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json`
+を修復した: `purpose`を「何をしないか」の列挙から「何をするか」の
+簡潔な説明へ書き換え、新しい`requested_actions`(Evidence
+Integration実装・Unit Test追加・Ruff/Mypy実行・Targeted Pytest実行・
+DECISIONS.md記録、のみ)を追加し、`forbidden_actions`はPure
+Prohibitionのリストとして維持した。`expected_head`もDEV-AUTO-01時点
+(`1802a49`、Stale)から本Round開始時点のHEAD(`a81d979`)へ更新した。
+CLIで直接確認: `validate`/`run --dry-run`いずれも
+`human_gate_reason: null`(`HUMAN_APPROVAL_REQUIRED = NO`)、
+`executor_invocations: 0`、Writer/Reviewer両Prompt正常生成、
+Repositoryへの書き込みZero(`git status --porcelain`で確認)。
+非Dry-Runは(本Roundの一時的な自己変更Diffにより)Scope Gateまたは
+Head Gateで`STOP`するが、これはHuman Gateとは独立した別の既存Gate
+であり、Human Gate自体は正しくClearされている。
+
+### Local Executor Configuration(§2)
+
+`claude --help`を再確認(推測なし、Usage: `claude [options] [command]
+[prompt]`——`prompt`は末尾Positional引数であり、`-p/--print`はValueを
+取らないBoolean Flagであることを確認、これにより既存
+`LocalCommandExecutor`の`prompt_via="arg"`[Prompt末尾追加]と矛盾なく
+組み合わせられる)。`where claude`で`claude`がPATH解決可能な
+Bare Command名であることを確認済み(User固有絶対Pathは一切不要)。
+
+`Japanese_Equity_Lab/scripts/executor_config.example.json`を新設した
+(APIキー・Token・Password・Secret・Credential・User固有絶対Path、
+いずれも含まない、`test_J_executor_config_contains_no_secret_fields`
+で確認):
+
+- **Writer(`CAN_EXECUTE_WRITER`)**: `claude -p --output-format json
+  --permission-mode acceptEdits --permission-prompts none`。
+  非対話・機械可読JSON結果・File編集の自動承認(Scope自体は
+  Orchestrator側`check_scope()`が別途強制)・それ以外の承認要求は
+  Hangせず自動拒否(`--permission-prompts none`)。
+- **Reviewer(`CAN_EXECUTE_READ_ONLY_REVIEWER`)**: Writerとは別の
+  Invocation/別のPrompt(既存`build_reviewer_prompt()`/
+  `build_closure_reviewer_prompt()`のREAD ONLY指示は無変更)。
+  `--permission-mode plan`(編集を適用しないMode)+`--restricted`
+  (Bash/PowerShell/REPL等のCode実行系ToolとWebFetchを除去)+
+  `--disallowedTools Edit,Write,MultiEdit,NotebookEdit`
+  (File変更系Toolの明示的Deny、多層防御)。これはCLI Level
+  (第1層)の制御であり、`orchestrator.py`の既存Pre/Post Git状態Diff
+  比較(第2層、Reviewerが実際にRepositoryを変更した場合はVerdictを
+  無条件拒否して`STOP`、`test_reviewer_modifying_repo_stops_and_
+  rejects_verdict`で既存確認済み・無変更)と独立に両方が効く設計と
+  した。
+
+**Provider名はCoreへHard-codeしていない**: `dev_workflow_lib/
+executor.py`自体は本Roundで一切変更していない(既に`claude`等の
+Vendor名を知らない汎用`LocalCommandExecutor`のまま)。`claude`という
+文字列が現れるのはCommitされたExample Configuration File
+(`executor_config.example.json`)のみであり、これはCapability-Based
+Architecture(`CAPABILITY_BASED = YES`)を損なわない。
+
+### 推奨運用(PowerShellからの起動、自己言及Risk)
+
+推奨する本番運用形態:
+`PowerShell → python Japanese_Equity_Lab/scripts/dev_workflow.py run
+<manifest> --executor-config
+Japanese_Equity_Lab/scripts/executor_config.example.json →
+(Orchestratorが)Writer用`claude`Subprocessを起動 →
+(Orchestratorが)別ProcessとしてReviewer用`claude`Subprocessを起動`。
+**このOrchestratorをClaude Codeの対話Session内部から同一Sessionに
+対して起動しない**(DEV-AUTO-02から継続する既知の自己言及的多重起動
+Risk——このOrchestrator自体がClaude Codeによって開発されているため、
+対話Session内から`claude`Subprocessを大量に起動するとNested Session
+やResource競合を招きうる)。したがって独立したPowerShell
+Terminal(対話Claude Codeとは別Process)から`dev_workflow.py run`を
+起動することを推奨する。この検出・回避は実装を複雑化させず
+Documentationレベルに留めた(Executor自体に自己Session検出Logicは
+追加していない)。
+
+### Regression Test(§14 A-J、全件追加・全件Pass)
+
+`13_tests/test_dev_workflow.py`に追加: A(`forbidden_actions=
+["H0001"]`はHuman Gate対象外)・B(`purpose`内のProhibition表現は
+対象外)・C(`requested_actions`のH0001はHuman Gate対象)・
+D(`requested_actions`の2025 Locked Test rerunはHuman Gate対象)・
+E(`forbidden_actions`のforce pushは対象外)・F(`requested_actions`の
+force pushは対象)・G(D0103 Pilot ManifestはHuman Gate = NO+
+`is_h0001_request() = False`)・H(Human Gate該当Manifestは
+`evaluate_acceptance()`が`HUMAN_APPROVAL_REQUIRED`を返す=Zero
+Execution経路)。`13_tests/test_dev_workflow_orchestrator.py`に
+追加: I(Reviewer Executor ConfigはWriterとは別Commandであり
+`--restricted`+`--disallowedTools`[Edit/Write/MultiEdit/NotebookEdit]
+を含み、かつOrchestrator側Git Diff比較という独立した第2層Enforcement
+も既存Testで別途確認済み)・J(Example Executor ConfigにSecret相当
+Field・User固有絶対Pathが一切無い)。既存6 Test
+(`test_h0001_request_requires_human_approval_and_is_not_silently_
+substituted`・`test_force_push_reference_requires_human_approval`・
+`test_cli_validate_human_approval_required_for_h0001`・
+`test_d0103_pilot_dry_run_succeeds_with_zero_executions`[
+`human_gate_reason is None`へ更新]・`test_d0103_pilot_non_dry_run_
+halts_with_zero_executions`[`test_d0103_pilot_non_dry_run_halts_
+before_any_execution`へ改名しOutcomeを`STOP`へ更新]・
+`test_h0001_reference_executes_zero_agents`)は旧False Positive挙動を
+前提にしていたため、`forbidden_actions`ではなく`requested_actions`を
+使うよう更新した(旧Testが検証していた「H0001/Force PushはHuman
+Gate対象」という結論自体は変更していない、Requestとして表現した
+場合の挙動として引き続き真)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`
+(`scripts/dev_workflow_lib/human_gate.py`・`model.py`・
+`13_tests/test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`):
+全File Pass。`mypy --strict`(`human_gate.py`・`model.py`、変更した
+Production File 2本): Success, no issues found(Test File自体への
+`mypy --strict`はRepository既存の`numpy`Type Stub Parsing事情
+[Python 3.14環境、本Round変更前から存在する既知の無関係な事象]で
+Blockされるため対象外とした——変更したProduction File自体はいずれも
+Clean)。Targeted Pytest: `test_dev_workflow.py`(50 Test、42+新規8)・
+`test_dev_workflow_orchestrator.py`(28 Test、26+新規2)、合計78 Test
+全てPass。`13_tests/`全体(1762 Test)もCross-Contamination無しでPass
+確認済み(Full Repository Suite/H0001は実行していない)。
+
+### D0103 Execution Confirmation
+
+`D0103_EXECUTED = NO`。本Roundで`evidence_integration.py`・
+`test_evidence_integration.py`はいずれも作成・変更していない。
+D0103 ManifestはDry-Run Readyになったのみであり、実際のWriter/
+Reviewer Executor起動は一切行っていない(`FakeExecutor`/実在repoへの
+`validate`/`run --dry-run`によるRead-Only確認のみ)。
+
+### Persistence / Commit対象・Scope
+
+変更: `scripts/dev_workflow_lib/human_gate.py`(Human Gate False-
+Positive修正)・`scripts/dev_workflow_lib/model.py`
+(`TaskManifest.requested_actions`Field追加)・
+`scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json`
+(修復)・`13_tests/test_dev_workflow.py`・
+`13_tests/test_dev_workflow_orchestrator.py`(Regression Test追加/
+更新)。新規: `scripts/executor_config.example.json`。
+`dev_workflow_lib/executor.py`/`orchestrator.py`/`acceptance.py`/
+`gates.py`/`prompts.py`/`dev_workflow.py`本体・既存`lib/`
+(Faithfulness/Normalization/Semantic Claims/Candidate Extraction、
+Frozen Investment Module)はいずれも無変更。H0001は実行していない。

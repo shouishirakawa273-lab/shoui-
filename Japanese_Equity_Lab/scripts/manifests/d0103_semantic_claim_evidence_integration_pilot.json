@@ -1,7 +1,7 @@
 {
   "task_id": "D0103-SEMANTIC-CLAIM-EVIDENCE-INTEGRATION-PILOT",
-  "purpose": "SemanticClaim -> Evidence Integration: connect only Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary while preserving provenance and relation semantics. This manifest is a DRY-RUN PILOT ONLY for DEV-AUTO-02 (task requires_independent_review because Evidence integration is a high-risk epistemic boundary). It intentionally must NOT be executed for real in this round: no H0001, no Locked Test rerun, no BUY/SELL signal generation, no expected-return calculation, no portfolio construction, no strategy search or backtest, no ResearchArtifact conclusion mutation, no external news treated as Evidence, and no changes to the raw Toyota untracked research directory.",
-  "expected_head": "1802a49e8742c4d7db08705ed2af2d8a7f0f6500",
+  "purpose": "SemanticClaim -> Evidence Integration: connect only Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary while preserving provenance and relation semantics. This manifest is a DRY-RUN PILOT for DEV-AUTO-02/DEV-AUTO-02.1 (task requires_independent_review because Evidence integration is a high-risk epistemic boundary). See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
+  "expected_head": "a81d9794b5d263ff7dbd89c6e5a9e7551cd70d4c",
   "allowed_files": [
     "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
     "Japanese_Equity_Lab/13_tests/test_evidence_integration.py"
@@ -19,6 +19,13 @@
   "static_checks": [
     "ruff check Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
     "mypy --strict Japanese_Equity_Lab/lib/disclosures/evidence_integration.py"
+  ],
+  "requested_actions": [
+    "implement Japanese_Equity_Lab/lib/disclosures/evidence_integration.py connecting Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary",
+    "add unit tests in Japanese_Equity_Lab/13_tests/test_evidence_integration.py covering the new integration",
+    "run ruff check and mypy --strict on evidence_integration.py",
+    "run the targeted pytest suite for test_evidence_integration.py",
+    "record any design decision in DECISIONS.md"
   ],
   "forbidden_actions": [
     "no H0001",

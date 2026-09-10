@@ -212,15 +212,22 @@ def test_d0103_pilot_dry_run_succeeds_with_zero_executions(tmp_path: Path) -> No
     assert result.executor_invocations == 0
     assert writer.call_count == 0
     assert reviewer.call_count == 0
-    # D0103 Pilot Manifestは意図的にH0001/Locked Test等のKeywordを含む
-    # forbidden_actionsを持つため、Human Gateは既にTriggerされている
-    # ことを確認する(D0103が誤って実行される経路が構造的に無いことの
-    # 追加確認)。
+    # DEV-AUTO-02.1: D0103 Pilot ManifestはH0001/Locked Test等を
+    # `forbidden_actions`(Prohibition)としてのみ記載し、`requested_actions`
+    # には通常のScoped実装/Test/Review作業のみを列挙するよう修復した
+    # (Human-Gate False-Positive Fix)。したがってこのManifestは
+    # Human Gateを一切Triggerしない(HUMAN_APPROVAL_REQUIRED = NO)ことを
+    # 確認する——D0103がこのRoundで実際に実行される経路はDry-Run自体が
+    # AgentをZero回しか呼ばないことで別途保証されている。
     assert result.dry_run_report is not None
-    assert result.dry_run_report.human_gate_reason is not None
+    assert result.dry_run_report.human_gate_reason is None
 
 
-def test_d0103_pilot_non_dry_run_halts_with_zero_executions(tmp_path: Path) -> None:
+def test_d0103_pilot_non_dry_run_halts_before_any_execution(tmp_path: Path) -> None:
+    # DEV-AUTO-02.1: Human Gateは修復済みのManifestではもはやTriggerされ
+    # ないが、一時Repositoryの実HEADはManifestの`expected_head`とは
+    # 一致しないため、Expected-Head Gateにより即座にSTOPし、Agentは
+    # 一切呼ばれない(D0103_EXECUTED = NOはこの経路でも維持される)。
     manifest_data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest = TaskManifest.from_dict(manifest_data)
     repo, _head = _init_temp_repo(tmp_path)
@@ -235,7 +242,7 @@ def test_d0103_pilot_non_dry_run_halts_with_zero_executions(tmp_path: Path) -> N
         dry_run=False,
     )
 
-    assert result.outcome == OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED
+    assert result.outcome == OrchestratorOutcome.STOP
     assert result.executor_invocations == 0
     assert writer.call_count == 0
     assert reviewer.call_count == 0
@@ -261,7 +268,7 @@ def test_human_gated_manifest_executes_zero_agents(tmp_path: Path) -> None:
 
 def test_h0001_reference_executes_zero_agents(tmp_path: Path) -> None:
     repo, head = _init_temp_repo(tmp_path)
-    manifest = _manifest(expected_head=head, forbidden_actions=("do not run H0001",))
+    manifest = _manifest(expected_head=head, requested_actions=("run H0001",))
     writer = FakeExecutor(fixed_response=_writer_success())
     reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
 
@@ -570,3 +577,56 @@ def test_status_command_is_read_only_and_does_not_execute(tmp_path: Path) -> Non
     # (Executor未使用)でも`load_run_record`が正しく動くことを確認する。
     with pytest.raises(FileNotFoundError):
         load_run_record("does-not-exist", runs_dir=tmp_path / "runs")
+
+
+# ============================================================
+# DEV-AUTO-02.1: Local Executor Configuration (§14 I, J)
+# ============================================================
+
+_EXECUTOR_CONFIG_PATH = Path(__file__).resolve().parent.parent / "scripts" / "executor_config.example.json"
+
+
+def test_I_reviewer_executor_config_retains_read_only_enforcement() -> None:
+    # Config-Level: ReviewerのCommandは`--restricted`(Bash/PowerShell/
+    # REPL/Code-Execution/WebFetchを除去)とFile変更系Toolの明示的
+    # `--disallowedTools`を含み、Writerとは別のInvocation/Processである
+    # ことを確認する(DEV-AUTO-02.1)。
+    from scripts.dev_workflow_lib.executor import load_executor_registry_from_json
+
+    registry = load_executor_registry_from_json(_EXECUTOR_CONFIG_PATH)
+    writer = registry.get(ExecutionCapability.CAN_EXECUTE_WRITER)
+    reviewer = registry.get(ExecutionCapability.CAN_EXECUTE_READ_ONLY_REVIEWER)
+    assert writer is not None
+    assert reviewer is not None
+    assert writer is not reviewer
+
+    reviewer_command = reviewer.command  # type: ignore[union-attr]
+    assert "--restricted" in reviewer_command
+    assert "--disallowedTools" in reviewer_command
+    disallowed_index = reviewer_command.index("--disallowedTools")
+    disallowed_value = reviewer_command[disallowed_index + 1]
+    for mutating_tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        assert mutating_tool in disallowed_value
+
+    # Orchestrator-Level(独立した第2層): Reviewerが実際にRepositoryを
+    # 変更した場合はVerdictを無条件に拒否しSTOPする(既存のGit状態Diff
+    # 比較、test_reviewer_modifying_repo_stops_and_rejects_verdictで
+    # 別途検証済み)。ここでは両方のLayerが揃っていることのみを確認する。
+    writer_command = writer.command  # type: ignore[union-attr]
+    assert writer_command != reviewer_command
+
+
+def test_J_executor_config_contains_no_secret_fields() -> None:
+    # `scripts/executor_config.example.json`はAPIキー・Token・Password・
+    # Secret・Credential等を一切含まない(コミット可能なExample、
+    # DEV-AUTO-02.1)。Key名・Value双方をCase-Insensitiveに走査する。
+    raw_text = _EXECUTOR_CONFIG_PATH.read_text(encoding="utf-8").lower()
+    forbidden_tokens = ("api_key", "apikey", "token", "password", "secret", "credential")
+    for forbidden in forbidden_tokens:
+        assert forbidden not in raw_text, f"executor config example must not reference {forbidden!r}"
+
+    # Bare, PATH-resolvable command name only (no user-specific absolute
+    # path such as `C:\Users\...` or `/home/...`).
+    assert "c:\\users" not in raw_text
+    assert "/home/" not in raw_text
+    assert "c:/users" not in raw_text

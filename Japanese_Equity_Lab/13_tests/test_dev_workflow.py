@@ -82,6 +82,7 @@ def _write_manifest_json(path: Path, **overrides: object) -> None:
         "targeted_tests": [],
         "static_checks": [],
         "forbidden_actions": [],
+        "requested_actions": [],
         "requires_independent_review": True,
         "requires_human_approval": False,
     }
@@ -180,7 +181,7 @@ def test_high_risk_operation_requires_human_approval() -> None:
 
 
 def test_h0001_request_requires_human_approval_and_is_not_silently_substituted() -> None:
-    manifest = _manifest(forbidden_actions=("do not run H0001",))
+    manifest = _manifest(requested_actions=("H0001",))
     assert is_h0001_request(manifest)
     assert requires_human_approval(manifest) is not None
 
@@ -201,7 +202,7 @@ def test_2025_locked_test_reference_requires_human_approval() -> None:
 
 
 def test_force_push_reference_requires_human_approval() -> None:
-    manifest = _manifest(forbidden_actions=("force push to main",))
+    manifest = _manifest(requested_actions=("force push to main",))
     assert requires_human_approval(manifest) is not None
 
 
@@ -209,6 +210,69 @@ def test_ordinary_manifest_does_not_require_human_approval() -> None:
     manifest = _manifest()
     assert requires_human_approval(manifest) is None
     assert not is_h0001_request(manifest)
+
+
+# ============================================================
+# DEV-AUTO-02.1: Human Gate False-Positive Fix (§14 A-J)
+# ============================================================
+
+
+def test_A_forbidden_h0001_is_not_human_gated_solely_for_that_reason() -> None:
+    manifest = _manifest(forbidden_actions=("H0001",))
+    assert requires_human_approval(manifest) is None
+    assert not is_h0001_request(manifest)
+
+
+def test_B_prohibition_wording_in_purpose_is_not_human_gated() -> None:
+    manifest = _manifest(purpose="Do not run H0001; implement documentation only")
+    assert requires_human_approval(manifest) is None
+    assert not is_h0001_request(manifest)
+
+
+def test_C_requested_h0001_is_human_gated() -> None:
+    manifest = _manifest(requested_actions=("H0001",))
+    assert requires_human_approval(manifest) is not None
+    assert is_h0001_request(manifest)
+
+
+def test_D_requested_2025_locked_test_rerun_is_human_gated() -> None:
+    manifest = _manifest(requested_actions=("rerun the 2025 locked test",))
+    assert requires_human_approval(manifest) is not None
+    assert is_h0001_request(manifest)
+
+
+def test_E_force_push_in_forbidden_actions_is_prohibition_only() -> None:
+    manifest = _manifest(forbidden_actions=("force push", "no force push to main"))
+    assert requires_human_approval(manifest) is None
+
+
+def test_F_force_push_as_requested_action_is_human_gated() -> None:
+    manifest = _manifest(requested_actions=("force push to main",))
+    assert requires_human_approval(manifest) is not None
+
+
+def test_G_d0103_pilot_manifest_is_dry_run_eligible_with_zero_gate() -> None:
+    manifest_path = (
+        Path(__file__).resolve().parent.parent / "scripts" / "manifests" / "d0103_semantic_claim_evidence_integration_pilot.json"
+    )
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = TaskManifest.from_dict(data)
+    assert requires_human_approval(manifest) is None
+    assert not is_h0001_request(manifest)
+
+
+def test_H_human_gated_request_yields_zero_executions_via_acceptance_verdict() -> None:
+    manifest = _manifest(requested_actions=("H0001",))
+    assert requires_human_approval(manifest) is not None
+    verdict = evaluate_acceptance(
+        manifest=manifest,
+        reviewer_verdict=ReviewerVerdict.ACCEPTED,
+        findings=(),
+        tests_passed=True,
+        static_checks_passed=True,
+        scope_clean=True,
+    )
+    assert verdict == AcceptanceVerdict.HUMAN_APPROVAL_REQUIRED
 
 
 def test_prohibited_old_bad_commit_reference_detected() -> None:
@@ -518,7 +582,7 @@ def test_cli_validate_passes_when_scope_clean(tmp_path: Path) -> None:
 def test_cli_validate_human_approval_required_for_h0001(tmp_path: Path) -> None:
     repo, head = _init_temp_repo(tmp_path)
     manifest_path = tmp_path / "manifest.json"
-    _write_manifest_json(manifest_path, expected_head=head, forbidden_actions=["run H0001"])
+    _write_manifest_json(manifest_path, expected_head=head, requested_actions=["run H0001"])
 
     result = subprocess.run(
         [sys.executable, str(_CLI_PATH), "validate", str(manifest_path), "--repo-root", str(repo)],

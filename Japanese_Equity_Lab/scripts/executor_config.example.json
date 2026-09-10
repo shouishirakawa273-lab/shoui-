@@ -1,0 +1,69 @@
+{
+  "CAN_EXECUTE_WRITER": {
+    "_comment": [
+      "-p/--print: non-interactive, prints final response and exits.",
+      "--output-format json: single machine-readable JSON result on stdout.",
+      "--permission-mode acceptEdits: auto-approve file edit/write tool",
+      "  calls (the Writer role's whole job is CAN_EDIT_REPO within",
+      "  allowed_files -- enforced separately by the orchestrator's scope",
+      "  gate, not by this CLI flag).",
+      "--permission-prompts none: anything else that would need interactive",
+      "  approval is auto-denied instead of hanging forever waiting for a",
+      "  human who is not there (there is no human in a subprocess).",
+      "Prompt is appended as the trailing positional argument by",
+      "LocalCommandExecutor (prompt_via=arg), matching `claude`'s",
+      "`[options] [command] [prompt]` usage."
+    ],
+    "command": [
+      "claude",
+      "-p",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "acceptEdits",
+      "--permission-prompts",
+      "none"
+    ],
+    "prompt_via": "arg",
+    "timeout_seconds": 1800
+  },
+  "CAN_EXECUTE_READ_ONLY_REVIEWER": {
+    "_comment": [
+      "Separate invocation/process from the Writer, with its own reviewer",
+      "prompt (build_reviewer_prompt / build_closure_reviewer_prompt) that",
+      "explicitly instructs READ ONLY behavior.",
+      "--permission-mode plan: a read/inspect-oriented mode that does not",
+      "  apply file edits.",
+      "--restricted: removes Bash/PowerShell/REPL/other code-running tools",
+      "  and WebFetch, and ignores user/project/local settings files -- the",
+      "  Reviewer never needs to execute code (targeted_tests/static_checks",
+      "  are run by the orchestrator itself, not by the reviewer agent).",
+      "--disallowedTools Edit,Write,MultiEdit,NotebookEdit: explicit",
+      "  defense-in-depth denial of every file-mutation tool, on top of",
+      "  --permission-mode plan and --restricted.",
+      "--permission-prompts none: same non-interactive fail-closed reason",
+      "  as the Writer.",
+      "This CLI-level restriction is a second, independent layer on top of",
+      "the orchestrator's own pre/post git-state diff comparison in",
+      "orchestrator.py, which rejects the reviewer's verdict outright if the",
+      "repository was modified during the reviewer's execution -- so",
+      "read-only is enforced even if a future CLI flag change loosens the",
+      "options above."
+    ],
+    "command": [
+      "claude",
+      "-p",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "plan",
+      "--permission-prompts",
+      "none",
+      "--restricted",
+      "--disallowedTools",
+      "Edit,Write,MultiEdit,NotebookEdit"
+    ],
+    "prompt_via": "arg",
+    "timeout_seconds": 900
+  }
+}

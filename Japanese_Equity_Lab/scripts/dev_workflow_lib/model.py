@@ -161,6 +161,7 @@ class TaskManifest:
     targeted_tests: tuple[str, ...] = field(default_factory=tuple)
     static_checks: tuple[str, ...] = field(default_factory=tuple)
     forbidden_actions: tuple[str, ...] = field(default_factory=tuple)
+    requested_actions: tuple[str, ...] = field(default_factory=tuple)
     requires_independent_review: bool = True
     requires_human_approval: bool = False
 
@@ -188,6 +189,7 @@ class TaskManifest:
             targeted_tests=tuple(str(p) for p in data.get("targeted_tests", [])),
             static_checks=tuple(str(p) for p in data.get("static_checks", [])),
             forbidden_actions=tuple(str(p) for p in data.get("forbidden_actions", [])),
+            requested_actions=tuple(str(p) for p in data.get("requested_actions", [])),
             requires_independent_review=bool(data.get("requires_independent_review", True)),
             requires_human_approval=bool(data.get("requires_human_approval", False)),
         )
@@ -202,6 +204,7 @@ class TaskManifest:
             "targeted_tests": list(self.targeted_tests),
             "static_checks": list(self.static_checks),
             "forbidden_actions": list(self.forbidden_actions),
+            "requested_actions": list(self.requested_actions),
             "requires_independent_review": self.requires_independent_review,
             "requires_human_approval": self.requires_human_approval,
         }
