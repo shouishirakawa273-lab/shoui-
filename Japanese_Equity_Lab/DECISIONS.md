@@ -15931,3 +15931,179 @@ DECISIONS.md追記のみ。`lib/disclosures/normalization.py`・
 既存`13_tests/`(faithfulness以外)はいずれも無変更。
 `EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
 まま(変更なし)。H0001は実行していない。
+
+## DEV-AUTO-01 — Development Workflow Automation
+
+D0102 Faithfulness Verification(D0102.4.1〜D0102.4.2.1)は
+`cb5baaa`でACCEPTED/FROZEN。SemanticClaim → Evidence統合(次Stage)へ
+進む前に、これまでのD0102各Roundで実際に手作業で繰り返してきた
+Engineering Loop(Build → Targeted Validation → Independent Read-Only
+Review → Finding Classification → Narrow Fix → Closure Validation →
+Commit/Push → Freeze Recommendation)を、最小限のCapability-Based
+Data Model + Deterministic Gate Logicとして機械的に扱えるようにした。
+**投資判断・市場Data取得・Backtest・BUY/SELL生成・ResearchArtifact
+作成・SemanticClaim→Evidence統合・Model API呼び出し・Trading・
+Portfolio Automationはこのpackage自身も本Round自体もいずれも行わない**
+(`INVESTMENT_LOGIC_CHANGED = NO`、DEV-AUTO-01 §15)。新しいAgent
+Framework(LangChain/CrewAI/AutoGen等)・外部Orchestration Library・
+新規Dependencyはいずれも追加していない(`EXTERNAL_AGENT_FRAMEWORK =
+NO`、標準Library[`dataclasses`/`enum`/`json`/`argparse`/`subprocess`/
+`pathlib`]のみで実装)。
+
+### 配置
+
+`Japanese_Equity_Lab/scripts/dev_workflow.py`(Thin CLI Entrypoint、
+`validate`/`gate`/`render-prompt`の3 Subcommandのみ)+
+`Japanese_Equity_Lab/scripts/dev_workflow_lib/`(Pure Function中心の
+実装本体、Package名はCLI Entrypoint`dev_workflow.py`との名前衝突を
+避けるため`dev_workflow_lib`とした):
+
+- `model.py`: `Capability`/`Role`/`WorkflowState`/`Severity`/
+  `FindingStatus`/`ReviewerVerdict`/`AcceptanceVerdict`(全Closed
+  StrEnum)、`Finding`/`TaskManifest`(frozen dataclass、Runtime型
+  検証+JSON (de)serialization)。
+- `gates.py`: Read-OnlyなGit Repository Gate(`git status`/`git
+  rev-parse`のみ実行、書き込み系Subcommandへの参照が無いことを
+  `13_tests/test_dev_workflow.py`でSource Level Grepにより確認)。
+- `human_gate.py`: H0001/2025 Locked Test/Force Push/Branch削除等の
+  Human-Gated Boundary検出(Closed Pattern List)、Old Bad Commit
+  (`e8eb683`)参照禁止Guard。
+- `acceptance.py`: Deterministic Acceptance Gate(LLM Score・確率は
+  一切使わない)+ Closure Audit Narrowing(既にCLOSEDのFindingを
+  次Roundの監査対象に含めない)。
+- `prompts.py`: Task ManifestからWRITER/REVIEWER/CLOSURE REVIEWER
+  Prompt Templateを機械的に生成する(手作業での書き直しをしない、
+  REVIEWER/CLOSURE REVIEWER Templateは必ず"READ ONLY"を含む)。
+
+Test: `Japanese_Equity_Lab/13_tests/test_dev_workflow.py`
+(42 Test、実Git Repositoryとの相互作用が必要なTestは`tmp_path`配下の
+隔離Temporary Repositoryのみを使い、実際のRepository状態には一切
+触れない)。
+
+### Role/Capability(DEV-AUTO-01 §1/§2)
+
+Product/Plan名(CLAUDE/CODEX/GPT_PLAN/STANDARD/PRO等)は一切使わず、
+実際に許可される操作(`Capability`、全て`CAN_`Prefix)でRoleを表現する:
+
+```
+WRITER          = {CAN_EDIT_REPO, CAN_RUN_TESTS}
+REVIEWER        = {CAN_REVIEW_READ_ONLY, CAN_RUN_TESTS}
+ACCEPTANCE_GATE = {CAN_COMMIT, CAN_PUSH}
+```
+
+REVIEWERは`CAN_EDIT_REPO`/`CAN_COMMIT`/`CAN_PUSH`のいずれも持たない
+(Write系Actionを一切Authorizeできない、DEV-AUTO-01 §10 Review
+Independence)。`role_has_capability()`で機械的に確認できる。
+
+### Workflow State / Task Manifest / Finding Schema(§3/§4/§5)
+
+`WorkflowState`(`PLANNED`→...→`ACCEPTED`/`STOPPED`)はEnumのみを
+定義し、DBは導入していない(永続化が必要な場合はJSON、DEV-AUTO-01
+§3)。`TaskManifest`(`task_id`/`purpose`/`expected_head`/
+`allowed_files`/`frozen_files`/`targeted_tests`/`static_checks`/
+`forbidden_actions`/`requires_independent_review`/
+`requires_human_approval`)・`Finding`(`finding_id`/`severity`/
+`status`/`summary`/`location`/`reproducer`/`expected`/`actual`/
+`blocking`)はいずれもConstructor Levelで最小限のRuntime検証を持つ
+frozen dataclass。Tool Provider/Subscription Plan名はManifestの
+どのFieldにも含めない。
+
+### Deterministic Acceptance Gate(§14)
+
+`evaluate_acceptance()`は以下の優先順位を機械的に適用する(Hidden
+Weighting無し、LLM Score/確率は一切使わない):
+
+1. Human Approval Boundary該当 → `HUMAN_APPROVAL_REQUIRED`
+2. Reviewer Verdict = `STOP` → `STOP`
+3. Blocking FindingがOPEN → `FIX_REQUIRED`
+4. Reviewer Verdict = `NEEDS_FIX` → `FIX_REQUIRED`
+5. Test/Static Gate/Scopeのいずれか失敗 → `FIX_REQUIRED`
+6. Independent Review必須なのにReviewer Verdict != `ACCEPTED`
+   → `FIX_REQUIRED`
+7. 上記いずれにも該当しない → `ACCEPT`
+
+### Closure Audit Narrowing(§11)
+
+`narrow_to_open_findings()`は既にCLOSEDのFindingを一切含まない集合を
+返す。`build_closure_reviewer_prompt()`はこの集合のみをCLOSURE
+REVIEWERへ提示し、既にCLOSEDのFindingを再監査対象として提示しない
+(例: `F01 CLOSED`/`F02 OPEN`/`F03 CLOSED`なら、次のFix/Closure Audit
+は`F02`のみを対象とする、DEV-AUTO-01 §11「This behavior is
+central.」)。共有Architectureを変更した場合の全体再監査は、この
+Automation自体では強制しない(呼び出し側[人間]が必要に応じて新しい
+Task Manifestを発行して広いReviewを再度依頼する)。
+
+### Human Approval Boundary / H0001 Guard(§7/§8/§9)
+
+`requires_human_approval()`は以下いずれかを検出すると理由文字列を
+返す(呼び出し側は`HUMAN_APPROVAL_REQUIRED`へMap、Silent
+Substitution・Silent Skipはいずれも行わない):
+
+`H0001`/`2025 Locked Test`/`Held-Out Test`/`Force Push`/
+`Branch Deletion`/`git reset --hard`/`Rebase`/`Cherry-Pick`/
+`Production/Live Trading`/`Execution`/`Acceptance Methodology変更`/
+`Preregistered Strategy Rule変更`、および`Task Manifest`が明示的に
+`requires_human_approval=True`を宣言している場合。
+
+`is_h0001_request()`はH0001/2025 Locked Testへの言及のみを専用に
+検出する狭いGuard(§8)。`is_prohibited_commit_reference()`はOld Bad
+Commit(`e8eb683`)への参照(Rebase/Cherry-Pick/Reset対象としての指定)
+を検出する(§9)。
+
+### Git Safety(§9)
+
+`gates.py`は`git status --porcelain`/`git rev-parse HEAD`のみを
+実行する(書き込み系Subcommandへの参照が無いことをTestでSource
+Level確認済み)。`check_expected_head()`はWrite Workflow開始前の
+必須Gate、`check_scope()`はCommit前の必須Gate(Trackedな変更が
+`allowed_files`の範囲内のみであり`frozen_files`を一切変更していない
+ことを確認する)。UntrackedなFile(既存の`.agents/`/`.codex/`/
+`AGENTS.md`等)はScope判定の対象外——これらを誤ってStageしないこと
+自体は、呼び出し側が`git add`に常に明示的Pathのみを渡す規律
+(`git add .`/`git add -A`を使わない)に委ねる(このPackage自体は
+`add`/`commit`/`push`/`reset`/`clean`/`rebase`/`cherry-pick`のいずれも
+実行しない)。
+
+### CLI(§12)
+
+```
+python scripts/dev_workflow.py validate <manifest.json> [--repo-root PATH]
+python scripts/dev_workflow.py gate <manifest.json> [--findings ...] [--reviewer-verdict ...] [--tests-passed|--tests-failed] [--static-passed|--static-failed]
+python scripts/dev_workflow.py render-prompt <manifest.json> --role writer|reviewer|closure-reviewer [--findings ...]
+```
+
+3 Subcommandのみ(過剰なCLI化はしない、DEV-AUTO-01 §12「Do not
+overbuild a CLI」)。いずれもJSON出力・非0 Exit Codeで失敗を表現する
+(例外の生出力はしない)。
+
+### Test Matrix(42 Test、DEV-AUTO-01 §17を全てCover)
+
+期待HEAD不一致→STOP・Frozen File変更→STOP相当・無関係なUntracked
+Fileの無視・Blocking FindingがOPEN→FIX_REQUIRED・全Blocker CLOSED→
+ACCEPT Candidate・High-Risk Operation→HUMAN_APPROVAL_REQUIRED・H0001
+要求→HUMAN_APPROVAL_REQUIRED・Reviewer RoleがWrite Actionを
+Authorizeできないこと・Closure ReviewがOPENなFindingのみを含むこと・
+Capability名がProduct/Plan名でないこと、いずれも直接Test済み。CLI
+Subcommand自体もSubprocess経由で数件End-to-End確認した。
+
+### Static Gates
+
+`ruff check`/`ruff format --check`(`scripts/dev_workflow.py`・
+`scripts/dev_workflow_lib/*.py`・`13_tests/test_dev_workflow.py`):
+全File Pass。`mypy --strict`(`scripts/dev_workflow.py`・
+`scripts/dev_workflow_lib/*.py`、Production File 7本): Success, no
+issues found。Targeted Pytest: `test_dev_workflow.py`(**42 Test全て
+Pass**)。`13_tests/`全体(1726 Test)もCross-Contamination無しで
+Pass確認済み(Full Repository Suite/H0001は実行していない)。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/scripts/dev_workflow.py`(新規)・
+`Japanese_Equity_Lab/scripts/dev_workflow_lib/`(新規、6 File)・
+`Japanese_Equity_Lab/13_tests/test_dev_workflow.py`(新規)・この
+DECISIONS.md追記のみ。既存`lib/`(Faithfulness/Normalization/
+Semantic Claims/Candidate Extraction、いずれもFrozen Investment
+Module)・既存`13_tests/`(test_dev_workflow.py以外)はいずれも無変更。
+`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
+まま(変更なし、このAutomation自体はEngineering Process用でInvestment
+Automationではない)。H0001は実行していない。
