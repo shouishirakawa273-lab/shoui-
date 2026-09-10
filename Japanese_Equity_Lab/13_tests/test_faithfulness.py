@@ -1,12 +1,15 @@
-"""`lib.disclosures.faithfulness`(Stage 3.18.6、D0102.4.1)のRegression
-Test。
+"""`lib.disclosures.faithfulness`(Stage 3.18.6、D0102.4.1/D0102.4.2)の
+Regression Test。
 
 D0102.4/D0102.4A(DECISIONS.md、`READY_FOR_IMPLEMENTATION`)で承認された
-Deterministic Core Architectureをそのまま検証する。実LLM/Vendor SDKへの
-接続は一切行わない(`MODEL_CALL_SITES = 0`、D0102.4.2はこのModuleに
-存在しない)。Fixture方式は`test_candidate_extraction.py`と同じ
-(Synthetic EDINET-shaped ZIPを構築し、実際の`normalize_edinet_type1_zip()`
-経由でD0101.1の実Objectを得る)。
+Deterministic Core Architectureと、D0102.4.2で追加したModel-Assisted
+Verification(`FaithfulnessVerifier` Protocol)+ACCEPT-only Promotion
+Gateをそのまま検証する。**実LLM/Vendor SDKへの接続はこのModuleに一切
+存在しない**(`MODEL_CALL_SITES = 0`、Model-Assisted部分は本Test内で
+定義するDeterministic `FakeVerifier`のみで駆動する)。Fixture方式は
+`test_candidate_extraction.py`と同じ(Synthetic EDINET-shaped ZIPを
+構築し、実際の`normalize_edinet_type1_zip()`経由でD0101.1の実Objectを
+得る)。
 """
 
 from __future__ import annotations
@@ -28,8 +31,11 @@ from lib.disclosures.faithfulness import (
     FaithfulnessSchemaError,
     FaithfulnessVerificationResult,
     FaithfulnessVerificationStatus,
+    FaithfulnessVerifierInput,
     compute_candidate_reference,
+    promote_verified_candidate,
     verify_candidate_deterministically,
+    verify_candidate_faithfulness,
 )
 from lib.disclosures.normalization import NormalizedDisclosureDocument, normalize_edinet_type1_zip
 from lib.disclosures.semantic_claims import ClaimDirection, EvidenceSpan, FaithfulnessOutcome, SemanticClaimType
@@ -1232,3 +1238,682 @@ def test_d0102412_f05_13_multiple_categories_without_local_binding_is_ambiguous(
     assert temporal.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
     assert temporal.reason_code == FaithfulnessReasonCode.TEMPORAL_REQUIRES_SEMANTIC_REVIEW
     assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+# ============================================================
+# D0102.4.2 — Model-Assisted Verification + ACCEPT-only Promotion
+#
+# `FakeVerifier`はDeterministicなTest Double(実LLM/Vendor SDK不使用、
+# `MODEL_CALL_SITES = 0`)。各TestはPublic Entrypoint
+# (`verify_candidate_faithfulness()`/`promote_verified_candidate()`)を
+# 通じてのみ検証する。
+# ============================================================
+
+
+class FakeVerifier:
+    """`FaithfulnessVerifier` Protocolを満たすDeterministic Test
+    Double。`response`は固定Dict、または`verifier_input`を受け取り
+    Dictを返すCallable。呼び出し回数・最後の入力を記録する(Source
+    Revalidation Timing/Narrow Input Allowlistの検証用)。"""
+
+    def __init__(self, response=None, *, raise_exc: Exception | None = None) -> None:
+        self.response = response
+        self.raise_exc = raise_exc
+        self.call_count = 0
+        self.last_input: FaithfulnessVerifierInput | None = None
+
+    def verify(self, *, verifier_input: FaithfulnessVerifierInput) -> object:
+        self.call_count += 1
+        self.last_input = verifier_input
+        if self.raise_exc is not None:
+            raise self.raise_exc
+        if callable(self.response):
+            return self.response(verifier_input)
+        return self.response
+
+
+def _verify_model_assisted(
+    *,
+    candidate: SemanticClaimCandidate,
+    document: NormalizedDisclosureDocument,
+    verifier: FakeVerifier,
+) -> FaithfulnessVerificationResult:
+    return verify_candidate_faithfulness(
+        candidate=candidate,
+        document=document,
+        verifier=verifier,
+        model_provider="test-provider",
+        model_name="test-model",
+        prompt_hash="test-prompt-hash",
+        verified_at=_VERIFIED_AT,
+    )
+
+
+def _dims(*entries: tuple[str, str, str]) -> dict:
+    return {"dimensions": [{"dimension": d, "outcome": o, "reason_code": r} for d, o, r in entries]}
+
+
+# ---- Toyota Acceptance Fixtures(D0102.4 §34、Case A-O + P/Q/R/S/T) ----
+
+
+def test_case_a_exact_supported_quote_accepts_without_model_call() -> None:
+    text = "為替の影響により、利益が減少する可能性がある。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.DECREASE
+    )
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.status == FaithfulnessVerificationStatus.SUCCESS
+    assert result.overall_outcome == FaithfulnessOutcome.ACCEPT
+    assert result.verification_provenance is None
+
+
+def test_case_b_faithful_paraphrase_ratified_by_approved_table_accepts() -> None:
+    evidence_text = "海外事業の販売が拡大した可能性がある。"
+    candidate_text = "海外事業の販売が伸びた可能性がある。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=candidate_text)
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 1
+    assert result.overall_outcome == FaithfulnessOutcome.ACCEPT
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.PASS
+    assert prop.reason_code == FaithfulnessReasonCode.PARAPHRASE_EQUIVALENT_CONFIRMED
+    assert prop.checked_by == FaithfulnessCheckMethod.MODEL
+    assert result.verification_provenance is not None
+    assert result.verification_provenance.model_provider == "test-provider"
+
+
+def test_unratified_paraphrase_pass_downgrades_to_ambiguous_not_accept() -> None:
+    # Bの回帰Test: 事前承認済みTableに無いPairについては、ModelがPASSを
+    # 提案してもDeterministicにRatifyできず、overallはACCEPTしない。
+    evidence_text = "海外事業の販売が拡大した可能性がある。"
+    candidate_text = "海外事業の商品需要が高まった可能性がある。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=candidate_text)
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    assert prop.reason_code == FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED
+    assert result.overall_outcome != FaithfulnessOutcome.ACCEPT
+
+
+def test_case_c_wrong_subject_rejects() -> None:
+    evidence_text = "金融事業の利益は増加した可能性がある。"
+    candidate_text = "製造事業の利益は増加した可能性がある。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=candidate_text, direction=ClaimDirection.INCREASE
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "AMBIGUOUS", "SEMANTIC_VERIFICATION_REQUIRED"),
+            ("SUBJECT_ATTRIBUTION", "FAIL", "SUBJECT_MISMATCH_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    subject = _dim_result(result, FaithfulnessDimension.SUBJECT_ATTRIBUTION)
+    assert subject.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_d_opposite_direction_rejects_without_model_call() -> None:
+    text = "リスクは増加した。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.DECREASE
+    )
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_e_negation_inversion_rejects_without_model_call() -> None:
+    doc, span = _doc_and_span("重要な変更はありません。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="重要な変更があった。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_f_wrong_temporal_period_rejects_even_if_model_passes_other_dims() -> None:
+    doc, span = _doc_and_span("当中間連結会計期間の業績は堅調であった。")
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.OUTLOOK, text="今後も継続的に堅調である。")
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+            ("CERTAINTY_AND_COMMITMENT", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    temporal = _dim_result(result, FaithfulnessDimension.TEMPORAL_SCOPE)
+    assert temporal.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert temporal.checked_by == FaithfulnessCheckMethod.DETERMINISTIC
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_g_causal_tier_upgrade_rejects_even_if_model_passes_other_dims() -> None:
+    doc, span = _doc_and_span("為替影響は一因である。")
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.PERFORMANCE_DRIVER, text="為替影響は唯一の原因である。"
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    causal = _dim_result(result, FaithfulnessDimension.CAUSAL_STRENGTH)
+    assert causal.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert causal.checked_by == FaithfulnessCheckMethod.DETERMINISTIC
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_h_certainty_tier_upgrade_rejects_even_if_model_passes_other_dims() -> None:
+    doc, span = _doc_and_span("損失が発生する可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="損失が発生する。")
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    certainty = _dim_result(result, FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
+    assert certainty.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert certainty.checked_by == FaithfulnessCheckMethod.DETERMINISTIC
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_i_invented_number_rejects_without_model_call() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した。")
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.PERFORMANCE_CHANGE, text="業績は4.0%増加した。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_j_genuine_ambiguity_reviews() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "AMBIGUOUS", "SEMANTIC_VERIFICATION_REQUIRED"),
+            ("SUBJECT_ATTRIBUTION", "AMBIGUOUS", "SEMANTIC_VERIFICATION_REQUIRED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+
+def test_case_n_correct_text_wrong_claim_type_rejects() -> None:
+    text = "業績は堅調に推移した。"
+    doc, span = _doc_and_span(text)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.CAPITAL_ALLOCATION, text=text)
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "FAIL", "PROPOSITION_SEMANTIC_MISMATCH_DETECTED"),
+            ("CERTAINTY_AND_COMMITMENT", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    prop = _dim_result(result, FaithfulnessDimension.PROPOSITION_IDENTITY)
+    assert prop.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_o_materially_broadened_scope_is_caught_despite_substring_trivial_pass() -> None:
+    # Candidateは Evidence の厳密な部分文字列(「北米事業」限定を落として
+    # いる)——`_check_scope()`自体はTrivial PASSするが、完全一致では
+    # ないためScopeはModelへ回され、Qualifier脱落をFAILとして検出する。
+    evidence_text = "北米事業の販売は拡大した可能性がある。"
+    candidate_text = "販売は拡大した可能性がある。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=candidate_text)
+    verifier = FakeVerifier(response=_dims(("SCOPE", "FAIL", "SCOPE_QUALIFIER_DROPPED")))
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 1
+    scope = _dim_result(result, FaithfulnessDimension.SCOPE)
+    assert scope.outcome == FaithfulnessDimensionOutcome.FAIL
+    assert scope.checked_by == FaithfulnessCheckMethod.MODEL
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+
+def test_case_p_deterministic_fail_wins_over_hypothetical_model_pass() -> None:
+    # ModelがPASSしか返さないVerifierでも、Hard-Fail軸が既に
+    # Deterministic FAIL確定していればModelは一切呼び出されない。
+    doc, span = _doc_and_span("重要な変更はありません。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="重要な変更があった。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+
+def test_case_q_review_required_never_promotes() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "AMBIGUOUS", "SEMANTIC_VERIFICATION_REQUIRED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+    assert result.overall_outcome == FaithfulnessOutcome.REVIEW_REQUIRED
+
+    claim = promote_verified_candidate(candidate=candidate, verification_result=result)
+
+    assert claim is None
+
+
+def test_case_r_reject_never_promotes() -> None:
+    doc, span = _doc_and_span("重要な変更はありません。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="重要な変更があった。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+    assert result.overall_outcome == FaithfulnessOutcome.REJECT
+
+    claim = promote_verified_candidate(candidate=candidate, verification_result=result)
+
+    assert claim is None
+
+
+def test_case_s_accept_promotes_preserving_exact_candidate_fields() -> None:
+    text = "為替の影響により、利益が減少する可能性がある。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.DECREASE
+    )
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+    assert result.overall_outcome == FaithfulnessOutcome.ACCEPT
+
+    claim = promote_verified_candidate(candidate=candidate, verification_result=result)
+
+    assert claim is not None
+    assert claim.claim_type == candidate.claim_type
+    assert claim.normalized_claim_text == candidate.normalized_claim_text
+    assert claim.direction == candidate.direction
+    assert claim.evidence_span == candidate.evidence_span
+    assert claim.extraction_version == candidate.extraction_version
+    assert claim.schema_version == candidate.schema_version
+    assert claim.extraction_provenance == candidate.extraction_provenance
+    assert claim.faithfulness_outcome == FaithfulnessOutcome.ACCEPT
+    assert claim.faithfulness_review_required is False
+
+
+def test_case_t_verifier_rewrite_field_is_contract_violation() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(
+        response={
+            "dimensions": [
+                {
+                    "dimension": "PROPOSITION_IDENTITY",
+                    "outcome": "PASS",
+                    "reason_code": "NO_ISSUE_DETECTED",
+                    "corrected_claim_text": "hacked",
+                }
+            ]
+        }
+    )
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+    assert result.overall_outcome is None
+
+
+def test_case_l_verifier_exception_is_verifier_error() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(raise_exc=RuntimeError("boom"))
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_ERROR
+    assert result.overall_outcome is None
+    assert result.dimension_results == ()
+
+
+def test_case_m_stale_evidence_span_blocks_model_call() -> None:
+    doc, span = _doc_and_span("本文です。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    stale_span = replace(span, source_normalizer_version="STALE_VERSION_DOES_NOT_MATCH")
+    candidate = _candidate(evidence_span=stale_span, claim_type=SemanticClaimType.BUSINESS_RISK, text="本文です。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED
+    assert result.overall_outcome is None
+    assert verifier.call_count == 0
+
+
+def test_candidate_integrity_gate_rejects_non_candidate_object_model_assisted() -> None:
+    doc, _span = _doc_and_span("本文です。")
+    verifier = FakeVerifier(response=_dims())
+
+    result = verify_candidate_faithfulness(
+        candidate={"not": "a candidate"},
+        document=doc,
+        verifier=verifier,
+        model_provider="p",
+        model_name="m",
+        prompt_hash="h",
+        verified_at=_VERIFIED_AT,
+    )
+
+    assert result.status == FaithfulnessVerificationStatus.CANDIDATE_INTEGRITY_FAILED
+    assert result.overall_outcome is None
+    assert verifier.call_count == 0
+
+
+def test_prompt_hash_required_raises_schema_error() -> None:
+    doc, span = _doc_and_span("本文です。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="本文です。")
+    verifier = FakeVerifier(response=_dims())
+
+    with pytest.raises(FaithfulnessSchemaError):
+        verify_candidate_faithfulness(
+            candidate=candidate,
+            document=doc,
+            verifier=verifier,
+            model_provider="p",
+            model_name="m",
+            prompt_hash="",
+            verified_at=_VERIFIED_AT,
+        )
+
+
+# ---- Model Contract Tests(D0102.4 §14) ----
+
+
+def _run_with_raw_response(raw_response: object) -> FaithfulnessVerificationResult:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(response=raw_response)
+    return _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+
+def test_contract_unknown_top_level_key_is_violation() -> None:
+    result = _run_with_raw_response({"dimensions": [], "confidence": 0.9})
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+    assert result.overall_outcome is None
+
+
+def test_contract_unknown_item_field_is_violation() -> None:
+    result = _run_with_raw_response(
+        {
+            "dimensions": [
+                {"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED", "summary": "x"}
+            ]
+        }
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_missing_requested_dimension_is_violation() -> None:
+    # 必要な3軸(PROPOSITION_IDENTITY/SUBJECT_ATTRIBUTION/SCOPE)のうち
+    # 1件のみ返す——欠落。
+    result = _run_with_raw_response(
+        {"dimensions": [{"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED"}]}
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_duplicate_dimension_is_violation() -> None:
+    result = _run_with_raw_response(
+        _dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_extra_unrequested_dimension_is_violation() -> None:
+    result = _run_with_raw_response(
+        _dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+            ("QUANTITY", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_unknown_dimension_enum_is_violation() -> None:
+    result = _run_with_raw_response(
+        {"dimensions": [{"dimension": "NOT_A_REAL_DIMENSION", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED"}]}
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_unknown_outcome_enum_is_violation() -> None:
+    result = _run_with_raw_response(
+        {"dimensions": [{"dimension": "PROPOSITION_IDENTITY", "outcome": "MAYBE", "reason_code": "NO_ISSUE_DETECTED"}]}
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_unknown_reason_code_is_violation() -> None:
+    result = _run_with_raw_response(
+        {"dimensions": [{"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "TOTALLY_MADE_UP"}]}
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_confidence_field_is_violation() -> None:
+    result = _run_with_raw_response(
+        {
+            "dimensions": [
+                {"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED", "confidence": 0.95}
+            ]
+        }
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_rewrite_field_is_violation() -> None:
+    result = _run_with_raw_response(
+        {
+            "dimensions": [
+                {"dimension": "PROPOSITION_IDENTITY", "outcome": "PASS", "reason_code": "NO_ISSUE_DETECTED", "better_claim": "x"}
+            ]
+        }
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_top_level_not_dict_is_violation() -> None:
+    result = _run_with_raw_response(["not", "a", "dict"])
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_dimensions_not_list_is_violation() -> None:
+    result = _run_with_raw_response({"dimensions": "PROPOSITION_IDENTITY"})
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+def test_contract_not_applicable_on_never_not_applicable_dimension_is_violation() -> None:
+    result = _run_with_raw_response(
+        _dims(
+            ("PROPOSITION_IDENTITY", "NOT_APPLICABLE", "NOT_APPLICABLE_NO_RELEVANT_CONTENT"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+    assert result.status == FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION
+
+
+# ---- Source Revalidation Timing(D0102.4 §9、Model呼び出し直前の再確認) ----
+
+
+def test_source_revalidation_occurs_before_model_call_stale_span_blocks_call() -> None:
+    doc, span = _doc_and_span("業績は堅調に推移した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    stale_span = replace(span, source_normalizer_version="STALE_VERSION_DOES_NOT_MATCH")
+    candidate = _candidate(
+        evidence_span=stale_span, claim_type=SemanticClaimType.BUSINESS_RISK, text="業績はやや上向いた可能性がある。"
+    )
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.status == FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED
+    assert verifier.call_count == 0
+
+
+def test_verifier_input_is_narrow_allowlist_only() -> None:
+    evidence_text = "海外事業の販売が拡大した可能性がある。"
+    doc, span = _doc_and_span(evidence_text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="海外事業の販売が伸びた可能性がある。"
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+
+    _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.last_input is not None
+    field_names = set(FaithfulnessVerifierInput.__dataclass_fields__.keys())
+    assert field_names == {"claim_type", "normalized_claim_text", "direction", "supporting_quote", "taxonomy_element_name"}
+    assert verifier.last_input.claim_type == candidate.claim_type
+    assert verifier.last_input.normalized_claim_text == candidate.normalized_claim_text
+    assert verifier.last_input.direction == candidate.direction
+    assert verifier.last_input.supporting_quote == evidence_text
+    assert verifier.last_input.taxonomy_element_name == _BUSINESS_RISK_TAXONOMY
+
+
+def test_verifier_input_rejects_wrong_types() -> None:
+    with pytest.raises(FaithfulnessSchemaError):
+        FaithfulnessVerifierInput(
+            claim_type="BUSINESS_RISK",  # type: ignore[arg-type]
+            normalized_claim_text="x",
+            direction=ClaimDirection.UNSPECIFIED,
+            supporting_quote="y",
+            taxonomy_element_name="z",
+        )
+
+
+# ---- Provenance Tests(D0102.4 §27) ----
+
+
+def test_deterministic_only_model_assisted_call_has_no_provenance() -> None:
+    text = "為替の影響により、利益が減少する可能性がある。"
+    doc, span = _doc_and_span(text, taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text=text, direction=ClaimDirection.DECREASE
+    )
+    verifier = FakeVerifier(response=_dims())
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert verifier.call_count == 0
+    assert result.verification_provenance is None
+    assert result.verification_version != DETERMINISTIC_FAITHFULNESS_VERSION
+
+
+def test_model_assisted_call_sets_provenance_without_mutating_extraction_provenance() -> None:
+    doc, span = _doc_and_span("海外事業の販売が拡大した可能性がある。", taxonomy_name=_BUSINESS_RISK_TAXONOMY)
+    candidate = _candidate(
+        evidence_span=span, claim_type=SemanticClaimType.BUSINESS_RISK, text="海外事業の販売が伸びた可能性がある。"
+    )
+    verifier = FakeVerifier(
+        response=_dims(
+            ("PROPOSITION_IDENTITY", "PASS", "NO_ISSUE_DETECTED"),
+            ("SUBJECT_ATTRIBUTION", "PASS", "NO_ISSUE_DETECTED"),
+            ("SCOPE", "PASS", "NO_ISSUE_DETECTED"),
+        )
+    )
+    original_extraction_provenance = candidate.extraction_provenance
+
+    result = _verify_model_assisted(candidate=candidate, document=doc, verifier=verifier)
+
+    assert result.verification_provenance is not None
+    assert result.verification_provenance is not candidate.extraction_provenance
+    assert candidate.extraction_provenance is original_extraction_provenance
+
+
+def test_verified_at_remains_utc_and_not_pit_metadata_model_assisted() -> None:
+    field_names = set(FaithfulnessVerificationResult.__dataclass_fields__.keys())
+    assert "market_public_at" not in field_names
+    assert "provider_available_at" not in field_names
+    assert "available_at" not in field_names
+    assert "verified_at" in field_names

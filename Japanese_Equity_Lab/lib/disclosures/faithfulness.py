@@ -68,9 +68,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from typing import Protocol
 
 from lib.disclosures.candidate_extraction import BUSINESS_RISK_ELIGIBLE_TAXONOMY_NAMES, SemanticClaimCandidate
 from lib.disclosures.normalization import NormalizedDisclosureDocument
@@ -78,8 +79,10 @@ from lib.disclosures.semantic_claims import (
     ClaimDirection,
     FaithfulnessOutcome,
     RevalidationResult,
+    SemanticClaim,
     SemanticClaimSchemaError,
     SemanticClaimType,
+    build_semantic_claim,
     evidence_span_identity_fields,
     revalidate_evidence_span,
 )
@@ -91,6 +94,13 @@ from lib.reproducibility import hash_json_safe
 # D0102.4A修正4)。この文字列を変更する場合は実際にDeterministic Logic
 # 自体を変更した時のみとする(無関係な変更でVersionを進めない)。
 DETERMINISTIC_FAITHFULNESS_VERSION = "faithfulness-det-v1"
+
+# D0102.4.2: Model-Assisted Verification(Deterministic Checks +
+# `FaithfulnessVerifier` Protocol経由のModel-Assisted Checksの組合せ)の
+# 実装Versionを一意に識別する定数。Deterministic-Only Callには引き続き
+# `DETERMINISTIC_FAITHFULNESS_VERSION`を使う(`verify_candidate_
+# deterministically()`は本Roundでも無変更)。
+MODEL_ASSISTED_FAITHFULNESS_VERSION = "faithfulness-model-v1"
 
 
 class FaithfulnessSchemaError(ValueError):
@@ -164,6 +174,25 @@ class FaithfulnessReasonCode(StrEnum):
     # 実際に使用するため追加する、D0102.4.1 §3「Add more only where
     # implementation exposes meaningful boundaries」)。
     BUSINESS_RISK_TAXONOMY_INELIGIBLE = "BUSINESS_RISK_TAXONOMY_INELIGIBLE"
+    # D0102.4.2: Model-Assisted Check専用の追加Reason Code(D0102.4 §3の
+    # 設計Noteに例示されていた名称をそのまま採用、実装で実際に使用する
+    # 分のみ追加する)。
+    # PROPOSITION_IDENTITY: ModelがPASSを提案し、かつ小さな事前承認済み
+    # Paraphrase Pair Table(`_APPROVED_PROPOSITION_PARAPHRASES`)で
+    # Deterministicに Ratify できた場合のみ使用する(Model単独のPASS宣言
+    # を最終権威にしない、D0102設計方針)。
+    PARAPHRASE_EQUIVALENT_CONFIRMED = "PARAPHRASE_EQUIVALENT_CONFIRMED"
+    # PROPOSITION_IDENTITY: Model-Assisted Checkが、Paraphrase自体が
+    # 同一Propositionを表していない、またはclaim_typeがEvidence内容と
+    # Semanticに矛盾すると判定した場合(D0102.4A修正5のClaim-Type
+    # Semantic Compatibility判定を含む)。
+    PROPOSITION_SEMANTIC_MISMATCH_DETECTED = "PROPOSITION_SEMANTIC_MISMATCH_DETECTED"
+    # SUBJECT_ATTRIBUTION: Model-Assisted CheckがCandidateの主張する
+    # Subject/Entity/SegmentがSupporting Quoteと異なると判定した場合。
+    SUBJECT_MISMATCH_DETECTED = "SUBJECT_MISMATCH_DETECTED"
+    # SCOPE: Model-Assisted Checkが重要なScope修飾語(全社/Segment・
+    # 地域・製品・連結/単独・期間等)の脱落または追加を検出した場合。
+    SCOPE_QUALIFIER_DROPPED = "SCOPE_QUALIFIER_DROPPED"
 
 
 class FaithfulnessVerificationStatus(StrEnum):
@@ -1023,21 +1052,32 @@ def _split_into_clauses(text: str) -> list[str]:
     return parts if parts else [text]
 
 
-def _locally_bound_temporal_ranks(*, evidence_text: str, candidate_text: str) -> frozenset[int] | None:
-    """D0102.4.1.2 F05 Closure(§5B、Temporal Borrowing対策): Candidateの
-    Textが Evidence の単一Sentence-Level Clause内に文字通りContain
-    されている場合のみ、そのClause内(Evidence全体ではない)のTemporal
-    Rankを返す(既存`in`によるExact Substring Containment、他Dimension
-    [PROPOSITION_IDENTITY等]と同じ機構を再利用、独自のFuzzy/数値内部
-    開始判定は行わない)。Local Bindingが証明できない場合は`None`を返し、
-    呼び出し側でAMBIGUOUSへFail Closedする(無関係なClauseからのMarker
-    借用を構造的に禁止する)。"""
+def _find_containing_clause(*, evidence_text: str, candidate_text: str) -> str | None:
+    """D0102.4.1.2 F05 Closure(§5B)で導入、D0102.4.2 §13でCERTAINTY_AND_
+    COMMITMENTのModel-Routing判定にも再利用する共有Boundary Helper。
+    `candidate_text`が Evidence の単一Sentence-Level Clause内に文字通り
+    Containされている場合、そのClauseを返す(既存`in`によるExact
+    Substring Containment、他Dimension[PROPOSITION_IDENTITY等]と同じ
+    機構の再利用、独自のFuzzy/数値内部開始判定は行わない)。見つからない
+    場合は`None`(Local Bindingが証明できないことを表す)。"""
     if not candidate_text:
         return None
     for clause in _split_into_clauses(evidence_text):
         if candidate_text in clause:
-            return _temporal_ranks_present(clause)
+            return clause
     return None
+
+
+def _locally_bound_temporal_ranks(*, evidence_text: str, candidate_text: str) -> frozenset[int] | None:
+    """D0102.4.1.2 F05 Closure(§5B、Temporal Borrowing対策): Candidateが
+    単一Clauseへ安全にLocal Bindingできる場合のみ、そのClause内
+    (Evidence全体ではない)のTemporal Rankを返す。Local Bindingが証明
+    できない場合は`None`を返し、呼び出し側でAMBIGUOUSへFail Closedする
+    (無関係なClauseからのMarker借用を構造的に禁止する)。"""
+    clause = _find_containing_clause(evidence_text=evidence_text, candidate_text=candidate_text)
+    if clause is None:
+        return None
+    return _temporal_ranks_present(clause)
 
 
 def _check_temporal_scope(*, evidence_text: str, candidate: SemanticClaimCandidate) -> FaithfulnessDimensionResult:
@@ -1114,9 +1154,12 @@ def _aggregate(dimension_results: tuple[FaithfulnessDimensionResult, ...]) -> Fa
     if any(r.outcome == FaithfulnessDimensionOutcome.AMBIGUOUS for r in dimension_results):
         return FaithfulnessOutcome.REVIEW_REQUIRED
     if any(r.outcome == FaithfulnessDimensionOutcome.FAIL and r.dimension in _SOFT_FAIL_DIMENSIONS for r in dimension_results):
-        # Deterministic以外(Model-Only FAIL)のSoft Dimension FAIL、
-        # D0102.4.1ではModelを使わないため到達しないが、Aggregation
-        # Ruleの完全性のためにここへ含める。
+        # Deterministic以外(Model-Only FAIL)のSoft Dimension FAIL。
+        # D0102.4.1ではModelを使わないため到達しなかったが、D0102.4.2の
+        # Model-Assisted Verification経路では実際に到達しうる
+        # (`verify_candidate_faithfulness()`参照、Model単独のFAILは
+        # REJECTではなくREVIEW_REQUIREDに留める、Aggregation Rule自体は
+        # 本Roundでも無変更)。
         return FaithfulnessOutcome.REVIEW_REQUIRED
 
     return FaithfulnessOutcome.ACCEPT
@@ -1211,8 +1254,531 @@ def verify_candidate_deterministically(
     )
 
 
+# ============================================================
+# D0102.4.2 — Model-Assisted Verification(FaithfulnessVerifier Protocol)
+#
+# `verify_candidate_deterministically()`(上記)は本Roundでも一切
+# 変更しない。ここから下は、Deterministic Checksが`AMBIGUOUS`のまま
+# 残した軸のみをModel-Assisted Verifierへ委ねる、別の公開Entrypoint
+# (`verify_candidate_faithfulness()`)を追加する(D0102.4/D0102.4A
+# `READY_FOR_IMPLEMENTATION`)。`MODEL_CALL_SITES`は本Module内では
+# `FaithfulnessVerifier.verify()`のCall Site 1箇所のみであり、Vendor
+# SDK・実Network呼び出しは一切含まない。
+# ============================================================
+
+
+@dataclass(kw_only=True, frozen=True)
+class FaithfulnessVerifierInput:
+    """D0102.4 §12: Model-Assisted Verifierへ渡す入力のNarrow Allowlist
+    (`candidate`/`evidence_span`をそのまま丸ごと渡さない)。Ticker・
+    企業名・市場価格・Valuation・Bull/Base/Bear・期待Return・投資
+    Thesis・外部News・EvidenceSpanのIdentity Field(document_id等)、
+    いずれも含めない——この5 Fieldのみが唯一のAuthoritative Input。"""
+
+    claim_type: SemanticClaimType
+    normalized_claim_text: str
+    direction: ClaimDirection
+    supporting_quote: str
+    taxonomy_element_name: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.claim_type, SemanticClaimType):
+            raise FaithfulnessSchemaError(f"claim_type は SemanticClaimType である必要があります: {self.claim_type!r}")
+        if not isinstance(self.direction, ClaimDirection):
+            raise FaithfulnessSchemaError(f"direction は ClaimDirection である必要があります: {self.direction!r}")
+        if not isinstance(self.normalized_claim_text, str) or not self.normalized_claim_text:
+            raise FaithfulnessSchemaError("normalized_claim_text は空でないstrである必要があります")
+        if not isinstance(self.supporting_quote, str) or not self.supporting_quote:
+            raise FaithfulnessSchemaError("supporting_quote は空でないstrである必要があります")
+        if not isinstance(self.taxonomy_element_name, str) or not self.taxonomy_element_name:
+            raise FaithfulnessSchemaError("taxonomy_element_name は空でないstrである必要があります")
+
+
+class FaithfulnessVerifier(Protocol):
+    """D0102.4 §11: Vendor SDKへ直接結合しない、最小限のNarrow
+    Protocol(`CandidateExtractionModel`と同型のAdapter Injection
+    Pattern)。実装(Production Adapter・Test用Fake、いずれも同じ形)は
+    `verifier_input`のみを入力として受け取り、Model Output Contract
+    検証前のRaw構造化出力(通常`dict`)を返す——Schema検証自体は呼び出し
+    側(`verify_candidate_faithfulness()`)が一元的に行う。"""
+
+    def verify(self, *, verifier_input: FaithfulnessVerifierInput) -> object:
+        """`verifier_input`はNarrow Allowlist Fieldのみを持つ(上記
+        `FaithfulnessVerifierInput`参照)。実装はこの引数以外のいかなる
+        情報(他のTextBlock・後続Filing・市場データ・外部知識)にも
+        Accessすべきではない(PIT Safety、`CandidateExtractionModel`と
+        同じ制約)。"""
+        ...
+
+
+# D0102.4 §4: QUANTITY/NEGATIONはDeterministic中心の軸であり、本Round
+# でもModelへ送らない(既にDeterministicにHard-Fail/Ambiguousを判定
+# できる、Marker Word Listで十分)。残り6軸のみがModel-Assisted Check
+# の対象になりうる。
+_MODEL_ROUTABLE_DIMENSIONS: frozenset[FaithfulnessDimension] = frozenset(
+    {
+        FaithfulnessDimension.PROPOSITION_IDENTITY,
+        FaithfulnessDimension.SUBJECT_ATTRIBUTION,
+        FaithfulnessDimension.SCOPE,
+        FaithfulnessDimension.CAUSAL_STRENGTH,
+        FaithfulnessDimension.CERTAINTY_AND_COMMITMENT,
+        FaithfulnessDimension.TEMPORAL_SCOPE,
+    }
+)
+
+
+def _certainty_requires_model_routing(*, evidence_text: str, candidate_text: str) -> bool:
+    """D0102.4.2 §13(D0102.4.1.2で記録したResidual Riskの解消):
+    `_check_certainty_and_commitment()`(Frozen、無変更)はEvidence
+    全体からEpistemic/Commitment Markerを走査しており、Evidenceが
+    複数Clauseを含む場合、検出したMarkerが実際にはCandidateの
+    Propositionとは無関係な別Clauseに属する可能性を排除できない
+    (PRESENCE_IS_NOT_PROPOSITION_BINDING = TRUE、TEMPORAL_SCOPEの
+    F05 Closureと同種のRisk)。汎用日本語NLPを追加する代わりに、既存の
+    Clause分割+Exact Substring Containment Helper(`_find_containing_
+    clause()`)を再利用し、「Evidenceが複数Clauseを含み、かつCandidateが
+    単一Clauseへ安全にLocal Bindingできない」場合のみ、Deterministic
+    結果(PASS/FAILいずれでも)をModel-Assisted Verificationが必要な
+    Unresolved Dimensionとして扱う。`_check_certainty_and_commitment()`
+    自体は一切変更しない(`verify_candidate_deterministically()`の
+    挙動は無変更のまま)。"""
+    if len(_split_into_clauses(evidence_text)) <= 1:
+        return False
+    return _find_containing_clause(evidence_text=evidence_text, candidate_text=candidate_text) is None
+
+
+def _is_proper_substring_quote(*, normalized_claim_text: str, evidence_text: str) -> bool:
+    """D0102.4.2 §11(SCOPE Qualifier-Drop Detection、D0102 §24の既存
+    懸念「北米事業限定を落とした一般化はSilent ACCEPT禁止」への対応):
+    `_check_scope()`(Frozen、無変更)はCandidate TextがEvidence Textの
+    厳密な部分文字列であれば無条件にTrivial PASSする。しかし**完全
+    一致ではない**部分文字列一致は、先頭/末尾のScope修飾語(地域・
+    Segment・連結/単独等)をSilentに落としている可能性を構造的に排除
+    できない——完全一致(Verbatim Quote全体)はQualifierを一切落とし
+    得ないため区別する。"""
+    return normalized_claim_text != evidence_text and normalized_claim_text in evidence_text
+
+
+def _determine_model_required_dimensions(
+    deterministic_results: tuple[FaithfulnessDimensionResult, ...],
+    *,
+    evidence_text: str,
+    candidate: SemanticClaimCandidate,
+) -> frozenset[FaithfulnessDimension]:
+    """D0102.4 §32「When Model Verification Required」: Deterministic
+    Checksが`AMBIGUOUS`のまま残した`_MODEL_ROUTABLE_DIMENSIONS`のみを
+    収集する。追加で(a)CERTAINTY_AND_COMMITMENTは`NOT_APPLICABLE`でない
+    限り`_certainty_requires_model_routing()`のProposition-Binding
+    判定を適用する(§13)、(b)SCOPEは`_check_scope()`が完全一致ではない
+    部分文字列一致でTrivial PASSした場合でも、Qualifier脱落の可能性を
+    排除するためModel-Assisted Verificationへ回す(§11)。"""
+    by_dimension = {r.dimension: r for r in deterministic_results}
+    required = {
+        dimension
+        for dimension in _MODEL_ROUTABLE_DIMENSIONS
+        if by_dimension[dimension].outcome == FaithfulnessDimensionOutcome.AMBIGUOUS
+    }
+    certainty_result = by_dimension[FaithfulnessDimension.CERTAINTY_AND_COMMITMENT]
+    if certainty_result.outcome != FaithfulnessDimensionOutcome.NOT_APPLICABLE and _certainty_requires_model_routing(
+        evidence_text=evidence_text, candidate_text=candidate.normalized_claim_text
+    ):
+        required.add(FaithfulnessDimension.CERTAINTY_AND_COMMITMENT)
+    scope_result = by_dimension[FaithfulnessDimension.SCOPE]
+    if scope_result.outcome == FaithfulnessDimensionOutcome.PASS and _is_proper_substring_quote(
+        normalized_claim_text=candidate.normalized_claim_text, evidence_text=evidence_text
+    ):
+        required.add(FaithfulnessDimension.SCOPE)
+    return frozenset(required)
+
+
+# D0102 §22/D0102.4.2 §9: PROPOSITION_IDENTITYのParaphrase Equivalenceは
+# Model単独のPASS宣言を最終権威にしない。この極小の事前承認済みPair
+# Table(正規化Claim Text, Evidence Supporting Quote)に含まれる場合のみ
+# Deterministicに Ratify する——v1は意図的に極小(Toyota Acceptance
+# Fixture Case B専用の1件のみ)、汎用Ontologyは構築しない。未収載の
+# Pairは常にAMBIGUOUSへ倒れ、Silent ACCEPTは発生しない。
+_APPROVED_PROPOSITION_PARAPHRASES: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("海外事業の販売が伸びた可能性がある。", "海外事業の販売が拡大した可能性がある。"),
+    }
+)
+
+
+def _is_approved_proposition_paraphrase(*, normalized_claim_text: str, supporting_quote: str) -> bool:
+    return (normalized_claim_text, supporting_quote) in _APPROVED_PROPOSITION_PARAPHRASES
+
+
+# D0102.4 §14: Model Output Contractの許可Key集合(過不足を許さない、
+# これ以外のKeyが1つでもあればResponse全体をReject——Confidence Score・
+# Rewritten Claim・Summary・投資Sentiment・Source Identity Field等は
+# 構造的に受理不可能)。
+_VERIFIER_ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset({"dimensions"})
+_VERIFIER_ALLOWED_ITEM_KEYS: frozenset[str] = frozenset({"dimension", "outcome", "reason_code"})
+
+
+def _is_string_keyed_mapping(value: object) -> bool:
+    """D0102.3.2 F02と同型の防御的Check: `sorted()`/`set()`等でKeyを
+    比較する前に、全Keyがstrであることを必ず先に確認する。"""
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value.keys())
+
+
+def _validate_verifier_response(
+    raw_response: object,
+    *,
+    requested_dimensions: frozenset[FaithfulnessDimension],
+) -> tuple[tuple[FaithfulnessDimensionResult, ...] | None, str | None]:
+    """D0102.4 §14: `candidate_extraction.py`と同型のWhole-Response-
+    Fatal判定(Candidate単位のSkipではない、1件でも契約違反があれば
+    Response全体を拒否する)。成功時は`(results, None)`、失敗時は
+    `(None, reason)`を返す。"""
+    if not _is_string_keyed_mapping(raw_response):
+        return None, "response is not a string-keyed JSON object"
+    assert isinstance(raw_response, dict)  # noqa: S101 -- 直前のCheckで既に確認済み(mypy Narrowing用)
+    if set(raw_response.keys()) != _VERIFIER_ALLOWED_TOP_LEVEL_KEYS:
+        return None, f"unexpected top-level keys: {sorted(raw_response.keys())}"
+
+    raw_items = raw_response["dimensions"]
+    if not isinstance(raw_items, list):
+        return None, "'dimensions' is not a list"
+
+    seen: set[FaithfulnessDimension] = set()
+    results: list[FaithfulnessDimensionResult] = []
+    for raw_item in raw_items:
+        if not _is_string_keyed_mapping(raw_item):
+            return None, "dimension entry is not a string-keyed JSON object"
+        assert isinstance(raw_item, dict)  # noqa: S101 -- 直前のCheckで既に確認済み(mypy Narrowing用)
+        if set(raw_item.keys()) != _VERIFIER_ALLOWED_ITEM_KEYS:
+            return None, f"dimension entry has unexpected keys: {sorted(raw_item.keys())}"
+
+        dimension_raw = raw_item["dimension"]
+        outcome_raw = raw_item["outcome"]
+        reason_code_raw = raw_item["reason_code"]
+        if not isinstance(dimension_raw, str) or not isinstance(outcome_raw, str) or not isinstance(reason_code_raw, str):
+            return None, "dimension entry field(s) are not strings"
+
+        try:
+            dimension = FaithfulnessDimension(dimension_raw)
+        except ValueError:
+            return None, f"unknown dimension: {dimension_raw!r}"
+        try:
+            outcome = FaithfulnessDimensionOutcome(outcome_raw)
+        except ValueError:
+            return None, f"unknown outcome: {outcome_raw!r}"
+        try:
+            reason_code = FaithfulnessReasonCode(reason_code_raw)
+        except ValueError:
+            return None, f"unknown reason_code: {reason_code_raw!r}"
+
+        if dimension not in requested_dimensions:
+            return None, f"unrequested dimension in response: {dimension.value}"
+        if dimension in seen:
+            return None, f"duplicate dimension in response: {dimension.value}"
+        seen.add(dimension)
+
+        try:
+            results.append(
+                FaithfulnessDimensionResult(
+                    dimension=dimension,
+                    outcome=outcome,
+                    reason_code=reason_code,
+                    checked_by=FaithfulnessCheckMethod.MODEL,
+                )
+            )
+        except FaithfulnessSchemaError as exc:
+            # 例: NOT_APPLICABLEを許可しないDimension(PROPOSITION_IDENTITY等)に
+            # ModelがNOT_APPLICABLEを返した場合、ここでReject する。
+            return None, str(exc)
+
+    missing = requested_dimensions - seen
+    if missing:
+        return None, f"missing requested dimension(s): {sorted(d.value for d in missing)}"
+
+    return tuple(results), None
+
+
+def _merge_deterministic_and_model(
+    deterministic_results: tuple[FaithfulnessDimensionResult, ...],
+    model_results: tuple[FaithfulnessDimensionResult, ...],
+    *,
+    candidate: SemanticClaimCandidate,
+    evidence_text: str,
+) -> tuple[FaithfulnessDimensionResult, ...]:
+    """D0102.4 §15: Deterministic結果を破棄しない——Model-Requiredだった
+    軸のみを置き換える(既存の`PASS`/`FAIL`/`NOT_APPLICABLE`はそのまま
+    保持する)。PROPOSITION_IDENTITYのModel PASSのみ、事前承認済み
+    Paraphrase Pair Tableで Ratify できない限り`AMBIGUOUS`へ格下げする
+    (§9、Model単独のPASS宣言を最終権威にしない)。"""
+    model_by_dimension = {r.dimension: r for r in model_results}
+
+    proposition_result = model_by_dimension.get(FaithfulnessDimension.PROPOSITION_IDENTITY)
+    if proposition_result is not None and proposition_result.outcome == FaithfulnessDimensionOutcome.PASS:
+        if _is_approved_proposition_paraphrase(
+            normalized_claim_text=candidate.normalized_claim_text, supporting_quote=evidence_text
+        ):
+            model_by_dimension[FaithfulnessDimension.PROPOSITION_IDENTITY] = _dim(
+                FaithfulnessDimension.PROPOSITION_IDENTITY,
+                FaithfulnessDimensionOutcome.PASS,
+                FaithfulnessReasonCode.PARAPHRASE_EQUIVALENT_CONFIRMED,
+                checked_by=FaithfulnessCheckMethod.MODEL,
+            )
+        else:
+            model_by_dimension[FaithfulnessDimension.PROPOSITION_IDENTITY] = _dim(
+                FaithfulnessDimension.PROPOSITION_IDENTITY,
+                FaithfulnessDimensionOutcome.AMBIGUOUS,
+                FaithfulnessReasonCode.SEMANTIC_VERIFICATION_REQUIRED,
+                checked_by=FaithfulnessCheckMethod.MODEL,
+            )
+
+    return tuple(model_by_dimension.get(r.dimension, r) for r in deterministic_results)
+
+
+def verify_candidate_faithfulness(
+    *,
+    candidate: object,
+    document: NormalizedDisclosureDocument,
+    verifier: FaithfulnessVerifier,
+    model_provider: str,
+    model_name: str,
+    model_version: str | None = None,
+    prompt_version: str | None = None,
+    prompt_hash: str,
+    verification_version: str = MODEL_ASSISTED_FAITHFULNESS_VERSION,
+    verified_at: datetime,
+) -> FaithfulnessVerificationResult:
+    """D0102.4.2の公開Entrypoint。Deterministic Checks(`verify_
+    candidate_deterministically()`と同じ8軸Logicを内部関数経由で再利用、
+    そちら自体は一切変更しない)を実行した上で、AMBIGUOUSのまま残った
+    軸のみを`FaithfulnessVerifier`へ委ねる。Deterministic Hard-Fail
+    (PROPOSITION_IDENTITY/SUBJECT_ATTRIBUTION/NEGATION/QUANTITY)が
+    既に確定していればModel呼び出しをSkipする(§37コスト最適化、Model
+    PASSがDeterministic FAILを上書きすることは構造的に無い)。
+
+    `model_provider`/`model_name`/`prompt_hash`は`extract_candidates()`
+    と同型のCaller Contract(呼び出し側がModelにVersioningを自己申告
+    させず、常に明示指定する、D0102.3 §16と同じ方針)。
+    """
+    if not prompt_hash:
+        raise FaithfulnessSchemaError("prompt_hash は空にできません(D0102.4.2、Verifierの決定論的Versioningが必須)")
+
+    # Candidate Integrity Gate(既存`verify_candidate_deterministically()`と同型)。
+    if not isinstance(candidate, SemanticClaimCandidate):
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.CANDIDATE_INTEGRITY_FAILED,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference="",
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason="candidate は SemanticClaimCandidate である必要があります",
+        )
+
+    candidate_reference = compute_candidate_reference(candidate)
+
+    # Source Revalidation Gate(Verification開始直後、既存と同型)。
+    try:
+        revalidation = revalidate_evidence_span(candidate.evidence_span, document=document)
+    except SemanticClaimSchemaError as exc:
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=str(exc),
+        )
+    if revalidation != RevalidationResult.VALID:
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=f"revalidation result={revalidation.value}",
+        )
+
+    evidence_text = candidate.evidence_span.supporting_quote
+    deterministic_results = _run_all_dimension_checks(evidence_text=evidence_text, candidate=candidate)
+    by_dimension = {r.dimension: r for r in deterministic_results}
+
+    # Hard-Fail軸が既にDeterministic FAIL確定 → Model呼び出しをSkipして
+    # Overall=REJECT(§37コスト最適化、DETERMINISTIC_HARD_FAIL > MODEL_PASS)。
+    if any(by_dimension[dimension].outcome == FaithfulnessDimensionOutcome.FAIL for dimension in _HARD_FAIL_DIMENSIONS):
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=_aggregate(deterministic_results),
+            dimension_results=deterministic_results,
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+        )
+
+    model_required = _determine_model_required_dimensions(deterministic_results, evidence_text=evidence_text, candidate=candidate)
+
+    if not model_required:
+        # 全軸がDeterministicに解決済み(Exact Match等)——Model呼び出し不要。
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SUCCESS,
+            overall_outcome=_aggregate(deterministic_results),
+            dimension_results=deterministic_results,
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+        )
+
+    # D0102.4 §9: Model呼び出し「直前」に再度Revalidationを必須実行する
+    # (上記のGateから時間が経過していなくても、Contractとして毎回明示的に
+    # 再確認する——Extraction時点/Gate通過時点のValidationを信頼しない)。
+    try:
+        pre_model_revalidation = revalidate_evidence_span(candidate.evidence_span, document=document)
+    except SemanticClaimSchemaError as exc:
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=str(exc),
+        )
+    if pre_model_revalidation != RevalidationResult.VALID:
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.SOURCE_REVALIDATION_FAILED,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=f"pre-model revalidation result={pre_model_revalidation.value}",
+        )
+
+    verifier_input = FaithfulnessVerifierInput(
+        claim_type=candidate.claim_type,
+        normalized_claim_text=candidate.normalized_claim_text,
+        direction=candidate.direction,
+        supporting_quote=candidate.evidence_span.supporting_quote,
+        taxonomy_element_name=candidate.evidence_span.taxonomy_element_name,
+    )
+
+    try:
+        raw_response = verifier.verify(verifier_input=verifier_input)
+    except Exception as exc:
+        # D0102.3.2 §18と同型: Vendor SDKの生Exception文言をそのまま
+        # reasonへ保存しない。Exception種別名のみを記録する。
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.VERIFIER_ERROR,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=f"verifier raised {type(exc).__name__}",
+        )
+
+    model_results, contract_violation_reason = _validate_verifier_response(raw_response, requested_dimensions=model_required)
+    if model_results is None:
+        return FaithfulnessVerificationResult(
+            status=FaithfulnessVerificationStatus.VERIFIER_CONTRACT_VIOLATION,
+            overall_outcome=None,
+            dimension_results=(),
+            candidate_reference=candidate_reference,
+            verification_version=verification_version,
+            verified_at=verified_at,
+            verification_provenance=None,
+            reason=contract_violation_reason,
+        )
+
+    merged_results = _merge_deterministic_and_model(
+        deterministic_results, model_results, candidate=candidate, evidence_text=evidence_text
+    )
+    # D0102.4 §25のClaim-Type別必須軸Overrideは、Model結果で置き換えた
+    # 後にも再適用する(Modelが必須軸へNOT_APPLICABLEを返すことで
+    # `_apply_required_dimension_override()`をSilentに迂回することを
+    # 防ぐ、既存Overrideの意図をDETERMINISTIC/MODELいずれの出所でも
+    # 一貫して守る)。
+    merged_results = tuple(_apply_required_dimension_override(r, claim_type=candidate.claim_type) for r in merged_results)
+    overall_outcome = _aggregate(merged_results)
+
+    verification_provenance = AiDerivedProvenance(
+        model_provider=model_provider,
+        model_name=model_name,
+        model_version=model_version,
+        prompt_version=prompt_version,
+        prompt_hash=prompt_hash,
+        generated_at=datetime.now(UTC),
+    )
+
+    return FaithfulnessVerificationResult(
+        status=FaithfulnessVerificationStatus.SUCCESS,
+        overall_outcome=overall_outcome,
+        dimension_results=merged_results,
+        candidate_reference=candidate_reference,
+        verification_version=verification_version,
+        verified_at=verified_at,
+        verification_provenance=verification_provenance,
+    )
+
+
+# ============================================================
+# D0102.4.2 — ACCEPT-only Promotion Gate(§28修正2)
+# ============================================================
+
+
+def promote_verified_candidate(
+    *,
+    candidate: SemanticClaimCandidate,
+    verification_result: FaithfulnessVerificationResult,
+) -> SemanticClaim | None:
+    """D0102.4A修正2: 既存`SemanticClaim.__post_init__`は`REVIEW_
+    REQUIRED`の構築を技術的に許容するが、それは「新設するPromotion
+    Boundaryが実際にそれを行ってよい」という許可ではない。この
+    Orchestration Boundary自身の規律として、`status=SUCCESS`かつ
+    `overall_outcome=ACCEPT`の場合のみ`build_semantic_claim()`を
+    呼び出す(唯一の資格Case)。`REVIEW_REQUIRED`/`REJECT`/non-SUCCESS
+    はいずれも`None`を返し、`build_semantic_claim()`を一切呼び出さない
+    (REVIEW_PROMOTION_ALLOWED = NO、REJECT_PROMOTION_ALLOWED = NO)。
+
+    `candidate`のField(`claim_type`/`normalized_claim_text`/
+    `direction`/`evidence_span`/`extraction_version`/`schema_version`/
+    `extraction_provenance`)はVerification開始時点の値をそのまま渡す
+    (Verifierは書き換え不可、Silent Mutationの余地が構造的に無い、
+    §13/§19)。"""
+    if verification_result.status != FaithfulnessVerificationStatus.SUCCESS:
+        return None
+    if verification_result.overall_outcome != FaithfulnessOutcome.ACCEPT:
+        return None
+
+    expected_reference = compute_candidate_reference(candidate)
+    if verification_result.candidate_reference != expected_reference:
+        raise FaithfulnessSchemaError(
+            "verification_result.candidate_reference が candidate と一致しません"
+            "(異なるCandidateのVerificationResultを誤って渡していないか確認してください)"
+        )
+
+    return build_semantic_claim(
+        claim_type=candidate.claim_type,
+        normalized_claim_text=candidate.normalized_claim_text,
+        direction=candidate.direction,
+        evidence_span=candidate.evidence_span,
+        faithfulness_outcome=verification_result.overall_outcome,
+        extraction_version=candidate.extraction_version,
+        schema_version=candidate.schema_version,
+        extraction_provenance=candidate.extraction_provenance,
+    )
+
+
 __all__ = [
     "DETERMINISTIC_FAITHFULNESS_VERSION",
+    "MODEL_ASSISTED_FAITHFULNESS_VERSION",
     "FaithfulnessCheckMethod",
     "FaithfulnessDimension",
     "FaithfulnessDimensionOutcome",
@@ -1221,6 +1787,10 @@ __all__ = [
     "FaithfulnessSchemaError",
     "FaithfulnessVerificationResult",
     "FaithfulnessVerificationStatus",
+    "FaithfulnessVerifier",
+    "FaithfulnessVerifierInput",
     "compute_candidate_reference",
+    "promote_verified_candidate",
     "verify_candidate_deterministically",
+    "verify_candidate_faithfulness",
 ]

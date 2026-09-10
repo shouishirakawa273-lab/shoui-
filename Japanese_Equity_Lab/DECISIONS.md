@@ -15531,3 +15531,214 @@ candidate_extraction.py`・`test_disclosures_normalization.py`合計
 (faithfulness以外)はいずれも無変更。`PROMOTION_IMPLEMENTED = NO`・
 `EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`の
 まま(変更なし)。H0001は実行していない。
+
+## D0102.4.2 — Model-Assisted Faithfulness Verification + ACCEPT-only Promotion
+
+D0102.4.1(Deterministic Core、`ac7d451`)とD0102.4.1.2(F02/F04/F05
+Closure、`0f049e3`)は既にACCEPTED/FROZEN。本Roundはこれを一切書き換えず
+(`verify_candidate_deterministically()`は無変更のまま既存Test 118件
+[77+D0102.4.1.2の13を含む既存分]全てGreen)、D0102.4/D0102.4A
+(`READY_FOR_IMPLEMENTATION`)で設計した第2Layer(Model-Assisted
+Semantic Verification + ACCEPT-only Promotion)を`lib/disclosures/
+faithfulness.py`へ追記実装した。`lib/disclosures/normalization.py`・
+`semantic_claims.py`・`candidate_extraction.py`はいずれも無変更
+(Frozen)。**実LLM/Vendor SDKへの接続はこのModuleに一切存在しない**
+(`MODEL_CALL_SITES = 0`、`FaithfulnessVerifier.verify()`のCall Site
+1箇所のみで、実装は本Round全体でDeterministic `FakeVerifier`のみ)。
+
+### Verifier Protocol / Input(D0102.4 §11/§12)
+
+`FaithfulnessVerifier`(Protocol、`verify(self, *, verifier_input:
+FaithfulnessVerifierInput) -> object`)・`FaithfulnessVerifierInput`
+(frozen dataclass、Runtime型検証あり)を設計通りの5 Field限定
+Allowlistで実装した: `claim_type`/`normalized_claim_text`/
+`direction`/`supporting_quote`/`taxonomy_element_name`のみ。
+`candidate`/`evidence_span`をそのまま渡す経路は存在しない
+(Ticker・企業名・市場価格・Valuation・Bull/Base/Bear・期待Return・
+外部News・Document Identity Fieldはいずれも渡らない、Field名一覧を
+Testで直接確認済み)。
+
+### Model Output Contract(D0102.4 §14、Whole-Response-Fatal)
+
+`candidate_extraction.py`と同型のWhole-Response-Fatal判定
+(`_validate_verifier_response()`)を新設した。許可Key集合は厳密な
+完全一致(`set(...) != 許可集合`)で判定するため、個別のForbidden
+Fieldをいちいち列挙しなくても、Confidence Score・Rewritten Claim
+(`corrected_claim_text`/`better_claim`/`summary`)・投資Sentiment・
+Source Identity相当Field・その他未知Fieldはいずれも1つでも混入すれば
+Response全体が`VERIFIER_CONTRACT_VIOLATION`になる。加えて Top-level
+非dict・`dimensions`非list・重複Dimension・未知Dimension Enum・未知
+Outcome Enum・未知Reason Code・要求した軸の欠落・要求していない軸の
+混入・`NOT_APPLICABLE`禁止軸(PROPOSITION_IDENTITY等)へのNOT_APPLICABLE
+指定、いずれも個別にTestで確認した(Model Contract Tests、13件)。
+`overall_outcome`は契約違反時に必ず`None`(ACCEPTには一切到達しない)。
+
+### Source Revalidation Timing(D0102.4 §9)
+
+`verify_candidate_faithfulness()`はGate通過直後と、実際にModelを
+呼び出す直前の**2箇所**で`revalidate_evidence_span()`を呼ぶ(後者は
+前者から時間が経過していなくてもContractとして毎回明示的に再実行する)。
+Stale EvidenceSpanの場合はいずれの箇所でも`SOURCE_REVALIDATION_FAILED`
+になり、`FakeVerifier`のCall Counterで実際に0回であることを確認した
+(`test_case_m_stale_evidence_span_blocks_model_call`・`test_source_
+revalidation_occurs_before_model_call_stale_span_blocks_call`)。
+
+### Deterministic/Model Merge・Unresolved Dimension判定(D0102.4 §15/§32)
+
+既存`_check_proposition_identity()`等8軸のDeterministic Check本体は
+1行も変更していない。新設`_determine_model_required_dimensions()`が
+「Deterministic結果がAMBIGUOUSのままの軸」をModel-Routable 6軸
+(PROPOSITION_IDENTITY/SUBJECT_ATTRIBUTION/SCOPE/CAUSAL_STRENGTH/
+CERTAINTY_AND_COMMITMENT/TEMPORAL_SCOPE)の範囲で収集する
+(QUANTITY/NEGATIONはDeterministic中心のためModelへ送らない、D0102.4
+§4の既定通り)。Hard-Fail軸(PROPOSITION_IDENTITY/SUBJECT_ATTRIBUTION/
+NEGATION/QUANTITY)が既にDeterministic FAIL確定していれば、Model呼び
+出しを一切SkipしてOverall=REJECTを返す(コスト最適化、`DETERMINISTIC_
+HARD_FAIL > MODEL_PASS`、Case D/E/I/Pで確認)。`_merge_deterministic_
+and_model()`はModel-Requiredだった軸のみを置き換え、既存のPASS/FAIL/
+NOT_APPLICABLEは保持する。Merge後にClaim-Type別必須軸Override
+(`_apply_required_dimension_override()`)を再適用し、ModelがNOT_
+APPLICABLEを返して必須軸OverrideをSilentに迂回することも防いだ
+(Test: `test_contract_not_applicable_on_never_not_applicable_dimension_
+is_violation`は契約Level、Merge後Overrideは別途確認済み)。
+
+### PROPOSITION_IDENTITYのParaphrase Ratification(D0102 §22/D0102.4 §9)
+
+ModelがPROPOSITION_IDENTITYへ`PASS`を提案しても単独では最終権威にしない
+(D0102の核心方針)。極小の事前承認済みPair Table
+(`_APPROVED_PROPOSITION_PARAPHRASES`、v1は1件のみ、汎用Ontologyは
+構築しない)でDeterministicにRatifyできた場合のみ`PASS`+
+`PARAPHRASE_EQUIVALENT_CONFIRMED`を採用し、Ratifyできなければ
+`AMBIGUOUS`+`SEMANTIC_VERIFICATION_REQUIRED`へ格下げする——未収載の
+Pairは常にAMBIGUOUSへ倒れ、overallがACCEPTすることはない
+(Case B[Ratifyされる]・`test_unratified_paraphrase_pass_downgrades_
+to_ambiguous_not_accept`[Ratifyされない]の両方をTestで確認)。
+
+### CERTAINTY_AND_COMMITMENT Residual Risk Closure(D0102.4.1.2記録分、§13)
+
+D0102.4.1.2で「CERTAINTY_AND_COMMITMENTはEvidence全体からMarkerを
+走査しており、無関係な別PropositionのMarkerを借用しうる」Residual
+Riskとして記録した件を、汎用日本語NLPを追加せずに解消した。既存
+TEMPORAL_SCOPE F05 Closureの`_find_containing_clause()`を再利用する
+`_certainty_requires_model_routing()`を新設し、「Evidenceが複数
+Clauseを含み、かつCandidateが単一Clauseへ安全にLocal Bindingできない」
+場合のみ、`_check_certainty_and_commitment()`(Frozen、無変更)の結果
+(PASS/FAILいずれでも)をModel-Assisted Verification必須のUnresolved
+Dimensionとして扱う。`_check_certainty_and_commitment()`自体・
+`verify_candidate_deterministically()`の挙動はいずれも無変更のまま。
+
+### SCOPE Qualifier-Drop Detection(D0102 §24、新発見・実装Roundで対処)
+
+設計Reviewの過程で、既存`_check_scope()`(Frozen)の「Candidate TextがEvidence
+Textの部分文字列であれば無条件Trivial PASS」というLogicが、完全一致
+ではない部分文字列一致(先頭/末尾のScope修飾語を落とした一般化、
+例:「北米事業の販売は拡大した」→「販売は拡大した」)に対しても
+無条件でPASSしてしまい、Model-Required判定(「Deterministic結果が
+AMBIGUOUSかどうか」のみを見る素朴なRuleでは)一切Modelへ回らず、
+Silent ACCEPTが構造的に発生しうることを発見した(D0102 §24が明示的に
+禁止していた"北米事業限定を落とした一般化はSilent ACCEPT禁止"Exampleと
+直接一致するCase)。`_check_scope()`自体は変更せず(既存Deterministic
+Gateは弱めない)、Orchestration側に`_is_proper_substring_quote()`を
+新設し、「完全一致ではない部分文字列一致でSCOPEがTrivial PASSした
+場合」を追加のModel-Required条件としてRoutingするよう
+`_determine_model_required_dimensions()`を拡張した。Case O(Toyota
+Acceptance)で、この追加Routingが無ければSilent ACCEPTしていたはずの
+Inputが、Model-Assisted SCOPE FAIL経由で正しく`REVIEW_REQUIRED`に
+なることを確認した。
+
+### Aggregation(D0102.4 §15、無変更)
+
+既存`_aggregate()`の4段階Ruleは1行も変更していない(Hard-Fail軸FAIL→
+REJECT最優先、Soft軸Deterministic FAIL→REJECT、いずれかAMBIGUOUS/
+Soft軸Model-Only FAIL→REVIEW_REQUIRED、それ以外→ACCEPT)。D0102.4.1
+時点では「Soft軸Model-Only FAIL→REVIEW_REQUIRED」分岐は到達不能
+だったが、D0102.4.2で実際に到達するようになったことをCase F/G/H
+(Deterministic Soft FAILがModel回答に関わらず勝つ)・Case O
+(Model-Only Soft FAILがREVIEW_REQUIREDになる)で確認した。
+
+### Verification Provenance(D0102.4 §27)
+
+Model呼び出しが実際に発生した場合のみ`AiDerivedProvenance`(既存型、
+新型は作らない)を`verification_provenance`へ設定し、`candidate.
+extraction_provenance`は一切書き換えない(別Instanceであることを
+Identity比較で確認済み)。Deterministic-Only(Model呼び出し0回)の
+場合は`verification_provenance=None`のまま(既存`FaithfulnessVerification
+Result.__post_init__`のInvariantをそのまま再利用、無変更)。新設
+`MODEL_ASSISTED_FAITHFULNESS_VERSION = "faithfulness-model-v1"`を
+`verify_candidate_faithfulness()`の既定`verification_version`とし、
+`verify_candidate_deterministically()`側の`DETERMINISTIC_
+FAITHFULNESS_VERSION`とは区別する(既存Versioning Policy無変更)。
+
+### ACCEPT-only Promotion Gate(D0102.4A修正2)
+
+`promote_verified_candidate(*, candidate, verification_result)`を
+新設し、`status=SUCCESS`かつ`overall_outcome=ACCEPT`の場合のみ既存
+`build_semantic_claim()`を呼び出す(唯一の資格Case)。`REVIEW_REQUIRED`
+・`REJECT`・non-SUCCESSはいずれも`None`を返し`build_semantic_claim()`
+を一切呼び出さない(Case Q/R/S全てTestで確認)。加えて、渡された
+`candidate`と`verification_result.candidate_reference`が一致するかを
+`compute_candidate_reference()`(既存Helper再利用)で照合し、不一致
+なら`FaithfulnessSchemaError`(異なるCandidateのVerification Resultを
+誤って渡す事故を防ぐ、新規の安全策)。Promotionが`build_semantic_claim()`
+へ渡すField(`claim_type`/`normalized_claim_text`/`direction`/
+`evidence_span`/`extraction_version`/`schema_version`/
+`extraction_provenance`)はCandidateの値をそのまま渡すのみ(Model
+Rewrite自体が構造的に存在しないため、Silent Mutationの余地が無い)。
+`compute_semantic_identity_key()`/`compute_claim_id()`はいずれも
+無変更、`verification_version`はIdentity Hashに一切含まれない。
+
+### Toyota Acceptance Fixtures(D0102.4 §34、実LLM不使用)
+
+`FakeVerifier`(Deterministic Test Double、Call Counter+最後の入力を
+記録)で駆動する、Case A-O + P/Q/R/S/Tの全20 Caseを実装した:
+A(Exact→ACCEPT・Model呼び出し0回)・B(Faithful Paraphrase→Ratify
+されACCEPT)・C(Wrong Subject→REJECT)・D(Opposite Direction→
+Deterministic FAILでModel呼び出し0回のままREJECT)・E(Negation
+Inversion→同様)・F(Wrong Temporal→Deterministic Soft FAILがModel
+回答に関わらず勝ちREJECT)・G(因果Tier Upgrade→同様)・H(確信度Tier
+Upgrade→同様)・I(捏造数値→Hard-Fail、Model呼び出し0回でREJECT)・
+J(真正Ambiguity→REVIEW_REQUIRED)・K(Malformed Output→Contract
+Violation)・L(Verifier例外→VERIFIER_ERROR)・M(Stale EvidenceSpan→
+Model呼び出し0回でSOURCE_REVALIDATION_FAILED)・N(正しいText+誤った
+claim_type→PROPOSITION_IDENTITY経由でModelがFAIL・REJECT)・
+O(重要なScope脱落→Trivial PASSを回避してModel経由でFAIL検出・
+REVIEW_REQUIRED)・P(Deterministic FAIL + 仮想的なModel PASSでも
+Deterministicが勝つ、Model呼び出し0回)・Q(REVIEW_REQUIREDはPromote
+されない)・R(REJECTはPromoteされない)・S(ACCEPTはCandidate Fieldを
+完全に保持してPromoteされる)・T(Verifierが`corrected_claim_text`を
+返そうとするとContract Violation)。長い開示本文は一切永続化していない
+(短いCurated抜粋のみ、Gitignore対象Raw Fileも生成していない)。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`lib/disclosures/faithfulness.py`・
+`13_tests/test_faithfulness.py`): 両File Pass。`mypy --strict`
+(`lib/disclosures/faithfulness.py`): Success, no issues found in 1
+source file。Targeted Pytest: `test_faithfulness.py`(**118 Test**、
+既存77+新規41)・`test_disclosures_semantic_claims.py`・`test_
+candidate_extraction.py`・`test_disclosures_normalization.py`合計
+**263 Test全てPass**(D0102.4.1/D0102.4.1.2のFrozen Boundary無変更・
+無退行を含む)。Full Repository Suite/H0001はいずれも実行していない。
+
+### Architecture Guard(確認)
+
+`MODEL_CALL_SITES = 0`(`FaithfulnessVerifier.verify()`のCall Site
+1箇所のみ、Vendor SDK・実Network呼び出し・API Keyはいずれも無し)・
+新しい`FaithfulnessDimension`追加数`0`(既存8軸のまま)・
+`PROMOTION_IMPLEMENTED`は本Roundで実装したが`EvidenceRecord`/
+`EvidenceRelation`/`ResearchArtifact`統合・Bull/Base/Bear・Expected
+Return・Decision・Portfolio・Automation Orchestratorはいずれも未実装
+(`EVIDENCE_INTEGRATION = NO`のまま)。汎用日本語NLP追加なし。
+`AUTOMATION_READINESS = NOT_READY`のまま(変更なし)。H0001は実行して
+いない。
+
+### Persistence / Commit対象・Scope
+
+`Japanese_Equity_Lab/lib/disclosures/faithfulness.py`(Model-Assisted
+Verification + Promotion追記のみ、既存Deterministic Function本体は
+1行も変更していない)・`Japanese_Equity_Lab/13_tests/test_faithfulness.py`
+(D0102.4.2 Test追加)・このDECISIONS.md追記のみ。`lib/disclosures/
+normalization.py`・`semantic_claims.py`・`candidate_extraction.py`・
+その他既存`lib/`・既存`13_tests/`(faithfulness以外)はいずれも無変更。
+`EVIDENCE_INTEGRATION = NO`・`AUTOMATION_READINESS = NOT_READY`のまま
+(変更なし)。H0001は実行していない。
