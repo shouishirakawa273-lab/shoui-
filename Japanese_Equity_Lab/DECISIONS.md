@@ -16482,3 +16482,161 @@ Positive修正)・`scripts/dev_workflow_lib/model.py`
 `gates.py`/`prompts.py`/`dev_workflow.py`本体・既存`lib/`
 (Faithfulness/Normalization/Semantic Claims/Candidate Extraction、
 Frozen Investment Module)はいずれも無変更。H0001は実行していない。
+
+## DEV-AUTO-02.1.1 — Runtime HEAD Pinning
+
+DEV-AUTO-02.1(`f36c3e6`)はACCEPTED/FROZENのまま。本Roundは新機能を
+追加せず、DEV-AUTO-02.1完了直後に顕在化した1件の残存Bootstrap Defect
+のみを修復した: D0103 Pilot Manifestに`expected_head`として現在の
+HEAD SHAを直接埋め込むと、そのManifest自体をCommitした瞬間にHEADが
+1つ進み、Manifestが即座にStaleになる(D0103の`expected_head`が
+`a81d979`→`f36c3e6`へ実際に2Round連続でStaleになったことで発覚)。
+**投資判断・市場Data取得・Backtest・BUY/SELL生成・ResearchArtifact
+作成・SemanticClaim→Evidence統合・実Model API呼び出し・Trading/
+Portfolio Automationは本Round自体もいずれも行わない**
+(`INVESTMENT_LOGIC_CHANGED = NO`)。D0103は本Roundでも一切実装・実行
+していない(`D0103_EXECUTED = NO`)。
+
+### Stale Manifest HEAD Bootstrapの原因(§1)
+
+循環構造そのものが原因: (1) ManifestへCommit時点のHEADを書く→
+(2) そのManifestをCommitする→(3) Commit自体がHEADを1つ進める→
+(4) Manifestの`expected_head`は書いた瞬間から既にStale。DEV-AUTO-02.1
+で`expected_head`を`a81d979`→`a81d979`(自分自身のStarting HEAD)に
+更新して解決したつもりが、その更新Commit自体が新しいHEAD(`f36c3e6`)
+を生み、翌Round(本Round)開始時点で再びStaleになっていた——「Manifest
+に確定Commit SHAを手動転記する」という設計そのものが必然的に毎回
+Staleを再生産する構造的欠陥であり、値を最新化するその場しのぎでは
+解決しない。
+
+### 設計方針: Runtime HEAD Pinning(§1/§2)
+
+「ManifestにCommit済みSHAを永続的に保持する」のをやめ、「Run開始時点
+のHEADをそのRunの間だけImmutableな基準として使う」設計へ変更した:
+
+- `TaskManifest.expected_head`に新しいSentinel文字列
+  `RUNTIME_HEAD_SENTINEL = "CURRENT"`を追加した(`model.py`)。
+  `expected_head`を省略・`null`指定した場合もこのSentinelへ
+  Fallbackする(`from_dict()`)。
+- `orchestrator.py`に`_resolve_manifest_head()`を追加した:
+  `expected_head == "CURRENT"`の場合のみ、`run_task()`の実行開始
+  直後(Dry-Run/本実行どちらも同じ1箇所)で`gates.resolve_head()`
+  (新設、`git rev-parse HEAD`を比較なしにReadするだけのRead-Only関数)
+  を1回だけ呼び、その結果を`expected_head`に持つ新しい`TaskManifest`
+  (`dataclasses.replace()`で複製、元のFrozen Manifestは不変)を返す。
+  以降`run_task()`内では、Local変数`manifest`をこの解決済みオブジェクト
+  へ1度だけ差し替え、関数の残り全体(Human Gate・Head/Scope Check・
+  Writer/Reviewer Prompt生成・全Closure Round)がこの同じオブジェクトを
+  参照し続ける——**再解決(Repin)は一切行わない**。
+- 明示的な40桁SHAが指定された場合は`_resolve_manifest_head()`が
+  無変更でそのまま返す(Sentinelとの一致判定のみ、既存の厳密一致
+  Checkの意味は一切変えていない、§3 Backward Compatibility)。
+
+### Prompt/RunRecordへの反映(§5/§6)
+
+Prompt生成関数(`build_writer_prompt()`等)自体は無変更のまま
+`manifest.expected_head`を素直に埋め込む——上記の1箇所解決の結果、
+Writer/Reviewer両Promptには常に解決済みの実SHAが入り、Sentinel文字列
+`"CURRENT"`がPromptへ漏れることは無い(Testで直接確認: `"CURRENT"
+not in prompt`)。`RunRecord.starting_head`も同じ解決済み値をそのまま
+再利用する(新しいField追加は不要、既存Fieldをそのまま使う設計を
+維持)。`DryRunReport`に`resolved_starting_head`Fieldを新設し、
+Dry-Run JSON出力から解決済みSHAを直接確認できるようにした
+(`dev_workflow.py`の`payload["dry_run_report"]`にも追加)。
+
+### Writer/Reviewer Gate(§7/§8)
+
+Step1(既存)のHead Checkに加え、Writer実行直前・Reviewer実行直前
+(初回Round・全Closure Round)それぞれに明示的な`check_expected_head()`
+再確認を追加した(いずれも同じPin済み`manifest.expected_head`との
+比較、Sentinelの再解釈は行わない)。不一致であればAgentを一切呼ばず
+即座に`STOP`する。既存のReviewer Read-Only Enforcement(実行前後の
+`list_changed_paths()`比較)はそのまま維持し、変更していない。
+
+### Closure Loopの不変性(§9)
+
+`_resolve_manifest_head()`は`run_task()`の入口で1回だけ呼ばれ、
+Closure Round(`while closure_round < max_closure_rounds`)の内部では
+一切呼ばれない——Round内のWriter/Reviewer Gateは「同じ`manifest`
+オブジェクトとの一致」を再確認するだけで、HEADの再解決(Repin)は
+行わない。Testで直接確認: 初回Round・Closure Round双方でWriter/
+Reviewerへ送られた全Promptが同一の解決済みSHAを含むこと。
+
+### D0103 Manifestの修復(§4)
+
+`scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json`
+の`expected_head`を固定SHA(`a81d979`→本来は`f36c3e6`でも良いが、
+これを書いた瞬間にまたStaleになる循環そのものを断つため)から
+`"CURRENT"`へ変更した。**別の固定SHAへの置き換えは行っていない**
+(§4「Do NOT replace it with another hard-coded SHA」)。CLIで直接
+確認(実Repository、`git rev-parse HEAD` = `f36c3e6...`時点):
+`run --dry-run`の出力で`human_gate_reason: null`・
+`resolved_starting_head: "f36c3e6f55e4d1abbe43f13653cb548483595d9e"`・
+`head_check.passed: true`・`executor_invocations: 0`・両Promptに
+`Expected HEAD: f36c3e6f55e4d1abbe43f13653cb548483595d9e`が含まれる
+ことを確認した(`scope_check`のみ本Round自体の未Commit差分により
+`false`だが、これはHead/Human Gateとは独立した既存の別Gateであり、
+D0103実行を意味しない)。D0103本体(`evidence_integration.py`)は本
+Roundでも一切作成・実装していない。
+
+### Regression Test(§11 A-H、全件追加・全件Pass)
+
+`13_tests/test_dev_workflow_orchestrator.py`に追加: A(`expected_head=
+"CURRENT"`はRun開始時のHEADへ解決され`head_check.passed=true`)・
+B(Pin解決の`resolve_head()`をMonkeypatchしてPin値と実HEADを意図的に
+乖離させ、Writer実行前にSTOP・Zero Writer Invocationを確認)・
+C(明示的SHA=現在HEADはPASS)・D(明示的SHA≠現在HEADはSTOP、既存
+`test_expected_head_mismatch_executes_zero_agents`と補完関係)・
+E(初回Round・Closure Round双方の全Promptが解決済みSHAのみを含み、
+Sentinel文字列`"CURRENT"`を一切含まない)・F(`RunRecord.starting_head`
+が解決済みSHAであり`"CURRENT"`ではないことを`run_task()`の戻り値・
+`load_run_record()`再読込の両方で確認)・G(Closure Round前後で
+Writer/Reviewerへ送られる全Promptが同一の解決済みSHAを保持し続ける
+=Repin無し)・H(D0103 Dry-Runで`head_check.passed=true`・Human Gate
+Clear・`executor_invocations=0`)。既存2 Test
+(`test_d0103_pilot_dry_run_succeeds_with_zero_executions`
+[`resolved_starting_head`/Prompt内Resolved SHA/`"CURRENT"`不在の
+Assertionを追加]・`test_d0103_pilot_non_dry_run_halts_before_any_
+execution`[Runtime HEAD PinningによりHead Gate自体は常にPASSする
+設計変更を反映し、STOP理由を「Head不一致」から「Executor未設定」
+[`ExecutorRegistry.empty()`]へ更新——D0103_EXECUTED = NOという結論
+自体は変更していない])を新設計に合わせて更新した。
+
+### Static Gates / Regression
+
+`ruff check`/`ruff format --check`(`scripts/dev_workflow.py`・
+`scripts/dev_workflow_lib/model.py`・`gates.py`・`orchestrator.py`・
+`13_tests/test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`):
+全File Pass。`mypy --strict`(`dev_workflow.py`・`model.py`・
+`gates.py`・`orchestrator.py`、変更したProduction File 4本):
+Success, no issues found。Targeted Pytest: `test_dev_workflow.py`
+(50 Test、無変更)・`test_dev_workflow_orchestrator.py`(36 Test、
+28+新規8)、合計86 Test全てPass。`13_tests/`全体(1770 Test)も
+Cross-Contamination無しでPass確認済み(Full Repository Suite/H0001は
+実行していない)。
+
+### D0103 Execution Confirmation
+
+`D0103_EXECUTED = NO`。本Roundで`evidence_integration.py`・
+`test_evidence_integration.py`はいずれも作成・変更していない。
+D0103 ManifestはRuntime HEAD Pinningへ移行しDry-Run Readyのまま
+維持されたのみであり、実際のWriter/Reviewer Executor起動は一切
+行っていない(`FakeExecutor`/実在repoへの`run --dry-run`による
+Read-Only確認のみ)。
+
+### Persistence / Commit対象・Scope
+
+変更: `scripts/dev_workflow_lib/model.py`(`RUNTIME_HEAD_SENTINEL`
+定数+`expected_head`Default化)・`scripts/dev_workflow_lib/gates.py`
+(`resolve_head()`新設)・`scripts/dev_workflow_lib/orchestrator.py`
+(`_resolve_manifest_head()`+Writer/Reviewer Gate追加+
+`DryRunReport.resolved_starting_head`Field追加)・
+`scripts/dev_workflow.py`(`resolved_starting_head`をJSON出力へ追加)・
+`scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json`
+(`expected_head`をSentinelへ変更)・
+`13_tests/test_dev_workflow_orchestrator.py`(Regression Test追加/
+更新)。`13_tests/test_dev_workflow.py`・`dev_workflow_lib/human_gate.py`
+/`acceptance.py`/`executor.py`/`prompts.py`/`run_record.py`・既存
+`lib/`(Faithfulness/Normalization/Semantic Claims/Candidate
+Extraction、Frozen Investment Module)はいずれも無変更。H0001は
+実行していない。

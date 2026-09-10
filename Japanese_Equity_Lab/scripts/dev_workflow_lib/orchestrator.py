@@ -12,7 +12,7 @@ Loopは実装しない——Closure Roundは`max_closure_rounds`(既定2)で
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
@@ -20,9 +20,9 @@ from uuid import uuid4
 from .acceptance import evaluate_acceptance, narrow_to_open_findings, open_blocking_findings
 from .agent_results import ReviewerResult, WriterResult, WriterStatus
 from .executor import AgentExecutionResult, AgentExecutor, ExecutionCapability, ExecutorRegistry
-from .gates import GateResult, check_expected_head, check_scope, list_changed_paths
+from .gates import GateResult, check_expected_head, check_scope, list_changed_paths, resolve_head
 from .human_gate import requires_human_approval
-from .model import AcceptanceVerdict, Finding, Role, TaskManifest
+from .model import RUNTIME_HEAD_SENTINEL, AcceptanceVerdict, Finding, Role, TaskManifest
 from .prompts import build_closure_reviewer_prompt, build_closure_writer_prompt, build_reviewer_prompt, build_writer_prompt
 from .run_record import RunRecord, RunState, save_run_record
 
@@ -39,10 +39,16 @@ class OrchestratorOutcome(StrEnum):
 
 @dataclass(kw_only=True, frozen=True)
 class DryRunReport:
-    """DEV-AUTO-02 §11。Agentを一切呼び出さずに生成する完全なPreview。"""
+    """DEV-AUTO-02 §11。Agentを一切呼び出さずに生成する完全なPreview。
+
+    `resolved_starting_head`(DEV-AUTO-02.1.1 §10): Runtime HEAD Pinning
+    (`expected_head == RUNTIME_HEAD_SENTINEL`)が選択されている場合でも
+    実際にPinされたSHAをそのまま確認できるよう、解決済みの値を明示的に
+    保持する(明示的SHA指定の場合はそのSHA自身が入る)。"""
 
     manifest_task_id: str
     human_gate_reason: str | None
+    resolved_starting_head: str
     head_check: GateResult
     scope_check: GateResult
     writer_prompt: str
@@ -72,6 +78,23 @@ def _safe_execute(executor: AgentExecutor, *, role: Role, prompt: str, working_d
         return executor.execute(role=role, prompt=prompt, working_directory=working_directory)
     except Exception as exc:  # noqa: BLE001 -- 意図的なBroad Catch(Executor実装の異常系をTyped Resultへ変換する)。
         return AgentExecutionResult(returncode=-1, stdout="", stderr=f"executor raised {type(exc).__name__}: {exc}")
+
+
+def _resolve_manifest_head(manifest: TaskManifest, *, repo_root: Path) -> TaskManifest:
+    """DEV-AUTO-02.1.1 §2: `expected_head`がRuntime HEAD Pinning
+    Sentinel(`RUNTIME_HEAD_SENTINEL`)であれば、この瞬間のGit HEADを
+    一度だけ`resolve_head()`で読み取り、それを`expected_head`とする
+    新しい`TaskManifest`を返す(元のManifestは変更しない、Frozen
+    Dataclass)。以降そのRunでは呼び出し側が返り値のManifestだけを
+    使い続けることで、starting_headがWriter/Reviewer/全Closure Round
+    を通じてImmutableであることを保証する(§9「Do NOT repin HEAD
+    between rounds」)。明示的な40桁SHAが指定されている場合は無変更で
+    そのまま返す(Sentinelの再解釈をしない、§3 Backward
+    Compatibility)。"""
+    if manifest.expected_head != RUNTIME_HEAD_SENTINEL:
+        return manifest
+    resolved_head = resolve_head(repo_root)
+    return replace(manifest, expected_head=resolved_head)
 
 
 def _preview_command(executor: AgentExecutor | None) -> tuple[str, ...] | None:
@@ -129,6 +152,7 @@ def _build_dry_run_report(
     return DryRunReport(
         manifest_task_id=manifest.task_id,
         human_gate_reason=requires_human_approval(manifest),
+        resolved_starting_head=manifest.expected_head,
         head_check=check_expected_head(repo_root, manifest.expected_head),
         scope_check=check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files),
         writer_prompt=build_writer_prompt(manifest),
@@ -151,6 +175,13 @@ def run_task(
     """DEV-AUTO-02 §1の唯一のSanctioned Orchestration Flow。"""
     run_id = run_id or f"run-{uuid4().hex[:12]}"
     invocations = 0
+
+    # DEV-AUTO-02.1.1 §2: Runtime HEAD Pinningの解決はここ1箇所のみで
+    # 行う(Dry-Run/本実行いずれもこの直後の`manifest`を使う)。以降この
+    # 関数内では常にこの解決済み`manifest`のみを参照し、再解決は行わない
+    # (§9「Do NOT repin HEAD between rounds」)。明示的なSHA指定の場合は
+    # 無変更のまま返る(§3 Backward Compatibility)。
+    manifest = _resolve_manifest_head(manifest, repo_root=repo_root)
 
     def _record(
         state: RunState,
@@ -219,6 +250,16 @@ def run_task(
         record = _record(RunState.STOPPED, reason=reason)
         return OrchestratorResult(outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record)
 
+    # DEV-AUTO-02.1.1 §7 Writer Gate: Writer実行の直前にもう一度、
+    # Repository HEADがPin済みの`starting_head`(`manifest.expected_head`
+    # 、Step1と同じImmutable値)からDriftしていないことを確認する。
+    # Step1の確認からここまでの間にHEADが変化していればWriterを一切
+    # 実行せずSTOPする(Zero Writer Invocation)。
+    pre_writer_head_check = check_expected_head(repo_root, manifest.expected_head)
+    if not pre_writer_head_check.passed:
+        record = _record(RunState.REPOSITORY_GATE_FAILED, reason=pre_writer_head_check.reason)
+        return OrchestratorResult(outcome=OrchestratorOutcome.STOP, reason=pre_writer_head_check.reason, run_record=record)
+
     # ---- Writer ----
     _record(RunState.WRITER_RUNNING)
     writer_prompt = build_writer_prompt(manifest)
@@ -260,8 +301,20 @@ def run_task(
     static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
 
     # ---- Reviewer(Read-Only、実行前後のGit状態を比較する) ----
+    # DEV-AUTO-02.1.1 §8 Reviewer Gate: Reviewer実行前にもPin済み
+    # `starting_head`との一致を確認する(HEADが既にDriftしていれば
+    # Reviewerを一切実行せずSTOPする)。
+    pre_review_head_check = check_expected_head(repo_root, manifest.expected_head)
+    if not pre_review_head_check.passed:
+        record = _record(RunState.REPOSITORY_GATE_FAILED, reason=pre_review_head_check.reason, writer_result=writer_result)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP,
+            reason=pre_review_head_check.reason,
+            run_record=record,
+            executor_invocations=invocations,
+        )
     pre_review_tracked, pre_review_untracked = list_changed_paths(repo_root)
-    pre_review_head = check_expected_head(repo_root, manifest.expected_head).reason
+    pre_review_head = pre_review_head_check.reason
 
     _record(RunState.REVIEWING, writer_result=writer_result)
     reviewer_prompt = build_reviewer_prompt(manifest)
@@ -348,6 +401,22 @@ def run_task(
         blockers = open_blocking_findings(current_findings)
         _record(RunState.CLOSURE_ROUND, closure_round=closure_round, open_findings=narrow_to_open_findings(current_findings))
 
+        # DEV-AUTO-02.1.1 §7/§9: Closure Roundごとのwriter実行直前にも
+        # 同じPin済み`starting_head`との一致を確認する(§9「Do NOT repin
+        # HEAD between rounds」——ここでは`manifest`を再解決せず、Run開始
+        # 時点で一度だけPinされた同じ値との一致を毎Round確認するのみ)。
+        closure_pre_writer_head_check = check_expected_head(repo_root, manifest.expected_head)
+        if not closure_pre_writer_head_check.passed:
+            record = _record(
+                RunState.REPOSITORY_GATE_FAILED, reason=closure_pre_writer_head_check.reason, closure_round=closure_round
+            )
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP,
+                reason=closure_pre_writer_head_check.reason,
+                run_record=record,
+                executor_invocations=invocations,
+            )
+
         closure_writer_prompt = build_closure_writer_prompt(manifest, blockers)
         closure_writer_exec = _safe_execute(
             writer_executor, role=Role.WRITER, prompt=closure_writer_prompt, working_directory=repo_root
@@ -385,6 +454,20 @@ def run_task(
 
         tests_result = run_targeted_validation(manifest.targeted_tests, repo_root=repo_root)
         static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
+
+        # DEV-AUTO-02.1.1 §8/§9: Closure Reviewerの実行前にもPin済み
+        # `starting_head`との一致を確認する。
+        closure_pre_review_head_check = check_expected_head(repo_root, manifest.expected_head)
+        if not closure_pre_review_head_check.passed:
+            record = _record(
+                RunState.REPOSITORY_GATE_FAILED, reason=closure_pre_review_head_check.reason, closure_round=closure_round
+            )
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP,
+                reason=closure_pre_review_head_check.reason,
+                run_record=record,
+                executor_invocations=invocations,
+            )
 
         open_for_closure_review = narrow_to_open_findings(current_findings)
         pre_tracked, pre_untracked = list_changed_paths(repo_root)

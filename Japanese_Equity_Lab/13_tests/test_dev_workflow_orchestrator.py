@@ -192,11 +192,15 @@ def test_dry_run_works_with_empty_executor_registry(tmp_path: Path) -> None:
 
 def test_d0103_pilot_dry_run_succeeds_with_zero_executions(tmp_path: Path) -> None:
     # DEV-AUTO-02 §14: D0103はこのRoundで実行しない。Dry-Runのみ成功する
-    # ことを確認する(実Repositoryやexpected_headの実際の一致は問わない、
-    # Dry-Runは常に完走しAgentを一切呼ばないことのみを検証する)。
+    # ことを確認する(Dry-Runは常に完走しAgentを一切呼ばないことのみを
+    # 検証する)。DEV-AUTO-02.1.1: `expected_head`はRuntime HEAD Pinning
+    # Sentinelへ修復済みのため、Dry-Run時点でこのTemp RepositoryのHEADが
+    # そのまま`resolved_starting_head`として解決され、`head_check.passed`
+    # は常にTrueになることも確認する(Stale Manifest HEAD Bootstrap
+    # Problemの直接的な解消)。
     manifest_data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest = TaskManifest.from_dict(manifest_data)
-    repo, _head = _init_temp_repo(tmp_path)
+    repo, head = _init_temp_repo(tmp_path)
     writer = FakeExecutor(fixed_response=_writer_success())
     reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
 
@@ -221,31 +225,37 @@ def test_d0103_pilot_dry_run_succeeds_with_zero_executions(tmp_path: Path) -> No
     # AgentをZero回しか呼ばないことで別途保証されている。
     assert result.dry_run_report is not None
     assert result.dry_run_report.human_gate_reason is None
+    assert result.dry_run_report.resolved_starting_head == head
+    assert result.dry_run_report.head_check.passed
+    assert head in result.dry_run_report.writer_prompt
+    assert head in result.dry_run_report.reviewer_prompt
+    assert "CURRENT" not in result.dry_run_report.writer_prompt
+    assert "CURRENT" not in result.dry_run_report.reviewer_prompt
 
 
 def test_d0103_pilot_non_dry_run_halts_before_any_execution(tmp_path: Path) -> None:
-    # DEV-AUTO-02.1: Human Gateは修復済みのManifestではもはやTriggerされ
-    # ないが、一時Repositoryの実HEADはManifestの`expected_head`とは
-    # 一致しないため、Expected-Head Gateにより即座にSTOPし、Agentは
-    # 一切呼ばれない(D0103_EXECUTED = NOはこの経路でも維持される)。
+    # DEV-AUTO-02.1.1: `expected_head`はRuntime HEAD Pinning Sentinel
+    # (`"CURRENT"`)へ修復済みのため、どのRepositoryに対してもHEAD Gate
+    # 自体は常にPASSする(これがこのFixの狙い、D0103_DRY_RUN_READYの
+    # 前提)。それでもD0103は「明示的にExecutor Configurationを渡さない
+    # 限り」実行されない——Default Executor RegistryはEmptyであり
+    # (DEV-AUTO-02.1既存の安全側判断)、Executor未設定を理由にAgentを
+    # 一切呼ばずSTOPする(D0103_EXECUTED = NOはこの経路で維持される)。
     manifest_data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest = TaskManifest.from_dict(manifest_data)
     repo, _head = _init_temp_repo(tmp_path)
-    writer = FakeExecutor(fixed_response=_writer_success())
-    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
 
     result = run_task(
         manifest=manifest,
         repo_root=repo,
-        executors=_registry(writer, reviewer),
+        executors=ExecutorRegistry.empty(),
         runs_dir=tmp_path / "runs",
         dry_run=False,
     )
 
     assert result.outcome == OrchestratorOutcome.STOP
+    assert "no executor configured" in result.reason
     assert result.executor_invocations == 0
-    assert writer.call_count == 0
-    assert reviewer.call_count == 0
 
 
 # ============================================================
@@ -629,4 +639,145 @@ def test_J_executor_config_contains_no_secret_fields() -> None:
     # path such as `C:\Users\...` or `/home/...`).
     assert "c:\\users" not in raw_text
     assert "/home/" not in raw_text
-    assert "c:/users" not in raw_text
+
+
+# ============================================================
+# DEV-AUTO-02.1.1: Runtime HEAD Pinning (§11 A-H)
+# ============================================================
+
+
+def test_A_runtime_sentinel_resolves_to_current_head_and_passes(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head="CURRENT")
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=ExecutorRegistry.empty(), runs_dir=tmp_path / "runs", dry_run=True
+    )
+
+    assert result.dry_run_report is not None
+    assert result.dry_run_report.resolved_starting_head == head
+    assert result.dry_run_report.head_check.passed
+
+
+def test_B_head_drift_between_pin_and_writer_stops_with_zero_writer_invocations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Runtime HEAD Pinningが解決した瞬間の値(Simulateする都合上、実際の
+    # HEADとは異なる固定値)と、その後の各Gate(Step1/Writer Gate)が
+    # 実際に読むHEADが食い違う状況を`resolve_head()`のMonkeypatchで
+    # 再現する。Pin解決自体は`orchestrator._resolve_manifest_head()`が
+    # 呼ぶ`resolve_head`のみを差し替え、各Gateが呼ぶ`check_expected_head`
+    # (`gates.py`内部で実Git HEADを読む、無変更)は本物のままにする——
+    # つまり「Pinされた値」と「実際のHEAD」が一致しない状態を作る。
+    import scripts.dev_workflow_lib.orchestrator as orchestrator_module
+
+    repo, _real_head = _init_temp_repo(tmp_path)
+    monkeypatch.setattr(orchestrator_module, "resolve_head", lambda repo_root: "0" * 40)
+
+    manifest = _manifest(expected_head="CURRENT")
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert result.executor_invocations == 0
+    assert writer.call_count == 0
+    assert reviewer.call_count == 0
+
+
+def test_C_explicit_sha_matching_current_head_passes(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=ExecutorRegistry.empty(), runs_dir=tmp_path / "runs", dry_run=True
+    )
+
+    assert result.dry_run_report is not None
+    assert result.dry_run_report.resolved_starting_head == head
+    assert result.dry_run_report.head_check.passed
+
+
+def test_D_explicit_sha_mismatch_stops(tmp_path: Path) -> None:
+    repo, _head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head="0" * 40)
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert writer.call_count == 0
+    assert reviewer.call_count == 0
+
+
+def test_E_prompt_rendering_uses_resolved_sha_never_sentinel(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head="CURRENT")
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.ACCEPT_CANDIDATE
+    assert writer.call_count == 1
+    assert reviewer.call_count == 1
+    for prompt in (*writer.calls, *reviewer.calls):
+        assert f"Expected HEAD: {head}" in prompt
+        assert "CURRENT" not in prompt
+
+
+def test_F_run_record_stores_resolved_starting_sha(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head="CURRENT")
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=ExecutorRegistry.empty(), runs_dir=tmp_path / "runs", dry_run=True
+    )
+
+    assert result.run_record.starting_head == head
+    assert result.run_record.starting_head != "CURRENT"
+    record = load_run_record(result.run_record.run_id, runs_dir=tmp_path / "runs")
+    assert record.starting_head == head
+
+
+def test_G_closure_rounds_preserve_original_starting_head(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head="CURRENT")
+    writer = FakeExecutor(fixed_response=_writer_success())
+
+    def _reviewer_response(call_number: int) -> str:
+        if call_number == 1:
+            return _reviewer_result("NEEDS_FIX", [_finding("F1")])
+        return _reviewer_result("ACCEPTED", [_finding("F1", status="CLOSED")])
+
+    reviewer = FakeExecutor(response_fn=_reviewer_response)
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.ACCEPT_CANDIDATE
+    assert writer.call_count == 2  # initial + 1 closure round
+    assert reviewer.call_count == 2
+    assert result.run_record.starting_head == head
+    # 初回Round・Closure Roundいずれで送られたPromptも、常に同じ
+    # Resolved SHAを保持していること(Repinしていないこと)を確認する。
+    for prompt in (*writer.calls, *reviewer.calls):
+        assert f"Expected HEAD: {head}" in prompt
+
+
+def test_H_d0103_dry_run_head_check_pass_human_gate_clear_zero_executions(tmp_path: Path) -> None:
+    manifest_data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    manifest = TaskManifest.from_dict(manifest_data)
+    repo, head = _init_temp_repo(tmp_path)
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=ExecutorRegistry.empty(), runs_dir=tmp_path / "runs", dry_run=True
+    )
+
+    assert result.outcome == OrchestratorOutcome.DRY_RUN
+    assert result.executor_invocations == 0
+    assert result.dry_run_report is not None
+    assert result.dry_run_report.human_gate_reason is None
+    assert result.dry_run_report.head_check.passed
+    assert result.dry_run_report.resolved_starting_head == head

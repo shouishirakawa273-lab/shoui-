@@ -11,6 +11,17 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+# DEV-AUTO-02.1.1: `TaskManifest.expected_head`にこのSentinel文字列を
+# 指定すると、実際のSHAをManifestへHard-codeする代わりに、実行開始時点
+# (`run_task()`の最初)でその瞬間のGit HEADを一度だけ解決し、そのRun
+# 全体(Writer/Reviewer/全Closure Round)でImmutableな`starting_head`
+# として再利用する(Bootstrap Problem: Manifestへ現在のHEADを書く→
+# Commit→そのCommit自体がHEADを進める→Manifestが即座にStaleになる、
+# という循環を断つ)。明示的な40桁SHAを指定した場合はこのSentinelとは
+# 無関係に既存の厳密一致Checkがそのまま適用される(Backward
+# Compatibility、§3)。
+RUNTIME_HEAD_SENTINEL = "CURRENT"
+
 
 class Capability(StrEnum):
     """実際に許可される操作そのもの(Product/Plan名ではない)。"""
@@ -155,7 +166,7 @@ class TaskManifest:
 
     task_id: str
     purpose: str
-    expected_head: str
+    expected_head: str = RUNTIME_HEAD_SENTINEL
     allowed_files: tuple[str, ...]
     frozen_files: tuple[str, ...] = field(default_factory=tuple)
     targeted_tests: tuple[str, ...] = field(default_factory=tuple)
@@ -171,7 +182,10 @@ class TaskManifest:
         if not self.purpose:
             raise ValueError("purpose は空にできません")
         if not self.expected_head:
-            raise ValueError("expected_head は空にできません")
+            raise ValueError(
+                f"expected_head は空にできません({RUNTIME_HEAD_SENTINEL!r}"
+                "[Runtime HEAD Pinning]または明示的な40桁SHAのいずれかを指定してください)"
+            )
         if not self.allowed_files:
             raise ValueError("allowed_files は空にできません(最低1件のScopeを明示する)")
         overlap = sorted(set(self.allowed_files) & set(self.frozen_files))
@@ -183,7 +197,7 @@ class TaskManifest:
         return TaskManifest(
             task_id=str(data["task_id"]),
             purpose=str(data["purpose"]),
-            expected_head=str(data["expected_head"]),
+            expected_head=str(data.get("expected_head", RUNTIME_HEAD_SENTINEL) or RUNTIME_HEAD_SENTINEL),
             allowed_files=tuple(str(p) for p in data.get("allowed_files", [])),
             frozen_files=tuple(str(p) for p in data.get("frozen_files", [])),
             targeted_tests=tuple(str(p) for p in data.get("targeted_tests", [])),
@@ -211,11 +225,12 @@ class TaskManifest:
 
 
 __all__ = [
+    "ROLE_CAPABILITIES",
+    "RUNTIME_HEAD_SENTINEL",
     "AcceptanceVerdict",
     "Capability",
     "Finding",
     "FindingStatus",
-    "ROLE_CAPABILITIES",
     "ReviewerVerdict",
     "Role",
     "Severity",

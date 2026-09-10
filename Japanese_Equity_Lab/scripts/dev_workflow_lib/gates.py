@@ -32,11 +32,20 @@ def _run_git(repo_root: Path, *args: str) -> str:
     return result.stdout
 
 
+def resolve_head(repo_root: Path) -> str:
+    """DEV-AUTO-02.1.1: 現在のGit HEADを比較なしにReadするだけの
+    Read-Only操作。Runtime HEAD Pinning(`TaskManifest.expected_head ==
+    RUNTIME_HEAD_SENTINEL`)がRun開始時点のHEADを一度だけ解決する際に
+    使う——呼び出し側(`orchestrator.py`)がこの戻り値をそのRun全体で
+    Immutableな`starting_head`として保持する。"""
+    return _run_git(repo_root, "rev-parse", "HEAD").strip()
+
+
 def check_expected_head(repo_root: Path, expected_head: str) -> GateResult:
     """DEV-AUTO-01 §9「Before any write workflow: verify expected
     HEAD」。不一致は常にSTOP相当(呼び出し側でAcceptanceVerdict.STOPへ
     Mapする)。"""
-    actual_head = _run_git(repo_root, "rev-parse", "HEAD").strip()
+    actual_head = resolve_head(repo_root)
     if actual_head != expected_head:
         return GateResult(
             passed=False,
@@ -95,4 +104,4 @@ def check_scope(
     return GateResult(passed=True, reason="all tracked changes are within allowed_files")
 
 
-__all__ = ["GateResult", "check_expected_head", "check_scope", "list_changed_paths"]
+__all__ = ["GateResult", "check_expected_head", "check_scope", "list_changed_paths", "resolve_head"]

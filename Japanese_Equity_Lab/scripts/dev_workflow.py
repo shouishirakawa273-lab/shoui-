@@ -180,6 +180,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         payload["dry_run_report"] = {
             "task_id": report.manifest_task_id,
             "human_gate_reason": report.human_gate_reason,
+            "resolved_starting_head": report.resolved_starting_head,
             "head_check": {"passed": report.head_check.passed, "reason": report.head_check.reason},
             "scope_check": {"passed": report.scope_check.passed, "reason": report.scope_check.reason},
             "writer_command_preview": (list(report.writer_command_preview) if report.writer_command_preview else None),

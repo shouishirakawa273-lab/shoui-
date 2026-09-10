@@ -1,7 +1,7 @@
 {
   "task_id": "D0103-SEMANTIC-CLAIM-EVIDENCE-INTEGRATION-PILOT",
   "purpose": "SemanticClaim -> Evidence Integration: connect only Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary while preserving provenance and relation semantics. This manifest is a DRY-RUN PILOT for DEV-AUTO-02/DEV-AUTO-02.1 (task requires_independent_review because Evidence integration is a high-risk epistemic boundary). See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
-  "expected_head": "a81d9794b5d263ff7dbd89c6e5a9e7551cd70d4c",
+  "expected_head": "CURRENT",
   "allowed_files": [
     "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
     "Japanese_Equity_Lab/13_tests/test_evidence_integration.py"
