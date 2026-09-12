@@ -16957,3 +16957,126 @@ Schema・Parser Contract)・`prompts.py`・`model.py`・`gates.py`・
 無変更。D0103は実行していない。`evidence_integration.py`・
 `test_evidence_integration.py`は本Commitに含めない。H0001は実行して
 いない。
+
+## DEV-AUTO-02.3 — Noninteractive Validation Permissions
+
+DEV-AUTO-02.2.2(`0556d05`)はACCEPTED/FROZENのまま。本RoundもD0103は
+実行せず(`D0103_EXECUTED = NO`)、既存の`evidence_integration.py`・
+`test_evidence_integration.py`(Untracked)・`.agents/`・`.codex/`・
+`AGENTS.md`・`02_company_research/7203_Toyota_Motor/`には一切触れて
+いない。H0001も実行していない。
+
+**実D0103 Writer Runでの権限拒否証拠**: HEAD `0556d0521...`での実
+D0103 Writer Runで、Writer自身(`build_writer_prompt`の指示による
+自己検証: 「Run every test listed under Targeted tests and every check
+listed under Static checks before reporting the change as done」)が
+`git status`・`python -m pytest ...`を実行しようとし、いずれも
+「Approval Surfaceの無いNoninteractive Session」として自動Denyされた
+(Writer自身のRaw stdoutにその旨が明記されていた)。旧Config
+(`--permission-mode acceptEdits --permission-prompts none`のみ)は
+File編集/書込Tool Callのみを自動承認し、Bash Callは一切自動承認しない
+ため、`--permission-prompts none`によりBash実行は常にDenyされていた
+(Approval Prompt自体が発生しない、Fail Closed)。同様にReviewer側も
+`model.py`の`ROLE_CAPABILITIES`が`CAN_RUN_TESTS`をREVIEWERに宣言する
+一方、旧Config(`--restricted`のみ)はBash自体を除去しており、
+Capabilityが名目上のみで実効していなかった。
+
+**実Claude CLI Permission Syntaxの確認(推測禁止)**: `claude --help`で
+`--allowedTools`/`--disallowedTools <tools...>`("Comma or
+space-separated list...(e.g. \"Bash(git *) Edit\")")・`--tools
+<tools...>`("--restrictedがBash等を除去、`--tools`で明示的に指定した
+Toolのみ復元可能")・`--permission-mode <acceptEdits|auto|
+bypassPermissions|manual|dontAsk|plan>`・`--permission-prompts
+<host|none>`を確認した。実CLIへの一連のReal Smoke Run(`--output-format
+json`をDiagnostics目的でのみ使用し、`permission_denials`配列で実際に
+何がDenyされたかを直接観測、`--output-format text`という本番Contract
+自体は変更していない)により、以下を実際に確認した(推測ではない):
+- `Bash(<prefix> *)`はSingle・非Chain Commandの Prefix Matchとして機能
+  する(`Bash(git *)`は`git rev-parse HEAD`単体を許可するが、
+  `git rev-parse HEAD; echo $?`のようなChained Commandは別Entryとして
+  Denyされる——単純なPrefix Ruleの回避手段にはならない)。
+- `--disallowedTools`は同じCommandに対する`--allowedTools`の広いMatch
+  より優先される(`Bash(git *)`がAllowされていても`Bash(git reset *)`
+  をDisallowすれば`git reset --hard HEAD`は実際にDenyされ、対象File
+  も変化しなかったことを確認)。
+- `--restricted --tools Bash`は、`--restricted`の他の保護
+  (User/Project/Local Settings無視、File Tool作業Dir限定、
+  bypassPermissions拒否、Settings/Git/Tool-Config書込のHuman/Handler
+  限定)を保ったまま、Bash Toolのみを復元できる。
+- `--permission-mode plan`は、実際の`build_reviewer_prompt()`規模の
+  Taskに対しては`~/.claude/plans/...`へのPlan File作成を要求し、
+  `--restricted --tools Bash`(Writeなし)ではPlan File自体を作成できず
+  (Bash経由の作成試行もSensitive Pathとして自動Deny)、「誰も答え
+  られないApproval待ち」に陥ることを実Smoke Runで確認した(Result
+  Textに「Exit/disable plan mode」等、人間への介入依頼が明示されて
+  いた)。`--permission-mode dontAsk`へ切り替えたところ、同じ
+  `build_reviewer_prompt()`でこのDeadlockが発生せず、かつ
+  `--permission-prompts none`・`--allowedTools`/`--disallowedTools`の
+  挙動(Git Mutation試行のDeny・git logが変化しないこと)は`plan`の
+  ときと同一のままであることを確認した。
+
+**Writer Requirement対応**: `scripts/executor_config.example.json`の
+`CAN_EXECUTE_WRITER`へ`--allowedTools`(`Bash(git status *)`・
+`Bash(git diff *)`・`Bash(git rev-parse *)`・`Bash(python *)`・
+`Bash(ruff *)`・`Bash(mypy *)`、Manifestの`targeted_tests`/
+`static_checks`が実際に使うCommand Classのみ)と`--disallowedTools`
+(`Bash(git push *)`・`Bash(git commit *)`・`Bash(git add *)`・
+`Bash(git reset *)`・`Bash(git clean *)`・`Bash(git branch *)`・
+`Bash(git checkout *)`、Writerの`ROLE_CAPABILITIES`には
+CAN_COMMIT/CAN_PUSHがそもそも無いため全て不要)を追加した。
+Prompt指示だけに頼らず、破壊的操作をTool-Level側でも明示的に拒否する
+(§2「Do not rely solely on prompt instructions for destructive
+operations if a tool-level restriction is available」)。
+
+**Reviewer Requirement対応**: `CAN_EXECUTE_READ_ONLY_REVIEWER`の
+Permission Modeを`plan`から`dontAsk`へ変更し、`--restricted`の直後へ
+`--tools Bash`を追加してBash Toolのみ復元、Writerと同じ`--allowedTools`
+(Git Status/Diff/Rev-Parse・python・ruff・mypy)を追加、既存の
+`--disallowedTools Edit,Write,MultiEdit,NotebookEdit`へGit Mutation
+Subcommand(push/commit/add/reset/clean/branch/checkout)を追加した。
+Reviewerの`ROLE_CAPABILITIES`はCAN_REVIEW_READ_ONLY/CAN_RUN_TESTSの
+みでCAN_EDIT_REPO/CAN_COMMIT/CAN_PUSHを持たない。Orchestrator側の
+実行前後Git状態Diff比較(`orchestrator.py`、DEV-AUTO-02 §6)は無変更の
+まま独立した第2防御Layerとして機能する。
+
+**Command-Policy Engine不追加**: `orchestrator.py`・`agent_results.py`
+等のCore Workflow Semanticsには一切手を入れていない。Manifest-Derived
+Commandの許可はV1としてExecutor Config側の既知Tool許可List
+(`--allowedTools`)のみで実現し、独自のShell Parsing/Command-Policy
+Engineは導入していない(§4)。
+
+**Regression Test**: `13_tests/test_dev_workflow_orchestrator.py`へ
+DEV-AUTO-02.3 §11 A-Hの11 Test追加(既存`test_I`もMulti-Element
+`--disallowedTools`値に対応する`_flag_values()`Helperへ更新、破壊せず
+継続Pass)。Config-Level Allow/Deny Pattern確認・Reviewerの
+Capability Model確認+Orchestrator Mutation検知の統合Test・Permission
+Modeの`plan`/`manual`不使用確認・破壊的Git操作のDeny確認・実Claude
+CLIを使わない(実通信なし)Stub Subprocess経由でのTransport
+(Trailing `--`によるPrompt非欠落)+WriterResult/ReviewerResult実際の
+Parse成功確認・UTF-8 Prompt往復確認・WriterResult/ReviewerResultの
+Schema不変確認、全てPass。実Claude CLIへの実際のSmoke Run(本
+DECISIONS内で報告した内容)はTest Suiteの一部としては追加していない
+(`.claude/CLAUDE.md`「外部APIへの実通信はTestで行わない」)。
+
+**Static Gates**: `ruff check`/`ruff format --check`
+(`test_dev_workflow_orchestrator.py`): Pass。`mypy --strict`
+(`test_dev_workflow_orchestrator.py`)は本Roundの変更とは無関係の
+既存NumPy Stub互換性Error(DEV-AUTO-02.2.1で既報告、`mypy
+python_version=3.11` vs 実行環境Python 3.14のNumPy Stub)で
+Type-Checkできない(未変更の他のTest Fileでも同一Errorが再現、
+DEV-AUTO-02.2.1参照)。本Round自体は`.py`のProduction Fileを一切
+変更していない(変更はConfig JSON 1件とTest File 1件のみ)。Targeted
+Pytest: `test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`・
+`test_dev_workflow_executor.py`合計124 Test全てPass。
+
+**Persistence / Commit対象・Scope**: 変更:
+`scripts/executor_config.example.json`(Writer/Reviewerへ
+`--allowedTools`/`--disallowedTools`追加、ReviewerへPermission Mode
+変更[`plan`→`dontAsk`]+`--tools Bash`追加)・
+`13_tests/test_dev_workflow_orchestrator.py`(Regression Test追加、
+`test_I`のHelper更新)・本`DECISIONS.md`。`orchestrator.py`・
+`agent_results.py`・`executor.py`・`prompts.py`・`model.py`・
+`gates.py`・`human_gate.py`・`acceptance.py`・`run_record.py`・
+`dev_workflow.py`・既存`lib/`はいずれも無変更。D0103は実行していない。
+`evidence_integration.py`・`test_evidence_integration.py`は本Commitに
+含めない。H0001は実行していない。

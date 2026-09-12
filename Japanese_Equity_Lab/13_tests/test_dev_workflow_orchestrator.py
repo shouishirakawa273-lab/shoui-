@@ -13,12 +13,20 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
-from scripts.dev_workflow_lib.executor import AgentExecutionResult, ExecutionCapability, ExecutorRegistry
+from scripts.dev_workflow_lib.agent_results import ReviewerResult, WriterResult, WriterStatus
+from scripts.dev_workflow_lib.executor import (
+    AgentExecutionResult,
+    ExecutionCapability,
+    ExecutorRegistry,
+    LocalCommandExecutor,
+    load_executor_registry_from_json,
+)
 from scripts.dev_workflow_lib.model import Role, TaskManifest
 from scripts.dev_workflow_lib.orchestrator import OrchestratorOutcome, run_task
 from scripts.dev_workflow_lib.run_record import MAX_DIAGNOSTIC_CHARS, ExecutionDiagnostics, RunState, load_run_record
@@ -643,13 +651,25 @@ def test_status_command_is_read_only_and_does_not_execute(tmp_path: Path) -> Non
 _EXECUTOR_CONFIG_PATH = Path(__file__).resolve().parent.parent / "scripts" / "executor_config.example.json"
 
 
+def _flag_values(command: tuple[str, ...], flag: str) -> tuple[str, ...]:
+    """`--allowedTools`/`--disallowedTools`/`--tools`等、Variadic Flag
+    (`<tools...>`)が受け取る値のTupleをCommand配列から取り出す
+    (実際のCLI Argv Parsingと同じく、次の`--`始まりTokenまたは配列の
+    終端で打ち切る、DEV-AUTO-02.3)。"""
+    start = command.index(flag) + 1
+    values: list[str] = []
+    for token in command[start:]:
+        if token.startswith("--"):
+            break
+        values.append(token)
+    return tuple(values)
+
+
 def test_I_reviewer_executor_config_retains_read_only_enforcement() -> None:
     # Config-Level: ReviewerのCommandは`--restricted`(Bash/PowerShell/
     # REPL/Code-Execution/WebFetchを除去)とFile変更系Toolの明示的
     # `--disallowedTools`を含み、Writerとは別のInvocation/Processである
     # ことを確認する(DEV-AUTO-02.1)。
-    from scripts.dev_workflow_lib.executor import load_executor_registry_from_json
-
     registry = load_executor_registry_from_json(_EXECUTOR_CONFIG_PATH)
     writer = registry.get(ExecutionCapability.CAN_EXECUTE_WRITER)
     reviewer = registry.get(ExecutionCapability.CAN_EXECUTE_READ_ONLY_REVIEWER)
@@ -660,10 +680,9 @@ def test_I_reviewer_executor_config_retains_read_only_enforcement() -> None:
     reviewer_command = reviewer.command  # type: ignore[union-attr]
     assert "--restricted" in reviewer_command
     assert "--disallowedTools" in reviewer_command
-    disallowed_index = reviewer_command.index("--disallowedTools")
-    disallowed_value = reviewer_command[disallowed_index + 1]
+    disallowed_values = _flag_values(reviewer_command, "--disallowedTools")
     for mutating_tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
-        assert mutating_tool in disallowed_value
+        assert mutating_tool in disallowed_values
 
     # Orchestrator-Level(独立した第2層): Reviewerが実際にRepositoryを
     # 変更した場合はVerdictを無条件に拒否しSTOPする(既存のGit状態Diff
@@ -1027,3 +1046,231 @@ def test_execution_diagnostics_round_trips_through_run_record_json(tmp_path: Pat
     assert loaded.reviewer_execution is None
     assert loaded.closure_writer_executions == record.closure_writer_executions
     assert loaded.closure_reviewer_executions == ()
+
+
+# ============================================================
+# DEV-AUTO-02.3: Noninteractive Test Execution Permissions (§11 A-H)
+# ============================================================
+#
+# 実際のD0103 Writer Runで、Writer自身(build_writer_prompt指示による
+# 自己検証)が`git status`/`python -m pytest ...`をApproval Surfaceの
+# 無いNoninteractive Session側で`--permission-prompts none`により
+# 自動Denyされ、Targeted Tests/Static Checksを実行できなかった。
+# Reviewer側もmodel.py `ROLE_CAPABILITIES`が`CAN_RUN_TESTS`を宣言する
+# 一方、旧Config(`--restricted`のみ)はBash自体を除去しており、この
+# Capabilityが名目上のみで実効していなかった。以下はConfig-Levelの
+# 許可/拒否パターンとNoninteractive Transportの構造(Trailing `--`)を
+# 固定するRegressionであり、WriterResult/ReviewerResultのSchema・
+# LAST行JSON Parser Contractには一切変更を加えていない
+# (No parser relaxation)。
+
+
+def _stub_command_from_config(command: tuple[str, ...], *, script: str) -> tuple[str, ...]:
+    """DEV-AUTO-02.3: 実Claude CLIを起動せず(CLAUDE.md「外部APIへの実
+    通信はTestで行わない」、実Modelへの通信を伴うためNetwork/API Key
+    無しでは実行できない)、Config`command`の`command[0]`("claude")だけを
+    `sys.executable -c <script>`へ差し替え、残りのArgv
+    (--allowedTools/--disallowedTools/--tools/`--`終端Marker等、実際の
+    Flag配置と個数)はそのまま渡す。これにより、`LocalCommandExecutor`が
+    実際にPromptをどのArgv位置へ追加するか(Variadic Flagに飲み込まれ
+    ないか)を、実Configの形そのもので検証できる
+    (DEV-AUTO-02.2の`_python_command`ヘルパーと同じ手法)。"""
+    assert command and command[0] == "claude"
+    return (sys.executable, "-c", script, *command[1:])
+
+
+def _load_config_command(capability_key: str) -> tuple[str, ...]:
+    raw = json.loads(_EXECUTOR_CONFIG_PATH.read_text(encoding="utf-8"))
+    return tuple(raw[capability_key]["command"])
+
+
+def test_A_writer_config_allows_required_validation_command_classes() -> None:
+    writer_command = _load_config_command("CAN_EXECUTE_WRITER")
+    allowed = _flag_values(writer_command, "--allowedTools")
+
+    assert any(v.startswith("Bash(git status") for v in allowed)
+    assert any(v.startswith("Bash(git diff") for v in allowed)
+    assert any(v.startswith("Bash(git rev-parse") for v in allowed)
+    assert any(v.startswith("Bash(python") for v in allowed)
+    assert any(v.startswith("Bash(ruff") for v in allowed)
+    assert any(v.startswith("Bash(mypy") for v in allowed)
+
+
+def test_A_writer_config_still_uses_parser_compatible_text_output(tmp_path: Path) -> None:
+    # DEV-AUTO-02.2.1のOutput Format Contract(--output-format text)が
+    # 本Roundでの--allowedTools/--disallowedTools追加によって崩れて
+    # いないことを確認する。
+    del tmp_path
+    writer_command = _load_config_command("CAN_EXECUTE_WRITER")
+    format_index = writer_command.index("--output-format")
+    assert writer_command[format_index + 1] == "text"
+
+
+def test_B_reviewer_config_allows_required_readonly_validation_command_classes() -> None:
+    reviewer_command = _load_config_command("CAN_EXECUTE_READ_ONLY_REVIEWER")
+    allowed = _flag_values(reviewer_command, "--allowedTools")
+
+    assert any(v.startswith("Bash(git status") for v in allowed)
+    assert any(v.startswith("Bash(git diff") for v in allowed)
+    assert any(v.startswith("Bash(git rev-parse") for v in allowed)
+    assert any(v.startswith("Bash(python") for v in allowed)
+    assert any(v.startswith("Bash(ruff") for v in allowed)
+    assert any(v.startswith("Bash(mypy") for v in allowed)
+
+    # `--restricted`はBash自体を除去するため、`--tools`で明示的に
+    # 復元していなければCAN_RUN_TESTSが実効しない(旧Configの実際の
+    # Gap)。
+    assert "--tools" in reviewer_command
+    tools = _flag_values(reviewer_command, "--tools")
+    assert "Bash" in tools
+
+
+def test_C_reviewer_role_capability_model_excludes_mutation_and_orchestrator_still_catches_attempts(
+    tmp_path: Path,
+) -> None:
+    from scripts.dev_workflow_lib.model import ROLE_CAPABILITIES, Capability
+
+    reviewer_capabilities = ROLE_CAPABILITIES[Role.REVIEWER]
+    assert Capability.CAN_RUN_TESTS in reviewer_capabilities  # DEV-AUTO-02.3で実効化した対象。
+    for forbidden_capability in (Capability.CAN_EDIT_REPO, Capability.CAN_COMMIT, Capability.CAN_PUSH):
+        assert forbidden_capability not in reviewer_capabilities
+
+    # Config-Level Bash許可(CAN_RUN_TESTSの実効化)を追加した後も、
+    # Orchestratorの実行前後Git状態Diff比較(独立した第2防御Layer)は
+    # 変わらず機能する。
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = FakeExecutor(fixed_response=_writer_success())
+
+    def _mutate(working_directory: Path) -> None:
+        (working_directory / "reviewer_should_not_write_this.txt").write_text("mutated\n", encoding="utf-8")
+
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"), mutate_fn=_mutate)
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "reviewer modified" in result.reason.lower()
+
+
+def test_D_neither_role_uses_plan_or_manual_permission_mode(tmp_path: Path) -> None:
+    # DEV-AUTO-02.3: `--permission-mode plan`は実Smoke Runで確認済みの
+    # 通り、実際のbuild_reviewer_prompt()規模のTaskに対して
+    # `~/.claude/plans/...`へのPlan File作成をNoninteractive Session側に
+    # 要求する。`--restricted --tools Bash`(Writeなし)ではPlan File自体を
+    # 作成できず(Bash経由の作成試行もSensitive Pathとして自動Deny)、
+    # 「誰も答えられないApproval待ち」(§5)に陥ることを実際に確認した。
+    # `manual`も同種の人間依存Approval Modeである。両ModeともWriter/
+    # Reviewerいずれにも使わないことを固定する。
+    del tmp_path
+    for capability_key in ("CAN_EXECUTE_WRITER", "CAN_EXECUTE_READ_ONLY_REVIEWER"):
+        command = _load_config_command(capability_key)
+        mode_index = command.index("--permission-mode")
+        mode_value = command[mode_index + 1]
+        assert mode_value not in ("plan", "manual")
+
+        # `--permission-prompts none`(DEV-AUTO-02.2.1から変更なし):
+        # Approvalが必要なActionはHuman不在のまま無限待機せず即Deny
+        # される。
+        prompts_index = command.index("--permission-prompts")
+        assert command[prompts_index + 1] == "none"
+
+
+def test_E_destructive_git_operations_remain_denied_for_both_roles() -> None:
+    required_denied_prefixes = (
+        "Bash(git push",
+        "Bash(git reset",
+        "Bash(git clean",
+        "Bash(git branch",
+        "Bash(git commit",
+        "Bash(git add",
+        "Bash(git checkout",
+    )
+    for capability_key in ("CAN_EXECUTE_WRITER", "CAN_EXECUTE_READ_ONLY_REVIEWER"):
+        command = _load_config_command(capability_key)
+        denied = _flag_values(command, "--disallowedTools")
+        for prefix in required_denied_prefixes:
+            assert any(v.startswith(prefix) for v in denied), f"{capability_key} must deny {prefix!r}"
+
+        # Allow-List側はNarrowなCommand Classのみで、広すぎるWildcard
+        # (`Bash(git *)`)は使わない(Prefer explicit allowlisting、§2/§3)。
+        allowed = _flag_values(command, "--allowedTools")
+        assert "Bash(git *)" not in allowed
+        assert "Bash(*)" not in allowed
+
+
+def test_F_writer_config_transport_delivers_prompt_and_parses_writer_result(tmp_path: Path) -> None:
+    # DEV-AUTO-02.3 §6/§F: 実Claude CLIを使わず、実Configの Argv構造
+    # (--allowedTools/--disallowedTools/`--`終端を含む)そのものを通して
+    # PromptがLAST引数として正しく届き、かつStub Agentが返す
+    # WriterResult形JSONが実際にParseできることを確認する。
+    writer_command = _load_config_command("CAN_EXECUTE_WRITER")
+    script = (
+        "import sys\n"
+        "prompt = sys.argv[-1]\n"
+        "assert 'WRITER-SMOKE-MARKER' in prompt, prompt[:200]\n"
+        'print(\'{"status": "SUCCESS", "files_changed": [], "tests": "ok", '
+        '"static_checks": "ok", "blocking_issue": null, "summary": "stub"}\')\n'
+    )
+    executor = LocalCommandExecutor(command=_stub_command_from_config(writer_command, script=script), prompt_via="arg")
+
+    result = executor.execute(role=Role.WRITER, prompt="WRITER-SMOKE-MARKER", working_directory=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    parsed = WriterResult.from_raw_output(result.stdout)
+    assert parsed.status == WriterStatus.SUCCESS
+
+
+def test_F_reviewer_config_transport_delivers_prompt_and_parses_reviewer_result(tmp_path: Path) -> None:
+    reviewer_command = _load_config_command("CAN_EXECUTE_READ_ONLY_REVIEWER")
+    script = (
+        "import sys\n"
+        "prompt = sys.argv[-1]\n"
+        "assert 'REVIEWER-SMOKE-MARKER' in prompt, prompt[:200]\n"
+        'print(\'{"status": "COMPLETED", "verdict": "ACCEPTED", "findings": []}\')\n'
+    )
+    executor = LocalCommandExecutor(command=_stub_command_from_config(reviewer_command, script=script), prompt_via="arg")
+
+    result = executor.execute(role=Role.REVIEWER, prompt="REVIEWER-SMOKE-MARKER", working_directory=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    parsed = ReviewerResult.from_raw_output(result.stdout)
+    assert parsed.verdict.value == "ACCEPTED"
+
+
+def test_G_utf8_prompt_still_delivered_correctly_through_updated_configs(tmp_path: Path) -> None:
+    # DEV-AUTO-02.3: 本RoundでWriter/Reviewer両Configへ--allowedTools/
+    # --disallowedTools/--toolsを追加したことが、DEV-AUTO-02.2の
+    # UTF-8 Prompt/Output Handlingに悪影響を与えていないことを確認する。
+    # `sys.stdout.write()`は子ProcessのAmbient Locale(Windows既定では
+    # cp932)へ暗黙依存するため、Testの意図(UTF-8 Prompt往復の確認)を
+    # Stub Script自身のEncoding問題で汚染しないよう、明示的にUTF-8
+    # Bytesとして書き出す(DEV-AUTO-02.2の`_UNSAFE_UNDER_CP932`Testと
+    # 同じ方式)。
+    script = "import sys\nsys.stdout.buffer.write(sys.argv[-1].encode('utf-8'))\n"
+    prompt = "検証結果 → ✓ UTF8-MARKER"
+
+    for capability_key in ("CAN_EXECUTE_WRITER", "CAN_EXECUTE_READ_ONLY_REVIEWER"):
+        command = _load_config_command(capability_key)
+        executor = LocalCommandExecutor(command=_stub_command_from_config(command, script=script), prompt_via="arg")
+        role = Role.WRITER if capability_key == "CAN_EXECUTE_WRITER" else Role.REVIEWER
+
+        result = executor.execute(role=role, prompt=prompt, working_directory=tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == prompt
+
+
+def test_H_parser_contract_schema_unchanged() -> None:
+    # DEV-AUTO-02.3は診断/権限のみのRoundであり、実D0103 RunのMalformed
+    # Writer ResultはExecution Blockerが原因であってParser Contractの
+    # 不備が原因ではない(§9)。WriterResult/ReviewerResultのField集合が
+    # 変化していないことを直接固定する。
+    assert set(WriterResult.__dataclass_fields__.keys()) == {
+        "status",
+        "files_changed",
+        "tests",
+        "static_checks",
+        "blocking_issue",
+        "summary",
+    }
+    assert set(ReviewerResult.__dataclass_fields__.keys()) == {"status", "verdict", "findings"}
