@@ -1,0 +1,964 @@
+{
+  "_disclaimer": "このファイルはPortfolio Simulationの挙動確認専用のsynthetic fixtureです。Strategy Performance評価には使用しないでください(価格は挙動を再現するためだけに設計されており、投資戦略として意味のあるパターンではありません)。",
+  "_scenario": {
+    "signal_dates": {
+      "PSIM_A": [
+        "2026-03-09",
+        "2026-03-12",
+        "2026-03-18",
+        "2026-03-23"
+      ],
+      "PSIM_B": [
+        "2026-03-05"
+      ]
+    },
+    "holding_period_days": 5,
+    "expected": {
+      "PSIM_A_signal_at_idx5": "EXECUTED (execution=idx6, exit=idx11)",
+      "PSIM_A_signal_at_idx8": "SKIPPED_POSITION_OPEN (保有中の再Signal, idx8 < idx11)",
+      "PSIM_A_signal_at_idx12": "UNEXECUTABLE_NO_OPEN (execution日=2026-03-19のOpenを意図的に欠損)",
+      "PSIM_A_signal_at_idx15": "EXECUTED (execution=idx16, exit=idx21, 正常Execution+Exit)",
+      "PSIM_B_signal_at_idx3": "EXECUTED (execution=idx4, exit=idx9, 異なる銘柄・異なる日付)"
+    }
+  },
+  "daily_quotes": {
+    "PSIM_A": [
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-02",
+        "Open": 1000.0,
+        "High": 1001.0,
+        "Low": 999.0,
+        "Close": 1000.0,
+        "Volume": 10000
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-03",
+        "Open": 1000.8,
+        "High": 1001.8,
+        "Low": 999.8,
+        "Close": 1000.8,
+        "Volume": 10005
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-04",
+        "Open": 1001.6,
+        "High": 1002.6,
+        "Low": 1000.6,
+        "Close": 1001.6,
+        "Volume": 10010
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-05",
+        "Open": 1002.4,
+        "High": 1003.4,
+        "Low": 1001.4,
+        "Close": 1002.4,
+        "Volume": 10015
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-06",
+        "Open": 1003.2,
+        "High": 1004.2,
+        "Low": 1002.2,
+        "Close": 1003.2,
+        "Volume": 10020
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-09",
+        "Open": 1004.0,
+        "High": 1005.0,
+        "Low": 1003.0,
+        "Close": 1004.0,
+        "Volume": 10025
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-10",
+        "Open": 1004.8,
+        "High": 1005.8,
+        "Low": 1003.8,
+        "Close": 1004.8,
+        "Volume": 10030
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-11",
+        "Open": 1005.6,
+        "High": 1006.6,
+        "Low": 1004.6,
+        "Close": 1005.6,
+        "Volume": 10035
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-12",
+        "Open": 1006.4,
+        "High": 1007.4,
+        "Low": 1005.4,
+        "Close": 1006.4,
+        "Volume": 10040
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-13",
+        "Open": 1007.2,
+        "High": 1008.2,
+        "Low": 1006.2,
+        "Close": 1007.2,
+        "Volume": 10045
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-16",
+        "Open": 1008.0,
+        "High": 1009.0,
+        "Low": 1007.0,
+        "Close": 1008.0,
+        "Volume": 10050
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-17",
+        "Open": 1008.8,
+        "High": 1009.8,
+        "Low": 1007.8,
+        "Close": 1008.8,
+        "Volume": 10055
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-18",
+        "Open": 1009.6,
+        "High": 1010.6,
+        "Low": 1008.6,
+        "Close": 1009.6,
+        "Volume": 10060
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-19",
+        "Open": null,
+        "High": 1011.4,
+        "Low": 1009.4,
+        "Close": 1010.4,
+        "Volume": 10065
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-20",
+        "Open": 1011.2,
+        "High": 1012.2,
+        "Low": 1010.2,
+        "Close": 1011.2,
+        "Volume": 10070
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-23",
+        "Open": 1012.0,
+        "High": 1013.0,
+        "Low": 1011.0,
+        "Close": 1012.0,
+        "Volume": 10075
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-24",
+        "Open": 1012.8,
+        "High": 1013.8,
+        "Low": 1011.8,
+        "Close": 1012.8,
+        "Volume": 10080
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-25",
+        "Open": 1013.6,
+        "High": 1014.6,
+        "Low": 1012.6,
+        "Close": 1013.6,
+        "Volume": 10085
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-26",
+        "Open": 1014.4,
+        "High": 1015.4,
+        "Low": 1013.4,
+        "Close": 1014.4,
+        "Volume": 10090
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-27",
+        "Open": 1015.2,
+        "High": 1016.2,
+        "Low": 1014.2,
+        "Close": 1015.2,
+        "Volume": 10095
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-30",
+        "Open": 1016.0,
+        "High": 1017.0,
+        "Low": 1015.0,
+        "Close": 1016.0,
+        "Volume": 10100
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-03-31",
+        "Open": 1016.8,
+        "High": 1017.8,
+        "Low": 1015.8,
+        "Close": 1016.8,
+        "Volume": 10105
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-01",
+        "Open": 1017.6,
+        "High": 1018.6,
+        "Low": 1016.6,
+        "Close": 1017.6,
+        "Volume": 10110
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-02",
+        "Open": 1018.4,
+        "High": 1019.4,
+        "Low": 1017.4,
+        "Close": 1018.4,
+        "Volume": 10115
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-03",
+        "Open": 1019.2,
+        "High": 1020.2,
+        "Low": 1018.2,
+        "Close": 1019.2,
+        "Volume": 10120
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-06",
+        "Open": 1020.0,
+        "High": 1021.0,
+        "Low": 1019.0,
+        "Close": 1020.0,
+        "Volume": 10125
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-07",
+        "Open": 1020.8,
+        "High": 1021.8,
+        "Low": 1019.8,
+        "Close": 1020.8,
+        "Volume": 10130
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-08",
+        "Open": 1021.6,
+        "High": 1022.6,
+        "Low": 1020.6,
+        "Close": 1021.6,
+        "Volume": 10135
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-09",
+        "Open": 1022.4,
+        "High": 1023.4,
+        "Low": 1021.4,
+        "Close": 1022.4,
+        "Volume": 10140
+      },
+      {
+        "Code": "PSIM_A",
+        "Date": "2026-04-10",
+        "Open": 1023.2,
+        "High": 1024.2,
+        "Low": 1022.2,
+        "Close": 1023.2,
+        "Volume": 10145
+      }
+    ],
+    "PSIM_B": [
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-02",
+        "Open": 500.0,
+        "High": 501.0,
+        "Low": 499.0,
+        "Close": 500.0,
+        "Volume": 10000
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-03",
+        "Open": 500.6,
+        "High": 501.6,
+        "Low": 499.6,
+        "Close": 500.6,
+        "Volume": 10005
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-04",
+        "Open": 501.2,
+        "High": 502.2,
+        "Low": 500.2,
+        "Close": 501.2,
+        "Volume": 10010
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-05",
+        "Open": 501.8,
+        "High": 502.8,
+        "Low": 500.8,
+        "Close": 501.8,
+        "Volume": 10015
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-06",
+        "Open": 502.4,
+        "High": 503.4,
+        "Low": 501.4,
+        "Close": 502.4,
+        "Volume": 10020
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-09",
+        "Open": 503.0,
+        "High": 504.0,
+        "Low": 502.0,
+        "Close": 503.0,
+        "Volume": 10025
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-10",
+        "Open": 503.6,
+        "High": 504.6,
+        "Low": 502.6,
+        "Close": 503.6,
+        "Volume": 10030
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-11",
+        "Open": 504.2,
+        "High": 505.2,
+        "Low": 503.2,
+        "Close": 504.2,
+        "Volume": 10035
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-12",
+        "Open": 504.8,
+        "High": 505.8,
+        "Low": 503.8,
+        "Close": 504.8,
+        "Volume": 10040
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-13",
+        "Open": 505.4,
+        "High": 506.4,
+        "Low": 504.4,
+        "Close": 505.4,
+        "Volume": 10045
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-16",
+        "Open": 506.0,
+        "High": 507.0,
+        "Low": 505.0,
+        "Close": 506.0,
+        "Volume": 10050
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-17",
+        "Open": 506.6,
+        "High": 507.6,
+        "Low": 505.6,
+        "Close": 506.6,
+        "Volume": 10055
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-18",
+        "Open": 507.2,
+        "High": 508.2,
+        "Low": 506.2,
+        "Close": 507.2,
+        "Volume": 10060
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-19",
+        "Open": 507.8,
+        "High": 508.8,
+        "Low": 506.8,
+        "Close": 507.8,
+        "Volume": 10065
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-20",
+        "Open": 508.4,
+        "High": 509.4,
+        "Low": 507.4,
+        "Close": 508.4,
+        "Volume": 10070
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-23",
+        "Open": 509.0,
+        "High": 510.0,
+        "Low": 508.0,
+        "Close": 509.0,
+        "Volume": 10075
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-24",
+        "Open": 509.6,
+        "High": 510.6,
+        "Low": 508.6,
+        "Close": 509.6,
+        "Volume": 10080
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-25",
+        "Open": 510.2,
+        "High": 511.2,
+        "Low": 509.2,
+        "Close": 510.2,
+        "Volume": 10085
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-26",
+        "Open": 510.8,
+        "High": 511.8,
+        "Low": 509.8,
+        "Close": 510.8,
+        "Volume": 10090
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-27",
+        "Open": 511.4,
+        "High": 512.4,
+        "Low": 510.4,
+        "Close": 511.4,
+        "Volume": 10095
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-30",
+        "Open": 512.0,
+        "High": 513.0,
+        "Low": 511.0,
+        "Close": 512.0,
+        "Volume": 10100
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-03-31",
+        "Open": 512.6,
+        "High": 513.6,
+        "Low": 511.6,
+        "Close": 512.6,
+        "Volume": 10105
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-01",
+        "Open": 513.2,
+        "High": 514.2,
+        "Low": 512.2,
+        "Close": 513.2,
+        "Volume": 10110
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-02",
+        "Open": 513.8,
+        "High": 514.8,
+        "Low": 512.8,
+        "Close": 513.8,
+        "Volume": 10115
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-03",
+        "Open": 514.4,
+        "High": 515.4,
+        "Low": 513.4,
+        "Close": 514.4,
+        "Volume": 10120
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-06",
+        "Open": 515.0,
+        "High": 516.0,
+        "Low": 514.0,
+        "Close": 515.0,
+        "Volume": 10125
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-07",
+        "Open": 515.6,
+        "High": 516.6,
+        "Low": 514.6,
+        "Close": 515.6,
+        "Volume": 10130
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-08",
+        "Open": 516.2,
+        "High": 517.2,
+        "Low": 515.2,
+        "Close": 516.2,
+        "Volume": 10135
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-09",
+        "Open": 516.8,
+        "High": 517.8,
+        "Low": 515.8,
+        "Close": 516.8,
+        "Volume": 10140
+      },
+      {
+        "Code": "PSIM_B",
+        "Date": "2026-04-10",
+        "Open": 517.4,
+        "High": 518.4,
+        "Low": 516.4,
+        "Close": 517.4,
+        "Volume": 10145
+      }
+    ],
+    "PSIM_BENCH": [
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-02",
+        "Open": 2000.0,
+        "High": 2001.0,
+        "Low": 1999.0,
+        "Close": 2000.0,
+        "Volume": 10000
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-03",
+        "Open": 2000.4,
+        "High": 2001.4,
+        "Low": 1999.4,
+        "Close": 2000.4,
+        "Volume": 10005
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-04",
+        "Open": 2000.8,
+        "High": 2001.8,
+        "Low": 1999.8,
+        "Close": 2000.8,
+        "Volume": 10010
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-05",
+        "Open": 2001.2,
+        "High": 2002.2,
+        "Low": 2000.2,
+        "Close": 2001.2,
+        "Volume": 10015
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-06",
+        "Open": 2001.6,
+        "High": 2002.6,
+        "Low": 2000.6,
+        "Close": 2001.6,
+        "Volume": 10020
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-09",
+        "Open": 2002.0,
+        "High": 2003.0,
+        "Low": 2001.0,
+        "Close": 2002.0,
+        "Volume": 10025
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-10",
+        "Open": 2002.4,
+        "High": 2003.4,
+        "Low": 2001.4,
+        "Close": 2002.4,
+        "Volume": 10030
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-11",
+        "Open": 2002.8,
+        "High": 2003.8,
+        "Low": 2001.8,
+        "Close": 2002.8,
+        "Volume": 10035
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-12",
+        "Open": 2003.2,
+        "High": 2004.2,
+        "Low": 2002.2,
+        "Close": 2003.2,
+        "Volume": 10040
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-13",
+        "Open": 2003.6,
+        "High": 2004.6,
+        "Low": 2002.6,
+        "Close": 2003.6,
+        "Volume": 10045
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-16",
+        "Open": 2004.0,
+        "High": 2005.0,
+        "Low": 2003.0,
+        "Close": 2004.0,
+        "Volume": 10050
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-17",
+        "Open": 2004.4,
+        "High": 2005.4,
+        "Low": 2003.4,
+        "Close": 2004.4,
+        "Volume": 10055
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-18",
+        "Open": 2004.8,
+        "High": 2005.8,
+        "Low": 2003.8,
+        "Close": 2004.8,
+        "Volume": 10060
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-19",
+        "Open": 2005.2,
+        "High": 2006.2,
+        "Low": 2004.2,
+        "Close": 2005.2,
+        "Volume": 10065
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-20",
+        "Open": 2005.6,
+        "High": 2006.6,
+        "Low": 2004.6,
+        "Close": 2005.6,
+        "Volume": 10070
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-23",
+        "Open": 2006.0,
+        "High": 2007.0,
+        "Low": 2005.0,
+        "Close": 2006.0,
+        "Volume": 10075
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-24",
+        "Open": 2006.4,
+        "High": 2007.4,
+        "Low": 2005.4,
+        "Close": 2006.4,
+        "Volume": 10080
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-25",
+        "Open": 2006.8,
+        "High": 2007.8,
+        "Low": 2005.8,
+        "Close": 2006.8,
+        "Volume": 10085
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-26",
+        "Open": 2007.2,
+        "High": 2008.2,
+        "Low": 2006.2,
+        "Close": 2007.2,
+        "Volume": 10090
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-27",
+        "Open": 2007.6,
+        "High": 2008.6,
+        "Low": 2006.6,
+        "Close": 2007.6,
+        "Volume": 10095
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-30",
+        "Open": 2008.0,
+        "High": 2009.0,
+        "Low": 2007.0,
+        "Close": 2008.0,
+        "Volume": 10100
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-03-31",
+        "Open": 2008.4,
+        "High": 2009.4,
+        "Low": 2007.4,
+        "Close": 2008.4,
+        "Volume": 10105
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-01",
+        "Open": 2008.8,
+        "High": 2009.8,
+        "Low": 2007.8,
+        "Close": 2008.8,
+        "Volume": 10110
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-02",
+        "Open": 2009.2,
+        "High": 2010.2,
+        "Low": 2008.2,
+        "Close": 2009.2,
+        "Volume": 10115
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-03",
+        "Open": 2009.6,
+        "High": 2010.6,
+        "Low": 2008.6,
+        "Close": 2009.6,
+        "Volume": 10120
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-06",
+        "Open": 2010.0,
+        "High": 2011.0,
+        "Low": 2009.0,
+        "Close": 2010.0,
+        "Volume": 10125
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-07",
+        "Open": 2010.4,
+        "High": 2011.4,
+        "Low": 2009.4,
+        "Close": 2010.4,
+        "Volume": 10130
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-08",
+        "Open": 2010.8,
+        "High": 2011.8,
+        "Low": 2009.8,
+        "Close": 2010.8,
+        "Volume": 10135
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-09",
+        "Open": 2011.2,
+        "High": 2012.2,
+        "Low": 2010.2,
+        "Close": 2011.2,
+        "Volume": 10140
+      },
+      {
+        "Code": "PSIM_BENCH",
+        "Date": "2026-04-10",
+        "Open": 2011.6,
+        "High": 2012.6,
+        "Low": 2010.6,
+        "Close": 2011.6,
+        "Volume": 10145
+      }
+    ]
+  },
+  "trading_calendar": [
+    {
+      "Date": "2026-03-02",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-03",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-04",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-05",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-06",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-09",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-10",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-11",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-12",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-13",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-16",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-17",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-18",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-19",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-20",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-23",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-24",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-25",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-26",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-27",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-30",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-03-31",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-01",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-02",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-03",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-06",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-07",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-08",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-09",
+      "HolidayDivision": "1"
+    },
+    {
+      "Date": "2026-04-10",
+      "HolidayDivision": "1"
+    }
+  ]
+}

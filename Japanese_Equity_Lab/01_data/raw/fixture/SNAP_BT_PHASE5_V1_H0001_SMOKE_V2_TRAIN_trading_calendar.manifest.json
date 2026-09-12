@@ -1,0 +1,19 @@
+{
+  "content_hash": "c28f4c05249f223194784b3891f8ceeae62f3da0b9fdc1624ad974b41f4e5fbb",
+  "created_at": "2026-08-19T11:17:34.889909+00:00",
+  "data_period": "2026-01-05/2026-03-04",
+  "endpoint": "fixture:trading_calendar",
+  "local_file": "raw/fixture/SNAP_BT_PHASE5_V1_H0001_SMOKE_V2_TRAIN_trading_calendar.json",
+  "provenance_id": null,
+  "record_count": 43,
+  "request_parameters": {
+    "from": "2026-01-05",
+    "to": "2026-03-04"
+  },
+  "response_schema_version": "fixture-v2(synthetic)",
+  "retrieved_at": "2026-08-19T11:17:34.887563+00:00",
+  "schema_version": "1.0",
+  "snapshot_id": "SNAP_BT_PHASE5_V1_H0001_SMOKE_V2_TRAIN_trading_calendar",
+  "source": "fixture",
+  "updated_at": "2026-08-19T11:17:34.889911+00:00"
+}

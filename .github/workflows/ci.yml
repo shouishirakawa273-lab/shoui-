@@ -26,7 +26,7 @@ jobs:
         run: ruff format --check .
 
       - name: Type check (mypy)
-        run: mypy core app.py scripts
+        run: mypy core app.py scripts Japanese_Equity_Lab/lib
 
       - name: Test (pytest, ネットワーク接続なし)
         run: pytest -q
