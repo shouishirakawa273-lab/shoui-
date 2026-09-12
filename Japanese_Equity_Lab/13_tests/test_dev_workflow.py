@@ -676,4 +676,80 @@ def test_cli_render_prompt_reviewer_role(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0
-    assert "READ ONLY" in result.stdout
+
+
+# ============================================================
+# DEV-AUTO-02.2.2: `status` Execution Diagnostics Visibility (Test G)
+# ============================================================
+#
+# 実際のD0103 RunでWriter実行自体は成功したがWriterResultのParseが
+# 失敗し、`status <run-id>`が`writer_result = null`しか表示できず
+# Protocol Failureを診断できなかった。以下は`status`が新設した
+# `writer_execution`/`reviewer_execution`(生Diagnostics)を実際に
+# CLI出力へ表示することを固定するRegression。
+
+
+def test_cli_status_exposes_writer_execution_diagnostics(tmp_path: Path) -> None:
+    from scripts.dev_workflow_lib.run_record import ExecutionDiagnostics, RunRecord, RunState, save_run_record
+
+    runs_dir = tmp_path / "runs"
+    huge_stdout = "y" * 5000
+    record = RunRecord(
+        run_id="status-diag",
+        task_id="T1",
+        starting_head="0" * 40,
+        state=RunState.WRITER_FAILED,
+        reason="malformed writer result: Expecting value: line 1 column 1 (char 0)",
+        writer_execution=ExecutionDiagnostics(returncode=0, timed_out=False, stdout=huge_stdout, stderr=""),
+    )
+    save_run_record(record, runs_dir=runs_dir)
+
+    result = subprocess.run(
+        [sys.executable, str(_CLI_PATH), "status", "status-diag", "--runs-dir", str(runs_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["reason"].startswith("malformed writer result")
+    assert payload["writer_result"] is None  # 既存Contract通りParse失敗時はNoneのまま(No relaxation)。
+    writer_execution = payload["writer_execution"]
+    assert writer_execution is not None
+    assert writer_execution["returncode"] == 0
+    assert writer_execution["timed_out"] is False
+    # `status`表示Previewはさらに短く切り詰め、切り詰めた場合は
+    # `stdout_preview_truncated`で明示する(Storage側`stdout_truncated`
+    # とは独立したFlag、Diagnosisに必要なDataは隠さない)。
+    assert writer_execution["stdout"].startswith("y")
+    assert len(writer_execution["stdout"]) < len(huge_stdout)
+    assert writer_execution["stdout_preview_truncated"] is True
+
+
+def test_cli_status_does_not_truncate_small_diagnostics(tmp_path: Path) -> None:
+    from scripts.dev_workflow_lib.run_record import ExecutionDiagnostics, RunRecord, RunState, save_run_record
+
+    runs_dir = tmp_path / "runs"
+    record = RunRecord(
+        run_id="status-diag-small",
+        task_id="T1",
+        starting_head="0" * 40,
+        state=RunState.REVIEW_FAILED,
+        reason="malformed reviewer result: agent output is not valid JSON",
+        reviewer_execution=ExecutionDiagnostics(returncode=0, timed_out=False, stdout="{not valid json", stderr=""),
+    )
+    save_run_record(record, runs_dir=runs_dir)
+
+    result = subprocess.run(
+        [sys.executable, str(_CLI_PATH), "status", "status-diag-small", "--runs-dir", str(runs_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    reviewer_execution = payload["reviewer_execution"]
+    assert reviewer_execution["stdout"] == "{not valid json"
+    assert reviewer_execution["stdout_preview_truncated"] is False

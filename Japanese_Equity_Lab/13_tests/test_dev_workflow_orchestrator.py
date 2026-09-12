@@ -21,7 +21,7 @@ import pytest
 from scripts.dev_workflow_lib.executor import AgentExecutionResult, ExecutionCapability, ExecutorRegistry
 from scripts.dev_workflow_lib.model import Role, TaskManifest
 from scripts.dev_workflow_lib.orchestrator import OrchestratorOutcome, run_task
-from scripts.dev_workflow_lib.run_record import RunState, load_run_record
+from scripts.dev_workflow_lib.run_record import MAX_DIAGNOSTIC_CHARS, ExecutionDiagnostics, RunState, load_run_record
 
 _MANIFEST_PATH = (
     Path(__file__).resolve().parent.parent / "scripts" / "manifests" / "d0103_semantic_claim_evidence_integration_pilot.json"
@@ -43,6 +43,7 @@ class FakeExecutor:
     fixed_response: str | None = None
     returncode: int = 0
     timed_out: bool = False
+    stderr: str = ""
     raise_exc: Exception | None = None
     mutate_fn: Callable[[Path], None] | None = None
     calls: list[str] = field(default_factory=list)
@@ -57,7 +58,7 @@ class FakeExecutor:
             stdout = self.response_fn(len(self.calls))
         else:
             stdout = self.fixed_response or ""
-        return AgentExecutionResult(returncode=self.returncode, stdout=stdout, stderr="", timed_out=self.timed_out)
+        return AgentExecutionResult(returncode=self.returncode, stdout=stdout, stderr=self.stderr, timed_out=self.timed_out)
 
     @property
     def call_count(self) -> int:
@@ -827,3 +828,202 @@ def test_H_d0103_dry_run_head_check_pass_human_gate_clear_zero_executions(tmp_pa
     assert result.dry_run_report.human_gate_reason is None
     assert result.dry_run_report.head_check.passed
     assert result.dry_run_report.resolved_starting_head == head
+
+
+# ============================================================
+# DEV-AUTO-02.2.2: Agent Output Diagnostics
+# ============================================================
+#
+# 実際のD0103 RunでWriter実行自体は成功したがWriterResultのParseが
+# 失敗し(`malformed writer result: ...`)、RunRecordには`writer_result
+# = null`しか残らず、実際のRaw stdout/stderrがどこにも保持されて
+# いなかった(Protocol Failureを診断できないObservability Gap)。以下は
+# `ExecutionDiagnostics`がParse成否に関わらず必ず永続化されることを
+# 固定するRegressionであり、WriterResult/ReviewerResultのSchemaや
+# 「LAST行が単一JSON Object」というParser Contractには一切変更を
+# 加えていない(No parser relaxation)。
+
+
+def test_A_malformed_writer_result_persists_writer_execution_diagnostics(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    raw_stdout = "not json at all"
+    writer = FakeExecutor(fixed_response=raw_stdout)
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-a"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    record = load_run_record("diag-a", runs_dir=runs_dir)
+    assert record.state == RunState.WRITER_FAILED
+    assert record.writer_result is None  # 既存Contract通りParse失敗時はNoneのまま(No relaxation)。
+    assert record.writer_execution is not None
+    assert record.writer_execution.returncode == 0
+    assert record.writer_execution.timed_out is False
+    assert record.writer_execution.stdout == raw_stdout
+    assert reviewer.call_count == 0
+
+
+def test_B_malformed_reviewer_result_persists_reviewer_execution_diagnostics(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = FakeExecutor(fixed_response=_writer_success())
+    raw_stdout = "{not valid json"
+    reviewer = FakeExecutor(fixed_response=raw_stdout)
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-b"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    record = load_run_record("diag-b", runs_dir=runs_dir)
+    assert record.state == RunState.REVIEW_FAILED
+    assert record.review_result is None  # 既存Contract通りParse失敗時はNoneのまま(No relaxation)。
+    assert record.writer_execution is not None  # Writer側のDiagnosticsも失われていないこと。
+    assert record.reviewer_execution is not None
+    assert record.reviewer_execution.stdout == raw_stdout
+
+
+def test_C_nonzero_writer_returncode_persists_stderr_and_returncode(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = FakeExecutor(returncode=7, stderr="boom: permission denied")
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-c"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    record = load_run_record("diag-c", runs_dir=runs_dir)
+    assert record.writer_execution is not None
+    assert record.writer_execution.returncode == 7
+    assert record.writer_execution.stderr == "boom: permission denied"
+
+
+def test_D_writer_timeout_persists_timed_out_flag(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer = FakeExecutor(timed_out=True, returncode=-1, stderr="timed out")
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-d"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    record = load_run_record("diag-d", runs_dir=runs_dir)
+    assert record.writer_execution is not None
+    assert record.writer_execution.timed_out is True
+    assert record.writer_execution.returncode == -1
+
+
+def test_E_valid_execution_behavior_unchanged_and_diagnostics_recorded(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    writer_stdout = _writer_success()
+    reviewer_stdout = _reviewer_result("ACCEPTED")
+    writer = FakeExecutor(fixed_response=writer_stdout)
+    reviewer = FakeExecutor(fixed_response=reviewer_stdout)
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-e"
+    )
+
+    # 既存の合格経路の挙動(Outcome/Verdict)は変化しない。
+    assert result.outcome == OrchestratorOutcome.ACCEPT_CANDIDATE
+    record = load_run_record("diag-e", runs_dir=runs_dir)
+    assert record.writer_result is not None
+    assert record.review_result is not None
+    assert record.writer_execution is not None
+    assert record.writer_execution.stdout == writer_stdout
+    assert record.writer_execution.stdout_truncated is False
+    assert record.reviewer_execution is not None
+    assert record.reviewer_execution.stdout == reviewer_stdout
+    assert record.reviewer_execution.stdout_truncated is False
+
+
+def test_F_closure_malformed_writer_result_preserves_round_specific_diagnostics(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+
+    def _writer_response(call_number: int) -> str:
+        if call_number == 1:
+            return _writer_success()
+        return "not json in closure round"
+
+    writer = FakeExecutor(response_fn=_writer_response)
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("NEEDS_FIX", [_finding("F1")]))
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-f"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "malformed closure writer result" in result.reason.lower()
+    record = load_run_record("diag-f", runs_dir=runs_dir)
+    assert record.closure_round == 1
+    assert len(record.closure_writer_executions) == 1
+    assert record.closure_writer_executions[0].stdout == "not json in closure round"
+    assert len(record.closure_reviewer_executions) == 0  # このRoundのClosure Reviewerはまだ呼ばれていない。
+
+
+def test_H_large_writer_stdout_is_truncated_deterministically_and_flagged(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+    raw_stdout = "x" * (MAX_DIAGNOSTIC_CHARS + 5000)
+    writer = FakeExecutor(fixed_response=raw_stdout)
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+    runs_dir = tmp_path / "runs"
+
+    result = run_task(
+        manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=runs_dir, run_id="diag-h"
+    )
+
+    assert result.outcome == OrchestratorOutcome.STOP  # Truncate後もParse失敗のためSTOP(No relaxation)。
+    record = load_run_record("diag-h", runs_dir=runs_dir)
+    assert record.writer_execution is not None
+    assert len(record.writer_execution.stdout) == MAX_DIAGNOSTIC_CHARS
+    assert record.writer_execution.stdout == raw_stdout[:MAX_DIAGNOSTIC_CHARS]
+    assert record.writer_execution.stdout_truncated is True
+    assert record.writer_execution.stderr_truncated is False
+
+
+def test_execution_diagnostics_round_trips_through_run_record_json(tmp_path: Path) -> None:
+    # `RunRecord.to_dict()`/`from_dict()`が新設した4Field
+    # (`writer_execution`/`reviewer_execution`/`closure_writer_executions`/
+    # `closure_reviewer_executions`)を Disk往復後も正しく再構築することを
+    # 直接確認する(Orchestrator経由のTestだけでは、from_dict側の
+    # Deserialize Bugを見落とし得るため)。
+    from scripts.dev_workflow_lib.run_record import RunRecord, save_run_record
+
+    record = RunRecord(
+        run_id="round-trip-diag",
+        task_id="T1",
+        starting_head="0" * 40,
+        state=RunState.WRITER_FAILED,
+        reason="malformed writer result: Expecting value: line 1 column 1 (char 0)",
+        writer_execution=ExecutionDiagnostics(returncode=0, timed_out=False, stdout="not json", stderr=""),
+        reviewer_execution=None,
+        closure_writer_executions=(
+            ExecutionDiagnostics(returncode=0, timed_out=False, stdout="round1", stderr="", stdout_truncated=False),
+        ),
+        closure_reviewer_executions=(),
+    )
+    runs_dir = tmp_path / "runs"
+    save_run_record(record, runs_dir=runs_dir)
+
+    loaded = load_run_record("round-trip-diag", runs_dir=runs_dir)
+
+    assert loaded.writer_execution == record.writer_execution
+    assert loaded.reviewer_execution is None
+    assert loaded.closure_writer_executions == record.closure_writer_executions
+    assert loaded.closure_reviewer_executions == ()

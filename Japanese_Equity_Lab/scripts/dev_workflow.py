@@ -192,11 +192,43 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if result.outcome.value == "ACCEPT_CANDIDATE" or result.outcome.value == "DRY_RUN" else 1
 
 
+# DEV-AUTO-02.2.2 §4/§5: `status`表示専用のPreview幅。RunRecord自体
+# (Disk上のJSON File)は`run_record.MAX_DIAGNOSTIC_CHARS`で既にBound済み
+# だが、それでもTerminal表示には長すぎ得るため、`status`はここでさらに
+# 短いPreviewへ切り詰めて表示する(Storage側の値は一切変更しない)。
+_STATUS_DIAGNOSTIC_PREVIEW_CHARS = 2000
+
+
+def _diagnostics_preview(
+    diag: dict[str, object] | None, *, max_chars: int = _STATUS_DIAGNOSTIC_PREVIEW_CHARS
+) -> dict[str, object] | None:
+    """`status`表示用のTruncationのみを行うHelper。切り詰めた場合は
+    `stdout_preview_truncated`/`stderr_preview_truncated`で必ず明示する
+    (Storage側の`stdout_truncated`/`stderr_truncated`とは独立したFlagで
+    あり、上書きしない――malformed Agent出力の診断に必要なData自体を
+    隠さない)。"""
+    if diag is None:
+        return None
+    preview = dict(diag)
+    stdout = str(diag.get("stdout", ""))
+    stderr = str(diag.get("stderr", ""))
+    preview["stdout"] = stdout[:max_chars]
+    preview["stdout_preview_truncated"] = len(stdout) > max_chars
+    preview["stderr"] = stderr[:max_chars]
+    preview["stderr_preview_truncated"] = len(stderr) > max_chars
+    return preview
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     repo_root = Path(args.repo_root) if args.repo_root else Path.cwd()
     runs_dir = Path(args.runs_dir) if args.runs_dir else _default_runs_dir(repo_root)
     record = load_run_record(args.run_id, runs_dir=runs_dir)
-    _emit(record.to_dict())
+    payload = record.to_dict()
+    payload["writer_execution"] = _diagnostics_preview(payload.get("writer_execution"))
+    payload["reviewer_execution"] = _diagnostics_preview(payload.get("reviewer_execution"))
+    payload["closure_writer_executions"] = [_diagnostics_preview(d) for d in payload.get("closure_writer_executions", [])]
+    payload["closure_reviewer_executions"] = [_diagnostics_preview(d) for d in payload.get("closure_reviewer_executions", [])]
+    _emit(payload)
     return 0
 
 

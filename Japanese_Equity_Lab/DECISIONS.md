@@ -16866,3 +16866,94 @@ Repository既存・本変更と無関係のNumPy Stub互換性Error
 `human_gate.py`・`acceptance.py`・`run_record.py`・`dev_workflow.py`)・
 既存`lib/`はいずれも無変更。D0103は実行していない(§参照)。H0001は
 実行していない。
+
+## DEV-AUTO-02.2.2 — Agent Output Diagnostics
+
+DEV-AUTO-02.2.1(`b962721`)はACCEPTED/FROZENのまま。本RoundもD0103は
+実行せず(`D0103_EXECUTED = NO`)、既存の`evidence_integration.py`・
+`test_evidence_integration.py`(Untracked)・`.agents/`・`.codex/`・
+`AGENTS.md`・`02_company_research/7203_Toyota_Motor/`には一切触れて
+いない。H0001も実行していない。
+
+**問題**: HEAD `b962721`での実D0103 Runで、Writer実行自体は成功した
+(`returncode=0`)がWriterResultのParseが`malformed writer result:
+agent output is not valid JSON: Expecting value: line 1 column 1
+(char 0)`で失敗しSTOPした。しかしRunRecordには`writer_result = null`・
+`review_result = null`・`reason = "malformed writer result ..."`しか
+残らず、実際のWriter Raw stdout/stderrがどこにも永続化されていない
+ため、実際に何が返ってきたのか(空文字列か、破損したJSONか、Envelope
+混入か等)を後から一切診断できなかった(Observability Gap)。
+
+**修正方針**: WriterResult/ReviewerResultのSchema・「LAST行が単一JSON
+Object」というParser Contract自体には一切手を入れず(No parser
+relaxation、Fenced JSON対応やNatural Language抽出も追加しない)、
+実行ごとの生Diagnosticsを別途・独立して常に保持するだけの
+Observability専用層を追加した。
+
+`scripts/dev_workflow_lib/run_record.py`に`ExecutionDiagnostics`
+(`returncode`/`timed_out`/`stdout`/`stderr`、`MAX_DIAGNOSTIC_CHARS`
+[20,000文字]でBoundし超過分は`stdout_truncated`/`stderr_truncated`で
+必ず明示)を新設し、`RunRecord`へ`writer_execution`/
+`reviewer_execution`/`closure_writer_executions`/
+`closure_reviewer_executions`(Closure Roundは`closure_round`の
+Index順にAppendする最小Tuple構造、独自のRound Key Dictは導入しない)
+を追加した。
+
+`scripts/dev_workflow_lib/orchestrator.py`は、Writer/Reviewer/Closure
+Writer/Closure Reviewerいずれの実行後も、`WriterResult`/
+`ReviewerResult.from_raw_output()`のParse成否に関わらず(成功時も
+`malformed ...`でSTOPする時も)`ExecutionDiagnostics`を`RunRecord`へ
+渡すよう変更した。これにより、実際にD0103 Runで起きたような
+Malformed Writer Result Caseでも、以後は生stdout/stderrがRunRecordの
+JSON Fileに残る。
+
+`_bounded()`(`run_record.py`)は`AgentExecutionResult.stdout`/`stderr`
+が(型Hintのみで強制されないため)非`str`だった場合でも
+`AttributeError`/`TypeError`を送出せずPlaceholder文字列へ変換する
+よう実装した——実装中に`_NoneStdoutExecutor`(DEV-AUTO-02.2の既存
+Regression Test Double、`stdout=None`を返す契約違反Executor)経由で
+このCrash経路を実際に踏んで発見し、修正した(Observability層自体が
+新しいCrash経路を持ち込んではならない)。
+
+`scripts/dev_workflow.py`の`status`Commandは、`RunRecord.to_dict()`の
+出力(Storage側で既にBound済み)をさらにCLI表示専用の短いPreview
+(既定2,000文字)へ切り詰めて表示するようにした
+(`_diagnostics_preview()`)。切り詰めた場合は`stdout_preview_truncated`/
+`stderr_preview_truncated`で必ず明示し(Storage側の`stdout_truncated`/
+`stderr_truncated`とは独立したFlag)、Diagnosisに必要なDataを無言で
+隠すことはない。Storage側の値自体(Run Record JSON File)は変更しない。
+
+**Regression Test**: `13_tests/test_dev_workflow_orchestrator.py`へ
+8 Test追加(Malformed Writer/Reviewer結果でのDiagnostics永続化・
+非0 Returncodeでのstderr/returncode保持・Timeout Flag保持・正常系の
+挙動不変・Closure RoundでのRound別Diagnostics保持・巨大Outputの
+決定的Truncation・RunRecordのJSON往復)。
+`13_tests/test_dev_workflow.py`へ2 Test追加(`status`CLIが
+`writer_execution`/`reviewer_execution`を実際に表示すること、小さな
+Diagnosticsは切り詰めずそのまま表示されること)。既存の
+`test_none_stdout_from_writer/reviewer_executor_stops_without_raising`
+(DEV-AUTO-02.2)が新設Diagnostics層のCrashを実際に検出したため、
+そのまま既存Regressionとして維持している。
+
+**Static Gates**: `ruff check`/`ruff format --check`
+(`run_record.py`・`orchestrator.py`・`dev_workflow.py`・
+`test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`): Pass。
+`mypy --strict`(`run_record.py`・`orchestrator.py`・
+`dev_workflow.py`): Success, no issues found。Targeted Pytest:
+`test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`・
+`test_dev_workflow_executor.py`合計114 Test全てPass。
+
+**Persistence / Commit対象・Scope**: 変更:
+`scripts/dev_workflow_lib/run_record.py`(`ExecutionDiagnostics`新設、
+`RunRecord`へDiagnostics4Field追加)・
+`scripts/dev_workflow_lib/orchestrator.py`(全実行箇所でDiagnostics
+Captureを配線)・`scripts/dev_workflow.py`(`status`のDiagnostics
+Preview表示)・`13_tests/test_dev_workflow_orchestrator.py`
+(Regression Test8件追加、`FakeExecutor`へ`stderr`Field追加)・
+`13_tests/test_dev_workflow.py`(Regression Test2件追加)・本
+`DECISIONS.md`。`agent_results.py`(WriterResult/ReviewerResult
+Schema・Parser Contract)・`prompts.py`・`model.py`・`gates.py`・
+`human_gate.py`・`acceptance.py`・`executor.py`・既存`lib/`はいずれも
+無変更。D0103は実行していない。`evidence_integration.py`・
+`test_evidence_integration.py`は本Commitに含めない。H0001は実行して
+いない。

@@ -24,7 +24,7 @@ from .gates import GateResult, check_expected_head, check_scope, list_changed_pa
 from .human_gate import requires_human_approval
 from .model import RUNTIME_HEAD_SENTINEL, AcceptanceVerdict, Finding, Role, TaskManifest
 from .prompts import build_closure_reviewer_prompt, build_closure_writer_prompt, build_reviewer_prompt, build_writer_prompt
-from .run_record import RunRecord, RunState, save_run_record
+from .run_record import ExecutionDiagnostics, RunRecord, RunState, save_run_record
 
 MAX_CLOSURE_ROUNDS = 2
 
@@ -191,6 +191,10 @@ def run_task(
         review_result: ReviewerResult | None = None,
         open_findings: tuple[Finding, ...] = (),
         closure_round: int = 0,
+        writer_execution: ExecutionDiagnostics | None = None,
+        reviewer_execution: ExecutionDiagnostics | None = None,
+        closure_writer_executions: tuple[ExecutionDiagnostics, ...] = (),
+        closure_reviewer_executions: tuple[ExecutionDiagnostics, ...] = (),
     ) -> RunRecord:
         record = RunRecord(
             run_id=run_id,
@@ -202,6 +206,10 @@ def run_task(
             open_findings=open_findings,
             closure_round=closure_round,
             reason=reason,
+            writer_execution=writer_execution,
+            reviewer_execution=reviewer_execution,
+            closure_writer_executions=closure_writer_executions,
+            closure_reviewer_executions=closure_reviewer_executions,
         )
         save_run_record(record, runs_dir=runs_dir)
         return record
@@ -265,9 +273,14 @@ def run_task(
     writer_prompt = build_writer_prompt(manifest)
     writer_exec_result = _safe_execute(writer_executor, role=Role.WRITER, prompt=writer_prompt, working_directory=repo_root)
     invocations += 1
+    # DEV-AUTO-02.2.2 §1/§3: WriterResult.from_raw_output()のParse成否に
+    # 関わらず(成功・失敗どちらの経路でもSTOPする経路でも)、実行直後の
+    # 生Diagnosticsを必ずRunRecordへ渡す(Parse失敗Caseで唯一Raw stdoutを
+    # 診断できる情報源になる)。
+    writer_diag = ExecutionDiagnostics.from_execution_result(writer_exec_result)
     if writer_exec_result.returncode != 0 or writer_exec_result.timed_out:
         reason = f"writer execution failed (returncode={writer_exec_result.returncode}, timed_out={writer_exec_result.timed_out})"
-        record = _record(RunState.WRITER_FAILED, reason=reason)
+        record = _record(RunState.WRITER_FAILED, reason=reason, writer_execution=writer_diag)
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
@@ -276,23 +289,23 @@ def run_task(
         writer_result = WriterResult.from_raw_output(writer_exec_result.stdout)
     except ValueError as exc:
         reason = f"malformed writer result: {exc}"
-        record = _record(RunState.WRITER_FAILED, reason=reason)
+        record = _record(RunState.WRITER_FAILED, reason=reason, writer_execution=writer_diag)
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
     if writer_result.status != WriterStatus.SUCCESS:
         reason = f"writer reported FAILED: {writer_result.blocking_issue or writer_result.summary}"
-        record = _record(RunState.WRITER_FAILED, reason=reason, writer_result=writer_result)
+        record = _record(RunState.WRITER_FAILED, reason=reason, writer_result=writer_result, writer_execution=writer_diag)
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
-    _record(RunState.WRITER_DONE, writer_result=writer_result)
+    _record(RunState.WRITER_DONE, writer_result=writer_result, writer_execution=writer_diag)
 
     # DEV-AUTO-02 §10: Acceptance前のScope Gate(Frozen File未変更・
     # Allowed File範囲内)を必ず確認する——Writer出力を無条件に信頼しない。
     scope_result = check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files)
     if not scope_result.passed:
-        record = _record(RunState.STOPPED, reason=scope_result.reason, writer_result=writer_result)
+        record = _record(RunState.STOPPED, reason=scope_result.reason, writer_result=writer_result, writer_execution=writer_diag)
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
         )
@@ -306,7 +319,12 @@ def run_task(
     # Reviewerを一切実行せずSTOPする)。
     pre_review_head_check = check_expected_head(repo_root, manifest.expected_head)
     if not pre_review_head_check.passed:
-        record = _record(RunState.REPOSITORY_GATE_FAILED, reason=pre_review_head_check.reason, writer_result=writer_result)
+        record = _record(
+            RunState.REPOSITORY_GATE_FAILED,
+            reason=pre_review_head_check.reason,
+            writer_result=writer_result,
+            writer_execution=writer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP,
             reason=pre_review_head_check.reason,
@@ -316,12 +334,13 @@ def run_task(
     pre_review_tracked, pre_review_untracked = list_changed_paths(repo_root)
     pre_review_head = pre_review_head_check.reason
 
-    _record(RunState.REVIEWING, writer_result=writer_result)
+    _record(RunState.REVIEWING, writer_result=writer_result, writer_execution=writer_diag)
     reviewer_prompt = build_reviewer_prompt(manifest)
     reviewer_exec_result = _safe_execute(
         reviewer_executor, role=Role.REVIEWER, prompt=reviewer_prompt, working_directory=repo_root
     )
     invocations += 1
+    reviewer_diag = ExecutionDiagnostics.from_execution_result(reviewer_exec_result)
 
     post_review_tracked, post_review_untracked = list_changed_paths(repo_root)
     post_review_head = check_expected_head(repo_root, manifest.expected_head).reason
@@ -331,7 +350,13 @@ def run_task(
         post_review_head,
     ):
         reason = "reviewer modified the repository (git state changed); reviewer verdict rejected"
-        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        record = _record(
+            RunState.REVIEW_FAILED,
+            reason=reason,
+            writer_result=writer_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
@@ -341,7 +366,13 @@ def run_task(
             f"reviewer execution failed (returncode={reviewer_exec_result.returncode}, "
             f"timed_out={reviewer_exec_result.timed_out})"
         )
-        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        record = _record(
+            RunState.REVIEW_FAILED,
+            reason=reason,
+            writer_result=writer_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
@@ -350,11 +381,23 @@ def run_task(
         review_result = ReviewerResult.from_raw_output(reviewer_exec_result.stdout)
     except ValueError as exc:
         reason = f"malformed reviewer result: {exc}"
-        record = _record(RunState.REVIEW_FAILED, reason=reason, writer_result=writer_result)
+        record = _record(
+            RunState.REVIEW_FAILED,
+            reason=reason,
+            writer_result=writer_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
         )
-    _record(RunState.REVIEW_DONE, writer_result=writer_result, review_result=review_result)
+    _record(
+        RunState.REVIEW_DONE,
+        writer_result=writer_result,
+        review_result=review_result,
+        writer_execution=writer_diag,
+        reviewer_execution=reviewer_diag,
+    )
 
     current_findings = review_result.findings
     verdict = evaluate_acceptance(
@@ -367,7 +410,13 @@ def run_task(
     )
 
     if verdict == AcceptanceVerdict.ACCEPT:
-        record = _record(RunState.ACCEPT_CANDIDATE, writer_result=writer_result, review_result=review_result)
+        record = _record(
+            RunState.ACCEPT_CANDIDATE,
+            writer_result=writer_result,
+            review_result=review_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.ACCEPT_CANDIDATE,
             reason="all gates passed; reviewer accepted",
@@ -376,7 +425,13 @@ def run_task(
             executor_invocations=invocations,
         )
     if verdict == AcceptanceVerdict.HUMAN_APPROVAL_REQUIRED:
-        record = _record(RunState.HUMAN_APPROVAL_REQUIRED, writer_result=writer_result, review_result=review_result)
+        record = _record(
+            RunState.HUMAN_APPROVAL_REQUIRED,
+            writer_result=writer_result,
+            review_result=review_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED,
             reason="human approval boundary detected during acceptance evaluation",
@@ -385,7 +440,13 @@ def run_task(
             executor_invocations=invocations,
         )
     if verdict == AcceptanceVerdict.STOP:
-        record = _record(RunState.STOPPED, writer_result=writer_result, review_result=review_result)
+        record = _record(
+            RunState.STOPPED,
+            writer_result=writer_result,
+            review_result=review_result,
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+        )
         return OrchestratorResult(
             outcome=OrchestratorOutcome.STOP,
             reason="reviewer verdict was STOP",
@@ -396,10 +457,24 @@ def run_task(
 
     # ---- Bounded Closure Loop(DEV-AUTO-02 §7/§8) ----
     closure_round = 0
+    # DEV-AUTO-02.2.2 §2: Closure Roundの実行Diagnosticsは、その時点までの
+    # 全Roundを順にAppendする最小Tuple構造で保持する(Round番号は
+    # `closure_round`のIndex[1-based]と一致するため、独自のRound Key
+    # Dictを新設しない)。
+    closure_writer_diagnostics: list[ExecutionDiagnostics] = []
+    closure_reviewer_diagnostics: list[ExecutionDiagnostics] = []
     while closure_round < max_closure_rounds:
         closure_round += 1
         blockers = open_blocking_findings(current_findings)
-        _record(RunState.CLOSURE_ROUND, closure_round=closure_round, open_findings=narrow_to_open_findings(current_findings))
+        _record(
+            RunState.CLOSURE_ROUND,
+            closure_round=closure_round,
+            open_findings=narrow_to_open_findings(current_findings),
+            writer_execution=writer_diag,
+            reviewer_execution=reviewer_diag,
+            closure_writer_executions=tuple(closure_writer_diagnostics),
+            closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+        )
 
         # DEV-AUTO-02.1.1 §7/§9: Closure Roundごとのwriter実行直前にも
         # 同じPin済み`starting_head`との一致を確認する(§9「Do NOT repin
@@ -408,7 +483,11 @@ def run_task(
         closure_pre_writer_head_check = check_expected_head(repo_root, manifest.expected_head)
         if not closure_pre_writer_head_check.passed:
             record = _record(
-                RunState.REPOSITORY_GATE_FAILED, reason=closure_pre_writer_head_check.reason, closure_round=closure_round
+                RunState.REPOSITORY_GATE_FAILED,
+                reason=closure_pre_writer_head_check.reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
             )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP,
@@ -422,9 +501,19 @@ def run_task(
             writer_executor, role=Role.WRITER, prompt=closure_writer_prompt, working_directory=repo_root
         )
         invocations += 1
+        # DEV-AUTO-02.2.2 §1/§3: このRoundのWriter Diagnosticsを、Parse
+        # 成否に関わらずAccumulatorへ即座にAppendする(malformed Caseでも
+        # このRoundのRaw stdout/stderrが必ずRecordへ残る)。
+        closure_writer_diagnostics.append(ExecutionDiagnostics.from_execution_result(closure_writer_exec))
         if closure_writer_exec.returncode != 0 or closure_writer_exec.timed_out:
             reason = f"closure writer execution failed at round {closure_round}"
-            record = _record(RunState.WRITER_FAILED, reason=reason, closure_round=closure_round)
+            record = _record(
+                RunState.WRITER_FAILED,
+                reason=reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
             )
@@ -432,14 +521,25 @@ def run_task(
             closure_writer_result = WriterResult.from_raw_output(closure_writer_exec.stdout)
         except ValueError as exc:
             reason = f"malformed closure writer result at round {closure_round}: {exc}"
-            record = _record(RunState.WRITER_FAILED, reason=reason, closure_round=closure_round)
+            record = _record(
+                RunState.WRITER_FAILED,
+                reason=reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
             )
         if closure_writer_result.status != WriterStatus.SUCCESS:
             reason = f"closure writer reported FAILED at round {closure_round}"
             record = _record(
-                RunState.WRITER_FAILED, reason=reason, writer_result=closure_writer_result, closure_round=closure_round
+                RunState.WRITER_FAILED,
+                reason=reason,
+                writer_result=closure_writer_result,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
             )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
@@ -447,7 +547,13 @@ def run_task(
 
         scope_result = check_scope(repo_root, allowed_files=manifest.allowed_files, frozen_files=manifest.frozen_files)
         if not scope_result.passed:
-            record = _record(RunState.STOPPED, reason=scope_result.reason, closure_round=closure_round)
+            record = _record(
+                RunState.STOPPED,
+                reason=scope_result.reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
             )
@@ -460,7 +566,11 @@ def run_task(
         closure_pre_review_head_check = check_expected_head(repo_root, manifest.expected_head)
         if not closure_pre_review_head_check.passed:
             record = _record(
-                RunState.REPOSITORY_GATE_FAILED, reason=closure_pre_review_head_check.reason, closure_round=closure_round
+                RunState.REPOSITORY_GATE_FAILED,
+                reason=closure_pre_review_head_check.reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
             )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP,
@@ -476,16 +586,29 @@ def run_task(
             reviewer_executor, role=Role.REVIEWER, prompt=closure_reviewer_prompt, working_directory=repo_root
         )
         invocations += 1
+        closure_reviewer_diagnostics.append(ExecutionDiagnostics.from_execution_result(closure_review_exec))
         post_tracked, post_untracked = list_changed_paths(repo_root)
         if (pre_tracked, pre_untracked) != (post_tracked, post_untracked):
             reason = f"closure reviewer modified the repository at round {closure_round}"
-            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            record = _record(
+                RunState.REVIEW_FAILED,
+                reason=reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
             )
         if closure_review_exec.returncode != 0 or closure_review_exec.timed_out:
             reason = f"closure reviewer execution failed at round {closure_round}"
-            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            record = _record(
+                RunState.REVIEW_FAILED,
+                reason=reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
             )
@@ -493,7 +616,13 @@ def run_task(
             closure_review_result = ReviewerResult.from_raw_output(closure_review_exec.stdout)
         except ValueError as exc:
             reason = f"malformed closure reviewer result at round {closure_round}: {exc}"
-            record = _record(RunState.REVIEW_FAILED, reason=reason, closure_round=closure_round)
+            record = _record(
+                RunState.REVIEW_FAILED,
+                reason=reason,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
             )
@@ -514,6 +643,8 @@ def run_task(
                 writer_result=closure_writer_result,
                 review_result=closure_review_result,
                 closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
             )
             return OrchestratorResult(
                 outcome=OrchestratorOutcome.ACCEPT_CANDIDATE,
@@ -528,7 +659,12 @@ def run_task(
                 OrchestratorOutcome.STOP if verdict == AcceptanceVerdict.STOP else OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED
             )
             record = _record(
-                state, writer_result=closure_writer_result, review_result=closure_review_result, closure_round=closure_round
+                state,
+                writer_result=closure_writer_result,
+                review_result=closure_review_result,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
             )
             return OrchestratorResult(
                 outcome=outcome,
@@ -545,6 +681,8 @@ def run_task(
         reason=reason,
         open_findings=narrow_to_open_findings(current_findings),
         closure_round=closure_round,
+        closure_writer_executions=tuple(closure_writer_diagnostics),
+        closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
     )
     return OrchestratorResult(
         outcome=OrchestratorOutcome.HUMAN_ATTENTION_REQUIRED,
