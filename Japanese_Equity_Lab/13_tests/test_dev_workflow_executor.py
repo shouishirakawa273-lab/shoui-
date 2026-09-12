@@ -11,13 +11,14 @@ Testを含む(純粋なDecode Helperの単体Testだけに留めない、DEV-AUT
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 import pytest
-from scripts.dev_workflow_lib.agent_results import ReviewerResult, WriterResult
+from scripts.dev_workflow_lib.agent_results import ReviewerResult, WriterResult, WriterStatus
 from scripts.dev_workflow_lib.executor import AgentExecutionResult, LocalCommandExecutor
-from scripts.dev_workflow_lib.model import Role
+from scripts.dev_workflow_lib.model import ReviewerVerdict, Role
 
 # cp932では表現できない(または表現が異なる)UTF-8文字を含む文字列。
 # 「検証結果」はcp932でもEncode可能だが、"→"(U+2192)はcp932の
@@ -168,3 +169,106 @@ def test_malformed_agent_execution_result_never_raises_attributeerror() -> None:
 
     with pytest.raises(ValueError):
         WriterResult.from_raw_output(malformed.stdout)
+
+
+# ============================================================
+# DEV-AUTO-02.2.1: Claude CLI Output Transport Closure
+# ============================================================
+#
+# `claude -p --output-format json`はAgent自身の回答をClaude CLI固有の
+# 外側Envelope Object(duration_api_ms/session_id/usage/.../result/...)
+# へ包み、Workflow JSONはそのEnvelopeの`result`Fieldへ二重Encodeされた
+# 文字列として入る。WriterResult/ReviewerResultはこの外側Envelopeを
+# 一切知らない(Provider-Specific Unwrapを持たない、DEV-AUTO-02 §3
+# Capability-Based/Provider-Agnostic Coreを維持)ため、
+# `--output-format text`(=Prompt自身が指示するLAST行JSON、prompts.py)
+# へ切り替えるのが正しい対処であり、Coreの変更は不要という設計判断を
+# 固定するRegressionを以下に置く。
+
+_EXECUTOR_CONFIG_PATH = Path(__file__).resolve().parent.parent / "scripts" / "executor_config.example.json"
+
+# 実際のClaude CLI `--output-format json`実行(`claude -p --output-format
+# json --permission-prompts none "..."`)で観測した外側Envelopeを模した
+# Fixture(Usage統計等の大半のFieldは本質的でないため省略する)。
+# Workflow JSON(`{"status": "SUCCESS", ...}`相当)はEscapeされた文字列と
+# して`result`Fieldに入り、Envelope自体のTop-Levelには`status`も
+# `verdict`も存在しない。
+_CLAUDE_CLI_JSON_ENVELOPE = json.dumps(
+    {
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "session_id": "f53a2d64-c3dd-445e-ae85-0e63fc64eabc",
+        "result": '{"status":"SUCCESS","note":"smoke-test"}',
+    }
+)
+
+
+def test_example_executor_config_uses_parser_compatible_text_output_format() -> None:
+    # `--output-format json`は上記のEnvelope問題を起こすため、Example
+    # ConfigのWriter/Reviewer双方が`text`を使うことを固定する。
+    raw = json.loads(_EXECUTOR_CONFIG_PATH.read_text(encoding="utf-8"))
+    for capability_key in ("CAN_EXECUTE_WRITER", "CAN_EXECUTE_READ_ONLY_REVIEWER"):
+        command = raw[capability_key]["command"]
+        format_index = command.index("--output-format")
+        assert command[format_index + 1] == "text"
+        assert "json" not in command[format_index + 1 : format_index + 2]
+
+
+def test_example_reviewer_config_terminates_disallowed_tools_before_prompt() -> None:
+    # `--disallowedTools <tools...>`はVariadicであり、`prompt_via="arg"`
+    # がCommand末尾へ追加するPromptがそのままDisallowedTools一覧へ
+    # 飲み込まれてしまう(実際に`claude`を起動し、"Input must be provided
+    # either through stdin or as a prompt argument"で失敗することを確認
+    # 済み)。Reviewer ConfigのCommand配列が`--`(End-of-Options)で終わり、
+    # Prompt追加後もOption Parsingへ巻き込まれないことを固定する。
+    raw = json.loads(_EXECUTOR_CONFIG_PATH.read_text(encoding="utf-8"))
+    command = raw["CAN_EXECUTE_READ_ONLY_REVIEWER"]["command"]
+    assert "--disallowedTools" in command
+    assert command[-1] == "--"
+
+
+def test_writer_result_fails_closed_on_raw_claude_cli_json_envelope() -> None:
+    # CoreがProvider固有のUnwrap(例: Envelopeの`result`Fieldを自動的に
+    # 展開する等)を一切実装していないことを確認する。Envelopeそのものを
+    # 渡した場合は、Top-Levelに`status`が存在しないため必ずFail Closedで
+    # `ValueError`になる。
+    with pytest.raises(ValueError, match="status"):
+        WriterResult.from_raw_output(_CLAUDE_CLI_JSON_ENVELOPE)
+
+
+def test_reviewer_result_fails_closed_on_raw_claude_cli_json_envelope() -> None:
+    with pytest.raises(ValueError, match="verdict"):
+        ReviewerResult.from_raw_output(_CLAUDE_CLI_JSON_ENVELOPE)
+
+
+def test_writer_result_parses_last_line_of_text_output_with_japanese_utf8() -> None:
+    # `--output-format text`実行を模したRaw Output: Agentの自然文Prose
+    # (日本語含む)の後、LAST行のみが単一JSON Object(prompts.py
+    # `_WRITER_RESULT_FORMAT`が要求する形)。UTF-8日本語がJSON文字列
+    # Value内で正しく保持されることを確認する。
+    raw_output = (
+        "変更点を確認しました。テストも実行しました。\n"
+        '{"status": "SUCCESS", "files_changed": ["core/foo.py"], '
+        '"tests": "pytest 12 passed", "static_checks": "ruff/mypy OK", '
+        '"blocking_issue": null, "summary": "検証結果 → 修正完了"}\n'
+    )
+
+    result = WriterResult.from_raw_output(raw_output)
+
+    assert result.status == WriterStatus.SUCCESS
+    assert result.files_changed == ("core/foo.py",)
+    assert result.summary == "検証結果 → 修正完了"
+
+
+def test_reviewer_result_parses_last_line_of_text_output_with_japanese_utf8() -> None:
+    raw_output = (
+        "READ ONLYでDiffを確認しました。問題は見つかりませんでした。\n"
+        '{"status": "COMPLETED", "verdict": "ACCEPTED", "findings": []}\n'
+    )
+
+    result = ReviewerResult.from_raw_output(raw_output)
+
+    assert result.status == "COMPLETED"
+    assert result.verdict == ReviewerVerdict.ACCEPTED
+    assert result.findings == ()

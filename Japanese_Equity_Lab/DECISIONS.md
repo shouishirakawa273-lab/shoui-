@@ -16788,3 +16788,81 @@ Claims/Candidate Extraction、Frozen Investment Module)はいずれも
 無変更。`Japanese_Equity_Lab/lib/disclosures/evidence_integration.py`・
 `Japanese_Equity_Lab/13_tests/test_evidence_integration.py`は本Commitに
 含めない(§10)。H0001は実行していない。
+
+## DEV-AUTO-02.2.1 — Claude CLI Output Transport Closure
+
+DEV-AUTO-02.2(`9f214ec`)はACCEPTED/FROZENのまま。本RoundもD0103は
+実行せず(`D0103_EXECUTED = NO`)、既存の`evidence_integration.py`・
+`test_evidence_integration.py`(Untracked)・`.agents/`・`.codex/`・
+`AGENTS.md`・`02_company_research/7203_Toyota_Motor/`には一切触れて
+いない。
+
+**問題**: `claude -p --output-format json`は実際に実Claude CLIへ
+確認したところ、Agentの回答をClaude CLI固有の外側Envelope Object
+(`duration_api_ms`/`session_id`/`usage`/.../`result`/...)へ包み、
+Workflow JSON(`{"status":...}`等)はそのEnvelopeの`result`Fieldへ
+二重Encodeされた文字列として入る。`WriterResult`/`ReviewerResult`
+(`agent_results.py`)はこのEnvelopeを一切知らないため、`status`/
+`verdict`が見つからずFail Closed(`ValueError`)する経路しかなかった。
+
+**修正(Config-Onlyの最小修正)**: `scripts/executor_config.example.json`
+のWriter/Reviewer両CommandをClaude CLI実`--help`で確認済みの
+`--output-format text`(既定値でもある)へ変更。`text`はEnvelope無しの
+Model自身の回答のみを返し、既存Prompt(`prompts.py`)が要求する
+「LAST行が単一JSON Object」形式とそのまま噛み合う。`agent_results.py`・
+`executor.py`等のCore/Parserには一切手を入れていない
+(Provider固有UnwrapをCoreへ追加しない、Capability-Based/
+Provider-Agnostic設計を維持)。
+
+副次的に、Reviewer Commandの実LocalCommandExecutor経由Smoke Testで
+別のTransport Bugを発見・修正した: `--disallowedTools <tools...>`は
+Variadicであり、`prompt_via="arg"`がCommand末尾へ追加するPromptを
+そのまま追加のDisallowedTools要素として飲み込んでしまい、
+`claude`が「Input must be provided either through stdin or as a
+prompt argument」で失敗する経路が実在した。Reviewer Command配列の
+末尾に`--`(End-of-Options Marker)を追加してこれを閉じた
+(これも実行結果で確認済みのConfig-Only修正)。
+
+**確認**: (1) `claude -p --output-format json --permission-prompts
+none "..."`を実行し、外側Envelope構造を実際に確認、`result`Fieldに
+Workflow JSONがEscape文字列として入ることを確認。(2)
+`claude --help`で`--output-format`が`text`(既定)/`json`/`stream-json`
+のみを受け付けることを確認(推測なし)。(3)
+`LocalCommandExecutor`+修正後Reviewer/Writer Commandを実際に起動し
+(Working DirectoryはRepository外のScratch Dirへ隔離、Investment
+Fileは一切対象にしていない)、`WriterResult.from_raw_output()`・
+`ReviewerResult.from_raw_output()`双方が実Claude CLI Stdoutを正しく
+Parseできることを確認した。(4) Envelope全体(Top-Levelに`status`も
+`verdict`も存在しない)を直接ParserへPassすると、Coreが独自Unwrapを
+持たないままFail Closedすることを確認した。(5) 日本語UTF-8を含む
+LAST行JSONが正しくParseされることを確認した。
+
+**Regression Test**: `13_tests/test_dev_workflow_executor.py`へ6 Test
+追加(既存10 + 新規6 = 16、全Pass) —
+`test_example_executor_config_uses_parser_compatible_text_output_format`・
+`test_example_reviewer_config_terminates_disallowed_tools_before_prompt`・
+`test_writer_result_fails_closed_on_raw_claude_cli_json_envelope`・
+`test_reviewer_result_fails_closed_on_raw_claude_cli_json_envelope`・
+`test_writer_result_parses_last_line_of_text_output_with_japanese_utf8`・
+`test_reviewer_result_parses_last_line_of_text_output_with_japanese_utf8`。
+
+**Static Gates**: `ruff check`/`ruff format --check`
+(`test_dev_workflow_executor.py`): Pass。`mypy`
+(`agent_results.py`・`executor.py`、変更対象Production File):
+Success, no issues found(`test_dev_workflow_executor.py`単体実行時に
+Repository既存・本変更と無関係のNumPy Stub互換性Error
+[`mypy python_version=3.11` vs 実行環境Python 3.14のNumPy Stub]が
+出るが、変更前の既存Testでも同一Errorが再現するため、本Roundの
+変更とは無関係の既存環境問題として扱う)。Targeted Pytest:
+`test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`・
+`test_dev_workflow_executor.py`合計104 Test全てPass。
+
+**Persistence / Commit対象・Scope**: 変更:
+`scripts/executor_config.example.json`(Writer/Reviewer両Commandを
+`--output-format text`へ、Reviewer Commandへ`--`追加)・
+`13_tests/test_dev_workflow_executor.py`(Regression Test6件追加)・
+本`DECISIONS.md`。Core(`agent_results.py`・`executor.py`・
+`orchestrator.py`・`prompts.py`・`model.py`・`gates.py`・
+`human_gate.py`・`acceptance.py`・`run_record.py`・`dev_workflow.py`)・
+既存`lib/`はいずれも無変更。D0103は実行していない(§参照)。H0001は
+実行していない。
