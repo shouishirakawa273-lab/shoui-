@@ -14,11 +14,11 @@
     "Japanese_Equity_Lab/lib/evidence/model.py"
   ],
   "targeted_tests": [
-    "python -m pytest Japanese_Equity_Lab/13_tests/test_evidence_integration.py -q"
+    ".venv\\Scripts\\python.exe -m pytest Japanese_Equity_Lab/13_tests/test_evidence_integration.py -q"
   ],
   "static_checks": [
-    "ruff check Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
-    "mypy --strict Japanese_Equity_Lab/lib/disclosures/evidence_integration.py"
+    ".venv\\Scripts\\ruff.exe check Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    ".venv\\Scripts\\python.exe -m mypy --strict Japanese_Equity_Lab/lib/disclosures/evidence_integration.py"
   ],
   "requested_actions": [
     "implement Japanese_Equity_Lab/lib/disclosures/evidence_integration.py connecting Faithfulness-ACCEPTED SemanticClaim objects into the existing Evidence boundary",

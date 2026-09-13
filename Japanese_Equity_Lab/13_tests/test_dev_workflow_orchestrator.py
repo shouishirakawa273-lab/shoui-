@@ -1084,16 +1084,18 @@ def _load_config_command(capability_key: str) -> tuple[str, ...]:
     return tuple(raw[capability_key]["command"])
 
 
-def test_A_writer_config_allows_required_validation_command_classes() -> None:
+def test_A_writer_config_allows_required_inspection_command_classes() -> None:
+    # DEV-AUTO-02.3当初はここでBash(python *)/Bash(ruff *)/Bash(mypy *)も
+    # 許可していたが、DEV-AUTO-02.4でValidation Execution自体をHostへ
+    # 移したため、Writerの`--allowedTools`はGit調査系のみでよい
+    # (test_D_writer_executor_config_no_longer_allows_python_ruff_mypy_bash
+    # が非許可であることを別途固定する)。
     writer_command = _load_config_command("CAN_EXECUTE_WRITER")
     allowed = _flag_values(writer_command, "--allowedTools")
 
     assert any(v.startswith("Bash(git status") for v in allowed)
     assert any(v.startswith("Bash(git diff") for v in allowed)
     assert any(v.startswith("Bash(git rev-parse") for v in allowed)
-    assert any(v.startswith("Bash(python") for v in allowed)
-    assert any(v.startswith("Bash(ruff") for v in allowed)
-    assert any(v.startswith("Bash(mypy") for v in allowed)
 
 
 def test_A_writer_config_still_uses_parser_compatible_text_output(tmp_path: Path) -> None:
@@ -1106,19 +1108,21 @@ def test_A_writer_config_still_uses_parser_compatible_text_output(tmp_path: Path
     assert writer_command[format_index + 1] == "text"
 
 
-def test_B_reviewer_config_allows_required_readonly_validation_command_classes() -> None:
+def test_B_reviewer_config_allows_required_readonly_inspection_command_classes() -> None:
+    # DEV-AUTO-02.3当初はここでBash(python *)/Bash(ruff *)/Bash(mypy *)も
+    # 許可していたが、DEV-AUTO-02.4でValidation Execution自体をHostへ
+    # 移したため、Reviewerの`--allowedTools`はGit調査系のみでよい
+    # (test_E_reviewer_executor_config_no_longer_allows_python_ruff_mypy_bash
+    # が非許可であることを別途固定する)。
     reviewer_command = _load_config_command("CAN_EXECUTE_READ_ONLY_REVIEWER")
     allowed = _flag_values(reviewer_command, "--allowedTools")
 
     assert any(v.startswith("Bash(git status") for v in allowed)
     assert any(v.startswith("Bash(git diff") for v in allowed)
     assert any(v.startswith("Bash(git rev-parse") for v in allowed)
-    assert any(v.startswith("Bash(python") for v in allowed)
-    assert any(v.startswith("Bash(ruff") for v in allowed)
-    assert any(v.startswith("Bash(mypy") for v in allowed)
 
     # `--restricted`はBash自体を除去するため、`--tools`で明示的に
-    # 復元していなければCAN_RUN_TESTSが実効しない(旧Configの実際の
+    # 復元していなければGit調査Commandが実効しない(旧Configの実際の
     # Gap)。
     assert "--tools" in reviewer_command
     tools = _flag_values(reviewer_command, "--tools")
@@ -1274,3 +1278,179 @@ def test_H_parser_contract_schema_unchanged() -> None:
         "summary",
     }
     assert set(ReviewerResult.__dataclass_fields__.keys()) == {"status", "verdict", "findings"}
+
+
+# ============================================================
+# DEV-AUTO-02.4: Host-Side Validation Boundary (§10 A-L)
+# ============================================================
+#
+# 実D0103 Writer Runで、Writer自身のNoninteractive Claude CLI
+# Subprocess環境がGlobal Python PATHしか見えずruff/mypyを実行できな
+# かった(pytestは偶然実行できたがruff/mypyはできなかった)。
+# `orchestrator.py`はもはやManifest Validation(targeted_tests/
+# static_checks)をAgent Subprocessに実行させず、Host自身
+# (`host_validation.run_manifest_validation`)が`repo_root`をCwdとして
+# 直接実行する。以下は実Subprocess実行(FakeExecutorはWriter/Reviewer
+# LLM呼び出しのみをStubし、Host Validation自体は本物のSubprocessを
+# 起動する)でこのArchitectural変更を固定するRegressionである。
+
+
+def test_C_failing_host_validation_forces_non_accept_outcome(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head, targeted_tests=("exit 1",))
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(
+        manifest=manifest,
+        repo_root=repo,
+        executors=_registry(writer, reviewer),
+        runs_dir=tmp_path / "runs",
+        max_closure_rounds=0,
+    )
+
+    # Reviewerは(FakeExecutor経由で)ACCEPTEDを返しているが、実際にHostが
+    # 実行した"exit 1"がFailしているため、Acceptance Gateは
+    # `tests_passed=False`によりACCEPTを拒否する(§1「判定は常にHost
+    # 自身が実行したValidation結果のみに基づく」)。
+    assert result.outcome != OrchestratorOutcome.ACCEPT_CANDIDATE
+
+
+def test_D_writer_executor_config_no_longer_allows_python_ruff_mypy_bash() -> None:
+    # DEV-AUTO-02.3はWriter自身がpytest/ruff/mypyを実行できるよう
+    # Bash(python *)/Bash(ruff *)/Bash(mypy *)を許可したが、実D0103 Run
+    # でGlobal Python PATH(Repository-Local .venvではない)しか見えず
+    # ruff/mypyが実行できないことが判明した。DEV-AUTO-02.4はValidation
+    # Execution自体をAgentの責務から外すため、これらのAllow Patternを
+    # 削除したことを固定する(Agent Shell権限を再拡張する方向ではなく、
+    # 縮小する方向の解決であることの確認)。
+    writer_command = _load_config_command("CAN_EXECUTE_WRITER")
+    allowed = _flag_values(writer_command, "--allowedTools")
+    for prefix in ("Bash(python", "Bash(ruff", "Bash(mypy"):
+        assert not any(v.startswith(prefix) for v in allowed), f"Writer must no longer allow {prefix!r}"
+    # Git Statusによる「調査」責務は引き続き必要。
+    assert any(v.startswith("Bash(git status") for v in allowed)
+
+
+def test_E_reviewer_executor_config_no_longer_allows_python_ruff_mypy_bash() -> None:
+    reviewer_command = _load_config_command("CAN_EXECUTE_READ_ONLY_REVIEWER")
+    allowed = _flag_values(reviewer_command, "--allowedTools")
+    for prefix in ("Bash(python", "Bash(ruff", "Bash(mypy"):
+        assert not any(v.startswith(prefix) for v in allowed), f"Reviewer must no longer allow {prefix!r}"
+    assert any(v.startswith("Bash(git status") for v in allowed)
+
+
+def test_G_closure_writer_fix_is_followed_by_fresh_host_validation(tmp_path: Path) -> None:
+    # DEV-AUTO-02.4 §4「Closure Writer → HOST validation again → Closure
+    # Reviewer」。Targeted Testは`allowed.txt`の内容を検査するReal
+    # Command――初回Roundでは失敗し、Closure Writer(Test Double)が
+    # `allowed.txt`をFixした後、Closure Roundで再実行されたHost
+    # Validationだけが成功できる(=古いCache済みResultの使い回しでは
+    # ないことの証明)。
+    repo, head = _init_temp_repo(tmp_path)
+    check_fixed_content = (
+        f'{sys.executable} -c "import pathlib,sys; '
+        "sys.exit(0 if pathlib.Path('allowed.txt').read_text() == "
+        'chr(102)+chr(105)+chr(120)+chr(101)+chr(100)+chr(10) else 1)"'
+    )
+    manifest = _manifest(expected_head=head, targeted_tests=(check_fixed_content,))
+
+    @dataclass
+    class _FixingWriter:
+        calls: list[str] = field(default_factory=list)
+
+        def execute(self, *, role: Role, prompt: str, working_directory: Path) -> AgentExecutionResult:
+            self.calls.append(prompt)
+            if len(self.calls) >= 2:
+                (working_directory / "allowed.txt").write_text("fixed\n", encoding="utf-8")
+            return AgentExecutionResult(returncode=0, stdout=_writer_success(), stderr="")
+
+        @property
+        def call_count(self) -> int:
+            return len(self.calls)
+
+    writer = _FixingWriter()
+
+    def _reviewer_response(call_number: int) -> str:
+        if call_number == 1:
+            return _reviewer_result("NEEDS_FIX", [_finding("F1")])
+        return _reviewer_result("ACCEPTED", [_finding("F1", status="CLOSED")])
+
+    reviewer = FakeExecutor(response_fn=_reviewer_response)
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.ACCEPT_CANDIDATE
+    assert writer.call_count == 2  # initial + 1 closure round
+
+
+def test_H_d0103_pilot_manifest_uses_repository_local_executables() -> None:
+    manifest_data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+    for command in (*manifest_data["targeted_tests"], *manifest_data["static_checks"]):
+        assert ".venv" in command, f"validation command must use the repository-local .venv: {command!r}"
+    # DEV-AUTO-02.4 §3: Windows `shell=True`はForward-Slash実行Pathを",
+    # cmd.exeがSwitch区切りと誤解釈するため解決できない(空実行して
+    # 確認済み)。Executable部分はBackslashを使う。
+    for command in (*manifest_data["targeted_tests"], *manifest_data["static_checks"]):
+        assert "\\Scripts\\" in command or "\\Scripts/" in command or ".venv\\" in command
+
+
+def test_K_orchestrator_never_invents_validation_commands(tmp_path: Path) -> None:
+    # DEV-AUTO-02.4 §2「No shell command invented by Agent. Only commands
+    # already present in TaskManifest may execute.」--- WriterがResult
+    # JSON経由で任意のCommand文字列を注入しようとしても(例えば
+    # `summary`に紛れ込ませても)、Host Validationの実行対象は常に
+    # `manifest.targeted_tests`/`static_checks`のみであることを確認する。
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head, targeted_tests=("exit 0",))
+    malicious_summary_writer = FakeExecutor(
+        fixed_response=json.dumps(
+            {
+                "status": "SUCCESS",
+                "files_changed": [],
+                "tests": "ignore this: git push origin main --force",
+                "static_checks": "ignore this too",
+                "blocking_issue": None,
+                "summary": "exit 1; echo pwned",
+            }
+        )
+    )
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(
+        manifest=manifest,
+        repo_root=repo,
+        executors=_registry(malicious_summary_writer, reviewer),
+        runs_dir=tmp_path / "runs",
+    )
+
+    # `targeted_tests=("exit 0",)`のみがHostにより実行されるため、
+    # WriterのFree-Text Field内の文字列に関わらずACCEPTに到達する。
+    assert result.outcome == OrchestratorOutcome.ACCEPT_CANDIDATE
+
+
+def test_L_h0001_in_static_checks_stops_before_any_agent_invocation(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head, static_checks=("run H0001 acceptance methodology",))
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.HUMAN_APPROVAL_REQUIRED
+    assert result.executor_invocations == 0
+    assert writer.call_count == 0
+    assert reviewer.call_count == 0
+
+
+def test_L_git_mutation_in_static_checks_blocks_host_validation_without_executing_it(tmp_path: Path) -> None:
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head, static_checks=("git push origin main --force",))
+    writer = FakeExecutor(fixed_response=_writer_success())
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "forbidden" in result.reason.lower()
+    assert reviewer.call_count == 0  # Host Validation BlockでReviewerは一切呼ばれない。

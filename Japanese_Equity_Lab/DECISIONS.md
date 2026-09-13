@@ -17080,3 +17080,218 @@ Pytest: `test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`・
 `dev_workflow.py`・既存`lib/`はいずれも無変更。D0103は実行していない。
 `evidence_integration.py`・`test_evidence_integration.py`は本Commitに
 含めない。H0001は実行していない。
+
+## DEV-AUTO-02.4 — Host-Side Validation Boundary
+
+**Repository Reality(§0、開始時点での予期しないDrift)**: 本Round開始時
+Expected HEADは`e9faf36`(DEV-AUTO-02.3)だったが、実際のHEADは
+`cf89b6e0a3b0abb4e99e7468231f809601934701`(コミットMessage
+「DEV-AUTO-02.4: move validation to host orchestrator」)だった。この
+Commitの実際の中身を確認したところ、本Round(DEV-AUTO-02.4)が実装
+すべきArchitecture変更(Host Validation等)は一切含まれておらず、
+`.agents/`・`.codex/`・`AGENTS.md`・
+`Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/
+research_artifacts.jsonl`・D0103 Partial Files
+(`evidence_integration.py`・`test_evidence_integration.py`)を
+Bulk追加しただけのCommitだった――過去4 Round(DEV-AUTO-02.2〜02.3)が
+一貫して「Untracked/Unstagedのまま保存する」よう明示的に指示していた
+File群がこのCommit 1件でまとめてTrackedになっている。Commit
+Messageと実際のDiffが一致しない不審な状態だが、Git Historyを書き換え
+(`reset`/Force Push等)ることはせず、指示通り「Repository Realityを
+そのまま使う」方針で本Roundを進めた――D0103本体
+(`evidence_integration.py`)には一切追加の変更を加えていない。
+
+**実D0103 Writer Run(§9)の実際の証拠**: HEAD `0556d05`(DEV-AUTO-02.2.2
+Commit)時点での実D0103 Writer Runは、既存Partial実装を正しく検査し、
+Targeted Test(`pytest`)を実行して**9/9 PASS**を観測したが、
+Static Checks(ruff/mypy)はWriter自身のNoninteractive Claude CLI
+Subprocess環境がGlobal Python PATH(Repository-Local`.venv`ではない)
+しか見えず実行できなかった(pytestは偶然Global PATH上にも入っていた
+ため動いたが、ruff/mypyは入っていなかった)。ruff相当のManual
+Inspectionをruff実行と同一視することはできない。したがって
+**D0103はこのRoundでもUNACCEPTEDのまま**である
+(`D0103_ACCEPTED = NO`)。別途、Reviewer側の実行でWriter結果が
+```json Markdown Fenceに包まれ、既存の厳密LAST行Parserに正しく
+拒否される(Fail Closed、Parser自体のBugではない)事例も観測された。
+
+**Root Cause**: DEV-AUTO-02.3はWriter/Reviewerの両Agentに
+`Bash(python *)`/`Bash(ruff *)`/`Bash(mypy *)`Permissionを与える
+ことでNoninteractive Session内でのTest/Static Check実行を可能にした
+が、実際にはAgent Subprocessから見えるPATHがRepository固有の`.venv`
+と一致しない、という別種の問題を解決していなかった。DEV-AUTO-02.3の
+方向性(Agent Shell権限をさらに広げる)を継続しても解決しないため、
+本Roundでは**Validation実行責務そのものをAgentから外す**
+Architectural変更を行った(§1)。
+
+**Host-Side Validation Boundary(§1/§2)**: 新設
+`scripts/dev_workflow_lib/host_validation.py`の
+`run_manifest_validation(targeted_tests, static_checks, *, repo_root,
+timeout_seconds)`が、`manifest.targeted_tests`→`static_checks`の順に
+Command文字列をHost自身(Orchestrator Process、LLM非関与)が
+`repo_root`をCwdとして直接`subprocess.run(shell=True)`実行する。
+`CommandResult`(command/returncode/stdout/stderr/timed_out、
+`MAX_COMMAND_OUTPUT_CHARS`[20,000文字]でBound)と`ValidationResult`
+(targeted_tests/static_checks双方の`CommandResult`Tuple、
+`targeted_tests_passed`/`static_checks_passed`/`passed`/
+`first_failure`Property)を返す。最初の失敗Commandで即
+Short-Circuitし(既存`run_targeted_validation`と同じFail Closed
+契約)、`to_dict()`/`from_dict()`でJSON往復可能。LLMは一切関与せず、
+実行対象は常に`TaskManifest.targeted_tests`/`static_checks`という
+既存Structured Fieldの文字列そのものであり、Agent(WriterResultの
+`summary`等自由記述Field含む)が独自に発明したCommandが実行される
+経路は構造的に存在しない(§2「No shell command invented by Agent」、
+`test_K_orchestrator_never_invents_validation_commands`で固定)。
+
+**Destructive-Operation Protection(§11)**: `find_forbidden_
+validation_command()`が`targeted_tests`/`static_checks`のCommand
+文字列自体に`git push`/`commit`/`add`/`reset`/`clean`/`checkout`/
+`branch`のいずれかが含まれていないかを実行前にScanし、1件でも
+該当すれば**両Category一切実行せず**`blocked_reason`付きの
+`ValidationResult`を返す(`orchestrator.py`はこれをSTOPへMap)。
+H0001/Locked Test混入については、既存`human_gate.
+requires_human_approval()`のScan対象へ`static_checks`を追加した
+(従来`targeted_tests`のみScanしており、`static_checks`側だけの
+抜け穴が存在した——DEV-AUTO-02.4で初めてHostが`static_checks`も
+直接実行するようになったため、同じ立場でScan対象に加える必要が
+あった)。いずれもAgent実行より前(Writer起動前)にSTOP/
+HUMAN_APPROVAL_REQUIREDへ倒れる。
+
+**Orchestrator配線(§4)**: `orchestrator.py`から`run_targeted_
+validation()`(GateResult返却、`subprocess`直呼び出し)を削除し、
+初回Round・Closure Round双方で`run_manifest_validation()`を呼ぶ
+よう変更した。既存の実行順序(Repository Gate→Writer→Scope Gate→
+Host Validation→Reviewer→Acceptance Gate、Closure Roundも同様に
+Closure Writer→Host Validation→Closure Reviewer)はDEV-AUTO-02.1
+時点から変わっていない――変わったのは「WriterResult/
+`_written_after_writer`ではなくHostが直接実行したTuple」という
+Validation自体の実行主体のみ。`evaluate_acceptance()`への
+`tests_passed`/`static_checks_passed`は`ValidationResult`の
+Propertyから取得する(値の意味自体は不変)。
+
+**Writer/Reviewer Prompt(§5/§6)**: `prompts.py`から
+「Run every test listed under Targeted tests and every check listed
+under Static checks before reporting the change as done」という
+Writer/Closure Writer向け自己検証指示を削除し、代わりに
+「Do NOT run the Targeted tests or Static checks yourself」+
+`tests`/`static_checks`Fieldへ書くべき唯一のSanctioned値
+(`HOST_VALIDATION_PENDING`定数)を指示した。Reviewer/Closure
+Reviewer向けには「Probe the stated acceptance boundary directly
+(targeted tests, static checks...)」を削除し、代わりにHostが実行
+済みの`ValidationResult`をCommand・Pass/Fail・簡潔なstdout/stderr
+要約として直接Promptへ埋め込む(`_format_validation_result()`)。
+Reviewerは自ら再実行する必要が無く(その権限も持たない)、FAILが
+あれば少なくとも1件のBlocking Findingとして報告するよう指示する
+——CAN_REVIEW_READ_ONLYと矛盾する`Bash(python/ruff/mypy *)`
+Permissionを持たせずに、CAN_RUN_TESTS(意味論的十分性の判断)を
+Truthfulに保つ。`build_reviewer_prompt`/`build_closure_reviewer_
+prompt`は`validation_result: ValidationResult`引数を追加(Dry-Run
+Preview等向けにDefault値は空の`ValidationResult()`、既存呼び出し
+Site[`dev_workflow.py`のCLI Preview]は無変更のまま動く)。Writer
+のFabrication(実行していないPASSを自己申告)は、Acceptance判定が
+常にHost自身の`ValidationResult`のみに基づく(WriterResultの
+`tests`/`static_checks`文字列Fieldは一切判定に使わない)ため、
+構造的にAcceptanceへ影響し得ない。
+
+**Structured-Output CLI機能の調査・採用(§7)**: `claude --help`で
+`--json-schema <schema>`(「JSON Schema for structured output
+validation」)を確認した。実Smoke Runで、`--output-format text`と
+組み合わせると**stdout全体が指定したJSON Schemaに一致する単一の
+JSON Objectそのものになる**(Envelope無し・前置きProse無し・
+Markdown Fence無し)ことを確認し、かつRead/Bash等の実Tool Useは
+最終回答の前に通常通り行われることも確認した(推測ではなく実行して
+確認、`--restricted`/`--tools`/`--permission-mode dontAsk`の
+組み合わせ双方で検証済み)。WriterResult/ReviewerResultの既存
+Contract(`agent_results.py`、Finding.from_dictを含む)と一致する
+JSON Schemaを`executor_config.example.json`の両CommandへEmbedし、
+主たるOutput Contract Enforcementとした。Prompt側のLAST行JSON指示
+文言はParser Contract自体のFallback/将来Executorへの備えとして
+維持し、実D0103 Writer Runで実際に観測された```json Fence混入を
+踏まえ明示的に強化した("DO NOT USE MARKDOWN"/"DO NOT USE ```json
+FENCES"/"DO NOT WRITE ANY TEXT AFTER THE JSON OBJECT")。Parser
+Contract自体(LAST行・厳密JSON Parse・Fail Closed、`agent_results.py`)
+には一切変更を加えていない(No parser relaxation、§9)。
+
+**Executor Config縮小(§1)**: `executor_config.example.json`の
+Writer/Reviewer両`--allowedTools`から`Bash(python *)`/`Bash(ruff
+*)`/`Bash(mypy *)`(DEV-AUTO-02.3で追加)を削除し、`Bash(git status
+*)`/`Bash(git diff *)`/`Bash(git rev-parse *)`(「調査」責務)のみを
+残した——Agent Shell権限をさらに広げる方向ではなく縮小する方向の
+解決であることを実際のConfig差分としても固定する。`--disallowedTools`
+(Git Mutation拒否)は既存のまま維持(Defense-in-Depth)。
+
+**Repository-Local Tooling(§3)**: `.venv/Scripts/python.exe`
+(`-m pytest`/`-m mypy`)・`.venv/Scripts/ruff.exe`が実際に存在する
+ことを確認した上で(推測禁止)、D0103 Pilot Manifest
+(`d0103_semantic_claim_evidence_integration_pilot.json`)の
+`targeted_tests`/`static_checks`をRepository-Local Executableへ
+更新した。**重要な実験結果**: Windows`subprocess.run(...,
+shell=True)`はForward-Slash実行Path(`.venv/Scripts/python.exe`)を
+`cmd.exe`がSwitch区切りと誤解釈し解決に失敗する(`'.venv' は、
+内部コマンドまたは外部コマンド...として認識されていません`)ことを
+実際に確認した――Executable部分はBackslash(`.venv\Scripts\
+python.exe`)が必須で、引数側のTest File Path(Forward-Slash)は
+問題なく動く。これも推測せず実際に両方の形を実行して確認した。
+なお、修正後のCommandを診断目的で直接実行したところ(Sanctioned
+Orchestrator経由ではない、単なるManual確認)、既存D0103 Partial
+実装(HEAD時点で既にCommit済み)はpytest 9/9 PASS・ruff
+All checks passed・mypy --strict Success no issuesを示したが、これは
+Reviewerの独立確認を経ていないため、D0103のACCEPT判定には使わない
+(§9、D0103は依然UNACCEPTED)。
+
+**Regression Test(§10 A-L)**: 新設`13_tests/test_host_validation.py`
+(17 Test、実Subprocess[`exit 0`/`exit 1`/`sys.executable -c ...`]を
+実際に起動): targeted_tests/static_checks双方の実行・Cwd=repo_root・
+最初の失敗でのShort-Circuit・空Listの無条件PASS・Forbidden Git
+Mutation Commandでの両Category実行拒否・Timeout記録・Output
+Truncation・to_dict/from_dict往復・Secret-Looking Field不在。
+`13_tests/test_dev_workflow.py`へ11 Test追加(Writer/Closure Writer
+PromptがValidation非実行指示+`HOST_VALIDATION_PENDING`を含むこと、
+Reviewer/Closure Reviewer PromptがHost Validation結果を実際に含む
+こと・Blocked Case表示・Default空`ValidationResult()`、Strict
+Output指示文言の存在とField Contract不変、`static_checks`側H0001
+混入のHuman Gate検出)。`13_tests/test_dev_workflow_orchestrator.py`
+へ8 Test追加+既存2 Test更新(DEV-AUTO-02.3のA/BからBash(python/ruff/
+mypy)許可Assertionを削除し「もはや許可しない」側へ反転):
+Failing Host ValidationでのNon-Accept・Writer/Reviewer Config双方の
+python/ruff/mypy非許可・Closure Writer Fix後の再Validation実行
+(古いCache結果の使い回しでないことを実Subprocessで証明)・D0103
+Pilot ManifestのRepository-Local Executable使用・Agent発明Command
+不実行・`static_checks`内のH0001/Git Mutationでの実行前Stop。
+Targeted Pytest合計: `test_dev_workflow.py`(62)・
+`test_dev_workflow_orchestrator.py`(64)・`test_dev_workflow_
+executor.py`(16)・`test_host_validation.py`(17)、計159 Test全てPass。
+
+**Static Gates**: `ruff check`/`ruff format --check`
+(`host_validation.py`・`orchestrator.py`・`prompts.py`・
+`human_gate.py`・`dev_workflow.py`・変更Test File4本): Pass。
+`mypy --strict`(`host_validation.py`・`orchestrator.py`・
+`prompts.py`・`human_gate.py`・`dev_workflow.py`): Success, no
+issues found in 5 source files。
+
+**D0103**: `D0103_EXECUTED = NO`(本RoundでもD0103本体・Writer/
+Reviewer Roleの実起動は一切行っていない、上記診断目的の直接実行を
+除く)。`evidence_integration.py`・`test_evidence_integration.py`は
+本Commitで一切変更していない(既にHEADにCommit済みの内容をそのまま
+保持、§0参照)。`D0103_ACCEPTED = NO`(§9)。
+
+**Persistence / Commit対象・Scope**: 変更:
+`scripts/dev_workflow_lib/host_validation.py`(新設)・
+`scripts/dev_workflow_lib/orchestrator.py`(Host Validation配線、
+`run_targeted_validation`削除)・`scripts/dev_workflow_lib/
+prompts.py`(Writer/Reviewer Prompt刷新、`validation_result`引数
+追加、Strict Output指示強化)・`scripts/dev_workflow_lib/
+human_gate.py`(`static_checks`もScan対象に追加)・
+`scripts/executor_config.example.json`(`--json-schema`追加、
+python/ruff/mypy Bash Permission削除)・`scripts/manifests/
+d0103_semantic_claim_evidence_integration_pilot.json`
+(Repository-Local Executable Pathへ更新)・
+`13_tests/test_host_validation.py`(新設)・
+`13_tests/test_dev_workflow.py`(Regression Test追加)・
+`13_tests/test_dev_workflow_orchestrator.py`(Regression Test追加+
+既存2 Test更新)・本`DECISIONS.md`。`agent_results.py`(Parser
+Contract)・`model.py`・`gates.py`・`acceptance.py`・`executor.py`・
+`run_record.py`・既存`lib/`はいずれも無変更。
+`evidence_integration.py`・`test_evidence_integration.py`は本
+Commitに一切含めない(既存Commit内容のまま)。`.agents/`・
+`.codex/`・`AGENTS.md`・`02_company_research/7203_Toyota_Motor/`
+にも一切触れていない。H0001は実行していない。

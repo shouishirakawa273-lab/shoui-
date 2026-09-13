@@ -19,6 +19,7 @@ import pytest
 from scripts.dev_workflow_lib import gates as gates_module
 from scripts.dev_workflow_lib.acceptance import evaluate_acceptance, narrow_to_open_findings, open_blocking_findings
 from scripts.dev_workflow_lib.gates import check_expected_head, check_scope, list_changed_paths
+from scripts.dev_workflow_lib.host_validation import CommandResult, ValidationResult
 from scripts.dev_workflow_lib.human_gate import (
     is_h0001_request,
     is_prohibited_commit_reference,
@@ -36,7 +37,13 @@ from scripts.dev_workflow_lib.model import (
     TaskManifest,
     role_has_capability,
 )
-from scripts.dev_workflow_lib.prompts import build_closure_reviewer_prompt, build_reviewer_prompt, build_writer_prompt
+from scripts.dev_workflow_lib.prompts import (
+    HOST_VALIDATION_PENDING,
+    build_closure_reviewer_prompt,
+    build_closure_writer_prompt,
+    build_reviewer_prompt,
+    build_writer_prompt,
+)
 
 _CLI_PATH = Path(__file__).resolve().parent.parent / "scripts" / "dev_workflow.py"
 
@@ -244,6 +251,18 @@ def test_D_requested_2025_locked_test_rerun_is_human_gated() -> None:
 def test_E_force_push_in_forbidden_actions_is_prohibition_only() -> None:
     manifest = _manifest(forbidden_actions=("force push", "no force push to main"))
     assert requires_human_approval(manifest) is None
+
+
+def test_L_h0001_in_static_checks_is_human_gated_before_host_validation_execution() -> None:
+    # DEV-AUTO-02.4 §11: `static_checks`はもはや`targeted_tests`と同じ
+    # 立場でHost(`host_validation.run_manifest_validation`)が直接実行
+    # する対象であり、H0001/Locked Test混入が`targeted_tests`側でしか
+    # 検出されないのでは不十分(実行前Gateの抜け穴になる)。
+    # `static_checks`側でも同じくHUMAN_APPROVAL_REQUIREDへ倒れることを
+    # 固定する(DEV-AUTO-02.3時点ではこのScanが`static_checks`を見て
+    # いなかった)。
+    manifest = _manifest(static_checks=("run H0001 acceptance methodology",))
+    assert requires_human_approval(manifest) is not None
 
 
 def test_F_force_push_as_requested_action_is_human_gated() -> None:
@@ -496,6 +515,111 @@ def test_prompts_do_not_reference_product_plan_names() -> None:
     for prompt in (build_writer_prompt(manifest), build_reviewer_prompt(manifest), build_closure_reviewer_prompt(manifest, ())):
         for name in forbidden_literal_names:
             assert name not in prompt
+
+
+# ============================================================
+# DEV-AUTO-02.4: Host-Side Validation Boundary (§10 A-L)
+# ============================================================
+#
+# 実D0103 Writer Runで、Writer自身のNoninteractive Claude CLI
+# Subprocess環境がGlobal Python PATHしか見えずruff/mypyを実行できな
+# かった(pytestは偶然実行できたがruff/mypyはできなかった)。以下は
+# Writer/ReviewerがもはやTargeted Tests/Static Checksを自ら実行する
+# よう指示されないこと、Host(`host_validation.py`)が実行した結果が
+# Reviewer Promptへ実際に注入されることを固定するRegressionである。
+# WriterResult/ReviewerResultのSchema・LAST行JSON Parser Contractには
+# 一切変更を加えていない(No parser relaxation)。
+
+
+def test_D_writer_prompt_does_not_require_agent_to_run_validation() -> None:
+    manifest = _manifest(targeted_tests=("pytest -q",), static_checks=("ruff check",))
+    prompt = build_writer_prompt(manifest)
+    assert "Do NOT run the Targeted tests or Static checks yourself" in prompt
+    assert HOST_VALIDATION_PENDING in prompt
+    assert "Run every test listed under Targeted tests" not in prompt
+
+
+def test_D_closure_writer_prompt_also_does_not_require_running_validation() -> None:
+    manifest = _manifest(targeted_tests=("pytest -q",), static_checks=("ruff check",))
+    prompt = build_closure_writer_prompt(manifest, ())
+    assert "Do NOT run the Targeted tests or Static checks yourself" in prompt
+    assert HOST_VALIDATION_PENDING in prompt
+    assert "Run every test listed under Targeted tests" not in prompt
+
+
+def test_E_reviewer_prompt_does_not_require_agent_to_run_validation() -> None:
+    manifest = _manifest()
+    prompt = build_reviewer_prompt(manifest, ValidationResult())
+    assert "Probe the stated acceptance boundary directly" not in prompt
+    assert "Do NOT re-run the targeted tests or static checks yourself" in prompt
+
+
+def test_E_closure_reviewer_prompt_does_not_require_agent_to_run_validation() -> None:
+    manifest = _manifest()
+    prompt = build_closure_reviewer_prompt(manifest, (), ValidationResult())
+    assert "Do NOT re-run the targeted tests or static checks yourself" in prompt
+
+
+def test_E_reviewer_prompt_default_validation_result_is_empty() -> None:
+    # Dry-Run Preview等、実行前はDefault(空の`ValidationResult()`)で
+    # 呼べる後方互換Contractを確認する。
+    manifest = _manifest()
+    prompt = build_reviewer_prompt(manifest)
+    assert "Host-Executed Validation Results" in prompt
+    assert "no targeted_tests/static_checks were configured" in prompt
+
+
+def test_F_reviewer_prompt_includes_host_validation_results() -> None:
+    validation_result = ValidationResult(
+        targeted_tests=(CommandResult(command="pytest -q", returncode=0, stdout="3 passed", stderr=""),),
+        static_checks=(CommandResult(command="ruff check .", returncode=1, stdout="E501 line too long", stderr=""),),
+    )
+    manifest = _manifest()
+    prompt = build_reviewer_prompt(manifest, validation_result)
+    assert "Host-Executed Validation Results" in prompt
+    assert "pytest -q" in prompt
+    assert "ruff check ." in prompt
+    assert "E501 line too long" in prompt
+    assert "FAIL" in prompt
+
+
+def test_F_closure_reviewer_prompt_includes_host_validation_results() -> None:
+    validation_result = ValidationResult(
+        targeted_tests=(CommandResult(command="pytest -q", returncode=0, stdout="ok", stderr=""),)
+    )
+    manifest = _manifest()
+    prompt = build_closure_reviewer_prompt(manifest, (), validation_result)
+    assert "Host-Executed Validation Results" in prompt
+    assert "pytest -q" in prompt
+
+
+def test_F_reviewer_prompt_shows_blocked_validation() -> None:
+    validation_result = ValidationResult(
+        blocked_reason="validation command matches a forbidden git-mutation pattern: 'git push origin main'"
+    )
+    manifest = _manifest()
+    prompt = build_reviewer_prompt(manifest, validation_result)
+    assert "BLOCKED before execution" in prompt
+    assert "git push origin main" in prompt
+
+
+def test_J_strict_output_instructions_present_without_changing_field_contract() -> None:
+    # DEV-AUTO-02.4 §7/§9: Fenced JSON誤発生(実D0103 Writer Run)を受け、
+    # Prompt文言を強化したが、ReportすべきField自体([status/
+    # files_changed/tests/static_checks/blocking_issue/summary]・
+    # [status/verdict/findings])は変更していないことを確認する。
+    manifest = _manifest()
+    writer_prompt = build_writer_prompt(manifest)
+    reviewer_prompt = build_reviewer_prompt(manifest, ValidationResult())
+    for prompt in (writer_prompt, reviewer_prompt):
+        assert "LAST line of your output" in prompt
+        assert "DO NOT USE MARKDOWN" in prompt
+        assert "```json FENCES" in prompt
+        assert "DO NOT WRITE ANY TEXT AFTER THE JSON OBJECT" in prompt
+    assert "files_changed" in writer_prompt
+    assert "blocking_issue" in writer_prompt
+    assert "verdict" in reviewer_prompt
+    assert "findings" in reviewer_prompt
 
 
 # ============================================================

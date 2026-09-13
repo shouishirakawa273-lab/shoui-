@@ -124,8 +124,12 @@ def requires_human_approval(manifest: TaskManifest) -> str | None:
     if manifest.requires_human_approval:
         return "task manifest explicitly sets requires_human_approval=True"
 
-    # 常にScan対象(要求そのものを表すStructured Field)。
-    for text in (*manifest.requested_actions, *manifest.targeted_tests):
+    # 常にScan対象(要求そのものを表すStructured Field)。DEV-AUTO-02.4:
+    # `static_checks`も追加(Host Validation Boundaryが`targeted_tests`
+    # と同じ立場でCommandをHost側実行するようになったため、H0001/
+    # Locked Test等の混入を`static_checks`側でも同じくPre-Execution
+    # Scanで検出する、既存の`targeted_tests`Scanと同じ原則の適用)。
+    for text in (*manifest.requested_actions, *manifest.targeted_tests, *manifest.static_checks):
         for pattern in _HUMAN_GATED_PATTERNS:
             if pattern.search(text):
                 return f"human-gated boundary detected: pattern={pattern.pattern!r} matched={text!r}"

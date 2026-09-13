@@ -11,7 +11,6 @@ Loopは実装しない——Closure Roundは`max_closure_rounds`(既定2)で
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -21,6 +20,7 @@ from .acceptance import evaluate_acceptance, narrow_to_open_findings, open_block
 from .agent_results import ReviewerResult, WriterResult, WriterStatus
 from .executor import AgentExecutionResult, AgentExecutor, ExecutionCapability, ExecutorRegistry
 from .gates import GateResult, check_expected_head, check_scope, list_changed_paths, resolve_head
+from .host_validation import run_manifest_validation
 from .human_gate import requires_human_approval
 from .model import RUNTIME_HEAD_SENTINEL, AcceptanceVerdict, Finding, Role, TaskManifest
 from .prompts import build_closure_reviewer_prompt, build_closure_writer_prompt, build_reviewer_prompt, build_writer_prompt
@@ -102,37 +102,6 @@ def _preview_command(executor: AgentExecutor | None) -> tuple[str, ...] | None:
     if isinstance(command, tuple) and all(isinstance(part, str) for part in command):
         return command
     return None
-
-
-def run_targeted_validation(commands: tuple[str, ...], *, repo_root: Path, timeout_seconds: float = 900.0) -> GateResult:
-    """`manifest.targeted_tests`/`manifest.static_checks`の各Entryを
-    Shell Commandとして実行する。Manifestは人間が作成・管理する信頼済み
-    Configurationであり(任意の外部/未検証入力ではない)、CI Config
-    (`run:` Step)と同種の前提を置く。空Listは無条件でPASS扱い
-    (DEV-AUTO-01からの既存契約、`tests_passed`/`static_checks_passed`
-    は呼び出し側があらかじめ確定させる値という設計を、ここでは
-    Command文字列を実行することで具体化する)。"""
-    if not commands:
-        return GateResult(passed=True, reason="no commands configured")
-    for command in commands:
-        try:
-            completed = subprocess.run(
-                command,
-                shell=True,  # noqa: S602 -- Manifestは人間が管理するTrusted Configuration(CI Config相当)。
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return GateResult(passed=False, reason=f"command timed out: {command}")
-        if completed.returncode != 0:
-            return GateResult(
-                passed=False,
-                reason=f"command failed (exit {completed.returncode}): {command}\n{completed.stdout}\n{completed.stderr}",
-            )
-    return GateResult(passed=True, reason="all commands passed")
 
 
 def _merge_closure_findings(current: tuple[Finding, ...], closure_updates: tuple[Finding, ...]) -> tuple[Finding, ...]:
@@ -310,8 +279,22 @@ def run_task(
             outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
         )
 
-    tests_result = run_targeted_validation(manifest.targeted_tests, repo_root=repo_root)
-    static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
+    # DEV-AUTO-02.4 §1/§2/§4: Manifest Validation(targeted_tests/
+    # static_checks)はHost自身(このProcess、LLM非関与)が直接実行する
+    # ——Writer/ReviewerのAgent Subprocessには一切実行させない
+    # (実D0103 Runで、Agent側のNoninteractive Subprocess環境がGlobal
+    # Python PATHしか見えずruff/mypyを実行できなかった、Permission/PATH
+    # 不整合の根本解決)。`run_manifest_validation()`はCommand文字列自体が
+    # Git Mutation Verb(push/commit/add/reset/clean/checkout/branch)に
+    # 一致する場合、一切実行せず`blocked_reason`付きの結果を返す
+    # (DEV-AUTO-02.4 §11、Fail Closed)。
+    validation_result = run_manifest_validation(manifest.targeted_tests, manifest.static_checks, repo_root=repo_root)
+    if validation_result.blocked_reason is not None:
+        reason = f"host validation blocked before execution: {validation_result.blocked_reason}"
+        record = _record(RunState.STOPPED, reason=reason, writer_result=writer_result, writer_execution=writer_diag)
+        return OrchestratorResult(
+            outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+        )
 
     # ---- Reviewer(Read-Only、実行前後のGit状態を比較する) ----
     # DEV-AUTO-02.1.1 §8 Reviewer Gate: Reviewer実行前にもPin済み
@@ -335,7 +318,7 @@ def run_task(
     pre_review_head = pre_review_head_check.reason
 
     _record(RunState.REVIEWING, writer_result=writer_result, writer_execution=writer_diag)
-    reviewer_prompt = build_reviewer_prompt(manifest)
+    reviewer_prompt = build_reviewer_prompt(manifest, validation_result)
     reviewer_exec_result = _safe_execute(
         reviewer_executor, role=Role.REVIEWER, prompt=reviewer_prompt, working_directory=repo_root
     )
@@ -404,8 +387,8 @@ def run_task(
         manifest=manifest,
         reviewer_verdict=review_result.verdict,
         findings=current_findings,
-        tests_passed=tests_result.passed,
-        static_checks_passed=static_result.passed,
+        tests_passed=validation_result.targeted_tests_passed,
+        static_checks_passed=validation_result.static_checks_passed,
         scope_clean=scope_result.passed,
     )
 
@@ -558,8 +541,25 @@ def run_task(
                 outcome=OrchestratorOutcome.STOP, reason=scope_result.reason, run_record=record, executor_invocations=invocations
             )
 
-        tests_result = run_targeted_validation(manifest.targeted_tests, repo_root=repo_root)
-        static_result = run_targeted_validation(manifest.static_checks, repo_root=repo_root)
+        # DEV-AUTO-02.4 §4: Closure Writer Fix後もHostが再度Validationを
+        # 実行する(「Closure Writer → HOST validation again → Closure
+        # Reviewer」)。
+        closure_validation_result = run_manifest_validation(manifest.targeted_tests, manifest.static_checks, repo_root=repo_root)
+        if closure_validation_result.blocked_reason is not None:
+            reason = (
+                f"host validation blocked before execution at round {closure_round}: {closure_validation_result.blocked_reason}"
+            )
+            record = _record(
+                RunState.STOPPED,
+                reason=reason,
+                writer_result=closure_writer_result,
+                closure_round=closure_round,
+                closure_writer_executions=tuple(closure_writer_diagnostics),
+                closure_reviewer_executions=tuple(closure_reviewer_diagnostics),
+            )
+            return OrchestratorResult(
+                outcome=OrchestratorOutcome.STOP, reason=reason, run_record=record, executor_invocations=invocations
+            )
 
         # DEV-AUTO-02.1.1 §8/§9: Closure Reviewerの実行前にもPin済み
         # `starting_head`との一致を確認する。
@@ -581,7 +581,7 @@ def run_task(
 
         open_for_closure_review = narrow_to_open_findings(current_findings)
         pre_tracked, pre_untracked = list_changed_paths(repo_root)
-        closure_reviewer_prompt = build_closure_reviewer_prompt(manifest, open_for_closure_review)
+        closure_reviewer_prompt = build_closure_reviewer_prompt(manifest, open_for_closure_review, closure_validation_result)
         closure_review_exec = _safe_execute(
             reviewer_executor, role=Role.REVIEWER, prompt=closure_reviewer_prompt, working_directory=repo_root
         )
@@ -632,8 +632,8 @@ def run_task(
             manifest=manifest,
             reviewer_verdict=closure_review_result.verdict,
             findings=current_findings,
-            tests_passed=tests_result.passed,
-            static_checks_passed=static_result.passed,
+            tests_passed=closure_validation_result.targeted_tests_passed,
+            static_checks_passed=closure_validation_result.static_checks_passed,
             scope_clean=scope_result.passed,
         )
 
@@ -697,6 +697,5 @@ __all__ = [
     "DryRunReport",
     "OrchestratorOutcome",
     "OrchestratorResult",
-    "run_targeted_validation",
     "run_task",
 ]
