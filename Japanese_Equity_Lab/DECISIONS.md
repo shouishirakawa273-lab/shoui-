@@ -17393,3 +17393,50 @@ Stub(`type`文、3.12+限定Syntax)がParse Errorを起こす既存の
 ・`test_evidence_integration.py`含む)。D0103は本Roundでも実行して
 いない(`D0103_ACCEPTED`判定は変更無し)。History Rewrite・H0001は
 いずれも未実施。
+
+## D0103 — SemanticClaim → EvidenceRecord Integration
+
+**Accepted Run**: `run-1c62448c7c51`(`starting_head =
+fb55fd96a29b714da44545753abb09585f2924ee`、INCIDENT-01.1直後の
+HEAD)。Outcome = `ACCEPT_CANDIDATE`。Writer(`status: SUCCESS`)→
+Host Validation(Targeted Test/`ruff`/`mypy --strict`いずれもPASS、
+Orchestrator自身がLLM非関与で実行)→ Reviewer(`verdict: ACCEPTED`)の
+3段階が全てPASSし、`acceptance_verdict = ACCEPT`。Reviewerは7件の
+Finding(D0103-R-01〜07)を記録したが全て`blocking: false`(内6件
+`OPEN`・1件`CLOSED`)であり、`open_findings`(Blocking集合)は空、
+`closure_round = 0`——Closure Roundは不要だった。H0001は本Runで未実行。
+
+**実装内容**: `integrate_accepted_semantic_claim()`が唯一の
+Entrypoint。ACCEPT-Only Gate(`faithfulness_outcome`のIdentity比較、
+`FaithfulnessOutcome`型以外・`faithfulness_review_required`との
+矛盾をRejectする——StrEnumの`!=`比較が生Stringを誤って通過する既存
+落とし穴への対策含む)、Document Identity Mismatch検出、
+PIT Availability Policy(D0049/D0050優先順位を再利用、
+`market_public_at`へのFallback無し、D0102.1
+`EXTRACTION_TIMESTAMP_IS_NOT_PIT_AVAILABILITY`を維持)、
+`EvidenceType.CLAIM`/`DataLayer.DERIVED`固定・`EvidenceRelation`
+未付与を確認済み。Frozen Files(`faithfulness.py`・
+`semantic_claims.py`・`candidate_extraction.py`・`normalization.py`・
+`lib/evidence/model.py`)は本Runで無変更(`git diff HEAD`で確認済み)。
+ResearchArtifact・BUY/SELL・期待Return Logicはいずれも導入していない。
+Targeted Test 19件PASS(本Round時点でのLightweight Local
+Re-check、Repository Integrity確認のみ目的、D0103 Workflow自体は
+再実行していない)。
+
+**未解決(Blocking対象外)の既知Limitation**: D0103-R-01
+(ACCEPT-Only GateはSelf-Declared `faithfulness_outcome`を信頼、
+`promote_verified_candidate()`経由のClaimでのTest欠如)・D0103-R-02
+(EvidenceSpan Locator/RelationがFree Text埋め込みで、Claim Text側
+からのSpoofing耐性が無い)・D0103-R-03(Verbatim Quote未転記)・
+D0103-R-04(`extraction_provenance=None`時のPolicy未Pin)・D0103-R-05
+(`primary_or_secondary`固定・`source_authority_class`制限無し)・
+D0103-R-06(Document Join後の本文Retrieval Time未検証)は、
+Reviewerが`blocking: false`と判定した既知のLimitationとして記録
+するのみとし、今回のPhase Closeでは修正しない(将来Roundでの
+扱いはDECISIONS.mdへの参照で引き継ぐ)。D0102.4
+Faithfulness Verificationの境界は再展開しない。
+
+**Status**: `D0103_ACCEPTED = YES`。`evidence_integration.py`・
+`test_evidence_integration.py`は本Entry記録と同時にTracked化し、
+以降はD0103 FROZEN(新規機能追加・再実行はこのEntry以降の新Taskとして
+扱う)。
