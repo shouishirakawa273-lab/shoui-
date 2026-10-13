@@ -17295,3 +17295,101 @@ Contract)・`model.py`・`gates.py`・`acceptance.py`・`executor.py`・
 Commitに一切含めない(既存Commit内容のまま)。`.agents/`・
 `.codex/`・`AGENTS.md`・`02_company_research/7203_Toyota_Motor/`
 にも一切触れていない。H0001は実行していない。
+
+## INCIDENT-01.1 — Tracking Boundary Restoration
+
+**Investigation結果(INCIDENT-01、Read-Only)**: 前Entryで記録した
+`cf89b6e`は、過去4 Round(DEV-AUTO-02.2〜02.3)が明示的に「Untracked/
+Unstagedのまま保存する」よう指示していた16個のFile(`.agents/`・
+`.codex/`・`AGENTS.md`・D0103 Partial Files
+`evidence_integration.py`/`test_evidence_integration.py`・Toyota
+Research Artifact `research_artifacts.jsonl`)をBulk Add(16 File全て
+`A`、純追加・既存Tracked File 0件変更)しただけのCommitで、Commit
+Message「DEV-AUTO-02.4: move validation to host orchestrator」が示す
+実際のArchitecture変更(Host Validation等)は一切含まれていなかった。
+DEV-AUTO Orchestrator自身は`git add`/`commit`/`push`を一切実行しない
+(`gates.py`はRead-Only Subcommandのみ、Executor Configは該当Bash
+Permissionを一律拒否)ためOrchestratorがこのCommitを作成した可能性は
+排除できる。`0f92e97`(本物のDEV-AUTO-02.4)はこのAnomalous Content
+に論理的依存していない(変更Pathが完全に素集合)。History Rewrite
+(Reset/Revert/Force Push)は実施しない(既にRemoteへPush済み、かつ
+禁止方針のため)。
+
+**Remediation(本Round、Forward-Only)**: `git rm --cached`のみを
+明示Path指定で実行し、16 File全てをGit Index上からのみ削除した
+(`git rm`に`--cached`無し、`git add .`/`-A`、`git reset`、
+`git checkout`、`git clean`、`git revert`、History Rewriteのいずれも
+未使用)。削除後に全16 Fileが On-Disk に無変更(Byte単位)で存在する
+ことを確認済み(Content削除は一切発生していない)。
+
+**機械的Ignore Hardening**: `.gitignore`へ`.agents/`・`.codex/`・
+`AGENTS.md`・`Japanese_Equity_Lab/02_company_research/
+7203_Toyota_Motor/`を追加した——これまでGit Add Discipline(明示Path
+指定のみ)という人間/Agent側の規律のみに依存していたUntracked状態を、
+機械的なGuardに置き換える。`02_company_research/`配下を一括でIgnore
+すると将来の他Ticker Research・既存`README.md`まで隠れてしまうため、
+`7203_Toyota_Motor/`のみに意図的に絞った(`README.md`は現在もTracked
+のまま、`git check-ignore`で未Ignore確認済み)。D0103 Partial Files
+(`evidence_integration.py`・`test_evidence_integration.py`)は意図的に
+Ignore対象へ**追加しない**——これらはD0103正式Acceptance前の将来の
+Legitimate Deliverableであり、`git status`上でUntracked(`??`)かつ
+Visibleなままであることを`git ls-files --error-unmatch`(失敗=
+Untracked確認)・`git check-ignore`(失敗=未Ignore確認)の両方で
+Round終了時に確認した。
+
+**Staged-Scope機械的Guard(`gates.py`)**: 既存`check_scope`は
+`git status --porcelain`(Working Tree)のみを見ており、Docstringが
+明記する通り「Untracked Fileを誤ってStageしないこと自体は呼び出し側
+のGit Add Disciplineに委ねる」設計だった——cf89b6eはこのDiscipline
+依存部分が破られた事例である。`list_staged_paths()`(`git diff
+--cached --name-only`でIndex Snapshotを直接読む新規関数)を追加し、
+`check_scope`がTracked Working Tree変更に加えてStaged(Index)側の
+`allowed_files`逸脱・`frozen_files`抵触も検出するよう拡張した
+(Working Tree Scope CheckのみにRelyしない、という本Incidentの要求に
+対応)。既存3箇所の`check_scope`呼び出し(`orchestrator.py`、Dry-Run
+Preview含む)はSignature不変のため呼び出し側の変更は不要だった。
+Orchestrator自体が元々`git add`/`commit`/`push`を実行しないため、
+「Commit/Push Acceptance直前」はこのRunning Context上「Writer実行後
+のACCEPT_CANDIDATE判定前」に対応する(人間側の実Commit/Pushはこの
+判定より後に行われる)。
+
+**Test(`13_tests/test_dev_workflow.py`・
+`13_tests/test_dev_workflow_orchestrator.py`、新規Regression)**:
+(A)Manifestが許可するFileをStageしたCommitはPASS
+(`test_scope_staged_allowed_file_change_passes`)、(B)cf89b6e相当の
+Manifest外File(`AGENTS.md`)をIndexへ直接追加するとSTOP
+(`test_scope_staged_unrelated_file_stops`・Orchestrator End-to-End
+版`test_writer_staging_unrelated_out_of_scope_file_stops`)、
+(C)UntrackedかつUnstagedのFileはScope Checkに無関係
+(`test_scope_untracked_unstaged_file_does_not_stop`)、(D)D0103
+相当のManifest許可PathがUntrackedのまま存在してもScope Checkを通過し
+`git status`上でVisible(`??`)かつ未Ignoreのまま
+(`test_d0103_style_future_deliverable_stays_untracked_and_visible`)、
+(E)H0001(`human_gate.py`)は本Round無変更であり、既存
+`test_h0001_reference_executes_zero_agents`・
+`test_L_h0001_in_static_checks_stops_before_any_agent_invocation`が
+無修正でPASSし続けることを確認した。`list_staged_paths`単体の
+Unit Test(`test_list_staged_paths_reports_only_index_contents`)も
+追加した。
+
+**Validation**: Targeted Test(`gates.py`関連4 File、
+`test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`・
+`test_dev_workflow_executor.py`・`test_host_validation.py`)
+165/165 PASS。`ruff check`・`ruff format --check`は変更した3 File
+(`gates.py`・`test_dev_workflow.py`・`test_dev_workflow_orchestrator.py`)
+全てPASS。`mypy --strict`は本Round唯一の変更Production File
+`gates.py`でPASS(no issues found)——Test File 2件への`mypy --strict`
+実行は、`.venv`の実際のPython(3.14)と`pyproject.toml`の
+`mypy`設定(`python_version = "3.11"`)の不一致により、numpyの
+Stub(`type`文、3.12+限定Syntax)がParse Errorを起こす既存の
+環境Issueで実行できなかった(本Round変更前のCommit済みFileでも
+同一Errorが再現することを確認済み、本Changeによる新規Issueでは
+ない)。
+
+**変更File**: `.gitignore`・`scripts/dev_workflow_lib/gates.py`・
+`13_tests/test_dev_workflow.py`・
+`13_tests/test_dev_workflow_orchestrator.py`・本`DECISIONS.md`のみ。
+16個の復元対象File自体はStage/Commitしていない(`evidence_integration.py`
+・`test_evidence_integration.py`含む)。D0103は本Roundでも実行して
+いない(`D0103_ACCEPTED`判定は変更無し)。History Rewrite・H0001は
+いずれも未実施。

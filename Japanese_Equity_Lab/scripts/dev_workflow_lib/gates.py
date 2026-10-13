@@ -75,6 +75,17 @@ def list_changed_paths(repo_root: Path) -> tuple[tuple[str, ...], tuple[str, ...
     return tuple(tracked), tuple(untracked)
 
 
+def list_staged_paths(repo_root: Path) -> tuple[str, ...]:
+    """`git diff --cached --name-only`からIndex(Stage)に積まれたPathを
+    直接抽出する。INCIDENT-01(`cf89b6e`)はWorking Tree側の`??`判定を
+    経由せず、16個の対象外PathをIndexへ直接追加したうえでCommitした
+    事例だった——`list_changed_paths`のTracked側(`git status
+    --porcelain`)はStage前後を区別しないため単独では区別できないが、
+    こちらはCommit/Push直前のIndex Snapshotを明示的に見る。"""
+    output = _run_git(repo_root, "diff", "--cached", "--name-only")
+    return tuple(line.strip() for line in output.splitlines() if line.strip())
+
+
 def check_scope(
     repo_root: Path,
     *,
@@ -82,18 +93,21 @@ def check_scope(
     frozen_files: tuple[str, ...],
 ) -> GateResult:
     """DEV-AUTO-01 §9「Before commit: verify only allowed files
-    changed」。Trackedな変更のみを対象にする——UntrackedなFile
-    (`.agents/`/`.codex/`/`AGENTS.md`等、既存の無関係なFile)は
-    `git add`で明示的Pathのみを使う限りStageされないため、ここでは
-    ScopeからのTracked逸脱と`frozen_files`への書き込みのみを検出する
-    (Untracked Fileを誤ってStageしないこと自体は呼び出し側のGit Add
-    Discipline、DEV-AUTO-01 §9「Never use git add . / git add -A」に
-    委ねる)。"""
+    changed」に加え、INCIDENT-01.1でIndexへの直接追加(Working Tree
+    Scope Checkだけでは検出できないClass)に対するGuardを追加する。
+    UntrackedなFile(`.agents/`/`.codex/`/`AGENTS.md`等、既存の無関係な
+    File)自体は`git add`で明示的Pathのみを使う限りStageされないため、
+    ここではTracked逸脱・Staged(Index)逸脱・`frozen_files`への書き込み
+    の3種を検出する(Untracked Fileを誤ってStageしないこと自体は
+    呼び出し側のGit Add Discipline、DEV-AUTO-01 §9「Never use git add
+    . / git add -A」に委ねる——Working Tree Scope CheckだけにRely
+    しないことがINCIDENT-01.1の要求)。"""
     tracked_changed, _untracked = list_changed_paths(repo_root)
+    staged = list_staged_paths(repo_root)
     allowed = set(allowed_files)
     frozen = set(frozen_files)
 
-    frozen_touched = sorted(set(tracked_changed) & frozen)
+    frozen_touched = sorted((set(tracked_changed) | set(staged)) & frozen)
     if frozen_touched:
         return GateResult(passed=False, reason=f"frozen files were modified: {frozen_touched}")
 
@@ -101,7 +115,18 @@ def check_scope(
     if out_of_scope:
         return GateResult(passed=False, reason=f"changes outside allowed_files: {out_of_scope}")
 
-    return GateResult(passed=True, reason="all tracked changes are within allowed_files")
+    staged_out_of_scope = sorted(p for p in staged if p not in allowed)
+    if staged_out_of_scope:
+        return GateResult(passed=False, reason=f"staged changes outside allowed_files: {staged_out_of_scope}")
+
+    return GateResult(passed=True, reason="all tracked and staged changes are within allowed_files")
 
 
-__all__ = ["GateResult", "check_expected_head", "check_scope", "list_changed_paths", "resolve_head"]
+__all__ = [
+    "GateResult",
+    "check_expected_head",
+    "check_scope",
+    "list_changed_paths",
+    "list_staged_paths",
+    "resolve_head",
+]

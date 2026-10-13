@@ -494,6 +494,30 @@ def test_frozen_file_mutation_by_writer_stops(tmp_path: Path) -> None:
     assert reviewer.call_count == 0
 
 
+def test_writer_staging_unrelated_out_of_scope_file_stops(tmp_path: Path) -> None:
+    # INCIDENT-01 Regression: cf89b6eはManifest外の16Pathを`git add`で
+    # Index(Stage)へ直接追加したうえでCommitされた事例だった。ここでは
+    # Writer側がAllowed Files外のFileを明示PathでStageした場合に、
+    # Reviewerを一切呼ばずSTOPすることを検証する(Working Tree側の
+    # `??`判定経由ではなく、Index Snapshotそのものを見るCheckが効く
+    # ことの確認)。
+    repo, head = _init_temp_repo(tmp_path)
+    manifest = _manifest(expected_head=head)
+
+    def _stage_unrelated_file(working_directory: Path) -> None:
+        (working_directory / "AGENTS.md").write_text("unrelated operational file\n", encoding="utf-8")
+        subprocess.run(["git", "add", "AGENTS.md"], cwd=working_directory, check=True)
+
+    writer = FakeExecutor(fixed_response=_writer_success(), mutate_fn=_stage_unrelated_file)
+    reviewer = FakeExecutor(fixed_response=_reviewer_result("ACCEPTED"))
+
+    result = run_task(manifest=manifest, repo_root=repo, executors=_registry(writer, reviewer), runs_dir=tmp_path / "runs")
+
+    assert result.outcome == OrchestratorOutcome.STOP
+    assert "AGENTS.md" in result.reason
+    assert reviewer.call_count == 0
+
+
 # ============================================================
 # Closure Loop
 # ============================================================

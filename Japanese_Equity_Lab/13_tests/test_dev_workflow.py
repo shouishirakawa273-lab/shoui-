@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from scripts.dev_workflow_lib import gates as gates_module
 from scripts.dev_workflow_lib.acceptance import evaluate_acceptance, narrow_to_open_findings, open_blocking_findings
-from scripts.dev_workflow_lib.gates import check_expected_head, check_scope, list_changed_paths
+from scripts.dev_workflow_lib.gates import check_expected_head, check_scope, list_changed_paths, list_staged_paths
 from scripts.dev_workflow_lib.host_validation import CommandResult, ValidationResult
 from scripts.dev_workflow_lib.human_gate import (
     is_h0001_request,
@@ -154,6 +154,81 @@ def test_unrelated_untracked_files_are_ignored_by_scope_check(tmp_path: Path) ->
     tracked, untracked = list_changed_paths(repo)
     assert "unrelated_untracked.txt" in untracked
     assert "unrelated_untracked.txt" not in tracked
+
+
+# ============================================================
+# Repository Gate: staged (Index) scope — INCIDENT-01.1
+#
+# cf89b6eはWorking Tree側の`??`判定を経由せず、16個の対象外PathをIndexへ
+# 直接追加したうえでCommitした事例だった(INCIDENT-01)。以下はCommit/Push
+# 直前のIndex Snapshot(`git diff --cached --name-only`)がSanctioned
+# Staging Setの部分集合であることを検証する。
+# ============================================================
+
+
+def test_list_staged_paths_reports_only_index_contents(tmp_path: Path) -> None:
+    repo, _head = _init_temp_repo(tmp_path)
+    (repo / "allowed.txt").write_text("changed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "allowed.txt"], cwd=repo, check=True)
+    (repo / "unstaged_untracked.txt").write_text("noise\n", encoding="utf-8")
+
+    staged = list_staged_paths(repo)
+
+    assert staged == ("allowed.txt",)
+    assert "unstaged_untracked.txt" not in staged
+
+
+def test_scope_staged_allowed_file_change_passes(tmp_path: Path) -> None:
+    # A: Manifestが明示的に許可するFileをStageしたCommitはPASSする。
+    repo, _head = _init_temp_repo(tmp_path)
+    (repo / "allowed.txt").write_text("changed\n", encoding="utf-8")
+    subprocess.run(["git", "add", "allowed.txt"], cwd=repo, check=True)
+
+    result = check_scope(repo, allowed_files=("allowed.txt",), frozen_files=("frozen.txt",))
+
+    assert result.passed
+
+
+def test_scope_staged_unrelated_file_stops(tmp_path: Path) -> None:
+    # B: cf89b6e相当のRegression——Manifest外のFileをIndexへ直接追加した
+    # CommitはSTOPする。
+    repo, _head = _init_temp_repo(tmp_path)
+    (repo / "AGENTS.md").write_text("unrelated operational file\n", encoding="utf-8")
+    subprocess.run(["git", "add", "AGENTS.md"], cwd=repo, check=True)
+
+    result = check_scope(repo, allowed_files=("allowed.txt",), frozen_files=("frozen.txt",))
+
+    assert not result.passed
+    assert "AGENTS.md" in result.reason
+
+
+def test_scope_untracked_unstaged_file_does_not_stop(tmp_path: Path) -> None:
+    # C: UntrackedかつUnstagedのFileはScope Checkに一切影響しない。
+    repo, _head = _init_temp_repo(tmp_path)
+    (repo / "AGENTS.md").write_text("unrelated operational file\n", encoding="utf-8")
+
+    result = check_scope(repo, allowed_files=("allowed.txt",), frozen_files=("frozen.txt",))
+
+    assert result.passed
+    assert list_staged_paths(repo) == ()
+
+
+def test_d0103_style_future_deliverable_stays_untracked_and_visible(tmp_path: Path) -> None:
+    # D: D0103のようなManifest許可Pathでも、意図的にUntrackedのまま置いて
+    # あるだけならScope Checkを通過し、かつ`git status`上で可視(??)の
+    # ままである——Permanent Ignoreで隠されてはならない。
+    repo, _head = _init_temp_repo(tmp_path)
+    (repo / "future_deliverable.py").write_text("# pre-populated, not yet committed\n", encoding="utf-8")
+
+    result = check_scope(repo, allowed_files=("allowed.txt", "future_deliverable.py"), frozen_files=("frozen.txt",))
+
+    assert result.passed
+    _tracked, untracked = list_changed_paths(repo)
+    assert "future_deliverable.py" in untracked
+    is_ignored = subprocess.run(
+        ["git", "check-ignore", "future_deliverable.py"], cwd=repo, capture_output=True, text=True, check=False
+    )
+    assert is_ignored.returncode != 0  # NOT ignored
 
 
 def test_gates_module_never_calls_write_git_commands() -> None:
