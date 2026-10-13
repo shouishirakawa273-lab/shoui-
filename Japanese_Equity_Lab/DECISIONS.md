@@ -18241,3 +18241,168 @@ H0001は実行していない。
 `lib/evaluation/integrity.py`・`lib/evaluation/model.py`・
 `lib/evaluation/store.py`・`test_evaluation_foundation.py`は本Entry
 記録と同時にTracked化し、以降はD0107 FROZEN。
+
+## D0108 — Market Expectations Foundation
+
+**目的**: 市場の期待を単一の観測可能なTruthとして表現しない。「市場は
+X%の成長を期待している」という単一の主張は一切構築せず、常に3つの別
+概念——(1) **OBSERVED EXPECTATION PROXY**(Analyst Consensus/Company
+Guidance等、外部から観測されたProxy)、(2) **MARKET-IMPLIED
+ASSUMPTION**(固定Assumption群の下で現在価格と整合する値)、(3)
+**RESEARCH FORECAST**(既存D0107 PredictionRecord)——を分離して保持
+する`lib/expectations/`(`model.py`/`reverse_spec.py`/`comparison.py`)
+を新設した。Full Forward/Reverse Valuation Engineは将来のD0110の責務
+であり、本Roundでは構築しない。
+
+**既存Abstractionの再利用(複製しない)**: `ConsensusSnapshot`は既存
+`lib.consensus.model.ConsensusRecord`(Phase4E-4、PIT-safe/vintage-
+aware/source-aware)から`build_consensus_snapshot()`経由で構築する薄い
+Adapterであり、新しいConsensus Ingestion/Normalization機構は作らない。
+Company Guidanceも既存`lib.fundamentals.model.FundamentalMetric`
+(`actual_or_forecast=COMPANY_FORECAST`)をそのまま使い、
+`observation_from_company_forecast_metric()`が`actual_or_forecast`を
+検証してACTUAL Metricの混入を拒否する(Company Guidance != Analyst
+Consensus != Actual Result)。Research ForecastはD0107
+`PredictionRecord`をそのまま参照し、第二のPrediction Storageは作らない。
+
+**Consensus Coverage/Staleness**: `ConsensusCoverageStatus`
+(SINGLE_ESTIMATE/LIMITED_COVERAGE/BROAD_COVERAGE/UNKNOWN_COVERAGE)に
+より、1件のAnalyst Estimateが暗黙に「広範な市場Consensus」へ格上げ
+されることを防ぐ(`classify_consensus_coverage()`)。`StalenessStatus`
+(FRESH/STALE/UNKNOWN)は`decision_at`/`max_age_days`が明示された場合
+のみ判定し(`evaluate_staleness()`)、Policy未指定時はUNKNOWNのまま
+推測しない。Consensus取得不可は新しいDataGap概念を作らず既存
+`lib.evidence.research_artifact.DataGap`/`DataGapStatus`を再利用する
+(`missing_expectation_data_gap()`)。
+
+**PIT**: Snapshot/Observation自体の構築時にはPIT Gateを課さず(構築
+時点では`decision_at`が未定のことがあるため)、消費側=Comparison時点
+で`available_at > pit_cutoff`を`lib.errors.LookAheadBiasError`で拒否
+する。Unknown PIT Field(`provider_available_at`等)からのFallbackは
+一切行わない。
+
+**No False Uniqueness(最重要、D0108 §8)**: `ReverseValuationSpec`の
+`solver_mode`(SINGLE_VARIABLE/SOLUTION_SURFACE)は`solve_for_variables`
+の個数から**構造的に導出**し、呼び出し側が指定できない——1変数のみ
+SINGLE_VARIABLE、2変数以上は常にSOLUTION_SURFACEに固定される。
+SOLUTION_SURFACEのSpecから単一のScalar解を生成することは許可しない
+(`build_assumption_surface()`がSINGLE_VARIABLEのSpecを拒否し、Toy
+Adapterが複数未知変数に対して常にUNDERDETERMINEDを返すことで両方向
+から矛盾を防ぐ)。固定Assumption(`FixedAssumption`)はProse注記ではなく
+Structured Tupleとして`record_hash`計算対象に含め、Condition付き主張
+のみを構築する(D0108 §9 Conditional Language Contract)。
+
+**MarketImpliedAssumptionResult**: D0110 Solverが満たすべきTyped
+Outcome Contract(SUCCESS/UNDERDETERMINED/NO_SOLUTION/MULTIPLE_
+SOLUTIONS/OUT_OF_BOUNDS/PIT_INVALID/INVALID_SPEC/UNSUPPORTED_MODEL)
+のみを定義し、`fixed_assumptions_echo`によりStatusを問わず固定
+Assumptionを常にProvenanceへ保存する。`solve_toy_linear_reverse_
+valuation()`(`TOY_LINEAR_V1`)は、Interface自体を検証するためだけの
+意図的に単純化したLinear Adapterであり、本番Valuation Engineとして
+将来提示してはならないと明示した(D0108 §20)。
+
+**ExpectationComparison**: Research Forecastと1件のProxy/Market-
+Implied Assumptionとの間の単純な算術差分のみを計算する。Metric/
+Target Period/Unitのいずれかが一致しない場合は無言で比較せず
+`MarketExpectationsSchemaError`でFail Closedする。BUY/SELL/Expected
+Return/Scenario Probability/DecisionRecord自動生成はいずれも行わない
+(Source Level ASTで確認)。
+
+**独立Adversarial Review(`/code-review high`)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** `compare_prediction_to_market_implied_
+   result()`が`pit_cutoff`を引数で受け取るにもかかわらず一切検証せず、
+   他の2つの`compare_prediction_to_*()`(Consensus/Observation)が
+   `available_at > pit_cutoff`でLook-aheadを拒否するのに対し、本関数
+   だけがPIT Gateを素通りしていたことをReviewerが指摘。修正:
+   `result.computed_at`(そのResultが初めて知り得た時刻)を`pit_cutoff`
+   と比較し、超えていれば`LookAheadBiasError`で拒否するようにした。
+   Regression Test`test_compare_prediction_to_market_implied_result_
+   rejects_future_result`を追加。
+2. **(Blocking、修正済み)** 同関数が`prediction.target`と
+   `solve_for_variable_name`の一致を一切検証していなかった
+   (他の2関数は`prediction.target != consensus.metric`等でMetric
+   一致をCheckしている)ため、EPS予測とRevenue Growthの解を無言で
+   比較できてしまうことをReviewerが指摘。修正: `prediction.target !=
+   solve_for_variable_name`を明示的にCheckし、不一致なら
+   `MarketExpectationsSchemaError`で拒否するようにした。Regression
+   Test`test_compare_prediction_to_market_implied_result_rejects_
+   metric_mismatch`を追加。
+3. **(Non-blocking、修正済み)** `ReverseValuationSpec.__post_init__`
+   が`solve_for_variables`/`fixed_assumptions`の重複変数名はCheckして
+   いたが、`bounded_assumptions`には同じCheckが無く、同一変数名を持つ
+   矛盾する2件の`BoundedAssumption`が`solve_toy_linear_reverse_
+   valuation()`の`bound_by_name`辞書構築時に後勝ちで黙って片方を無視
+   されることをReviewerが指摘。修正: `bounded_assumptions`にも重複名
+   Checkを追加。Regression Test`test_reverse_valuation_spec_rejects_
+   duplicate_bounded_assumption_names`を追加。
+4. **(Non-blocking、修正済み)** `observation_from_company_forecast_
+   metric()`が`metric.unit`が`None`の場合`unit=metric.unit or ""`で
+   暗黙に空文字へFallbackし、後段の汎用空文字Validationに間接的に
+   引っ掛ける設計になっていた(ルートCLAUDE.mdの「取得できない値を
+   推測で埋めない」原則違反、既に2行上で`metric.value is None`は明示
+   的にCheckしているのと非対称)とReviewerが指摘。修正:
+   `metric.unit is None`を明示的にCheckし拒否するようにした。
+   Regression Test`test_observation_from_company_forecast_metric_
+   rejects_missing_unit_explicitly`を追加。
+5. **(Non-blocking、修正済み)** `_require_nonempty_str`/`_require_tz_
+   aware`が`model.py`/`reverse_spec.py`/`comparison.py`の3Fileで同一
+   内容のまま重複定義されており、将来の修正が3箇所で同期せず分岐する
+   RiskがあるとReviewerが指摘。修正: `model.py`側を`require_nonempty_
+   str`/`require_tz_aware`(非Private名)へ変更して`__all__`へ追加し、
+   他2 Fileはこれをimportして重複定義を削除した。
+
+**Test(`test_expectations_foundation.py`、37件、新規)**: §21 A-G
+(ConsensusSnapshot Immutable/Tamper-Evident・異なるProvider分離・
+Company Guidance != Analyst Consensus・Comparison時PIT拒否・Staleness
+識別・DataGap明示・Single-Estimate非昇格)、§22 A-H(単一未知変数+充足
+Fixed Assumption→有効Spec・複数未知変数→UNDERDETERMINED・Fixed
+Assumption欠落→Reject・Provenance保存・異なるFixed Assumption→異なる
+Identity・順序違い→同一Canonical Identity・未来価格→PIT Reject・
+未対応Model→Typed Failure)、§23 A-G(Research vs Consensus有効Delta・
+Research vs Market-Implied有効Conditional Comparison・異なるPeriod/
+Unit/Metric→Reject・Stale Proxy引継ぎ・BUY/SELL/Expected Return不在)、
+§24(禁止識別子のSource Level AST確認)、D0107統合/DecisionRecord不
+自動生成/LLM非依存/H0001未実行/本番Valuation Engine不在、Reviewer
+Finding Closure 5件を網羅。既存D0102-D0107 Test・Consensus Test
+(`test_consensus_pit.py`・`test_consensus_catalog.py`)・Fundamentals
+Test(`test_fundamentals_model.py`)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(`test_expectations_foundation.py`)37件
+PASS。D0102-D0108+Consensus+Fundamentals関連13 File合計405件PASS。
+Repository全体`pytest`2066件PASS(0 Failure)。`ruff check`・`ruff
+format --check`・`mypy --strict`はいずれも本Round唯一の変更Production
+File(`lib/expectations/model.py`・`lib/expectations/reverse_spec.py`・
+`lib/expectations/comparison.py`)でPASS。`mypy --strict`はTest File
+自体では既存の環境Issue(numpy Stub/Python 3.14不一致、D0103以降で
+確認済みと同一原因)により実行不能だったが、本Changeによる新規Issue
+ではないことを確認した。
+
+**Manifest**: `scripts/manifests/d0108_market_expectations_foundation_
+pilot.json`(新設、`task_id=D0108-MARKET-EXPECTATIONS-FOUNDATION`、
+`allowed_files`は`lib/expectations/`配下4File・`test_expectations_
+foundation.py`のみ、`frozen_files`はD0103-D0107関連16 File、
+`expected_head=CURRENT`)。`dev_workflow.py run --dry-run`で
+`head_check`/`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/expectations/__init__.py`(新設、空File)・
+`lib/expectations/model.py`(新設)・`lib/expectations/reverse_spec.py`
+(新設)・`lib/expectations/comparison.py`(新設)・`13_tests/test_
+expectations_foundation.py`(新設)・`scripts/manifests/d0108_market_
+expectations_foundation_pilot.json`(新設)・本`DECISIONS.md`。既存
+Frozen File(D0102-D0107関連16 File)・`lib/consensus/`・
+`lib/fundamentals/`はいずれも無変更。Fundamental Forecast生成
+(D0109)・Production Forward/Reverse Valuation Engine(D0110)・
+Expected Return・BUY/SELL・Portfolio構築・Scenario Probability・
+DecisionRecord自動生成はいずれも導入していない。H0001は実行していない。
+
+**D0109/D0110 Boundary**: `lib/expectations/`はExpectation Data
+Model・Consensus/Guidance Proxy・Reverse Valuation Specification・
+Market-Implied Result Interface・Comparison構造のみを提供する。
+Fundamental Forecasting Logic自体(D0109)・実際のForward Valuation
+Engine/Reverse Valuation Solver/実データによるAssumption Surface計算
+(D0110)はいずれも本Roundに含めていない。
+
+**Status**: `D0108_ACCEPTED = YES`。`lib/expectations/__init__.py`・
+`lib/expectations/model.py`・`lib/expectations/reverse_spec.py`・
+`lib/expectations/comparison.py`・`test_expectations_foundation.py`は
+本Entry記録と同時にTracked化し、以降はD0108 FROZEN。
