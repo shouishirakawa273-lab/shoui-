@@ -17928,3 +17928,172 @@ Interpretation自体(Bull/Base/Bearへの反映判断等)はD0106の責務とし
 **Status**: `D0105_ACCEPTED = YES`。`incremental_update.py`・
 `test_incremental_research_update.py`は本Entry記録と同時にTracked化
 し、以降はD0105 FROZEN。
+
+## D0106 — Thesis Break Monitor
+
+**目的**: D0105が識別した変化Evidence(NEW/POTENTIALLY_SUPERSEDED/
+REMOVED_OR_MISSING)を、既存`ResearchArtifact`のBull/Base/Bear各
+`NarrativeCase`に対してScenario単位で評価し、既存`EvidenceRelation`
+(SUPPORTS/CONTRADICTS/ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN)の
+いずれかへ分類する唯一の公開Entrypoint`lib.evidence.thesis_impact.
+assess_thesis_impact()`を新設。「このEvidenceは既存Hypothesisに
+何を意味するか」のみに答え、「新しいThesisは何であるべきか」には
+一切答えない(EVIDENCE/INTERPRETATION/DECISIONの分離、D0106 §2)。
+
+**Deterministic Gate(Semantic Interpretationより常に先行)**: 1)
+evidence_idがD0105の`IncrementalResearchUpdateResult`内のいずれかの
+Bucketに実在すること、2) UNCHANGEDは対象外、3) REMOVED_OR_MISSINGは
+当該ScenarioのNarrativeCase.supporting_evidence_idsに実際に参照され
+ていること(Materiality、既存Reference再利用のみ、§17)、4)NEW/
+POTENTIALLY_SUPERSEDEDはevidence_records内に一意に存在すること、5)
+EvidenceType.CLAIMであること、6)decision_at時点でPIT利用可能である
+こと、7)`lib.disclosures.evidence_lineage.resolve_evidence_lineage()`
+(D0104、そのまま再利用)がSUCCESSであること(ACCEPT以外もこのGateで
+検知される)。いずれかが失敗すればModelは一切呼び出されない
+(`verify_candidate_faithfulness()`と同じ「Model PASSがDeterministic
+FAILを上書きしない」設計原則)。
+
+**REMOVED_OR_MISSING Policy**: 対応するEvidenceRecord自体が存在しない
+ため、Modelを一切呼び出さず`relation=UNKNOWN`・`requires_review=True`・
+`reason="EVIDENCE_MISSING"`を決定論的に直接返す——自動的にCONTRADICTS
+やFALSEを意味しない(§12)。
+
+**EvidenceRelation Vocabulary**: 既存`lib.evidence.model.
+EvidenceRelation`をそのまま再利用し、新しいSynonymは追加しない。
+CONTRADICTS(直接的論理矛盾)とALTERNATIVE_EXPLANATION(競合する説明)
+を明確に区別し、「販促費値引き」vs「原材料インフレ」の例をTestで
+実証した(§4)。
+
+**Scenario Isolation**: `assess_thesis_impact()`は単一(ResearchArtifact,
+Scenario, Evidence)の3つ組に対する最小単位のPure Functionであり、
+Bull/Base/Bear全ての評価は呼び出し側が3回個別に呼ぶ(隠れたLoop・
+Global Relation強制は無い、§14)。同一Evidenceが異なるScenarioへ
+異なるRelationで評価されることをTestで実証した。
+
+**Unassigned NEW Evidence**: D0105の`unassigned_new_evidence_ids`を
+本Moduleが自動的にどのScenarioへもAttachしない(Semantic Auto-
+Routing無し、§18、Source Level AST確認)。
+
+**Model-Assisted Semantic Interpretation**: `ThesisRelationModel`
+Protocol(`CandidateExtractionModel`/`FaithfulnessVerifier`と同型の
+Adapter Injection Pattern)経由でOptionalに注入する。入力は
+`ThesisRelationModelInput`(Narrow Allowlist、7 Field: research_node_id/
+scenario/hypothesis_summary/evidence_normalized_text/
+evidence_claim_type/evidence_direction/evidence_supporting_quote)の
+みで、市場価格・Valuation・他のEvidenceRecord・Research History全体
+は渡さない。出力はDict形式を期待し、`relation`/`reason`/
+`uncertainty`(既存`ConfidenceLevel`を再利用、新しい0-100 Scoreは
+作らない)の3 Keyのみを許可する——未知のKey(Thesis書き換え・BUY/
+SELL密輸等)・不正なEnum値はいずれもResponse全体を
+`MODEL_CONTRACT_VIOLATION`としてReject する(`candidate_extraction.py`
+のAllowed Key/Forbidden Field Patternと同じ設計)。Modelが`None`の
+場合は`relation=UNKNOWN`・`reason="NO_MODEL_CONFIGURED"`を返し、
+推測しない。
+
+**Confidence/ResearchArtifact不変性**: `ConfidenceLevel`等の
+Confidence Fieldを自動的に変更しない(§15)。`ResearchArtifact`/
+`NarrativeCase`は一切構築・Mutateしない(Read-Onlyの引数としてのみ
+受け取る、Source Level AST確認+Constructor呼び出しの不在をTest化、
+§24)。新しいEvidenceRelation Mutation・Append-Only Assessment Store
+は本Repositoryに現時点で存在しないため新設しない(将来のD0107の
+責務として明確に分離)。
+
+**Assessment Provenance / D0107 Readiness**: Model呼び出しが発生した
+場合、既存`lib.evidence.model.AiDerivedProvenance`をそのまま再利用し
+(新しいProvenance Schemaは作らない)、`assessed_at`(評価生成時刻)と
+`evidence_available_at`(当該EvidenceのPIT available_at)・
+`decision_at`(PIT判定基準時刻)を明確に分離して保持する(§19、
+混同しないことをTestで実証)。`lineage_reference`(claim_id)も保持
+し、将来のD0107(本Roundでは構築しない、§25)が「時刻Tにどのような
+評価が存在したか」を再構成できる形を維持する。
+
+**独立Adversarial Review(`/code-review high`、D0106 §29 Reviewer
+Focus 1〜12に基づく)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** `candidates`/`normalized_documents`/
+   `disclosure_documents`の個々の要素が未検証のまま`resolve_
+   evidence_lineage()`へ渡され、不正な要素(dict等)に対して生の
+   `AttributeError`が漏れることをReviewerが実際に再現した。修正:
+   D0105の`_require_type`と同じ方針でElement型検証を追加し、
+   `ThesisImpactSchemaError`で明示的に拒否するようにした。Regression
+   Test`test_malformed_candidate_element_raises_schema_error_not_
+   attribute_error`を追加。
+2. **(Non-blocking、修正済み)** `ThesisRelationModelInput.evidence_
+   claim_type`/`evidence_direction`がAllowlist Fieldとして宣言・
+   Importされているにもかかわらず、実装上常に`None`で固定されており
+   実質未使用だった(Reviewerが2回の独立Passで同一問題を指摘)。修正:
+   `evidence.source.source_id == claim.claim_id`(既存Authoritative
+   Join Key)で実際のSemanticClaimを再特定し、`claim_type`/
+   `direction`を実際にModel Inputへ渡すようにした。Regression Test
+   `test_model_input_carries_actual_claim_type_and_direction`を追加。
+3. **(Non-blocking、修正済み)** 空の`NarrativeCase.summary`
+   (ResearchArtifact側で構造的に禁止されていないLegitimate Domain
+   State)が、`ThesisRelationModelInput.__post_init__`の空文字
+   Validationに到達して`ThesisImpactSchemaError`(Exception)を
+   発生させていた——「Caller Programming Errorと正当なDomain Outcome
+   を区別する」既存契約の違反だった。修正: Model呼び出し直前に空
+   Summaryを検知し`UNSUPPORTED_INPUT`というTyped Outcomeを返すよう
+   にした。Regression Test`test_empty_narrative_case_summary_is_
+   typed_unsupported_input_not_exception`を追加。
+4. **(Non-blocking、Docstring修正)** Module Docstringが「Ticker・
+   企業名はいずれも含めない」と絶対的に主張していたが、`research_
+   node_id`(=`ResearchArtifact.artifact_id`、Task Spec自身が
+   Hypothesis Identifierとして許可するField)はCaller側のID発行
+   Conventionにより企業識別子を含みうる——本Module自身が新たにTicker/
+   企業名Fieldを追加送信しない、という正確な主張へDocstringを修正
+   した。「6 Field」という誤った個数(実際は7 Field)も修正した。
+
+**Test(`test_thesis_impact.py`、33件、新規)**: §21 A-L(Contradicts/
+Supports/Alternative Explanation/Neutral/Unknown/Removed/Lineage
+Failure/PIT-Invalid/Non-ACCEPT/Scenario Isolation/Unassigned/
+ResearchArtifact不変性)・Model Contract Test(不正Enum・Prose-only・
+Reason欠落・Thesis書き換え試行・BUY/SELL密輸のいずれもReject)・
+Deterministic Reference/Materiality/Identity Gate(Missing Reference・
+UNCHANGED・NOT_MATERIAL・重複ID)・Assessment Provenance分離・
+Potential Supersession・Reviewer Finding Closure 3件・No-LLM/No-
+ResearchArtifact-Mutation(Source Level AST確認)、を網羅。既存
+D0102.4-D0105 Test(`test_candidate_extraction.py`・`test_disclosures_
+semantic_claims.py`・`test_evidence_integration.py`・
+`test_faithfulness.py`・`test_evidence_lineage.py`(D0040)・
+`test_disclosures_evidence_lineage.py`・`test_incremental_research_
+update.py`・`test_research_artifact.py`・`test_research_artifact_
+registry.py`)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(D0102-D0106関連10 File)390件PASS。
+Repository全体`pytest`1960件PASS(0 Failure)。`ruff check`・`ruff
+format --check`・`mypy --strict`はいずれも本Round唯一の変更
+Production File(`thesis_impact.py`)でPASS。`mypy --strict`はTest
+File自体では`import pytest`単独でも再現する既存の環境Issue(numpy
+Stub/Python 3.14不一致、D0103/D0105で確認済みと同一原因)により実行
+不能だったが、本Changeによる新規Issueではないことを確認した。
+
+**Manifest**: `scripts/manifests/d0106_thesis_break_monitor_pilot.json`
+(新設、`task_id=D0106-THESIS-BREAK-MONITOR`、`allowed_files`は
+`thesis_impact.py`(`lib/evidence/`配下)・`test_thesis_impact.py`
+のみ、`frozen_files`はD0103/D0104/D0105関連11 File、`expected_
+head=CURRENT`)。`dev_workflow.py run --dry-run`で`head_check`/
+`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/evidence/thesis_impact.py`(新設)・
+`13_tests/test_thesis_impact.py`(新設)・
+`scripts/manifests/d0106_thesis_break_monitor_pilot.json`(新設)・
+本`DECISIONS.md`。既存Frozen File(`evidence_integration.py`・
+`evidence_lineage.py`・`faithfulness.py`・`semantic_claims.py`・
+`candidate_extraction.py`・`normalization.py`・`model.py`・
+`lib/evidence/model.py`・`lib/evidence/research_artifact.py`・
+`lib/evidence/incremental_update.py`・`lib/registry/research_
+artifact_registry.py`)はいずれも無変更。ResearchArtifact/
+NarrativeCaseのMutation・自動Thesis Rewrite・BUY/SELL・期待Return
+Logic・Confidence自動変更はいずれも導入していない。H0001は実行して
+いない。
+
+**D0107との関係**: `ThesisImpactAssessment`(Deterministic Gate +
+Model-Assisted Interpretationの出力)は、将来のD0107(Lock機構、本
+Roundでは構築しない)が「時刻Tにどのような評価が存在したか」を
+Reconstructするための入力として設計されている。`assessed_at`/
+`evidence_available_at`/`decision_at`の明確な分離、`assessment_
+provenance`(AiDerivedProvenance)の保持がこれを支える。Persistence/
+Append-Only Store自体はD0106では実装しない。
+
+**Status**: `D0106_ACCEPTED = YES`。`thesis_impact.py`・
+`test_thesis_impact.py`は本Entry記録と同時にTracked化し、以降は
+D0106 FROZEN。
