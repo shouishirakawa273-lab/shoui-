@@ -17595,3 +17595,158 @@ Production File`evidence_lineage.py`でPASS(no issues found)。
 **Status**: `D0104_ACCEPTED = YES`。`evidence_lineage.py`・
 `test_disclosures_evidence_lineage.py`は本Entry記録と同時にTracked化
 し、以降はD0104 FROZEN。
+
+## D0104.1 — Candidate Lineage Identity
+
+**目的**: D0104で唯一「再構成されたEdge」だった`SemanticClaim ->
+SemanticClaimCandidate`について、D0105 Incremental Research Update
+着手前にSAFE(誤った結論を出さない)とAUDITABLE(正しく解決できる
+Caseを正しく解決する)が同値ではないことを前提に、現状の構造的Identity
+が十分かどうかを判定する。
+
+**現状Identity分析(Persisted/Derived/Reconstructed/Ephemeralの分類)**:
+- `SemanticClaimCandidate`: **Ephemeral**(D0102.3 §15、専用ID無し、
+  Non-Persisted)。
+- `compute_candidate_reference()`: **Derived**(`evidence_span_
+  identity_fields()`8 Field+`claim_type`+`normalized_claim_text`+
+  `direction`の計4 Fieldから決定論的Hash導出、D0102.4A修正3、
+  `extraction_version`/`schema_version`/`extraction_provenance`は
+  意図的に含まない——Verification同一Call内のTamper Checkという狭い
+  用途であり、Cross-Extraction-Run Global Identityとしては設計されて
+  いない)。
+- `SemanticClaim.claim_id`/`semantic_identity_key`: **Derived**
+  (D0102.1 §F、`hash_json_safe()`)。
+- `SemanticClaim <- SemanticClaimCandidate`の対応関係そのもの:
+  **Reconstructed**(`promote_verified_candidate()`が`candidate`の
+  **7 Field全て**[`claim_type`/`normalized_claim_text`/`direction`/
+  `evidence_span`/`extraction_version`/`schema_version`/
+  `extraction_provenance`]をそのままCopyするIndirect Invariantのみに
+  依拠、Explicit Reference Fieldは無い)。
+
+**Core Question回答(8問)**:
+1. 2つの別個のCandidateが4 Field(D0104初版が使った`evidence_span`/
+   `claim_type`/`normalized_claim_text`/`direction`)全て同一になる
+   ことは正当にありうる——Yes(同一EvidenceSpanに対する別個の
+   Extraction Runが、定型文Claim等で偶然同一内容を生成するCase、
+   D0105が前提とする典型シナリオ)。
+2. `compute_candidate_reference()`はこれを区別しない——しない(上記
+   4 FieldのみのHashのため)。
+3. `compute_candidate_reference()`は上記4 Fieldと完全に同一であり、
+   追加のStable Provenanceは含まない(Source確認済み)。
+4. Normalizer Version変更がHistorical SemanticClaimの解決先を変える
+   ことはない——`EvidenceSpan.source_normalizer_version`がSpanに
+   既に凍結されているため、旧SpanはIndependent(`revalidate_
+   evidence_span()`が不一致を`NEEDS_REVALIDATION`→`IDENTITY_
+   MISMATCH`でFail Closedする、Silent Driftは無い)。
+5. 別Document/別Extraction Runからの2 Candidateが構造的に衝突する
+   ことはある——同一EvidenceSpan(document_id含む)+同一内容+
+   4 Fieldのみ照合、の場合に限り(D0104初版の実際のGap)。
+6. `EvidenceSpan`はDocument/TextBlock Identityとしては十分Global
+   Uniqueである(document_id+member_path+taxonomy_element_name+
+   occurrence_index+char_start+char_end+content_hash+normalizer_
+   versionの8 Fieldで位置とVersionを完全に固定する)——ただし
+   Candidate(=「誰が・いつ・どのRunで」生成したか)の一意性までは
+   保証しない。
+7. Candidate Identityは4 Fieldのみで見ればSerialization Round-trip
+   後も安定(全てFrozen Dataclass、構造的Equality、Primitive Field
+   のみ)——Field値がRound-tripで保存されれば一致判定は成立する
+   (Testで実証)。
+8. 既存`AMBIGUOUS_LINK` Protectionは**SAFE**(誤って一方をSilent
+   選択しない)だが、4 Fieldのみでは**AUDITABLE**ではない(本来一意に
+   解決できるCase[同一内容・別Extraction Run]を不要にAmbiguousへ
+   倒してしまう、D0104.1 §2「SAFE/AUDITABLEは同値ではない」の実例)。
+
+**決定: A. CURRENT_IDENTITY_SUFFICIENT**(Frozen Phase1 Schema変更
+不要)。但し「現状」とは、D0104初版が使っていた4 Fieldのみの照合
+ではなく、`promote_verified_candidate()`が既にCopy済みの**7 Field
+全て**(`extraction_version`/`schema_version`/`extraction_
+provenance`を追加)を使うよう`evidence_lineage.py`自身(Frozen
+Schemaではない、D0104.1の対象そのもの)の`_candidate_matches_claim()`
+を強化した上での結論である——新しい識別子Field・新しいHash
+Algorithm・Fuzzy Match・Positional ID・Mutable Global Registryは
+いずれも導入していない(既存Promotion Boundaryが既にCopyしている
+値を追加で照合に使うのみ)。この強化後、D0104 §Core Question 1の
+Realistic Collision Scenario(同一EvidenceSpan・同一内容・別
+Extraction Run)はAMBIGUOUS_LINKにならずSUCCESSで一意に解決する。
+
+**残存する境界(明示的に未解消、D0102.1由来のSystem-Wide前提の継承)**:
+同一`extraction_version`が2つの異なるExtraction Runへ誤って再利用
+され、かつ`extraction_provenance`(Timestamp含む)まで偶然一致する
+場合のみ、7 Field照合でも理論上はAMBIGUOUS_LINKにならず偶然一致する
+可能性が残る。これはLineage固有の新しい弱点ではなく、`claim_id`自体が
+「Extraction Run単位で一意」という型では強制されないCaller
+Disciplineに既に依存している(D0102.1 §F)、System全体が既に負って
+いるTrust Assumptionをそのまま継承したものである。
+
+**Frozen Schema Exception**: 不要。Option B(`SemanticClaim.
+candidate_reference`のような新Field追加)は検討したが、7 Field照合
+への強化のみで実用上のCollisionシナリオを解消できるため採用しなかった
+(Historical Compatibility/Legacy Resolver Labelも不要)。
+
+**独立Reviewer(`/code-review high`)の回答(6問)**:
+1. 「Forensic Audit向けに十分Explicitか」: 部分的。`EvidenceLineage.
+   extraction_version`追加によりどのExtraction Runかを結果自身から
+   読み取れるようになったが、`candidate_reference`単独(4 Field
+   Hash)は依然複数Runで同一になりうる——Docstringで「`(candidate_
+   reference, extraction_version)`のPairで判断すること」を明示する
+   Finding(Low)を受け、両Field Docstringを強化した。
+2. 「2つの歴史的Extraction Eventが1つのLineage Identityへ収束しう
+   るか」: 上記「残存する境界」の1ケースのみ(extraction_version
+   再利用+extraction_provenance完全一致という複合条件)、System全体
+   が既に負っている前提の継承。
+3. 「将来のNormalization変更がLineage解決を変えうるか」: No
+   (`revalidate_evidence_span()`がFail Closed)。
+4. 「保存済みLineage結果は再現可能か」: Yes(Pure Function、Model
+   呼び出し無し、同じ入力から常に同じ結果)。
+5. 「Semantic/Text類似度からの推測Edgeが残っているか」: No(全て`==`
+   構造的Equality・既存Hash再利用・Dict/List Lookupのみ、Source
+   Level確認済み)。
+6. 「D0105 Incremental Research Update向けに準備できているか」:
+   概ねYes(定型文Claim再Extraction Caseが実際にSUCCESS解決する
+   ことをTestで実証)。もう1件のFinding(Low、`schema_version`/
+   `extraction_provenance`単独Divergenceを分離検証するTestが無く
+   `_candidate_matches_claim()`の将来的な劣化Regressionを検知
+   できない)を受け、2件のIsolation Testを追加した(追加前に両方
+   がFailすることを意図的に確認済み、D0104.1 §8検証プロセス)。
+
+**Test(`test_disclosures_evidence_lineage.py`、D0104の22件+D0104.1で
+7件追加の計29件)**: D0104.1追加分は
+`test_repeated_extraction_run_with_identical_content_resolves_
+without_false_ambiguity`(核心Regression、偽Ambiguity解消の実証)・
+`test_true_duplicate_candidate_across_identical_runs_still_
+ambiguous`(真のDuplicateは依然AMBIGUOUS_LINK)・
+`test_same_claim_text_from_different_document_cannot_cross_link`
+(A)・`test_same_claim_text_from_different_textblock_cannot_cross_
+link`(B/C)・`test_candidate_identity_match_survives_serialization_
+round_trip`(E)・`test_schema_version_divergence_alone_distinguishes_
+candidates`・`test_extraction_provenance_divergence_alone_
+distinguishes_candidates`(Reviewer Finding Closure、Isolation
+Test)。F〜N・ACCEPT-only・PIT Invariant・Forward Query・D0103
+無変更は既存22件が継続してCoverする(全件無修正でPASS)。
+
+**Incremental Research Update Readiness**: `resolve_evidence_
+lineage()`は依然Pure Function・O(n)×4 Linear Scan(D0104の既知
+Trade-offをそのまま継承、本Roundで変更なし)。新DisclosureDocument
+→Descendant Candidates→Accepted SemanticClaims→EvidenceRecordsの
+経路はText類似度・偶然の構造的再構成に依存せず、7 Field Exact
+Equalityのみで決定論的に解決できることを確認した——D0105はこの上に
+Incremental Update Logic(本Round・D0104.1いずれも未実装)を構築
+できる状態にある。
+
+**Validation**: Targeted Test(D0102/D0103/D0104/D0104.1関連7
+File)304件PASS。Repository全体`pytest`1897件PASS。`ruff check`・
+`ruff format --check`・`mypy --strict`はいずれも変更Production File
+(`evidence_lineage.py`)でPASS。Isolation Test 2件は追加前に
+意図的にFailすることを確認済み(Regression検知力の実証)。
+
+**変更File**: `lib/disclosures/evidence_lineage.py`・
+`13_tests/test_disclosures_evidence_lineage.py`・本`DECISIONS.md`
+のみ。Frozen Phase1 Schema(`evidence_integration.py`・
+`faithfulness.py`・`semantic_claims.py`・`candidate_extraction.py`・
+`normalization.py`・`model.py`・`lib/evidence/model.py`)はいずれも
+無変更。ResearchArtifact・NarrativeCase・BUY/SELL・期待Return Logic
+は導入していない。H0001は実行していない。
+
+**Status**: `D0104_ACCEPTED = YES`(継続)、`D0104.1_DECISION =
+CURRENT_IDENTITY_SUFFICIENT`、Candidate Lineage Identity Hardening
+完了。D0104は本Entryと合わせて再FROZEN。

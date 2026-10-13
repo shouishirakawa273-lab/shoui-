@@ -27,19 +27,59 @@ LLM/Model呼び出しはこのModule内に一切存在しない(`MODEL_CALL_SITE
 行わない——必要なLinkが見つからない場合は常にTyped Failure
 (`EvidenceLineageStatus`)を返す(Silent Repair禁止)。
 
-## Candidate Identity(既存Schemaの再利用のみ、新IDは追加しない)
+## Candidate Identity(既存Schemaの再利用のみ、新IDは追加しない、D0104.1で強化)
 
 `SemanticClaimCandidate`はD0102.3 §15により意図的にNon-Persistedであり、
 `candidate_id`等の専用識別子を持たない。本Module自身もこの不在を補う
 新しい識別子Fieldを追加しない(D0104 §6「Do not silently retrofit IDs
 across frozen Phase 1 schemas」)。代わりに`promote_verified_candidate()`
-(`lib.disclosures.faithfulness`)が`SemanticClaim`を`candidate.claim_type`/
-`normalized_claim_text`/`direction`/`evidence_span`から**そのままCopy**で
-構築するという既存Invariantを再利用し、`SemanticClaim`から同じ4 Fieldの
-構造的Equalityで元の`SemanticClaimCandidate`を一意に再特定する。一致した
-Candidateに対しては既存`compute_candidate_reference()`(`CANDREF_`
-Hash、D0102.4で既に確立済みのCandidate Identity概念)を呼び出し、
-Lineage結果へそのまま転記する——新しいHash構築はここでは一切行わない。
+(`lib.disclosures.faithfulness`)が`SemanticClaim`を`candidate`の
+**7 Field全て**(`claim_type`/`normalized_claim_text`/`direction`/
+`evidence_span`/`extraction_version`/`schema_version`/
+`extraction_provenance`)から そのままCopyで構築するという既存Invariantを
+利用し、`SemanticClaim`から同じ7 Fieldの構造的Equalityで元の
+`SemanticClaimCandidate`を一意に再特定する。
+
+**D0104.1 Identity Hardening**: D0104初版は4 Field(`evidence_span`/
+`claim_type`/`normalized_claim_text`/`direction`)のみで照合していたが、
+これは`compute_candidate_reference()`(`lib.disclosures.faithfulness`)
+自身が使うFieldと同一であり、その4 Fieldは意図的に`extraction_version`/
+`schema_version`/`extraction_provenance`を含まない(D0102.4A修正3、
+Verificationの同一Call内Tamper Checkという狭い用途のための設計であり、
+Cross-Extraction-Run Global Identityとして設計されたものではない)。
+したがって4 Fieldのみの照合では、**同一EvidenceSpanに対する別個の
+Extraction Run(異なる`extraction_version`)が偶然同一のClaim内容
+[`claim_type`/`normalized_claim_text`/`direction`]を生成した場合**に、
+本来一意に解決できるはずのCandidateを誤って`AMBIGUOUS_LINK`としてしまう
+(SAFE[誤った結論を出さない]だがAUDITABLE[正しく解決できるCaseを正しく
+解決する]ではない、D0104.1 §2の区別)——安定した定型文Claim
+(例:「重要な変更はありません。」)がExtraction Version更新を跨いで
+再Extractionされた場合に実際に起こりうる、D0105 Incremental Research
+Updateが前提とする典型ケースである。`promote_verified_candidate()`が
+既に`extraction_version`/`schema_version`/`extraction_provenance`も
+Candidateから そのままCopyしているため、この3 Fieldを追加照合に使う
+ことは新しい識別子・新しいHash Algorithm・Fuzzy Matchのいずれでもなく、
+既存Promotion Boundaryが既にCopyしている値をそのまま使うだけである
+(Frozen Phase1 Schemaは一切変更しない、D0104.1 Decision A)。
+
+一致したCandidateに対しては既存`compute_candidate_reference()`
+(`CANDREF_`Hash、D0102.4で既に確立済みのCandidate Identity概念)も
+参考値としてLineage結果へそのまま転記する(新しいHash構築はここでは
+一切行わない)が、この値自体は上記4 Fieldのみのハッシュであり、
+AUTHORITATIVEな一致判定(7 Field)そのものではないことに注意
+(`EvidenceLineage.candidate_reference`のDocstring参照)。
+
+**残存する境界(D0104.1で解消しない、D0102.1由来のSystem-Wide前提)**:
+同一`extraction_version`が2つの異なるExtraction Runへ誤って再利用され、
+かつ`extraction_provenance`(Timestamp含む)まで偶然一致する場合のみ、
+7 Field照合でも理論上はAMBIGUOUS_LINKにならず偶然一致してしまう
+可能性が残る。しかしこれはLineage固有の弱点ではなく、`claim_id`
+自体が`semantic_identity_key + extraction_version`から導出される
+(D0102.1 §F、「Extraction Run単位で一意」という明示されたが型では
+強制されないCaller Discipline)ことに既に依存している、System全体が
+既に負っているTrust Assumptionである——D0104.1はこれを新たに生むのでは
+なく、既存のClaim ID Architectureが既に受け入れている前提をそのまま
+継承するのみである。
 
 一致するCandidateが0件の場合(例: `build_semantic_claim()`を直接呼び出し
 Candidate Pipelineを経由しなかったClaim)は`MISSING_LINK`を返す。これは
@@ -143,11 +183,29 @@ class EvidenceLineage:
     (D0104 §3)。EvidenceRecord -> SemanticClaim -> SemanticClaimCandidate
     -> TextBlock -> DisclosureDocumentの各段の識別子・Locator・PIT
     Timestamp・Verification Statusを保持する(数値推測・補完は一切
-    行わない、全Fieldは既存Schemaからの逐語転記のみ)。"""
+    行わない、全Fieldは既存Schemaからの逐語転記のみ)。
+
+    `extraction_version`はD0104.1で追加した——Candidate Identityの
+    AUTHORITATIVEな一致判定(7 Field、`_candidate_matches_claim()`)で
+    実際に使われた値をそのまま転記し、「どのExtraction Runのどの
+    Candidateから一意に解決されたか」を結果自身から読み取れるようにする
+    (Auditability向け)。`candidate_reference`は既存
+    `compute_candidate_reference()`(4 Field、`extraction_version`等を
+    含まない)の参考値であり、こちらは複数のExtraction Runで同一になり
+    うる——AUTHORITATIVEな一致判定そのものではない。
+
+    **消費者への警告(Code Review、D0104.1)**: `candidate_reference`を
+    単独で「Candidateの一意な識別子」として扱わないこと。異なる
+    `extraction_version`を持つ2つの別Extraction RunのCandidateが同一
+    `candidate_reference`を持つことは構造的に可能(4 Fieldしか見ない
+    ため)である。2つの`EvidenceLineage`が本当に同一のCandidateから
+    来たかを判定する場合は、常に`(candidate_reference, extraction_
+    version)`のPairで比較すること(片方だけでは不十分)。"""
 
     evidence_id: str
     claim_id: str
     semantic_identity_key: str
+    extraction_version: str
     candidate_reference: str
     document_id: str
     entity_id: str | None
@@ -167,7 +225,14 @@ class EvidenceLineage:
     extraction_provenance: AiDerivedProvenance | None
 
     def __post_init__(self) -> None:
-        for field_name in ("evidence_id", "claim_id", "semantic_identity_key", "candidate_reference", "document_id"):
+        for field_name in (
+            "evidence_id",
+            "claim_id",
+            "semantic_identity_key",
+            "extraction_version",
+            "candidate_reference",
+            "document_id",
+        ):
             if not getattr(self, field_name):
                 raise EvidenceLineageSchemaError(f"{field_name} は空にできません")
         if self.available_at.tzinfo is None:
@@ -241,14 +306,23 @@ def _assert_claim_not_forged(claim: SemanticClaim) -> None:
 
 def _candidate_matches_claim(candidate: SemanticClaimCandidate, claim: SemanticClaim) -> bool:
     """`promote_verified_candidate()`(`lib.disclosures.faithfulness`)が
-    `SemanticClaim`を`candidate`のこの4 Fieldからそのまま(値を変更せず)
-    構築するという既存Invariantの逆方向判定。全Field値の構造的Equality
-    のみを使う(Hash再計算・Fuzzy Match・部分一致は一切行わない)。"""
+    `SemanticClaim`を`candidate`の**7 Field全て**からそのまま(値を変更
+    せず)構築するという既存Invariantの逆方向判定(D0104.1 Identity
+    Hardening、`compute_candidate_reference()`が使う4 Fieldのみでは
+    同一EvidenceSpanに対する別Extraction Run[異なる`extraction_
+    version`]が偶然同一Claim内容を生成したCaseを誤ってAmbiguousにして
+    しまうため、既にPromotion Boundaryが Copy済みの残り3 Field
+    [`extraction_version`/`schema_version`/`extraction_provenance`]も
+    照合に使う)。全Field値の構造的Equalityのみを使う(Hash再計算・
+    Fuzzy Match・部分一致は一切行わない)。"""
     return (
         candidate.evidence_span == claim.evidence_span
         and candidate.claim_type == claim.claim_type
         and candidate.normalized_claim_text == claim.normalized_claim_text
         and candidate.direction == claim.direction
+        and candidate.extraction_version == claim.extraction_version
+        and candidate.schema_version == claim.schema_version
+        and candidate.extraction_provenance == claim.extraction_provenance
     )
 
 
@@ -282,10 +356,12 @@ def resolve_evidence_lineage(
       `UNSUPPORTED_PROVENANCE`(型違反・Forged Stateは例外、ACCEPT以外
       の正当なOutcomeはTyped Outcome)。
     - `claim`の`evidence_span`/`claim_type`/`normalized_claim_text`/
-      `direction`の4 Fieldが完全一致する`SemanticClaimCandidate`を
-      `candidates`から一意に特定する(Candidate自身はNon-Persistedで
-      専用IDが無いため、これが既存Architecture上唯一のCandidate
-      Identity、D0104 §6)。
+      `direction`/`extraction_version`/`schema_version`/
+      `extraction_provenance`の7 Field全てが完全一致する
+      `SemanticClaimCandidate`を`candidates`から一意に特定する
+      (Candidate自身はNon-Persistedで専用IDが無いため、これが既存
+      Architecture上唯一のCandidate Identity、D0104 §6/D0104.1
+      Identity Hardening)。
     - `claim.evidence_span`を、その`document_id`に一致する
       `NormalizedDisclosureDocument`に対して既存`revalidate_evidence_
       span()`で再検証する(`VALID`以外、または構造的不整合の
@@ -426,6 +502,7 @@ def resolve_evidence_lineage(
         evidence_id=evidence.evidence_id,
         claim_id=claim.claim_id,
         semantic_identity_key=claim.semantic_identity_key,
+        extraction_version=claim.extraction_version,
         candidate_reference=candidate_reference,
         document_id=span.document_id,
         entity_id=document.entity_id,

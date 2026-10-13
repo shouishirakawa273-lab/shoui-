@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from lib.disclosures import evidence_lineage as evidence_lineage_module
+from lib.disclosures.candidate_extraction import SCHEMA_VERSION as CANDIDATE_SCHEMA_VERSION
 from lib.disclosures.candidate_extraction import SemanticClaimCandidate
 from lib.disclosures.evidence_integration import integrate_accepted_semantic_claim
 from lib.disclosures.evidence_lineage import (
@@ -45,6 +46,7 @@ from lib.disclosures.evidence_lineage import (
     evidence_ids_for_document,
     resolve_evidence_lineage,
 )
+from lib.disclosures.faithfulness import compute_candidate_reference
 from lib.disclosures.model import DisclosureDocument
 from lib.disclosures.normalization import NormalizedDisclosureDocument, normalize_edinet_type1_zip
 from lib.disclosures.semantic_claims import (
@@ -96,12 +98,12 @@ def _span_for(doc: NormalizedDisclosureDocument, *, occurrence: int = 0) -> Evid
     return EvidenceSpan.from_text_block(document=doc, member=member, text_block=member.text_blocks[occurrence])
 
 
-def _provenance() -> AiDerivedProvenance:
+def _provenance(*, generated_at: datetime = datetime(2026, 1, 1, tzinfo=UTC)) -> AiDerivedProvenance:
     return AiDerivedProvenance(
         model_provider="test-provider",
         model_name="test-model",
         model_version="v1",
-        generated_at=datetime(2026, 1, 1, tzinfo=UTC),
+        generated_at=generated_at,
     )
 
 
@@ -112,6 +114,8 @@ def _candidate(
     normalized_claim_text: str = "重要な変更はありません。",
     direction: ClaimDirection = ClaimDirection.UNSPECIFIED,
     extraction_version: str = "EXTRACT_V1",
+    extraction_provenance: AiDerivedProvenance | None = None,
+    schema_version: str = CANDIDATE_SCHEMA_VERSION,
 ) -> SemanticClaimCandidate:
     return SemanticClaimCandidate(
         claim_type=claim_type,
@@ -119,7 +123,8 @@ def _candidate(
         direction=direction,
         evidence_span=evidence_span,
         extraction_version=extraction_version,
-        extraction_provenance=_provenance(),
+        extraction_provenance=extraction_provenance if extraction_provenance is not None else _provenance(),
+        schema_version=schema_version,
     )
 
 
@@ -608,3 +613,276 @@ def test_evidence_lineage_does_not_modify_frozen_phase1_modules() -> None:
     assert "def compute_candidate_reference" not in source
     assert "def revalidate_evidence_span" not in source
     assert "def build_semantic_claim" not in source
+
+
+# ============================================================
+# D0104.1 — Candidate Lineage Identity Hardening
+#
+# SemanticClaim -> SemanticClaimCandidateは唯一の「再構成された」Edge
+# だった(compute_candidate_reference()が使う4 Fieldのみでの照合は、
+# 同一EvidenceSpanに対する別Extraction Runが偶然同一Claim内容を生成
+# したCaseを誤ってAmbiguousにしてしまう——SAFEだがAUDITABLEではない)。
+# 以下はPromotion Boundaryが既にCopy済みの残り3 Field
+# (extraction_version/schema_version/extraction_provenance)も使う
+# 7 Field照合が、この偽Ambiguityを解消しつつ、本来のAmbiguity・
+# Cross-Document/Cross-TextBlock取り違えは引き続きFail Closedする
+# ことを証明する。
+# ============================================================
+
+
+def test_repeated_extraction_run_with_identical_content_resolves_without_false_ambiguity() -> None:
+    """D0104.1の核心Regression: 同一EvidenceSpanに対し、異なる
+    extraction_version(=別のExtraction Run)から生成された2つの
+    Candidateが偶然同一のclaim_type/text/directionを持つ場合(定型文
+    Claimが再Extractionされた典型Case、D0105 Incremental Research
+    Updateが前提とするシナリオ)、4 Field照合ならAMBIGUOUS_LINKに
+    なっていたが、7 Field照合では実際に対応するCandidate(Claimの
+    extraction_version/schema_version/extraction_provenanceと一致する
+    方)のみに一意に解決される。"""
+    norm_doc = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"))
+    span = _span_for(norm_doc)
+
+    candidate_run1 = _candidate(
+        evidence_span=span,
+        extraction_version="EXTRACT_V1",
+        extraction_provenance=_provenance(generated_at=datetime(2026, 1, 1, tzinfo=UTC)),
+    )
+    candidate_run2 = _candidate(
+        evidence_span=span,
+        extraction_version="EXTRACT_V2",
+        extraction_provenance=_provenance(generated_at=datetime(2026, 2, 1, tzinfo=UTC)),
+    )
+    # 両CandidateはEvidenceSpan/claim_type/normalized_claim_text/direction
+    # が完全に同一(定型文の再Extraction)。
+    assert candidate_run1.evidence_span == candidate_run2.evidence_span
+    assert candidate_run1.claim_type == candidate_run2.claim_type
+    assert candidate_run1.normalized_claim_text == candidate_run2.normalized_claim_text
+    assert candidate_run1.direction == candidate_run2.direction
+    assert candidate_run1.extraction_version != candidate_run2.extraction_version
+
+    claim = _claim_from_candidate(candidate_run2)
+    document = _disclosure_document()
+    evidence = _evidence_for(claim, document)
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim,),
+        candidates=(candidate_run1, candidate_run2),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    assert result.status == EvidenceLineageStatus.SUCCESS
+    assert result.lineage is not None
+    assert result.lineage.extraction_version == "EXTRACT_V2"
+
+
+def test_true_duplicate_candidate_across_identical_runs_still_ambiguous() -> None:
+    """Sanity Check: extraction_version/extraction_provenanceまで含めて
+    完全に同一の2つのCandidate(真のDuplicate、発生すべきではないが
+    Caller側のBugを想定)は、7 Field照合でも依然AMBIGUOUS_LINKになる
+    (任意選択はしない)。"""
+    norm_doc = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"))
+    candidate = _candidate(evidence_span=_span_for(norm_doc))
+    duplicate_candidate = _candidate(evidence_span=_span_for(norm_doc))
+    assert candidate == duplicate_candidate  # 完全に同一のCandidate
+    claim = _claim_from_candidate(candidate)
+    document = _disclosure_document()
+    evidence = _evidence_for(claim, document)
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim,),
+        candidates=(candidate, duplicate_candidate),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    assert result.status == EvidenceLineageStatus.AMBIGUOUS_LINK
+    assert result.lineage is None
+
+
+def test_same_claim_text_from_different_document_cannot_cross_link() -> None:
+    """A: 同一のClaim Text/claim_type/directionを持つCandidateが別
+    Documentから来ている場合、EvidenceSpan.document_idが異なるため
+    Cross-Linkしない(MISSING_LINK、Silent SUCCESSしない)。"""
+    norm_doc_a = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"), document_id="DOC1")
+    norm_doc_b = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"), document_id="DOC2")
+    candidate_a = _candidate(evidence_span=_span_for(norm_doc_a))
+    candidate_b = _candidate(evidence_span=_span_for(norm_doc_b))
+    assert candidate_a.normalized_claim_text == candidate_b.normalized_claim_text
+    assert candidate_a.evidence_span != candidate_b.evidence_span
+
+    claim_a = _claim_from_candidate(candidate_a)
+    document_a = _disclosure_document(internal_document_id="DOC1")
+    evidence_a = _evidence_for(claim_a, document_a)
+
+    result = resolve_evidence_lineage(
+        evidence_a,
+        semantic_claims=(claim_a,),
+        candidates=(candidate_b,),  # DOC2由来のCandidateのみ(DOC1由来を含めない)
+        normalized_documents=(norm_doc_a,),
+        disclosure_documents=(document_a,),
+    )
+
+    assert result.status == EvidenceLineageStatus.MISSING_LINK
+    assert result.lineage is None
+
+
+def test_same_claim_text_from_different_textblock_cannot_cross_link() -> None:
+    """B: 同一Document内に同一Taxonomy要素名・同一Textが2回出現する
+    場合(occurrence_index 0/1)、Candidate側がoccurrence=1由来でも
+    Claim側がoccurrence=0由来なら、EvidenceSpanのoccurrence_indexが
+    異なるためCross-Linkしない。"""
+    body = _ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。") + _ix(
+        "jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"
+    )
+    norm_doc = _single_member_doc(body)
+    assert len(norm_doc.members[0].text_blocks) == 2
+
+    span_occurrence_0 = _span_for(norm_doc, occurrence=0)
+    span_occurrence_1 = _span_for(norm_doc, occurrence=1)
+    assert span_occurrence_0.occurrence_index != span_occurrence_1.occurrence_index
+    assert span_occurrence_0 != span_occurrence_1
+
+    candidate_occurrence_1 = _candidate(evidence_span=span_occurrence_1)
+    claim_occurrence_0 = _claim_from_candidate(_candidate(evidence_span=span_occurrence_0))
+    document = _disclosure_document()
+    evidence = _evidence_for(claim_occurrence_0, document)
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim_occurrence_0,),
+        candidates=(candidate_occurrence_1,),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    assert result.status == EvidenceLineageStatus.MISSING_LINK
+    assert result.lineage is None
+
+
+def test_candidate_identity_match_survives_serialization_round_trip() -> None:
+    """E: Candidate/EvidenceSpan/AiDerivedProvenanceはいずれもFrozen
+    Dataclass(構造的Equality)であり、JSON等を介したSerialize/
+    Deserializeで再構築された「別Instance」でもField値が保存されて
+    いれば一致判定は成立する(Object Identityではなく値に基づく)。"""
+    norm_doc = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"))
+    original_candidate = _candidate(evidence_span=_span_for(norm_doc))
+    claim = _claim_from_candidate(original_candidate)
+    document = _disclosure_document()
+    evidence = _evidence_for(claim, document)
+
+    # Serialize/Deserialize相当: 全FieldをPrimitive値へ変換し、同じ値から
+    # 新しいInstanceを再構築する(実際にJSON round-tripしても同値になる
+    # Primitive Typeのみで構成されていることを確認する)。
+    rebuilt_span = EvidenceSpan(
+        document_id=original_candidate.evidence_span.document_id,
+        source_raw_canonical_content_hash=original_candidate.evidence_span.source_raw_canonical_content_hash,
+        source_normalizer_version=original_candidate.evidence_span.source_normalizer_version,
+        member_path=original_candidate.evidence_span.member_path,
+        taxonomy_element_name=original_candidate.evidence_span.taxonomy_element_name,
+        occurrence_index=original_candidate.evidence_span.occurrence_index,
+        char_start=original_candidate.evidence_span.char_start,
+        char_end=original_candidate.evidence_span.char_end,
+        supporting_quote=original_candidate.evidence_span.supporting_quote,
+    )
+    rebuilt_provenance = AiDerivedProvenance(
+        model_provider=original_candidate.extraction_provenance.model_provider,
+        model_name=original_candidate.extraction_provenance.model_name,
+        model_version=original_candidate.extraction_provenance.model_version,
+        generated_at=original_candidate.extraction_provenance.generated_at,
+    )
+    rebuilt_candidate = SemanticClaimCandidate(
+        claim_type=original_candidate.claim_type,
+        normalized_claim_text=original_candidate.normalized_claim_text,
+        direction=original_candidate.direction,
+        evidence_span=rebuilt_span,
+        extraction_version=original_candidate.extraction_version,
+        extraction_provenance=rebuilt_provenance,
+    )
+    assert rebuilt_candidate is not original_candidate
+    assert rebuilt_candidate == original_candidate
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim,),
+        candidates=(rebuilt_candidate,),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    assert result.status == EvidenceLineageStatus.SUCCESS
+    assert result.lineage is not None
+    assert result.lineage.candidate_reference == compute_candidate_reference(original_candidate)
+
+
+def test_schema_version_divergence_alone_distinguishes_candidates() -> None:
+    """Code Review Finding(D0104.1)Closure: `schema_version`のみが異なる
+    2つのCandidate(他の6 Fieldは完全同一)が、正しく区別されることを
+    独立に証明する——これが無ければ`_candidate_matches_claim()`から
+    `schema_version`比較が将来誤って削除されても、既存Testは検知
+    できなかった(他の全Testはextraction_versionの違いでのみ区別して
+    いたため)。"""
+    norm_doc = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"))
+    span = _span_for(norm_doc)
+    candidate_a = _candidate(evidence_span=span, schema_version=CANDIDATE_SCHEMA_VERSION)
+    candidate_b = _candidate(evidence_span=span, schema_version="OTHER_SCHEMA_V2")
+    # 7 Field中、schema_versionのみが異なる。
+    assert candidate_a.evidence_span == candidate_b.evidence_span
+    assert candidate_a.claim_type == candidate_b.claim_type
+    assert candidate_a.normalized_claim_text == candidate_b.normalized_claim_text
+    assert candidate_a.direction == candidate_b.direction
+    assert candidate_a.extraction_version == candidate_b.extraction_version
+    assert candidate_a.extraction_provenance == candidate_b.extraction_provenance
+    assert candidate_a.schema_version != candidate_b.schema_version
+
+    claim = _claim_from_candidate(candidate_a)
+    document = _disclosure_document()
+    evidence = _evidence_for(claim, document)
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim,),
+        candidates=(candidate_a, candidate_b),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    # schema_version比較が機能していれば、candidate_bはMatchせず
+    # candidate_aのみが一意にMatchしてSUCCESSになる(schema_version
+    # 比較が削除されていれば両方Matchし誤ってAMBIGUOUS_LINKになる)。
+    assert result.status == EvidenceLineageStatus.SUCCESS
+    assert result.lineage is not None
+
+
+def test_extraction_provenance_divergence_alone_distinguishes_candidates() -> None:
+    """Code Review Finding(D0104.1)Closure: `extraction_provenance`のみ
+    (`generated_at`)が異なる2つのCandidateが、正しく区別されることを
+    独立に証明する(他の6 Fieldは完全同一)。"""
+    norm_doc = _single_member_doc(_ix("jpcrp_cor:BusinessRisksTextBlock", "重要な変更はありません。"))
+    span = _span_for(norm_doc)
+    candidate_a = _candidate(evidence_span=span, extraction_provenance=_provenance(generated_at=datetime(2026, 1, 1, tzinfo=UTC)))
+    candidate_b = _candidate(evidence_span=span, extraction_provenance=_provenance(generated_at=datetime(2026, 6, 1, tzinfo=UTC)))
+    assert candidate_a.evidence_span == candidate_b.evidence_span
+    assert candidate_a.claim_type == candidate_b.claim_type
+    assert candidate_a.normalized_claim_text == candidate_b.normalized_claim_text
+    assert candidate_a.direction == candidate_b.direction
+    assert candidate_a.extraction_version == candidate_b.extraction_version
+    assert candidate_a.schema_version == candidate_b.schema_version
+    assert candidate_a.extraction_provenance != candidate_b.extraction_provenance
+
+    claim = _claim_from_candidate(candidate_a)
+    document = _disclosure_document()
+    evidence = _evidence_for(claim, document)
+
+    result = resolve_evidence_lineage(
+        evidence,
+        semantic_claims=(claim,),
+        candidates=(candidate_a, candidate_b),
+        normalized_documents=(norm_doc,),
+        disclosure_documents=(document,),
+    )
+
+    assert result.status == EvidenceLineageStatus.SUCCESS
+    assert result.lineage is not None
