@@ -1,0 +1,62 @@
+{
+  "task_id": "D0105-INCREMENTAL-RESEARCH-UPDATE",
+  "purpose": "Incremental Research Update: a deterministic delta engine that compares a prior and current EvidenceRecord snapshot and reports NEW / UNCHANGED / REMOVED_OR_MISSING / POTENTIALLY_SUPERSEDED evidence, plus which existing ResearchArtifact references require human review. This is a delta engine only: no new research generator, no thesis writer, no valuation model, no scoring system, no BUY/SELL, no expected-return model. It answers 'what changed in the evidence set and what existing research references might need human review', never 'what should the new thesis be'. See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
+  "expected_head": "CURRENT",
+  "allowed_files": [
+    "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+    "Japanese_Equity_Lab/13_tests/test_incremental_research_update.py"
+  ],
+  "frozen_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+    "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+    "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+    "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+    "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+    "Japanese_Equity_Lab/lib/disclosures/model.py",
+    "Japanese_Equity_Lab/lib/evidence/model.py",
+    "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+    "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py"
+  ],
+  "targeted_tests": [
+    ".venv\\Scripts\\python.exe -m pytest Japanese_Equity_Lab/13_tests/test_incremental_research_update.py -q"
+  ],
+  "static_checks": [
+    ".venv\\Scripts\\ruff.exe check Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+    ".venv\\Scripts\\python.exe -m mypy --strict Japanese_Equity_Lab/lib/evidence/incremental_update.py"
+  ],
+  "requested_actions": [
+    "implement Japanese_Equity_Lab/lib/evidence/incremental_update.py providing a deterministic evidence delta (NEW/UNCHANGED/REMOVED_OR_MISSING/POTENTIALLY_SUPERSEDED) between a prior and current EvidenceRecord snapshot, using only exact identity/provenance and the existing SemanticClaim.supersedes_claim_id relationship (no text-similarity, no embeddings, no LLM matching)",
+    "map the delta onto existing ResearchArtifact.included_evidence_ids references only (read-only) to classify each artifact as UNAFFECTED or REVIEW_REQUIRED, never mutating the artifact",
+    "reuse lib.disclosures.evidence_lineage.resolve_evidence_lineage() for lineage verification of newly accepted evidence; do not duplicate its traversal logic",
+    "add unit tests in Japanese_Equity_Lab/13_tests/test_incremental_research_update.py covering the forward-update, re-extraction, multiple-filing, supersession-safety, and research-impact scenarios plus duplicate IDs, missing references, deterministic ordering, empty snapshots, lineage failure, and ResearchArtifact immutability",
+    "run ruff check and mypy --strict on incremental_update.py",
+    "run the targeted pytest suite for test_incremental_research_update.py",
+    "record any design decision in DECISIONS.md"
+  ],
+  "forbidden_actions": [
+    "no H0001",
+    "no Locked Test rerun",
+    "no BUY/SELL signal generation",
+    "no expected return calculation",
+    "no valuation computation",
+    "no portfolio construction",
+    "no ResearchArtifact mutation",
+    "no NarrativeCase mutation or generation",
+    "no Bull/Base/Bear assignment or recomputation",
+    "no Conclusion or Confidence mutation",
+    "no automatic EvidenceRelation assignment",
+    "no SUPPORTS/CONTRADICTS determination",
+    "no thesis direction decision or automatic thesis rewrite",
+    "no supersession inference from wording similarity, opposite direction, or later date alone",
+    "no model/LLM call anywhere in the delta engine",
+    "no placing this module under Japanese_Equity_Lab/lib/research/ (Phase5-reserved namespace, VAL-020 forbids importing lib.evidence there)",
+    "no changes under Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/",
+    "no edits to any frozen_files entry",
+    "no force push",
+    "no git reset --hard",
+    "no branch deletion"
+  ],
+  "requires_independent_review": true,
+  "requires_human_approval": false
+}

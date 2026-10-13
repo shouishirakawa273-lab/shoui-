@@ -17750,3 +17750,181 @@ File)304件PASS。Repository全体`pytest`1897件PASS。`ruff check`・
 **Status**: `D0104_ACCEPTED = YES`(継続)、`D0104.1_DECISION =
 CURRENT_IDENTITY_SUFFICIENT`、Candidate Lineage Identity Hardening
 完了。D0104は本Entryと合わせて再FROZEN。
+
+## D0105 — Incremental Research Update
+
+**目的**: 新たに受理された(D0103/D0104で構築済みの)`EvidenceRecord`
+集合を、事前のResearch Evidence Snapshotと比較し、NEW/UNCHANGED/
+REMOVED_OR_MISSING/POTENTIALLY_SUPERSEDEDを機械的に分類し、既存
+`ResearchArtifact`のどの参照がHuman Reviewを要するかを報告する唯一の
+公開Entrypoint`lib.evidence.incremental_update.build_incremental_
+research_update()`を新設。**Delta Engineのみ**であり、新しいResearch
+Generator・Thesis Writer・Valuation Model・Scoring System・BUY/SELL
+Model・期待Return Modelのいずれでもない——「Evidence集合に何が変わった
+か」のみに答え、「新しいThesisは何であるべきか」には一切答えない
+(将来のD0106 Thesis Break Monitorの責務として明確に分離した)。
+
+**Module配置に関する発見(Repository Reality)**: 当初タスク仕様の提案
+通り`Japanese_Equity_Lab/lib/research/incremental_update.py`へ配置した
+ところ、既存Regression Test(`test_research_validation_pipeline.py::
+test_val020_research_modules_never_import_evidence_path`、Phase5 v1
+D0061由来)が「`lib/research/`配下のModuleは`lib.evidence`を一切
+Importしない」というPhase5専用の既存境界を検知してFAILした——D0105は
+`EvidenceRecord`/`ResearchArtifact`(いずれも`lib.evidence`配下)への
+依存が本質的な要件であり、この境界とは根本的に矛盾する。独立Reviewが
+(Phase5 VAL-020のGrep確認を含め)「Test回避ではなく正当なArchitecture
+上の必要性」であることを検証した上で、Moduleを`ResearchArtifact`自身が
+既に置かれている`Japanese_Equity_Lab/lib/evidence/incremental_
+update.py`へ移設した(Phase5既存Testは無修正)。D0104でのFile名衝突
+事故の教訓(「新規File作成前に既存命名・既存境界を確認する」)を、
+Directory Levelの既存Architectural Invariantにも拡張適用した実例。
+
+**Authoritative Evidence Identity**: `EvidenceRecord.evidence_id`
+(D0103、`EVID_CLAIM_{claim_id}`形式)を唯一のIdentityとして使う。
+同一`evidence_id`がPrior/Current両Snapshotに存在する場合、
+`EvidenceRecord`全Field(Frozen Dataclassの構造的Equality)が完全
+一致しなければ`IDENTITY_MISMATCH`でWhole-Call Abortする(「同じIDなら
+同じ内容のはず」という前提の違反をSilent Trustしない)。
+
+**NEW/UNCHANGED/REMOVED_OR_MISSING**: evidence_idの集合演算
+(current−prior/prior∩current/prior−current)のみで決定論的に計算する
+(Text類似度は一切使わない)。`REMOVED_OR_MISSING`は「Prior
+Snapshotに存在し、Current Snapshotから見当たらない」という事実のみを
+意味し、理由(Filing Scope変更・Source一時的欠落・意図的除外等)は
+一切推測しない(Section 7の要求通り)。
+
+**POTENTIALLY_SUPERSEDED(最も慎重な区分)**: 既存の明示的Relationship
+Field`SemanticClaim.supersedes_claim_id`(D0102.1 §13)のみを根拠に
+する。これ以外のBasis(同じ文言・同じ会社・反対方向・単なる後日付)は
+いずれも単独では不十分であることをTestで実証した(Supersession Safety
+Test A-F)。この関係が成立するPairはさらにPIT Order(`new.available_at
+>= old.available_at`)を検証し、違反時はPairを作らず`pit_failures`へ
+記録する(Pair単位のFail Closed)。Lineage Resolutionが失敗したNEW
+Evidenceは、Supersession Candidateとして一切扱わない。タスク仕様が
+列挙する他のAcceptable Basis(同一Taxonomy要素・同一Disclosure Lineage
+Family)は、対応する明示的Relationship Fieldが現在のRepository Schema
+に存在しないため、Heuristic Proxyを導入せずv1では実装しなかった
+(Fail Conservative、D0105 §8)。
+
+**PIT Policy**: Supersession Pair判定時の`new.available_at >= old.
+available_at`検証のみ(新しいAvailability Algorithmは作らない)。
+`market_public_at`へのFallbackは一切行わない(既存D0049/D0050方針を
+継承)。
+
+**Lineage Integration**: `lib.disclosures.evidence_lineage.resolve_
+evidence_lineage()`(D0104)をそのまま再利用し、NEW Evidence全件の
+Provenanceを検証する(Traversal Logicは複製しない)。`candidates`/
+`normalized_documents`/`disclosure_documents`のいずれかが1件以上
+供給された場合のみ実行し(`semantic_claims`単独供給はSupersession-Only
+Modeとして扱う、Lineage Checkを要求されたとは解釈しない)、失敗した
+Evidenceは`lineage_failures`へ記録してSupersession Candidateから除外
+する(Silent Provenance Trust禁止)。
+
+**Research Impact Mapping**: 既存`ResearchArtifact.included_
+evidence_ids`(新しいReference機構は作らない)のみを使い、REVIEW_
+REQUIREDの判定基準を「参照EvidenceがREMOVED_OR_MISSING/POTENTIALLY_
+SUPERSEDEDの旧側/Lineage不整合のいずれかに該当する」場合のみに限定した
+——NEW Evidenceが単独で既存ArtifactをREVIEW_REQUIREDにすることは無い
+(「新しいEvidenceがある→全てReviewすべき」を明示的に回避、Section
+10)。`unassigned_new_evidence_ids`はどのArtifactにも参照されていない
+NEW Evidenceの単純な集合差分として提供し、その扱いは将来のResearch
+Logicに委ねる。
+
+**ResearchArtifact Boundaryの不変性**: 本Moduleは`ResearchArtifact`/
+`NarrativeCase`を一切構築・Mutateしない(Source Level AST確認+
+`ResearchArtifact(`/`NarrativeCase(`構築呼び出しの不在をTest化)。
+Bull/Base/Bear・Conclusion・Confidence変更・新しい`EvidenceRelation`
+割当・SUPPORTS/CONTRADICTS判定・Thesis方向決定・Valuation・期待
+Return計算・BUY/SELL生成はいずれも行わない(D0105 §17)。
+
+**独立Adversarial Review(`/code-review high`、D0105 §28 Reviewer
+Focus 1〜12に基づく)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** Supersession Pair構築時の旧Evidence
+   逆引き(`claim_id -> EvidenceRecord`)が、`candidate_old.source.
+   source_id == old_claim.claim_id`に最初に一致した要素を無条件採用
+   する実装だった——2つの異なる`EvidenceRecord`が偶然同一の`source.
+   source_id`(claim_id)を持つ場合、採用される`old_evidence_id`が
+   入力順序に依存してしまう(本Module自身の決定論性保証の違反、かつ
+   他の全Identity Checkが従う「Fail Closed/Silent Trust禁止」方針の
+   違反)ことをReviewerが実際にPoCで再現した。修正: `claim_id ->
+   evidence_id`がFunctionであること(1つのClaim IDに2つ以上の異なる
+   Evidence IDが対応しないこと)をPrior/Current統合Universe全体に対し
+   事前に検証し、違反時は`AMBIGUOUS_REFERENCE`でWhole-Call Abortする
+   Guardを追加した。Regression Test
+   `test_duplicate_source_id_across_distinct_evidence_ids_fails_
+   closed`(入力順序反転の両方で同一Statusになることを確認)を追加。
+2. **(Non-blocking、修正済み)** `prior_evidence_records`等の個々の
+   要素がContainer型(`Sequence`)検査のみで、Element型自体は未検証
+   だった——不正な要素(dict等)に対して生の`AttributeError`が漏れ、
+   「Caller Programming Error(Exception)と正当なDomain Outcome
+   (Typed Result)を区別する」既存契約(D0103/D0104と同じ方針)が
+   破れていた。修正: 全Sequence引数の各要素に対しIsinstance検証を
+   追加し、`IncrementalResearchUpdateSchemaError`で明示的に拒否する
+   ようにした。Regression Test`test_non_evidence_record_element_
+   raises_schema_error_not_attribute_error`を追加。
+3. **(Non-blocking、修正済み)** `_duplicate_ids()`が`items.count()`を
+   Set Comprehension内で呼びO(n^2)になっていた——`collections.
+   Counter`を使う単発O(n)実装へ変更(Semantics不変)。同時に
+   Supersession Loop内の旧Evidence逆引きも、上記Guard導入後に安全に
+   O(1) Dict Lookupへ置き換えた(Finding 1の修正と同時に解消)。
+
+**Test(`13_tests/test_incremental_research_update.py`、30件、新規)**:
+Forward Update Scenario(§19)・Re-Extraction Scenario/D0104.1
+Case(§20、同一TextBlockの別Extraction Versionが同一evidence_idへ
+Collapseしないことを確認)・Multiple Filing Scenario(§21、同じ会社・
+同じ文言でも別Filing/別PIT Timestampなら別Evidenceのまま)・
+Supersession Safety Test A-F(§22、明示的Keyが無い限り文言・会社・
+方向・後日付単独では一切Supersessionにしないこと、PIT逆転の
+Fail Closed)・Research Impact Test A-G(§23、Removed/Superseded参照
+のREVIEW_REQUIRED・Unchanged参照のUNAFFECTED・無関係NEW Evidenceの
+非影響・Unassigned Queue・Missing Reference/Duplicate Artifact IDの
+Fail Closed)・重複ID(Evidence/Claim/Artifact/Source ID)・決定論的
+順序・空Prior/空Current/両方空・Lineage Failure・No-LLM・ResearchArtifact
+不変性・Element型検証、を網羅。既存D0102.4/D0103/D0104/D0104.1
+Test(`test_candidate_extraction.py`・`test_disclosures_semantic_
+claims.py`・`test_evidence_integration.py`・`test_faithfulness.py`・
+`test_evidence_lineage.py`(D0040)・`test_disclosures_evidence_
+lineage.py`・`test_provenance.py`・`test_research_artifact.py`・
+`test_research_artifact_registry.py`)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(D0102/D0103/D0104/D0104.1/D0105関連
+10 File)363件PASS。Repository全体`pytest`1927件PASS(0 Failure、
+Phase5 VAL-020含む既存Test全件無修正PASS)。`ruff check`・`ruff
+format --check`・`mypy --strict`はいずれも本Round唯一の変更
+Production File(`incremental_update.py`)でPASS。`mypy --strict`は
+Test File自体では`import pytest`単独でも再現する既存の環境Issue
+(numpy Stub/Python 3.14不一致、D0103 Close時に確認済みと同一原因)
+により実行不能だったが、D0103由来の既知Issueであり本Changeによる
+新規Issueではないことを確認した。
+
+**Manifest**: `scripts/manifests/d0105_incremental_research_update_
+pilot.json`(新設、`task_id=D0105-INCREMENTAL-RESEARCH-UPDATE`、
+`allowed_files`は`incremental_update.py`(`lib/evidence/`配下)・
+`test_incremental_research_update.py`のみ、`frozen_files`はD0103/
+D0104/D0104.1関連8 File+`research_artifact.py`+
+`research_artifact_registry.py`、`forbidden_actions`に`lib/research/`
+配下への配置禁止を明記、`expected_head=CURRENT`)。`dev_workflow.py
+run --dry-run`で`head_check`/`scope_check`両方`passed: true`を
+確認済み。
+
+**変更File**: `lib/evidence/incremental_update.py`(新設)・
+`13_tests/test_incremental_research_update.py`(新設)・
+`scripts/manifests/d0105_incremental_research_update_pilot.json`
+(新設)・本`DECISIONS.md`。既存Frozen File(`evidence_integration.py`・
+`evidence_lineage.py`・`faithfulness.py`・`semantic_claims.py`・
+`candidate_extraction.py`・`normalization.py`・`model.py`・
+`lib/evidence/model.py`・`lib/evidence/research_artifact.py`・
+`lib/registry/research_artifact_registry.py`)はいずれも無変更。
+ResearchArtifact/NarrativeCaseのMutation・Thesis Interpretation・
+BUY/SELL・期待Return Logicはいずれも導入していない。H0001は実行して
+いない。
+
+**D0106との関係**: D0105が生成する`IncrementalResearchUpdateResult`
+(Deterministic Delta + Research Impact Mapping)は、将来のD0106
+Thesis Break Monitorへの入力として使われる想定であり、Thesis-Impact
+Interpretation自体(Bull/Base/Bearへの反映判断等)はD0106の責務として
+明確に分離している。D0105自身はこの境界を一切越えない。
+
+**Status**: `D0105_ACCEPTED = YES`。`incremental_update.py`・
+`test_incremental_research_update.py`は本Entry記録と同時にTracked化
+し、以降はD0105 FROZEN。
