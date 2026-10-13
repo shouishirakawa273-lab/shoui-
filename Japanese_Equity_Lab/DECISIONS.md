@@ -18406,3 +18406,167 @@ Engine/Reverse Valuation Solver/実データによるAssumption Surface計算
 `lib/expectations/model.py`・`lib/expectations/reverse_spec.py`・
 `lib/expectations/comparison.py`・`test_expectations_foundation.py`は
 本Entry記録と同時にTracked化し、以降はD0108 FROZEN。
+
+## D0109 — Fundamental Forecast Engine
+
+**目的**: 会社Fundamental(v1 Scope: REVENUE/OPERATING_INCOME/
+OPERATING_MARGIN)のResearch-derived Forecastを、明示的Structured
+Assumption + Research Provenanceから構築する`lib/forecasting/`
+(`model.py`/`engine.py`)を新設した。Valuation・Expected Return・
+BUY/SELL・Portfolio LogicはD0110+の責務であり、本Roundでは一切含め
+ていない。
+
+**4つの別概念(D0109 §2、絶対に混同しない)**: OBSERVED HISTORICAL
+FUNDAMENTAL(`HistoricalFundamentalBase`、既存`lib.fundamentals`の
+PIT派生Logicを複製せず、Caller側が解決済みの値をそのまま受け取る)、
+MANAGEMENT GUIDANCE(`AssumptionSource.COMPANY_GUIDANCE`、既存D0108
+`ExpectationObservation`への参照のみ保持)、RESEARCH FORECAST
+(`FundamentalForecastResult`、本Module自身の出力)、MARKET
+EXPECTATION(`AssumptionSource.MARKET_PROXY`、既存D0108
+`ConsensusSnapshot`/`ExpectationObservation`への参照のみ保持)。
+
+**v1 Scope限定(REVENUE/OPERATING_INCOME/OPERATING_MARGINのみ)**:
+EPS/FCFは`SUPPORTED_FORECAST_METRICS`に含めない——Tax Rate/Share
+Count/D&A/Working Capital等の追加Assumption Categoryが必要になり、
+「Full Corporate Financial Modelを作らない」(D0109 §7)という制約と
+矛盾するため、v1のScopeから明示的に除外した(未対応Metricを要求した
+場合は`ForecastStatus.UNSUPPORTED_METRIC`でFail Closedする)。Metric
+名自体は型付きEnumにせず、Repository既存規約(`FundamentalMetric.
+metric_type`・`ConsensusRecord.metric_type`・`PredictionRecord.
+target`と同じ自由文字列)にそのまま従う。
+
+**Assumption Provenance(D0109 §8/§9)**: `AssumptionSource`
+(HISTORICAL_TREND/COMPANY_GUIDANCE/EVIDENCE_DERIVED/RESEARCH_
+JUDGMENT/MARKET_PROXY)で出自を型として強制する。`RESEARCH_JUDGMENT`
+は`rationale`必須かつ`evidence_ids`を持てない(EvidenceRecordである
+かのようにMasqueradeすることを防ぐ、D0109 §28D)。`EVIDENCE_DERIVED`
+は`evidence_ids`最低1件を必須とする(Evidence裏付けを主張しつつ実際
+のEvidence参照を持たない状態を防ぐ)。
+
+**決定論のみ(Zero Model Call、D0109 §10/§31)**: D0108と同じ判断——
+v1でModel Assistanceが不要なためModel呼び出しを一切行わない。
+`ForecastAssumption.model_version`/`prompt_version`は将来Model-
+Assisted Proposal用の前方互換Provenance Slotとして残すが、本Engine
+自身はいずれのFieldも設定しない。
+
+**Formula/Version(D0109 §12)**: `FORMULA_VERSION=
+"FUNDAMENTAL_FORECAST_ENGINE_V1"`唯一のVersion文字列で
+`REVENUE = historical_base × (1 + REVENUE_GROWTH/100)`・
+`OPERATING_INCOME = REVENUE × OPERATING_MARGIN/100`を明示する。
+Formula変更時は新Version文字列を発行し既存Versionを書き換えない。
+
+**Tamper Evidence/No Hidden Plug Number(D0109 §11/§18)**: 既存
+`lib.evaluation.integrity.compute_record_hash()`をそのまま再利用
+(新しいHash Algorithmは作らない)。必要なHistorical Base/Assumption
+が欠落している場合は値を推測で埋めず`ForecastStatus.INSUFFICIENT_
+INPUT`を返す。
+
+**D0107 Prediction統合(D0109 §17/§18)**: `build_prediction_record_
+from_forecast()`が、SUCCESSの`FundamentalForecastResult`から1指標分
+のBull/Base/Bear値を既存`lib.evaluation.model.BullBaseBearForecast`
+(新しいForecast Shapeを追加しない)へ転記し、既存`build_prediction_
+record()`をそのまま呼ぶ——D0107 Schema自体は一切変更していない。
+Revision(`parent_prediction_id`)・Forecast Family
+(`forecast_family_key()`)はD0107の既存Mechanicsをそのまま再利用する。
+
+**独立Adversarial Review(`/code-review high`)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** `METRIC_OPERATING_INCOME`のみを
+   `requested_metrics`に指定した場合(`METRIC_REVENUE`自体は要求し
+   ない)、`OPERATING_INCOME = REVENUE × MARGIN`という依存関係にも
+   関わらず`revenue_value`が`if METRIC_REVENUE in requested_metrics:`
+   Block内でのみ計算されていたため、Historical Base/Assumptionが
+   全て揃っていても常に`INSUFFICIENT_INPUT`になってしまうことを
+   Reviewerが直接再現した。修正: 条件を`METRIC_REVENUE in requested_
+   metrics or METRIC_OPERATING_INCOME in requested_metrics`に変更し、
+   `REVENUE`を内部依存として計算した上で、`metric_values`への公開は
+   `METRIC_REVENUE`が実際にrequested_metricsに含まれる場合のみに
+   限定した。Regression Test`test_operating_income_alone_computes_
+   revenue_as_internal_dependency`を追加。
+2. **(Blocking、修正済み)** `compute_fundamental_forecast()`が
+   `evidence_cutoff`/`forecast_created_at`のtz-aware検証を一切行わ
+   ず、tz-naiveなDatetimeを渡すと`FundamentalForecastResult.__post_
+   init__`の`require_tz_aware()`に到達する前に、Historical Baseとの
+   Datetime比較で生の`TypeError`が発生することをReviewerが直接再現
+   した(他の全ての不正入力PathはTyped Status/`ForecastSchemaError`
+   を返すのに対し、この1 Pathのみ生のException漏れだった)。修正:
+   `compute_fundamental_forecast()`冒頭で`require_tz_aware()`を両
+   引数に適用し、`ForecastSchemaError`で即座にFail Closedするように
+   した。Regression Test`test_naive_datetime_evidence_cutoff_raises_
+   schema_error_not_type_error`を追加。
+3. **(Blocking、修正済み)** `ForecastAssumption.__post_init__`が
+   `value`の型を一切検証しておらず、float/int等を渡すと構築自体は
+   成功するが、Engine内部の`growth.value / Decimal(100)`で生の
+   `TypeError`が発生することをReviewerが直接再現した(他の全Field
+   ——`name`/`unit`/`source`/`created_at`——は明示的に検証されている
+   のに対し、唯一の数値Fieldである`value`だけ無検証だった)。修正:
+   `isinstance(self.value, Decimal)`検証を追加。Regression Test
+   `test_forecast_assumption_value_must_be_decimal`を追加。
+4. **(Non-blocking、修正済み)** `_compute_scenario()`のPIT Check
+   Loopが、`requested_metrics`に実際には無関係なEVIDENCE_DERIVED
+   Assumption(例: `OPERATING_MARGIN`のみ要求時の未使用`REVENUE_
+   GROWTH`Assumption)が参照する古い/未来のEvidenceだけを理由に、
+   Forecast全体を`PIT_INVALID`にしてしまうことをReviewerが指摘した。
+   修正: `requested_metrics`から実際に必要なAssumption名の集合
+   (`relevant_names`)を先に決定し、PIT Checkをその集合に属する
+   Assumptionのみに限定した。Regression Test`test_unused_stale_
+   evidence_derived_assumption_does_not_block_unrelated_metric`を
+   追加。
+5. **(Non-blocking、Process Finding)** Manifestの`requested_
+   actions`が「DECISIONS.mdへ記録する」ことを要求しているにも関わら
+   ず、Reviewer実行時点でD0109自身のEntryが本`DECISIONS.md`に未記録
+   だったことをReviewerが指摘した。修正: 本Entryを記録した(本
+   Finding自体はCode変更ではなく、Task完了手順の記録漏れ)。
+
+**Test(`test_forecasting_foundation.py`、38件、新規)**: §25 Required
+Acceptance Scenario(Historical FY2026 Revenue=1000・Operating
+Margin=9% → Bull Revenue=1100/OI=121・Base Revenue=1060/OI=106・
+Bear Revenue=1000/OI=70)を実証、§26 Forecast A-J(決定論的計算・
+Bull/Base/Bear独立計算・再現性・順序非依存Identity・Historical Base
+欠落/Unit不整合/PIT違反(Historical Base/Evidence双方)/Operating
+Margin-Income不整合・Company Guidance/Consensus分離)、§27 Prediction
+Integration A-H(D0107互換PredictionRecord生成・Revision・旧Record
+不変・Parent Link・Forecast Family・Version/Evidence Cutoff/
+ResearchSnapshot保持)、§28 Judgment A-E(明示的Label・Rationale必須・
+Model-Assisted Provenance・Evidence Masquerade禁止・Judgment値の
+無改変)、§29 No Valuation/§30 No Probability(Source Level AST
+確認)、Reviewer Finding Closure 4件(Code変更分)を網羅。既存
+D0102-D0108 Test・Consensus Test・Fundamentals Test(`test_
+fundamentals_model.py`)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(`test_forecasting_foundation.py`)38件
+PASS。D0102-D0109+Consensus+Fundamentals関連14 File合計443件PASS。
+Repository全体`pytest`2100件PASS(0 Failure)。`ruff check`・`ruff
+format --check`・`mypy --strict`はいずれも本Round唯一の変更
+Production File(`lib/forecasting/model.py`・`lib/forecasting/
+engine.py`)でPASS。`mypy --strict`はTest File自体では既存の環境
+Issue(numpy Stub/Python 3.14不一致、D0103以降で確認済みと同一原因)
+により実行不能だったが、本Changeによる新規Issueではないことを確認
+した。
+
+**Manifest**: `scripts/manifests/d0109_fundamental_forecast_engine_
+pilot.json`(新設、`task_id=D0109-FUNDAMENTAL-FORECAST-ENGINE`、
+`allowed_files`は`lib/forecasting/`配下3File・`test_forecasting_
+foundation.py`のみ、`frozen_files`はD0103-D0108関連20 File、
+`expected_head=CURRENT`)。`dev_workflow.py run --dry-run`で
+`head_check`/`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/forecasting/__init__.py`(新設、空File)・
+`lib/forecasting/model.py`(新設)・`lib/forecasting/engine.py`
+(新設)・`13_tests/test_forecasting_foundation.py`(新設)・
+`scripts/manifests/d0109_fundamental_forecast_engine_pilot.json`
+(新設)・本`DECISIONS.md`。既存Frozen File(D0102-D0108関連20 File)・
+`lib/fundamentals/`・`lib/consensus/`・`lib/expectations/`はいずれも
+無変更。Valuation計算・Expected Return・BUY/SELL・Portfolio構築・
+Scenario Probability・DecisionRecord自動生成・EPS/FCF計算はいずれも
+導入していない。H0001は実行していない。
+
+**D0110との関係**: `FundamentalForecastResult`はMetric/Target
+Period/Unit/Currency/Scenario/Assumption/Formula Versionを明確に
+型付きで公開しており、将来のD0110(実際のForward/Reverse Valuation
+Engine)がProse解釈無しに直接消費できる形を維持している。WACC等の
+Valuation固有Assumptionは本Module自身には導入していない。
+
+**Status**: `D0109_ACCEPTED = YES`。`lib/forecasting/__init__.py`・
+`lib/forecasting/model.py`・`lib/forecasting/engine.py`・`test_
+forecasting_foundation.py`は本Entry記録と同時にTracked化し、以降は
+D0109 FROZEN。
