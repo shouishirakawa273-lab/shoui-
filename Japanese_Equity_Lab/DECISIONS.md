@@ -17440,3 +17440,158 @@ Faithfulness Verificationの境界は再展開しない。
 `test_evidence_integration.py`は本Entry記録と同時にTracked化し、
 以降はD0103 FROZEN(新規機能追加・再実行はこのEntry以降の新Taskとして
 扱う)。
+
+## D0104 — Evidence Lineage
+
+**目的**: 受理済み`EvidenceRecord`(D0103)を元のDisclosure Provenanceへ
+機械的に遡る(`EvidenceRecord -> SemanticClaim -> SemanticClaimCandidate
+-> TextBlock -> DisclosureDocument`)唯一の公開Entrypoint
+`lib.disclosures.evidence_lineage.resolve_evidence_lineage()`を新設。
+将来の`ResearchArtifact`/`NarrativeCase`層がこの戻り値を参照できる形へ
+整えるInfrastructureのみであり、本Round自体はScoring・
+ResearchArtifact生成・NarrativeCase生成・Bull/Base/Bear判定・
+SUPPORTS/CONTRADICTS判定・Confidence計算・期待Return計算・BUY/SELLの
+いずれも行わない(D0104 §9 Research Layer Boundary、Source Level
+Staticな不在確認をTestに含めた)。Model/LLM呼び出しはLineage Traversal
+自体に一切存在しない(`MODEL_CALL_SITES = 0`)。
+
+**選択したLineage抽象**: 新しい`LineageNode`/`LineageEdge`等のGraph
+構造は作らず、`resolve_evidence_lineage(evidence, *, semantic_claims,
+candidates, normalized_documents, disclosure_documents) ->
+EvidenceLineageResult`という単発Pure Functionに留めた(全Dependencyを
+明示的にDI、隠れたGlobal Registry無し)。`EvidenceLineageResult`
+(`status: EvidenceLineageStatus`、`lineage: EvidenceLineage | None`、
+`reason`)は既存`SemanticClaimEvidenceIntegrationResult`/
+`CandidateExtractionResult`/`FaithfulnessVerificationResult`と同型の
+Typed Outcome Pattern(`SUCCESS`時のみ`lineage`が非None)を踏襲、
+新しいError Frameworkは導入していない。Forward Query
+`evidence_ids_for_document(document_id, *, evidence_records,
+semantic_claims) -> tuple[str, ...]`も同様に単発Pure Function。
+
+**Authoritative Identity(新IDは追加せず既存Schemaのみ再利用)**:
+- EvidenceRecord -> SemanticClaim: `evidence.source.source_id ==
+  claim.claim_id`(D0103自身がDocstringで明示する既存Join Key)+
+  `evidence.evidence_id == f"EVID_CLAIM_{claim.claim_id}"`の逆方向
+  整合確認(Tamper検出)。
+- SemanticClaim -> SemanticClaimCandidate: `SemanticClaimCandidate`は
+  D0102.3 §15によりNon-Persisted(専用ID無し)なため、
+  `promote_verified_candidate()`が`SemanticClaim`を`candidate`の
+  `evidence_span`/`claim_type`/`normalized_claim_text`/`direction`から
+  そのままCopy構築するという既存Invariantの逆方向として、この4 Field
+  の構造的Equalityで一意にCandidateを再特定する。一致したCandidateには
+  既存`compute_candidate_reference()`(`lib.disclosures.faithfulness`、
+  `CANDREF_`Hash)をそのまま呼び出し、新Hash Algorithmは作らない。
+- Candidate.evidence_span -> TextBlock: 既存`revalidate_evidence_span()`
+  (`lib.disclosures.semantic_claims`)をそのまま呼び出し、独自の
+  再Parse・再Searchは一切行わない。
+- TextBlock -> DisclosureDocument: `evidence_span.document_id`(=
+  `NormalizedDisclosureDocument.document_id`)と`DisclosureDocument.
+  internal_document_id`の一致を確認(既存同一Identity空間、D0103
+  Docstringで既に確認済み)。
+
+**Backward Traversal(Fail-Closed契約)**: 各段で0件は`MISSING_LINK`、
+2件以上(重複/曖昧なID)は`AMBIGUOUS_LINK`(任意選択は一切しない)。
+構造的不整合(TextBlock Content Drift等)は`IDENTITY_MISMATCH`。PIT
+再計算(`_resolve_available_at()`、D0049/D0050の既存Priorityを
+D0103と同一のまま再実装、`market_public_at`へは決してFallback
+しない)がEvidence側と不一致なら`PIT_MISMATCH`。ACCEPT以外の
+`faithfulness_outcome`、または`EvidenceType.CLAIM`以外のEvidenceは
+`UNSUPPORTED_PROVENANCE`。Forged/Internally-Inconsistentな
+SemanticClaim(型違反・`faithfulness_review_required`矛盾)は
+D0103と同じ方針で`EvidenceLineageSchemaError`(Exception)として
+拒否し、正当なDomain Outcome(Typed Result)とは区別する。
+
+**Forward Impact Query**: `evidence_ids_for_document()`は将来の
+Incremental Research Updateが「このFilingから既にどのEvidenceが
+作られているか」を問い合わせる最小限のQuery。過剰Include防止のため
+Backward Resolverと同じJoin Key・`EvidenceType.CLAIM`限定・
+ACCEPT-only Gateを独立に適用する。
+
+**独立Adversarial Review(`/code-review high`、D0104 §14 Reviewer
+Focus 1〜8に基づく)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** Cross-Document取り違えGuard
+   (`entity_id`/`provenance_id`照合)が、両側いずれかがNone/空の場合に
+   無条件でSkipされ、取り違えたDisclosureDocumentでもSilent SUCCESS
+   しうる欠陥を検出。`integrate_accepted_semantic_claim()`自身の構築式
+   (`related_codes = () if entity_id is None else (entity_id,)`等)を
+   逆方向に再適用し、Bidirectional厳密Equality(いずれかのみがNone/
+   空であることそのものもMismatch対象)へ強化した。Regression Test
+   `test_document_identity_mismatch_detected_even_when_entity_id_
+   absent_on_original`・`test_document_identity_mismatch_detected_via_
+   provenance_id_even_when_absent_on_original`を追加。
+2. **(Blocking、修正済み)** `evidence_ids_for_document()`が
+   `faithfulness_outcome=ACCEPT`チェックを一切行わず、Backward
+   Resolverより緩い基準でEvidenceを含めうる不整合を検出(`claim_id`は
+   `faithfulness_outcome`を含まずに決定論的に導出されるため、同じ
+   `claim_id`を持つACCEPT/REVIEW_REQUIRED双方のClaimが混在しうる)。
+   同じACCEPT-only Gate(`_assert_claim_not_forged()`含む)を
+   Forward Query側にも独立適用。Regression Test
+   `test_forward_query_excludes_evidence_whose_matched_claim_is_not_
+   accepted`を追加。
+3. **(Non-blocking、Docstringで明記のみ)** `_resolve_available_at()`
+   がD0103側の同名Private Functionの意図的な2行Duplicateである
+   (D0103自身が既存`disclosure_document_to_evidence()`から同様に
+   Duplicateした前例を踏襲)——将来PIT Priority自体を変更する場合は
+   両Copyを同時に更新する必要があるTrade-offとしてDocstringに明記した。
+4. **(Non-blocking、Docstringで明記のみ)** `resolve_evidence_lineage()`
+   はO(n)×4のLinear Scanのみ(Index構築無し)——単発解決には十分だが、
+   将来大量のEvidenceRecordを同じCorpusへ繰り返し解決する場合は
+   呼び出し側でのPre-Indexingを検討する旨をDocstringに明記した
+   (「Keep It Simple、Graph Database/Caching層を持たない」方針のまま)。
+
+**事故と訂正(Test File名衝突)**: 当初`13_tests/test_evidence_lineage.py`
+へ`Write`したところ、Phase3D(D0040)から既存Tracked状態だった同名File
+(`ProvenanceStore`/`build_evidence_packet()`のLineage Test、3件)を
+上書きし、既存Regression Testを破壊する事故を起こした——独立Reviewが
+この破壊を検出。原Fileの内容を`git show HEAD:...`からByte単位で復元
+(`test_evidence_lineage.py`、3 Test全てPASSを再確認)し、D0104のTestは
+衝突しない`13_tests/test_disclosures_evidence_lineage.py`へ移動した。
+Manifestの`allowed_files`/`targeted_tests`もこの新Pathに合わせて修正
+済み。今後、新規Test File作成前に同名既存Fileの有無を確認することを
+徹底する。
+
+**Test(`13_tests/test_disclosures_evidence_lineage.py`、22件、新規)**:
+A(Happy Path Full Backward Lineage)・B(Supporting Quote/Span逐語
+保持)・C(available_at逐語保持)・D〜G(Missing SemanticClaim/
+Candidate/NormalizedDocument/DisclosureDocument、いずれもFail
+Closed)・TextBlock Content DriftのIDENTITY_MISMATCH・H(Document
+Identity Mismatch、Entity ID両方向+Provenance ID両方向の2 Variant
+含む)・I(Claim/Candidate重複IDのAMBIGUOUS_LINK、2 Variant)・
+J(PIT Mismatch)・K/L(Forward Query正常系・無関係Evidence除外・
+非ACCEPT Claim除外)・M(Model依存無しのAST Source Level確認)・
+N(ResearchArtifact等Research Layer Logic不在のAST Source Level
+確認)・UNSUPPORTED_PROVENANCE(非CLAIM Evidence Type・REVIEW_REQUIRED
+Claim)・Frozen Phase1 Module無変更確認、を網羅。既存
+`13_tests/test_evidence_lineage.py`(D0040)・`test_candidate_
+extraction.py`・`test_disclosures_semantic_claims.py`・
+`test_evidence_integration.py`・`test_faithfulness.py`・
+`test_provenance.py`は無修正で全件PASSを確認(D0102.4/D0103既存
+Behavior不変)。
+
+**Validation**: Targeted Test(D0102/D0103/D0104関連7 File)297件PASS。
+Repository全体`pytest`1890件PASS(0 Failure)。`ruff check`・
+`ruff format --check`・`mypy --strict`はいずれも本Round唯一の変更
+Production File`evidence_lineage.py`でPASS(no issues found)。
+`mypy --strict`は`test_disclosures_evidence_lineage.py`でもPASS
+(numpy Stub不一致の既存環境Issueは本Fileのimport Chainでは再現しない)。
+
+**Manifest**: `scripts/manifests/d0104_evidence_lineage_pilot.json`
+(新設、`task_id=D0104-EVIDENCE-LINEAGE`、`allowed_files`は
+`evidence_lineage.py`・`test_disclosures_evidence_lineage.py`のみ、
+`frozen_files`はD0103と同じ6 File+`lib/disclosures/model.py`を追加、
+`expected_head=CURRENT`)。`dev_workflow.py run --dry-run`で
+`head_check`/`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/disclosures/evidence_lineage.py`(新設)・
+`13_tests/test_disclosures_evidence_lineage.py`(新設)・
+`13_tests/test_evidence_lineage.py`(事故復元のみ、HEADとByte単位で
+同一)・`scripts/manifests/d0104_evidence_lineage_pilot.json`(新設)・
+本`DECISIONS.md`。既存`lib/disclosures/evidence_integration.py`・
+`faithfulness.py`・`semantic_claims.py`・`candidate_extraction.py`・
+`normalization.py`・`model.py`・`lib/evidence/model.py`はいずれも
+無変更。ResearchArtifact・NarrativeCase・BUY/SELL・期待Return Logicは
+導入していない。H0001は実行していない。
+
+**Status**: `D0104_ACCEPTED = YES`。`evidence_lineage.py`・
+`test_disclosures_evidence_lineage.py`は本Entry記録と同時にTracked化
+し、以降はD0104 FROZEN。
