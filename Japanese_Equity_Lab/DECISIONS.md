@@ -18097,3 +18097,147 @@ Append-Only Store自体はD0106では実装しない。
 **Status**: `D0106_ACCEPTED = YES`。`thesis_impact.py`・
 `test_thesis_impact.py`は本Entry記録と同時にTracked化し、以降は
 D0106 FROZEN。
+
+## D0107 — Immutable Prediction & Evaluation Foundation
+
+**目的**: 測定基盤のみを新設する(予測Modelの最適化・Valuation
+Engine・Backtest Engine・Portfolio構築ではない)。4つの能力——
+(1) Immutable Prediction(`PredictionRecord`は書き込み後一切Mutateせず、
+Revisionは`parent_prediction_id`のみで連結する新Recordとして追加、
+Heuristic一致は行わない)、(2) PIT Reconstruction(`ResearchSnapshot`/
+`PredictionRecord`それぞれについて、構築時点で利用可能だった
+`evidence_cutoff`・EvidenceRecord集合を常に遡及的に再構成できる、
+未来Evidenceは`LookAheadBiasError`で拒否)、(3) Evaluation Contract
+(対象Target/Target Periodに対する「正解」の定義をVersion管理し、
+Predictionからは分離して保持することでContract改訂が過去の評価を
+書き換えない)、(4) Experiment Contract(複数Prediction/Modelを
+比較可能にする、共有・再構成可能な条件集合)——を、分離された6つの
+Core Object(`ResearchSnapshot`/`PredictionRecord`/`DecisionRecord`/
+`EvaluationContract`/`EvaluationRecord`/`ExperimentSpec`)として
+`lib/evaluation/`配下に新設した。
+
+**Tamper Evidence**: 新しいHash Algorithmは作らず、既存
+`lib.reproducibility.hash_json_safe()`をそのまま再利用する
+`lib/evaluation/integrity.py`を新設(`to_hashable()`/
+`compute_record_hash()`/`verify_record_integrity()`)。`record_hash`
+はHash対象から自身を除外する。Tuple Field(`evidence_ids`/
+`prediction_ids`/`evaluation_contract_ids`/`variant_ids`等)の順序
+正規化(`sorted()`)は各`build_*()`関数(構築Layer)側の責務とし、
+`integrity.py`自身はSequenceの並び替えを行わない(論理的に同値な
+内容であれば入力順序を変えてもHashが変わらないことをTest Kで実証)。
+
+**Decision/Prediction分離**: `DecisionRecord`(ACTION/WATCH/
+NO_ACTION/INSUFFICIENT_DATA)は`PredictionRecord`とは構造的に別の
+Dataclassであり、Predictionに「決定」Fieldを持たせない。
+`NO_ACTION`(明示的に行動しない判断)と`INSUFFICIENT_DATA`(判断材料が
+不足)は異なるDecisionStatusとして区別し、別Recordとして永続化する
+(いずれもPredictionの有無に関わらず成立する概念であるため)。
+
+**Prediction Revision**: `build_prediction_record()`は
+`parent_prediction_id`が指定された場合、呼び出し側が明示的に注入する
+`existing_predictions`Poolに対して、親の実在・Entity/Target/Target
+Period一致・循環の不在を検証する(`_validate_parent_prediction()`)。
+Heuristicな類似度推測は一切行わない。`forecast_family_key()`
+(`entity_id`/`target`/`target_period`)により、相関したRevision群を
+Metadataとして横断的にGroupingできる(統計的Evaluationは行わない)。
+
+**Evaluation Metric**: D0107は「最小限で動作する決定論的Evaluation例
+が1つあれば十分」という要件に基づき、`EvaluationMetric.ABSOLUTE_
+ERROR`のみを実装する(`evaluate_scalar_absolute_error()`)。Target/
+Target Period/Forecast Shape/Metricのいずれかが不一致の場合は例外を
+投げず、Typed Outcome(`TARGET_MISMATCH`/`SHAPE_MISMATCH`/`METRIC_
+UNSUPPORTED`)を返す。
+
+**ResearchArtifact Identity**: 既存`ResearchArtifact`の`artifact_id`+
+`artifact_version`+`supersedes_artifact_id`が、D0107が必要とする
+Identity Primitiveを既に提供していることを確認した(新しいIdentity
+Primitiveは追加していない)。
+
+**Append-Only Store**: 既存`ResearchArtifactRegistry`/
+`ExperimentRegistry`/`ProvenanceStore`と同じJSON Lines Append-Only
+Pattern(Content同一か否かを問わず同一IDを無条件Reject)をそのまま
+踏襲する`AppendOnlyRecordStore[T]`を1つ新設し、6種類のRecord型全てに
+`to_dict`/`from_dict`/`id_of`のみを注入する形で再利用した(6回の
+重複Class実装と「汎用的なDatabaseを作る」の両方を回避)。
+
+**独立Adversarial Review(`/code-review high`)で検出・修正した
+Finding**:
+1. **(Blocking、修正済み)** `new_evaluation_contract_store()`が
+   `evaluation_contract_id`単独をIdentityとしていたため、`EvaluationContract`
+   のv1を記録した後、同じ`evaluation_contract_id`を持つv2を記録しようと
+   すると`AppendOnlyViolationError`になり、Version間の共存(D0107の
+   Evaluation Contractという概念そのものの存在意義)が成立しなかった
+   ことをReviewerが直接再現した。修正: Identityを`(evaluation_
+   contract_id, evaluation_contract_version)`の合成Key(`_evaluation_
+   contract_composite_id()`)に変更。Regression Test`test_evaluation_
+   contract_store_preserves_both_versions_under_same_id`を追加
+   (v1/v2が共存すること、かつ同一(id, version)の再記録は依然Reject
+   されることの両方を実証)。
+2. **(Blocking、修正済み)** `build_prediction_record()`/`_validate_
+   parent_prediction()`が、新しい`prediction_id`が呼び出し側注入の
+   `existing_predictions`Pool内の既存Recordと衝突していないかを一切
+   検証していなかった——`parent_prediction_id`を指定しない呼び出しでも
+   同一`prediction_id`で異なるContent(異なる`scalar_forecast`/
+   `record_hash`)を持つ2つのIn-Memory Instanceが構築でき、
+   AppendOnlyRecordStoreへ永続化する前の段階でSilent ID Collisionが
+   成立してしまうことをReviewerが直接再現した。修正: `build_
+   prediction_record()`冒頭で`existing_predictions`内のID衝突を検査し、
+   `EvaluationFoundationSchemaError`で拒否するようにした(forbidden_
+   actions「no silent overwrite of an existing PredictionRecord」の
+   In-Memory段階への拡張)。Regression Test`test_build_prediction_
+   record_rejects_prediction_id_collision_in_existing_predictions_pool`・
+   `test_build_prediction_record_rejects_prediction_id_collision_even_
+   without_parent`を追加。
+
+**Test(`test_evaluation_foundation.py`、32件、新規)**: §21 Mandatory
+Acceptance Test A-L(Revision非破壊・PIT Reconstruction・Evaluation
+Contract Version共存・未来Evidence拒否・NO_ACTION/INSUFFICIENT_DATA
+分離・ExperimentSpec共有・決定論的Evaluation再現性・Tamper検知・
+Forecast Family Grouping・親Revision不一致拒否(Entity/Target/Target
+Period/Missing/Cycle)・順序非依存性・H0001不参照)に加え、重複ID
+拒否(Prediction/既存Pool内衝突の双方)・Evaluation Category不一致
+(Target/Shape Mismatch)・EvaluationContract/ExperimentSpec/
+DecisionRecordへのTamper検知・No-Model-Dependency/No-Valuation-
+Backtest-Portfolio-Logic(Source Level AST確認、`EvaluationContract`等
+正当な識別子への誤反応を避けるためIdentifier完全一致Check)を網羅。
+既存D0103-D0106 Test(`test_evidence_integration.py`・`test_evidence_
+lineage.py`(D0040)・`test_disclosures_evidence_lineage.py`・
+`test_incremental_research_update.py`・`test_thesis_impact.py`・
+`test_research_artifact.py`・`test_research_artifact_registry.py`・
+`test_faithfulness.py`)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(`test_evaluation_foundation.py`)32件
+PASS。D0102-D0107関連9 File合計309件PASS。Repository全体`pytest`
+2029件PASS(0 Failure)。`ruff check`・`ruff format --check`・
+`mypy --strict`はいずれも本Round唯一の変更Production File
+(`lib/evaluation/integrity.py`・`lib/evaluation/model.py`・
+`lib/evaluation/store.py`)でPASS。`mypy --strict`はTest File自体では
+`import pytest`単独でも再現する既存の環境Issue(numpy Stub/Python
+3.14不一致、D0103/D0105/D0106で確認済みと同一原因)により実行不能
+だったが、本Changeによる新規Issueではないことを確認した。
+
+**Manifest**: `scripts/manifests/d0107_immutable_evaluation_foundation_
+pilot.json`(新設、`task_id=D0107-IMMUTABLE-EVALUATION-FOUNDATION`、
+`allowed_files`は`lib/evaluation/`配下4File・`test_evaluation_
+foundation.py`のみ、`frozen_files`はD0103-D0106関連12 File、
+`expected_head=CURRENT`)。`dev_workflow.py run --dry-run`で
+`head_check`/`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/evaluation/__init__.py`(新設、空File)・
+`lib/evaluation/integrity.py`(新設)・`lib/evaluation/model.py`
+(新設)・`lib/evaluation/store.py`(新設)・`13_tests/test_evaluation_
+foundation.py`(新設)・`scripts/manifests/d0107_immutable_evaluation_
+foundation_pilot.json`(新設)・本`DECISIONS.md`。既存Frozen File
+(`evidence_integration.py`・`evidence_lineage.py`・`faithfulness.py`・
+`semantic_claims.py`・`candidate_extraction.py`・`normalization.py`・
+`model.py`・`lib/evidence/model.py`・`lib/evidence/research_
+artifact.py`・`lib/evidence/incremental_update.py`・`lib/evidence/
+thesis_impact.py`・`lib/registry/research_artifact_registry.py`)は
+いずれも無変更。予測Model最適化・Valuation計算・Backtest・Portfolio
+構築・発注・BUY/SELL・期待Return Logicはいずれも導入していない。
+H0001は実行していない。
+
+**Status**: `D0107_ACCEPTED = YES`。`lib/evaluation/__init__.py`・
+`lib/evaluation/integrity.py`・`lib/evaluation/model.py`・
+`lib/evaluation/store.py`・`test_evaluation_foundation.py`は本Entry
+記録と同時にTracked化し、以降はD0107 FROZEN。

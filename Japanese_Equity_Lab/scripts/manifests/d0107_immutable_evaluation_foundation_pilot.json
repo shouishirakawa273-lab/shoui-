@@ -1,0 +1,74 @@
+{
+  "task_id": "D0107-IMMUTABLE-EVALUATION-FOUNDATION",
+  "purpose": "Immutable Prediction & Evaluation Foundation: measurement infrastructure only. Establish exactly four capabilities -- (1) Immutable Prediction (a PredictionRecord, once written, is never mutated; a revision is a new record linked only via parent_prediction_id, never a heuristic match), (2) PIT Reconstruction (every ResearchSnapshot/PredictionRecord can be traced back to the exact evidence_cutoff and EvidenceRecord set that were usable at creation time, rejecting any future-dated evidence via LookAheadBiasError), (3) Evaluation Contract (a versioned, explicit definition of what counts as a correct outcome for a target/target_period, kept separate from the Prediction itself so a contract revision never silently rewrites history), (4) Experiment Contract (a shared, reconstructable set of conditions multiple predictions/models can be compared under). Six separated core objects (ResearchSnapshot, PredictionRecord, DecisionRecord, EvaluationContract, EvaluationRecord, ExperimentSpec) plus tamper-evident canonical hashing (record_hash) and an append-only store. This is explicitly NOT a forecasting model, NOT a valuation engine, NOT a backtest engine, NOT a portfolio construction system, and does NOT touch H0001. See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
+  "expected_head": "CURRENT",
+  "allowed_files": [
+    "Japanese_Equity_Lab/lib/evaluation/__init__.py",
+    "Japanese_Equity_Lab/lib/evaluation/integrity.py",
+    "Japanese_Equity_Lab/lib/evaluation/model.py",
+    "Japanese_Equity_Lab/lib/evaluation/store.py",
+    "Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py",
+    "Japanese_Equity_Lab/scripts/manifests/d0107_immutable_evaluation_foundation_pilot.json",
+    "Japanese_Equity_Lab/DECISIONS.md"
+  ],
+  "frozen_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+    "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+    "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+    "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+    "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+    "Japanese_Equity_Lab/lib/disclosures/model.py",
+    "Japanese_Equity_Lab/lib/evidence/model.py",
+    "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+    "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+    "Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+    "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py"
+  ],
+  "targeted_tests": [
+    ".venv\\Scripts\\python.exe -m pytest Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py -q"
+  ],
+  "static_checks": [
+    ".venv\\Scripts\\ruff.exe check Japanese_Equity_Lab/lib/evaluation/",
+    ".venv\\Scripts\\ruff.exe format --check Japanese_Equity_Lab/lib/evaluation/",
+    ".venv\\Scripts\\python.exe -m mypy --strict Japanese_Equity_Lab/lib/evaluation/integrity.py Japanese_Equity_Lab/lib/evaluation/model.py Japanese_Equity_Lab/lib/evaluation/store.py"
+  ],
+  "requested_actions": [
+    "implement Japanese_Equity_Lab/lib/evaluation/integrity.py providing to_hashable()/compute_record_hash()/verify_record_integrity(), reusing lib.reproducibility.hash_json_safe() as the sole hash primitive (no new hash algorithm); record_hash must exclude itself from its own hash input",
+    "implement Japanese_Equity_Lab/lib/evaluation/model.py providing ResearchSnapshot, PredictionRecord, DecisionRecord, EvaluationContract, EvaluationRecord, ExperimentSpec as separated immutable dataclasses, plus their build_*() constructors with validation (PIT check via EvidenceRecord.is_usable_at()/LookAheadBiasError, parent-revision validation via entity/target/target_period match and cycle detection, canonical tuple ordering via sorted())",
+    "keep DecisionRecord (ACTION/WATCH/NO_ACTION/INSUFFICIENT_DATA) structurally separate from PredictionRecord -- a decision is never a field on a prediction",
+    "implement evaluate_scalar_absolute_error() as the one minimal deterministic evaluation example (EvaluationMetric.ABSOLUTE_ERROR only), returning a Typed Outcome (COMPUTED/TARGET_MISMATCH/SHAPE_MISMATCH/METRIC_UNSUPPORTED) rather than raising on a category mismatch",
+    "implement Japanese_Equity_Lab/lib/evaluation/store.py providing one generic AppendOnlyRecordStore[T] (unconditional reject-on-duplicate-id, matching the existing JSONL registry pattern) and six new_xxx_store() factory functions, one per core object",
+    "add unit tests in Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py covering Mandatory Acceptance Tests A-L plus duplicate-id rejection, evaluation category mismatch, and tamper-evidence detection on PredictionRecord/EvaluationContract/ExperimentSpec",
+    "confirm and document that ResearchArtifact's existing artifact_id+artifact_version+supersedes_artifact_id already provides the identity primitive D0107 needs (no new identity primitive introduced)",
+    "run ruff check/format and mypy --strict on the three new lib/evaluation/*.py files",
+    "run the targeted pytest suite for test_evaluation_foundation.py, then the D0102-D0107 regression suite, then the full repository pytest suite",
+    "record the design decision in DECISIONS.md"
+  ],
+  "forbidden_actions": [
+    "no H0001",
+    "no Locked Test rerun",
+    "no BUY/SELL signal generation",
+    "no expected return calculation",
+    "no valuation computation or valuation engine",
+    "no backtest engine",
+    "no portfolio construction or position sizing",
+    "no trading or execution",
+    "no forecasting model optimization or model training",
+    "no second evaluation metric beyond ABSOLUTE_ERROR",
+    "no silent overwrite of an existing PredictionRecord/EvaluationContract/ExperimentSpec",
+    "no heuristic-based revision linking (parent_prediction_id must be explicit, never inferred)",
+    "no collapsing NO_ACTION and INSUFFICIENT_DATA into one meaning",
+    "no future-dated evidence (available_at after evidence_cutoff) accepted into a ResearchSnapshot",
+    "no ResearchArtifact/EvidenceRecord/ThesisImpactAssessment mutation",
+    "no new identity primitive for ResearchArtifact",
+    "no model call anywhere in this module (deterministic only)",
+    "no changes under Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/",
+    "no edits to any frozen_files entry",
+    "no force push",
+    "no git reset --hard",
+    "no branch deletion"
+  ],
+  "requires_independent_review": true,
+  "requires_human_approval": false
+}
