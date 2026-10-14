@@ -18868,3 +18868,175 @@ First Release/Surpriseの3点セットは本Roundで十分な粒度で保存し�
 `lib/macro_events/model.py`・`lib/macro_events/surprise.py`・
 `lib/macro_events/store.py`・`test_macro_event_surprise.py`は本Entry
 記録と同時にTracked化し、以降はD0110.1 FROZEN。
+
+
+## D0110.2 — Event Window Response Foundation (2026-10-14)
+
+**Starting HEAD**: `1688d712095bf90b03e8cc9b38244f856a32aab2`.
+Development branch `claude/investment-strategy-pipeline-jyfby5`; PR #1 was
+confirmed open/unmerged at implementation start. Work used a fresh checkout;
+no previous user working-tree changes were reset, removed, or overwritten.
+
+**Scope**: independent `lib/event_responses/` (model/measurement/store),
+caller-supplied immutable point observations only. CPI event-window measurement
+for yields/FX/commodity prices; 5m/30m/UTC elapsed 24h windows. Japan next-session
+is explicitly UNSUPPORTED_WINDOW. No API fetching, causal claims, forecasting,
+company exposure, valuation changes, scenario probabilities, expected return,
+portfolio or execution. H0001 and Locked Test were not run.
+
+**Selection and PIT**: explicit structural SeriesKey, schema/integrity validation,
+then timestamp/availability eligibility, latest eligible strictly-pre publication
+point and first eligible post target. Eligible fallback is explicit and audited.
+No series substitution, implicit calendar rolling, arbitrary timestamp tie-break,
+or zero fill. Duplicate identical IDs collapse; conflicting IDs/content reject.
+Actual publication anchors windows; UTC arithmetic avoids DST wall-time shifts.
+Output availability includes the real calculation time. Every early outcome
+binds the complete candidate ID/hash audit; failure values are None.
+
+**Units/numerics**: yields PERCENT -> delta BASIS_POINT, not bond-price return.
+Prices preserve absolute-change units and separately report relative percent.
+New measurements use local Decimal precision 80 / ROUND_HALF_EVEN, bounded
+finite inputs, fixed operation order, 12-decimal-place result quantization and
+positive zero normalization. Ambient context does not determine results.
+
+**Identity/provenance**: economic observation key, measurement revision key,
+and stored calculation ID are separate. Explicit correction lineage retains old
+records; repeated calculations and multiple consensus links are not independent
+events. Response/Link include exact reference hashes. Link checks real event,
+release, dimension and consensus identities and cutoff, and reuses the frozen
+D0110.1 surprise producer. No implicit latest-consensus/revision selection.
+
+**Persistence**: thin adapters over existing D0107 AppendOnlyRecordStore,
+verified serialization round-trips, same-ID/same-content idempotency,
+same-ID/different-content rejection, existing same-economic-key correction
+parent and cycle checks. Single-writer only, reflecting the underlying store.
+No new database or hash algorithm.
+
+**Independent implementation review**: two blocking findings closed
+(input normalization repaired nested tampering; early failures lost candidate
+audit), plus one precision compatibility finding closed. Regression tests added;
+reviewer independently reran seven closure tests successfully. Final verdict
+ACCEPT, blocking findings zero. Implementation review and evidence are retained
+outside the checkout in the task's handoff/ and validation/ directories.
+
+**Compatibility limitation**: frozen D0110.1 does not record Decimal context.
+The link adapter explicitly supports standard precision-28/ROUND_HALF_EVEN
+surprise production. Arbitrary legacy contexts are not inferred; mismatches fail
+closed. D0110.1 itself remains byte-for-byte unchanged.
+
+**Validation (final code)**:
+- Dedicated synthetic acceptance/adversarial/store tests: 67 PASS.
+- Related D0107-D0110.1/global-market suite, including new tests: 300 PASS.
+- Broad repository suite excluding three Phase5/reversal execution-related test
+  files and tests matching h0001/locked: 2184 PASS, 17 deselected, two pre-existing
+  warnings. This is deliberately NOT an unrestricted full-suite claim.
+- ruff check / ruff format --check: PASS on the four new production files and test.
+- mypy --strict: PASS on four new production files (target Python 3.11).
+- Actual runtime: repository-local Python 3.12.14. Python 3.11 runtime and remote
+  CI were not exercised by this task.
+- Initial sandbox broad run had 23 existing environment failures (python3/Bash
+  resolution). Repository-local python3 alias, Git Bash PATH and explicit
+  workspace temp were used; shell integration required unsandboxed execution.
+  Environment subset: 29 PASS; final broad suite above PASS. No hook/CI source
+  was changed to mask these failures. Prior remote CI state is unchanged.
+- Manifest uses fixed starting SHA, seven allowed files and 282 frozen paths
+  (all previously tracked Lab lib/test files). HEAD/scope checks PASS.
+- Frozen baseline hash comparison: 282 paths, zero changed.
+
+**Status**: D0110_2_LOCAL_ACCEPT = YES / IMPLEMENTED_AND_REVIEWED.
+New files remain local and untracked; no commit/push/merge was performed.
+Remote acceptance/FROZEN publication must not be claimed from this local result.
+Do not automatically proceed to D0110.3.
+
+### D0110.2 — Publication and CI follow-up (2026-10-14)
+
+The preceding LOCAL_ACCEPT and local/untracked statements describe the end of
+local implementation validation, before publication. Subsequently the seven-file
+implementation was committed as `4f8e3b3bf636677d7f30aa1318fd9c8e19288921`, pushed
+to `codex/d0110-2-event-window-response`, and published as Draft PR #2:
+https://github.com/shouishirakawa273-lab/shoui-/pull/2
+The base is `claude/investment-strategy-pipeline-jyfby5`, starting commit
+`1688d712095bf90b03e8cc9b38244f856a32aab2`. Publication is not merge or FROZEN
+acceptance. PR #1 and PR #2 remain unmerged. The original implementation manifest
+is a historical starting-state record, not authorization to rerun its writer.
+
+The receiving reviewer reported two failing CI check runs for the implementation
+commit; an inspected job passed lint/format/mypy and failed pytest. Earlier Codex
+reports of 2245 passed / 10 failed and all failures being caused by missing .venv
+cannot be reverified from saved raw CI logs at this follow-up. Those exact counts
+and the cause of every remote failure therefore remain unconfirmed.
+
+Static inspection does establish an environment mismatch: CI installed dependencies
+without creating a repository-local .venv, while the quality hook and its tests
+require that toolchain. This follow-up changes only CI configuration and this
+decision record: create .venv, install requirements-dev.txt there, prepend its
+bin directory to subsequent-step PATH, and invoke checks through its Python.
+Hook code, existing tests, and frozen production modules are unchanged.
+
+CI regression is explicitly restricted: ignore test_research_validation_pipeline.py,
+test_phase5_v1_1_real_data_script.py and test_short_term_reversal_strategy.py,
+and deselect names matching h0001 or locked. This is scoped acceptance, not an
+unrestricted full-suite success claim. No H0001/Locked Test execution is authorized.
+The existing 282-path frozen implementation baseline remains applicable; this
+CI follow-up does not change the original seven-file implementation manifest.
+
+CI repair is a hypothesis until new verification succeeds; historical remote
+failures must not be retroactively relabelled as verified. No merge, FROZEN
+acceptance, or D0110.3 implementation is performed by this follow-up.
+
+Follow-up local verification: 92 PASS (quality/protected-path hooks plus D0110.2
+dedicated tests), one existing unregistered integration-marker warning, Python
+3.12.14 with repository-local .venv and Git Bash. YAML/toolchain/exclusion checks
+PASS; frozen baseline comparison: 282 paths, zero changed. This validates the
+local subset and configuration, not Ubuntu/Python 3.11 CI or full regression.
+
+### D0110.2 — Formal acceptance / FROZEN (2026-10-14)
+
+**Status: D0110_2_FORMALLY_ACCEPTED = YES / FROZEN.**
+The project owner explicitly approved formal acceptance and the FROZEN record
+in this conversation on 2026-10-14: "D0110.2の正式受入とFROZEN記録を承認する。
+マージはまだしない". This entry applies that approval; it does not authorize merge.
+
+Reviewed implementation/CI HEAD: `9e9d98279a99de46b3bb162e2b5dbe905f547278`.
+Base: `1688d712095bf90b03e8cc9b38244f856a32aab2`.
+PR: https://github.com/shouishirakawa273-lab/shoui-/pull/2 (Draft, unmerged).
+The acceptance-record commit is a later documentation-only commit; this reviewed
+HEAD identifies the accepted file contents, not the eventual merge commit.
+
+Acceptance evidence: independent implementation review Closure ACCEPT with zero
+blocking findings; dedicated 67, related 300 and scoped local regression 2184 PASS
+(17 deselected); CI-follow-up local subset 92 PASS. Existing frozen baseline:
+282 paths, zero content changes. Both push and PR CI for the reviewed HEAD were
+confirmed completed/success, including lint, format, mypy and scoped pytest:
+https://github.com/shouishirakawa273-lab/shoui-/actions/runs/38541788289
+https://github.com/shouishirakawa273-lab/shoui-/actions/runs/38541796298
+Acceptance excludes H0001/Locked Test and the three explicitly ignored
+Phase5/reversal files documented above. It is not unrestricted full-suite
+acceptance. Historical remote failure counts and cause remain unconfirmed from
+saved raw logs; successful new CI does not retroactively establish those details.
+
+The following files are FROZEN at the reviewed HEAD (SHA-256):
+
+| Repository-relative path | SHA-256 |
+| --- | --- |
+| Japanese_Equity_Lab/lib/event_responses/__init__.py | ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62 |
+| Japanese_Equity_Lab/lib/event_responses/model.py | 3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1 |
+| Japanese_Equity_Lab/lib/event_responses/measurement.py | f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797 |
+| Japanese_Equity_Lab/lib/event_responses/store.py | d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437 |
+| Japanese_Equity_Lab/13_tests/test_event_window_response.py | 7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a |
+| Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json | 5702eaeeca1316886325f17a4c14903c816a6ec83d8a568a83fa9261489e8ed7 |
+
+DECISIONS.md remains append-only; CI configuration is maintained separately as
+development infrastructure, not frozen wholesale by this acceptance. Existing
+D0108/D0109/D0110/D0110.1 freeze boundaries remain unchanged. The original
+implementation manifest expected_head is historical and must not be used to rerun
+its writer after acceptance. Future writer scopes must protect these six files.
+
+Accepted limitations: caller-supplied point quotes; 5m/30m/UTC elapsed 24h windows;
+Japan next-session unsupported; no fetching API, causal/forecast/exposure/trading
+extension; single-writer Store; same-ID/same-content Adapter idempotency per v2;
+legacy Surprise validation uses explicit precision28/ROUND_HALF_EVEN and fails
+closed for incompatible contexts rather than inferring missing provenance.
+
+This record performs no merge of PR #1 or #2 and does not start D0110.3.
+Any eventual merge and its actual commit must be recorded separately.
