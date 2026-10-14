@@ -18737,3 +18737,134 @@ Engineはいずれも導入していない。H0001は実行していない。
 model.py`・`lib/valuation/engine.py`・`lib/valuation/reverse.py`・
 `test_valuation_forward_reverse.py`は本Entry記録と同時にTracked化し、
 以降はD0110 FROZEN。
+
+## D0110.1 — Macro Event & Surprise Foundation
+
+**目的**: **MACRO MEASUREMENT FIRST. MACRO FORECASTING LATER.**
+D0107-D0110の企業Research/Valuation Layerとは独立したMacro Layerを
+新設した(`lib/macro_events/`、`model.py`/`surprise.py`/`store.py`)。
+CPI/FOMCの予測・解釈・投資判断は一切行わず、「何のEventがいつ予定
+され、市場Consensusは事前にどうだったか、最初に何が発表されたか、
+Surpriseはどう計算されるか」をPIT-correctに記録するのみ。
+
+**既存`lib/macro/`との関係(独立Namespace、複製・変更しない)**: 既存
+`lib.macro.model.MacroRecord`(Phase4D)はSeries中心のLong-form Macro
+Observation(`RevisionHistory`によるVintage管理)であり、「ある時点で
+見えていた最新Version」を返す設計(`macro_as_of()`)——本Round中心
+要件である「史上最初のRelease(Never Overwrite)」(D0110.1 §10)とは
+意味的に衝突する。本ModuleはEvent中心(1つの予定されたEvent発生に
+対するConsensus/First Release/Surpriseの組)という別の形状のため、
+新しいNamespace(`lib/macro_events/`)として独立させ、既存
+`lib/macro/`は一切変更していない。
+
+**4つの別概念(D0110.1 §4)**: `MacroEvent`(予定されたEvent発生、
+v1 Scope: CPI/FOMCのみ、`SUPPORTED_EVENT_TYPES`で明示)→
+`MacroConsensusSnapshot`(Snapshot時点ごとに別Record、新しい
+Snapshotが古いSnapshotを上書きすることは一切ない)/`MacroFirstRelease`
+(史上最初に公表された値、`update`/`revise`Methodが存在しない)→
+`MacroSurprise`(特定のConsensus Snapshot + First Releaseの組から
+計算)。
+
+**No Aggregate Surprise(D0110.1 §13/§16、最重要)**: `compute_macro_
+surprise()`は1つのEvent・1つのDimensionについて1つのSurpriseのみを
+計算する——FOMCの`POLICY_RATE`/`DOT_MEDIAN`は独立した別々の
+`MacroSurprise`Recordとなり、単一のOpaque Aggregate Score
+(`FOMC_SURPRISE = +0.72`等)は一切生成しない(Source Level AST確認)。
+
+**Consensus PIT Rule(D0110.1 §8、必須)**: Surprise計算に使う
+`MacroConsensusSnapshot`は`consensus_snapshot_at < actual_public_at`
+かつ`consensus.available_at <= actual_public_at`を必須とする——発表後
+にしか利用不能だったConsensus Snapshotは一切使えない(Fail Closed、
+`PIT_INVALID`)。Optionalな`decision_at`を指定すればBacktest等の
+外部Cutoffも追加でFail Closedできる。
+
+**Surprise Calculation Rule(D0110.1 §15/§17)**: CPI等の素朴な数値
+Releaseは`ACTUAL_MINUS_EXPECTED_PP_V1`(Percentage Point、無変換)、
+政策金利等のRate Decisionは`ACTUAL_MINUS_EXPECTED_BP_V1`(Basis
+Point、1 Percentage Point = 100bpの明示的決定論的変換)のRule
+Registryで表現する。暗黙のUnit変換は一切行わず、`consensus.unit`/
+`first_release.unit`いずれかがRuleの期待Unitと不一致なら
+`UNIT_MISMATCH`でFail Closedする。
+
+**Tamper Evidence/Append-Only(D0110.1 §20/§34)**: 既存
+`lib.evaluation.integrity.compute_record_hash()`/既存
+`lib.evaluation.store.AppendOnlyRecordStore`(Generic)をそのまま
+再利用する——新しいHash Algorithm・新しいPersistence機構は作らない。
+
+**独立Adversarial Review(`/code-review high`)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** `new_macro_event_store()`が`event_id`
+   単独をIdentityとしていたため、`MacroEvent`の改訂(延期等、
+   `event_version`を上げた新Snapshot、`model.py`自身のDocstringが
+   明記する設計)を記録しようとすると`AppendOnlyViolationError`に
+   なり、「改訂を既存Recordの書き換えではなく新しいImmutable
+   Snapshotとして表現する」という本Module自身の設計と矛盾すること
+   をReviewerが直接再現した(D0107 `EvaluationContract`の
+   `_evaluation_contract_composite_id()`で既に解決済みだった同種の
+   問題が、本Moduleでは未反映だった)。修正: Identityを`(event_id,
+   event_version)`の合成Key(`_macro_event_composite_id()`)に変更
+   した。Regression Test`test_macro_event_store_allows_revised_
+   event_version_to_coexist`を追加。
+2. **(Non-blocking、修正済み)** `surprise.py`のRule Registryが
+   `"PERCENT"`/`"PERCENTAGE_POINT"`/`"BASIS_POINT"`を生の文字列
+   Literalとして再宣言しており、`model.py`が同じ目的のために既に
+   `export`している`UNIT_PERCENT`/`UNIT_PERCENTAGE_POINT`/
+   `UNIT_BASIS_POINT`定数を使っていなかったことをReviewerが指摘
+   (将来の定数変更がRule Registryへ無言で反映されなくなるリスク)。
+   修正: 生文字列を既存定数への参照に置き換えた。
+
+**Test(`test_macro_event_surprise.py`、39件、新規)**: §27 CPI
+Acceptance Scenario(T-3日/T-5分の2つのConsensus Snapshotが共存し、
+それぞれ+0.3pp/+0.2ppの別Surpriseを生成)、§28 FOMC Acceptance
+Scenario(POLICY_RATE=-25bp・DOT_MEDIAN=+25bpの2つの独立Surprise、
+集約無し)、§29 Identity/Immutability A-F(Event識別子安定性・
+Snapshot時刻区別・重複ID Reject・First Release不変・改竄検知・
+順序非依存性、Reviewer Finding 1件分のEvent Revision共存Testを追加)、
+§30 PIT A-F(Pre-Release許可・Post-Release Snapshot拒否・Available-
+After-Release拒否・未来First Release拒否・tz-naive型的拒否・暗黙
+Timezone変換無し)、§31 Surprise A-I(PP/BP計算・Unit不一致・Event ID
+不一致・Dimension不一致・Consensus/First Release欠落・複数Dimension
+独立性・集約Surprise不在)、§32 Historical Fidelity A-D(Previous As
+Published/First Release/Consensus Snapshot/Surprise参照の不変性)を
+網羅。既存D0102-D0110 Test・既存`lib/macro`Test(`test_macro_pit.py`
+等3File)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(`test_macro_event_surprise.py`)39件
+PASS。D0107-D0110.1+既存Macro関連8 File合計234件PASS。Repository
+全体`pytest`は本Entry記録前の直近実行で2187件PASS(0 Failure、
+Reviewer Finding修正前の計測。修正後も同一Targeted/Regression
+Testが全件PASSすることを確認済み)。`ruff check`・`ruff format
+--check`・`mypy --strict`はいずれも本Round唯一の変更Production File
+(`lib/macro_events/model.py`・`surprise.py`・`store.py`)でPASS。
+
+**Manifest**: `scripts/manifests/d0110_1_macro_event_surprise_
+foundation_pilot.json`(新設、`task_id=D0110_1-MACRO-EVENT-SURPRISE-
+FOUNDATION`、`allowed_files`は`lib/macro_events/`配下4File・
+`test_macro_event_surprise.py`のみ、`frozen_files`はD0103-D0110
+関連26 File+既存`lib/macro/`5File、`expected_head=CURRENT`)。
+`dev_workflow.py run --dry-run`で`head_check`/`scope_check`両方
+`passed: true`を確認済み。
+
+**変更File**: `lib/macro_events/__init__.py`(新設、空File)・
+`lib/macro_events/model.py`(新設)・`lib/macro_events/surprise.py`
+(新設)・`lib/macro_events/store.py`(新設)・`13_tests/test_macro_
+event_surprise.py`(新設)・`scripts/manifests/d0110_1_macro_event_
+surprise_foundation_pilot.json`(新設)・本`DECISIONS.md`。既存
+Frozen File(D0102-D0110関連26 File)・既存`lib/macro/`5Fileはいずれも
+無変更。Proprietary Macro Forecast・Cross-Asset Transmission・
+Causal Inference・Company Exposure・Valuation変更・Expected Return
+はいずれも導入していない。H0001は実行していない。
+
+**D0110.2/D0110.3/D0110.4との関係**: `MacroEvent.event_id`/
+`MacroSurprise.surprise_id`/`dimension`/`actual_public_at`/
+`available_at`は将来のD0110.2(Event周辺のAsset Price変化測定)が
+参照できる安定したKeyとして設計したが、本RoundではAsset Price
+Response自体を実装していない。D0110.3(Company Exposure Mapping)が
+必要とする`company_id`等は本Moduleに一切含めていない。D0110.4
+(Proprietary Macro Forecast Experiment)が将来比較に使うConsensus/
+First Release/Surpriseの3点セットは本Roundで十分な粒度で保存して
+いるが、Forecast Error等のMetric自体は計算していない。
+
+**Status**: `D0110_1_ACCEPTED = YES`。`lib/macro_events/__init__.py`・
+`lib/macro_events/model.py`・`lib/macro_events/surprise.py`・
+`lib/macro_events/store.py`・`test_macro_event_surprise.py`は本Entry
+記録と同時にTracked化し、以降はD0110.1 FROZEN。
