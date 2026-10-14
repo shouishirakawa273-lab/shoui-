@@ -18868,3 +18868,82 @@ First Release/Surpriseの3点セットは本Roundで十分な粒度で保存し�
 `lib/macro_events/model.py`・`lib/macro_events/surprise.py`・
 `lib/macro_events/store.py`・`test_macro_event_surprise.py`は本Entry
 記録と同時にTracked化し、以降はD0110.1 FROZEN。
+
+
+## D0110.2 — Event Window Response Foundation (2026-10-14)
+
+**Starting HEAD**: `1688d712095bf90b03e8cc9b38244f856a32aab2`.
+Development branch `claude/investment-strategy-pipeline-jyfby5`; PR #1 was
+confirmed open/unmerged at implementation start. Work used a fresh checkout;
+no previous user working-tree changes were reset, removed, or overwritten.
+
+**Scope**: independent `lib/event_responses/` (model/measurement/store),
+caller-supplied immutable point observations only. CPI event-window measurement
+for yields/FX/commodity prices; 5m/30m/UTC elapsed 24h windows. Japan next-session
+is explicitly UNSUPPORTED_WINDOW. No API fetching, causal claims, forecasting,
+company exposure, valuation changes, scenario probabilities, expected return,
+portfolio or execution. H0001 and Locked Test were not run.
+
+**Selection and PIT**: explicit structural SeriesKey, schema/integrity validation,
+then timestamp/availability eligibility, latest eligible strictly-pre publication
+point and first eligible post target. Eligible fallback is explicit and audited.
+No series substitution, implicit calendar rolling, arbitrary timestamp tie-break,
+or zero fill. Duplicate identical IDs collapse; conflicting IDs/content reject.
+Actual publication anchors windows; UTC arithmetic avoids DST wall-time shifts.
+Output availability includes the real calculation time. Every early outcome
+binds the complete candidate ID/hash audit; failure values are None.
+
+**Units/numerics**: yields PERCENT -> delta BASIS_POINT, not bond-price return.
+Prices preserve absolute-change units and separately report relative percent.
+New measurements use local Decimal precision 80 / ROUND_HALF_EVEN, bounded
+finite inputs, fixed operation order, 12-decimal-place result quantization and
+positive zero normalization. Ambient context does not determine results.
+
+**Identity/provenance**: economic observation key, measurement revision key,
+and stored calculation ID are separate. Explicit correction lineage retains old
+records; repeated calculations and multiple consensus links are not independent
+events. Response/Link include exact reference hashes. Link checks real event,
+release, dimension and consensus identities and cutoff, and reuses the frozen
+D0110.1 surprise producer. No implicit latest-consensus/revision selection.
+
+**Persistence**: thin adapters over existing D0107 AppendOnlyRecordStore,
+verified serialization round-trips, same-ID/same-content idempotency,
+same-ID/different-content rejection, existing same-economic-key correction
+parent and cycle checks. Single-writer only, reflecting the underlying store.
+No new database or hash algorithm.
+
+**Independent implementation review**: two blocking findings closed
+(input normalization repaired nested tampering; early failures lost candidate
+audit), plus one precision compatibility finding closed. Regression tests added;
+reviewer independently reran seven closure tests successfully. Final verdict
+ACCEPT, blocking findings zero. Implementation review and evidence are retained
+outside the checkout in the task's handoff/ and validation/ directories.
+
+**Compatibility limitation**: frozen D0110.1 does not record Decimal context.
+The link adapter explicitly supports standard precision-28/ROUND_HALF_EVEN
+surprise production. Arbitrary legacy contexts are not inferred; mismatches fail
+closed. D0110.1 itself remains byte-for-byte unchanged.
+
+**Validation (final code)**:
+- Dedicated synthetic acceptance/adversarial/store tests: 67 PASS.
+- Related D0107-D0110.1/global-market suite, including new tests: 300 PASS.
+- Broad repository suite excluding three Phase5/reversal execution-related test
+  files and tests matching h0001/locked: 2184 PASS, 17 deselected, two pre-existing
+  warnings. This is deliberately NOT an unrestricted full-suite claim.
+- ruff check / ruff format --check: PASS on the four new production files and test.
+- mypy --strict: PASS on four new production files (target Python 3.11).
+- Actual runtime: repository-local Python 3.12.14. Python 3.11 runtime and remote
+  CI were not exercised by this task.
+- Initial sandbox broad run had 23 existing environment failures (python3/Bash
+  resolution). Repository-local python3 alias, Git Bash PATH and explicit
+  workspace temp were used; shell integration required unsandboxed execution.
+  Environment subset: 29 PASS; final broad suite above PASS. No hook/CI source
+  was changed to mask these failures. Prior remote CI state is unchanged.
+- Manifest uses fixed starting SHA, seven allowed files and 282 frozen paths
+  (all previously tracked Lab lib/test files). HEAD/scope checks PASS.
+- Frozen baseline hash comparison: 282 paths, zero changed.
+
+**Status**: D0110_2_LOCAL_ACCEPT = YES / IMPLEMENTED_AND_REVIEWED.
+New files remain local and untracked; no commit/push/merge was performed.
+Remote acceptance/FROZEN publication must not be claimed from this local result.
+Do not automatically proceed to D0110.3.
