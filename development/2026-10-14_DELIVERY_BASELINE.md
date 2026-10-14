@@ -49,6 +49,14 @@ raw logはチャットworkspace validation/delivery-20261014-source-record.log�
 原PDFの再取得・意味の独立照合・実PIT計算・符号付き会社予測・営業利益接続は検証対象外。
 synthetic helperのlimitationsが残るため、テスト生成物を実会社入力の正本へ昇格しない。
 
+### 独立検証と指摘解消
+
+検証担当は初回rawlogにHEAD/commandがないことを指摘し、実行同一性はログ単独で未確認とした。
+阻害解消確認として指定1件を自身で再実行。開始・終了HEADはfba60cbc42b76021000a24663dce34fd51b13aea、1 passed、exit code 0、作業ツリー変更なし。
+日時・command・pytest出力・終了HEAD/statusをvalidation/delivery-20261014-source-record-independent.logへ同一実行で記録した。
+独立認定はfact-only archival、未知時刻保持、単位換算、inputs/results round-tripの狭い1件だけ。
+原PDF・意味・実PIT・予測・全体接続の合格を主張せず、広い20成果物の到達度をこの1件だけで引き上げない。
+
 ## 次の最小開発単位
 
 新規の手動資料preflightは、入力資料の存在・hash・版・会社/期/指標・未知時刻と未充足条件を一覧化し、利益予測を生成しない範囲に限定する。
