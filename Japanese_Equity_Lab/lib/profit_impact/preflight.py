@@ -85,7 +85,8 @@ def inspect_request(request: ProfitImpactRequest) -> dict[str, object]:
         if source.profit_metric != "PRETAX_INCOME" or source.scope != "CONSOLIDATED":
             note("CALCULATION", "SUPPORTED_METRIC_SCOPE_UNCONFIRMED", sid)
         if (
-            source.currency != "JPY"
+            source.driver not in DRIVER_UNITS
+            or source.currency != "JPY"
             or source.profit_unit not in MONEY_SCALES
             or source.driver_unit != DRIVER_UNITS.get(source.driver)
         ):

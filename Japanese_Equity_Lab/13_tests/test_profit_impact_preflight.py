@@ -88,6 +88,18 @@ def test_missing_artifact_blocks_archive() -> None:
     assert inspect_request(change(request(), artifacts=()))["archive_status"] == "BLOCKED"
 
 
+def test_unknown_driver_with_unknown_unit_is_not_supported() -> None:
+    req = request()
+    unknown = replace(req.disclosures[0], driver="UNSUPPORTED_DRIVER", driver_unit=None, record_hash="")
+    req = change(req, disclosures=(unknown,), sensitivities=(), shocks=(), record_only=True)
+    report = inspect_request(decode_request(json.dumps(to_hashable(req))))
+    assert report["archive_status"] == "STRUCTURALLY_READY"
+    assert {"scope": "CALCULATION", "code": "SUPPORTED_UNITS_UNCONFIRMED", "disclosure_id": unknown.disclosure_id} in report[
+        "findings"
+    ]
+    assert report["calculation_status"] == "NOT_EVALUATED"
+
+
 def test_disclosed_unit_and_time_failures_are_reported_without_outputs() -> None:
     req = request()
     shock = replace(req.shocks[0], change=Decimal("30"), available_at=req.created_at + timedelta(days=1))
