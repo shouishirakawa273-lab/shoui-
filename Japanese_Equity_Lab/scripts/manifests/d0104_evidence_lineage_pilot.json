@@ -1,0 +1,55 @@
+{
+  "task_id": "D0104-EVIDENCE-LINEAGE",
+  "purpose": "Evidence Lineage: deterministic backward traversal from an accepted EvidenceRecord to its original DisclosureDocument provenance (EvidenceRecord -> SemanticClaim -> SemanticClaimCandidate -> TextBlock -> DisclosureDocument), plus a minimal forward query (DisclosureDocument -> descendant EvidenceRecord IDs). Infrastructure only: no new scoring system, no ResearchArtifact/NarrativeCase generation, no Bull/Base/Bear or SUPPORTS/CONTRADICTS assignment, no confidence/expected-return computation, no BUY/SELL, no position sizing. No model/LLM call anywhere in the traversal. See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
+  "expected_head": "CURRENT",
+  "allowed_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+    "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py"
+  ],
+  "frozen_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+    "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+    "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+    "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+    "Japanese_Equity_Lab/lib/disclosures/model.py",
+    "Japanese_Equity_Lab/lib/evidence/model.py"
+  ],
+  "targeted_tests": [
+    ".venv\\Scripts\\python.exe -m pytest Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py -q"
+  ],
+  "static_checks": [
+    ".venv\\Scripts\\ruff.exe check Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+    ".venv\\Scripts\\python.exe -m mypy --strict Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py"
+  ],
+  "requested_actions": [
+    "implement Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py providing a deterministic backward traversal from EvidenceRecord to DisclosureDocument (via SemanticClaim and SemanticClaimCandidate, using only existing stable identifiers/hashes already present in the frozen schemas, no new ID retrofit)",
+    "implement a minimal forward query: given a DisclosureDocument id, return descendant EvidenceRecord ids",
+    "add unit tests in Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py covering happy-path lineage, missing-link/ambiguous-link/identity-mismatch/PIT-mismatch/unsupported-provenance failure modes, and the forward query",
+    "run ruff check and mypy --strict on evidence_lineage.py",
+    "run the targeted pytest suite for test_disclosures_evidence_lineage.py",
+    "record any design decision in DECISIONS.md"
+  ],
+  "forbidden_actions": [
+    "no H0001",
+    "no Locked Test rerun",
+    "no BUY/SELL signal generation",
+    "no expected return calculation",
+    "no confidence/scoring computation",
+    "no ResearchArtifact creation or mutation",
+    "no NarrativeCase generation",
+    "no Bull/Base/Bear assignment",
+    "no SUPPORTS/CONTRADICTS assignment",
+    "no portfolio construction",
+    "no strategy search or backtest",
+    "no model/LLM call inside the lineage traversal",
+    "no changes under Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/",
+    "no edits to any frozen_files entry",
+    "no new identifier field retrofit onto SemanticClaim/SemanticClaimCandidate/EvidenceRecord/DisclosureDocument",
+    "no force push",
+    "no git reset --hard",
+    "no branch deletion"
+  ],
+  "requires_independent_review": true,
+  "requires_human_approval": false
+}

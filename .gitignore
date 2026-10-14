@@ -15,6 +15,33 @@ data/*.sqlite3
 data/*.db
 !data/.gitkeep
 
+# Japanese Equity Research Lab: 実データのRaw Snapshotは大きくなりうるため追跡しない。
+# fixtureによる合成データのSnapshot(Pipeline動作例)は小さいため追跡する。
+Japanese_Equity_Lab/01_data/raw/jquants/
+Japanese_Equity_Lab/01_data/raw/jquants_local/
+
+# Japanese Equity Research Lab: LocalSnapshotAdapter用にユーザーがローカルで取得した
+# J-Quants生レスポンス(Phase3A LOCAL_DATA_FETCH_GUIDE.md参照)。実データのため追跡しない。
+Japanese_Equity_Lab/01_data/raw/local_snapshot_input/
+
+# Japanese Equity Research Lab: DEV-AUTO-02 Development Workflow
+# Orchestratorの実行時Run Record(JSON、DB不使用・Secretは含まないが
+# 実行のたびに生成される一時State のため追跡しない)。
+Japanese_Equity_Lab/scripts/.dev_workflow_runs/
+.dev_workflow_runs/
+
+# INCIDENT-01.1: 運用用ElementでRepository追跡対象ではないFile群。
+# これまでDiscipline(明示Path指定のgit add)のみで未Track状態を維持していたが、
+# cf89b6eでBulk Addされた実績があるため、機械的なGuardとしてここで明示的にIgnoreする。
+.agents/
+.codex/
+AGENTS.md
+
+# INCIDENT-01.1: Toyota(7203) Company ResearchのRuntime生成物。狭く
+# この1 Ticker Directoryのみを対象にし、02_company_research/配下の他File
+# (README.md等、将来の他Ticker分含む)をGlobalに隠さないこと。
+Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/
+
 # Streamlit
 .streamlit/secrets.toml
 

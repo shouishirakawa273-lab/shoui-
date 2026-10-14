@@ -1,0 +1,67 @@
+{
+  "task_id": "D0106-THESIS-BREAK-MONITOR",
+  "purpose": "Thesis Break Monitor: given a changed EvidenceRecord (NEW/POTENTIALLY_SUPERSEDED/REMOVED_OR_MISSING per D0105) and an existing ResearchArtifact scenario (Bull/Base/Bear), determine whether the evidence SUPPORTS/CONTRADICTS/ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN that scenario's hypothesis, and whether the scenario requires human review. A deterministic gate (identity, materiality, PIT, D0104 lineage, ACCEPT-only) always runs before any optional model-assisted semantic interpretation; a model may never override a deterministic failure. This module answers only 'what does this evidence imply', never 'what is the new final thesis' -- no automatic thesis rewrite, no BUY/SELL, no expected return, no valuation, no confidence mutation. See forbidden_actions for the full list of prohibited out-of-scope operations for this task; those are constraints on the executor, not requests.",
+  "expected_head": "CURRENT",
+  "allowed_files": [
+    "Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+    "Japanese_Equity_Lab/13_tests/test_thesis_impact.py"
+  ],
+  "frozen_files": [
+    "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+    "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+    "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+    "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+    "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+    "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+    "Japanese_Equity_Lab/lib/disclosures/model.py",
+    "Japanese_Equity_Lab/lib/evidence/model.py",
+    "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+    "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+    "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py"
+  ],
+  "targeted_tests": [
+    ".venv\\Scripts\\python.exe -m pytest Japanese_Equity_Lab/13_tests/test_thesis_impact.py -q"
+  ],
+  "static_checks": [
+    ".venv\\Scripts\\ruff.exe check Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+    ".venv\\Scripts\\python.exe -m mypy --strict Japanese_Equity_Lab/lib/evidence/thesis_impact.py"
+  ],
+  "requested_actions": [
+    "implement Japanese_Equity_Lab/lib/evidence/thesis_impact.py providing assess_thesis_impact(): a deterministic gate (evidence identity/materiality/PIT/D0104 lineage/ACCEPT-only) that must pass before any optional model-assisted semantic classification into the existing EvidenceRelation vocabulary (SUPPORTS/CONTRADICTS/ALTERNATIVE_EXPLANATION/NEUTRAL/UNKNOWN)",
+    "reuse lib.disclosures.evidence_lineage.resolve_evidence_lineage() for lineage verification; do not duplicate its traversal logic",
+    "reuse lib.evidence.model.EvidenceRelation exactly; do not add new relation synonyms",
+    "define a narrow Protocol for optional model-assisted classification (mirroring CandidateExtractionModel / FaithfulnessVerifier), with schema-constrained output (reject unknown keys, invalid enum values, or attempts to rewrite the hypothesis/assign BUY-SELL)",
+    "ensure REMOVED_OR_MISSING evidence never automatically becomes CONTRADICTS, and unassigned NEW evidence is never auto-attached to a scenario by semantic similarity",
+    "ensure Bull/Base/Bear scenarios are assessed independently (no single global relation forced across scenarios)",
+    "add unit tests in Japanese_Equity_Lab/13_tests/test_thesis_impact.py covering the required scenarios (contradiction, support, alternative explanation, neutral, unknown, removed evidence, lineage failure, PIT-invalid, non-ACCEPT, scenario isolation, unassigned evidence, ResearchArtifact immutability, model contract violations)",
+    "run ruff check and mypy --strict on thesis_impact.py",
+    "run the targeted pytest suite for test_thesis_impact.py",
+    "record any design decision in DECISIONS.md"
+  ],
+  "forbidden_actions": [
+    "no H0001",
+    "no Locked Test rerun",
+    "no BUY/SELL signal generation",
+    "no expected return calculation",
+    "no valuation computation",
+    "no portfolio construction or position sizing",
+    "no trading or execution",
+    "no ResearchArtifact mutation",
+    "no NarrativeCase mutation or generation",
+    "no automatic confidence mutation (HIGH/MEDIUM/LOW/INSUFFICIENT)",
+    "no automatic thesis rewrite",
+    "no collapsing CONTRADICTS and ALTERNATIVE_EXPLANATION into one meaning",
+    "no treating REMOVED_OR_MISSING evidence as CONTRADICTS or FALSE",
+    "no auto-attaching unassigned NEW evidence to a Bull/Base/Bear scenario by semantic similarity",
+    "no numerical impact/materiality score (0-100 or otherwise)",
+    "no model call that overrides a deterministic gate failure",
+    "no real external model call in automated tests (fake/stub model only)",
+    "no changes under Japanese_Equity_Lab/02_company_research/7203_Toyota_Motor/",
+    "no edits to any frozen_files entry",
+    "no force push",
+    "no git reset --hard",
+    "no branch deletion"
+  ],
+  "requires_independent_review": true,
+  "requires_human_approval": false
+}

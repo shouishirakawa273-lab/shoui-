@@ -1,0 +1,19 @@
+{
+  "content_hash": "cb6d32084ec70ba0a0dfdb2723c6f48d5630059de356f0775a0303a595028115",
+  "created_at": "2026-08-16T11:48:38.984679+00:00",
+  "data_period": "2026-01-05/2026-06-30",
+  "endpoint": "fixture:trading_calendar",
+  "local_file": "raw/fixture/SNAP_RUN_20260816T114838981219_trading_calendar.json",
+  "provenance_id": null,
+  "record_count": 127,
+  "request_parameters": {
+    "from": "2026-01-05",
+    "to": "2026-06-30"
+  },
+  "response_schema_version": "fixture-v1(synthetic)",
+  "retrieved_at": "2026-08-16T11:48:38.981439+00:00",
+  "schema_version": "1.0",
+  "snapshot_id": "SNAP_RUN_20260816T114838981219_trading_calendar",
+  "source": "fixture",
+  "updated_at": "2026-08-16T11:48:38.984681+00:00"
+}

@@ -17,16 +17,27 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install -r requirements-dev.txt
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Lint (ruff check)
-        run: ruff check .
+        run: .venv/bin/python -m ruff check .
 
       - name: Format check (ruff format)
-        run: ruff format --check .
+        run: .venv/bin/python -m ruff format --check .
 
       - name: Type check (mypy)
-        run: mypy core app.py scripts
+        run: .venv/bin/python -m mypy core app.py scripts Japanese_Equity_Lab/lib
 
-      - name: Test (pytest, ネットワーク接続なし)
-        run: pytest -q
+      # Scoped regression: H0001/Locked Test must not execute.
+      # The ignored files also invoke the restricted Phase5/reversal workflows
+      # through tests whose names do not necessarily contain h0001 or locked.
+      - name: Test (pytest, H0001/Locked Test excluded)
+        run: >-
+          .venv/bin/python -m pytest -q
+          --ignore=Japanese_Equity_Lab/13_tests/test_research_validation_pipeline.py
+          --ignore=Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_script.py
+          --ignore=Japanese_Equity_Lab/13_tests/test_short_term_reversal_strategy.py
+          -k 'not h0001 and not locked'

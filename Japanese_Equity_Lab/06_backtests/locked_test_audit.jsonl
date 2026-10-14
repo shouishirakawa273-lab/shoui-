@@ -1,0 +1,1 @@
+{"experiment_id": "BT_PHASE5_V1_H0001_SMOKE_V2", "reason": "Train/Validation完了、pre-run skeptic-review(PASS_WITH_CONCERNS)・pit-audit(CLEAN)完了、Final Review実施のためLocked Testを解錠する", "actor": "Main Claude (Phase5 v1 Round)", "unlocked_at": "2026-08-19T11:28:41.726517+00:00"}
