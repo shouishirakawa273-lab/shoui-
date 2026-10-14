@@ -19040,3 +19040,88 @@ closed for incompatible contexts rather than inferring missing provenance.
 
 This record performs no merge of PR #1 or #2 and does not start D0110.3.
 Any eventual merge and its actual commit must be recorded separately.
+
+## D0110.3 — Company Exposure Synthetic Foundation (2026-10-14)
+
+**Status: IMPLEMENTED / LOCAL_VALIDATED / DRAFT_PR_PENDING. Not FROZEN.**
+The owner approved the D0110.3 v1 specification and implementation through Draft
+PR creation in this conversation. Starting HEAD is the merged development commit
+`071cff9c18632461c207a08c20e7c721a983221b`; PR #2 was merged into
+`claude/investment-strategy-pipeline-jyfby5` at that commit. PR #1 remains unmerged.
+Work uses a new branch `codex/d0110-3-company-exposure-bridge` from the clean
+workspace. No existing user working-tree differences were removed or overwritten.
+
+### Scope and frozen-engine contract
+
+Independent `lib/company_exposure/` provides immutable company sensitivity,
+explicit period-level driver assumptions, source/evidence references, complete
+baseline coverage bound to exact input hashes, source-backed composition and
+typed fail-closed bridge outcomes. GOLD/COPPER/USDJPY and consolidated operating
+income in JPY/JPY_MILLION/JPY_BILLION are the v1 supported contracts.
+Profit-metric conversion from pretax/net/segment income is unsupported.
+Estimated/judgment sensitivities and revenue effects are rejected.
+
+The existing D0109 public entrypoint requires all Bull/Base/Bear scenarios; the
+bridge changes only its requested scenario and retains the others. D0109 revenue
+is held fixed, operating margin is derived from the conditional income target,
+and any existing operating-income consistency input is replaced alongside margin.
+An invalid original baseline is rejected, not repaired. Derived assumptions are
+EVIDENCE_DERIVED only when all relevant inputs support that origin; mixed judgment
+uses RESEARCH_JUDGMENT with source lineage retained separately. Unresolved company
+guidance/market-proxy observation references fail closed rather than being accepted
+on the strength of a string reference. No frozen D0109 type, enum or formula changes.
+
+Bridge arithmetic uses precision80/ROUND_HALF_EVEN and frozen D0109 replay uses
+explicit precision28. Replay is checked against the target at a declared JPY
+money quantum; raw amounts and rounding differences are retained even when this
+check fails. The existing D0109 strict income consistency check is preserved.
+No implicit currency conversion, annualization, extrapolation outside the supplied
+range, or automatic event-window-to-period assumption transformation is performed.
+D0110.2 response references are audit-only and do not set period driver levels.
+
+### Integrity, PIT and double counting
+
+Evidence availability/publication/retrieval and record creation chronology are
+checked against the explicit system-simulation cutoff. Unknown source timestamps,
+entity/period/scope/unit/base-condition mismatches and ambiguous references fail
+closed. Source authority labels alone do not prove numeric truth: real company
+document extraction and economic applicability remain separate data acceptance.
+
+Candidate ID/hash audits remain on early failure and later rejection. Composition
+requires the exact exposure set and company primary evidence; differing group
+names do not establish independence. Coverage overlap and reapplied economic
+increments are rejected. Decimal display scale cannot create a new increment ID.
+Conditional FX changes require explicit joint applicability. Unit-only derived
+sensitivities retain and check the original disclosed amount/unit.
+
+Persistence is a single-writer adapter over the existing D0107 append-only store.
+Full input snapshots are retained; stored results must reproduce from the exact
+snapshot. Raw serialized hashes are verified before constructors run. Same-ID
+same-content retries return the existing record, conflicting content is rejected,
+and corrections require a new ID and an existing matching economic parent.
+Duplicate stored IDs are not silently selected. No original record is overwritten.
+
+### Verification and limitations
+
+Synthetic dedicated tests: 75 PASS. Final related suite (new bridge, D0109,
+D0110 valuation and D0110.2): 223 PASS, 2 name-based deselections.
+ruff check/format and mypy --strict PASS; local runtime Python 3.12.14.
+Specification/correctness review and blocking closure were performed in this task;
+this is not an independent agent review. The review added exact baseline binding,
+unit-origin validation, numeric increment identity, chronology checks, partial
+candidate audit retention, input/result replay checks and failure rounding audit.
+Remote Python 3.11 CI remains to be confirmed after publication.
+
+Implementation scope: four new production files, one new dedicated test, one
+new manifest, and append-only DECISIONS.md. Manifest pins the starting SHA and
+protects 288 prior frozen paths (the existing 282 plus D0110.2's six files).
+CI, hooks, frozen modules, prior tests and original manifests are unchanged.
+H0001 and Locked Test were not run. No unrestricted full-suite claim is made.
+
+All company-labelled sensitivities are explicitly SYNTHETIC fixtures, not actual
+Sumitomo Metal Mining disclosures. Real gold/copper/FX sensitivity values,
+metric/period applicability and source pages have not been verified or accepted.
+This foundation is not real-company production acceptance or an investment-value
+demonstration. No fetching API, causal inference, statistical calibration,
+stock return, probability, trading, D0111 or D0110.4 implementation is included.
+Draft PR publication does not authorize merge or FROZEN acceptance.
