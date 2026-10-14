@@ -19132,3 +19132,30 @@ one pinned-start manifest, and append-only DECISIONS.md. The manifest protects
 288 existing frozen files. CI, old tests/modules and original manifests are
 unchanged. Working-tree differences were clean before the new branch; none were
 removed or overwritten. Draft publication does not authorize merge or FROZEN.
+
+### Profit Impact — Read-only request preflight (2026-10-15)
+
+Status: IMPLEMENTATION_IN_PROGRESS; no merge or FROZEN acceptance.
+The owner authorized autonomous continuation through ordinary specification,
+minimal implementation, independent verification and publication without another
+approval prompt. Scope remains a small request-readiness diagnostic, not a profit
+forecast, operating-income adapter, valuation or return integration.
+
+Starting HEAD: fba60cbc42b76021000a24663dce34fd51b13aea (PR #4).
+Specification: development/2026-10-15_PROFIT_IMPACT_PREFLIGHT_SPEC.md.
+The existing immutable store decoder is reused read-only to verify raw record
+hashes before constructing typed inputs. Duplicate JSON keys and nonstandard
+numeric constants are rejected. No source fields, timestamps or shocks are filled.
+
+The report separates structural archival prerequisites from partial calculation
+prerequisites. Calculation readiness remains NOT_EVALUATED even when no detected
+blocker exists. Original source bytes/semantic truth and prior store history are
+explicitly outside this inspection. Caller authority and verification flags do
+not independently prove a disclosure. No calculator or store write is invoked.
+
+One implementation agent writes the new production/CLI/test files. A separate
+design auditor reviewed the input/output contract before implementation; a
+separate verification agent will inspect the pinned commit and run focused checks.
+No new independent completion claim is made by this in-progress entry.
+The 288 existing frozen paths, original Profit Impact source/test/manifest, H0001
+and Locked Test remain outside the allowed edit/execute scope.
