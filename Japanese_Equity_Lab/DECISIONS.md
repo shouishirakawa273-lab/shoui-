@@ -19204,3 +19204,19 @@ Separate design and verification roles review the fixed case commit. Existing
 production/test/manifest and frozen288 paths are unchanged. Restricted tests
 remain excluded. This is not real-company profit calculation or product Gate
 acceptance; unknown source facts must not be inferred from a successful archive.
+
+### SMM archive case — Independent bounded acceptance (2026-10-15)
+
+Status: STRUCTURAL_CASE_AND_ISOLATED_ROUNDTRIP_VALIDATED, not real-company profit
+or PIT acceptance. Independent reviewed HEAD:
+4a21e80bb523df66b01dfd62118141143bb2b66a.
+Design and verification roles independently found no blocking issue. Raw payload
+decode/hash and caller excerpt/fixture equality were checked. Isolated input and
+SOURCE_RECORDED result stores were re-opened in new instances with exact field/
+hash equality and unchanged original case bytes. Frozen288, production, tests
+and original manifests were unchanged. H0001/Locked Test were not run.
+Independent verification proves saved input contents and isolated replay, not
+the original PDF, semantic source truth, actual historical ingestion, production
+store history, or real-company forecasting. Construction procedure/time claims
+are recorded by the writer but not inferred from JSON alone. G1-G5 acceptance
+states remain unchanged. No merge/FROZEN is performed.

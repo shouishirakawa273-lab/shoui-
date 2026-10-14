@@ -39,3 +39,13 @@ record_only=True、sensitivities/shocks空、baseline/coverage/compositionなし
 H0001/Locked Test、マージ/FROZENは実施しない。生成スクリプトとrawlogsはチャットworkspace validationに保持。
 
 独立検証結果は固定SHA確認後に追記する。現時点は製品G1/G5未確認、G2/G3/G4未受入を維持する。
+
+## 独立検証の結果
+
+固定SHA4a21e80bb523df66b01dfd62118141143bb2b66aを設計監査・独立検証が別々に確認した。
+独立検証はrawdecode/hash、artifact excerptと固定fixtureの一致、3感応度の値/単位、UNKNOWN/null/Falseを確認。
+隔離した新規storeへrecord_onlyで入力とSOURCE_RECORDED結果を保存し、新instanceで読み直した全field/hashが一致。
+元case bytes不変、exit0、開始/終了HEAD一致、status clean。指定3fileだけ、production/test/manifestと凍結288パスは無変更。
+設計監査も重大findingなし。独立確認のログはチャットworkspace validation/smm-independent-verification.logへ保存。
+JSON単独から生成手順や実時計を独立証明したとは主張しない。構築担当のscript/log記録と、独立担当が再検証した入力内容/保存復元を区別する。
+本番store ID/訂正history、原PDF、意味の真実性、実会社利益計算、過去PIT、製品Gate受入は未確認のまま。
