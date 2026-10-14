@@ -19159,3 +19159,29 @@ separate verification agent will inspect the pinned commit and run focused check
 No new independent completion claim is made by this in-progress entry.
 The 288 existing frozen paths, original Profit Impact source/test/manifest, H0001
 and Locked Test remain outside the allowed edit/execute scope.
+
+### Profit Impact preflight — Independent validation (2026-10-15)
+
+Status: IMPLEMENTED / INDEPENDENTLY_VALIDATED within the partial read-only
+preflight specification; not merged, not FROZEN, and not D0110.3 real-data acceptance.
+Reviewed implementation: 8bfb90b45b5479ed0f81df459ec64423261e6b21.
+Reviewed closure: e69304c615ae45111d78433a8d9d20068d6fcd03.
+The design auditor found no blocking issue. One limited diagnostic omission for
+an unknown driver with an unknown unit was fixed by the sole implementation
+writer, with a dedicated regression test. The independent verifier checked this
+two-file delta and re-ran both the new case and the formerly filtered ordinary
+record-only test: 2 passed. Initial pinned execution: 98 passed / 1 deselected.
+The filter matched "blocked" in an ordinary test name; it was not a Locked Test.
+Final writer suite: 18 passed; lint/format and strict production/CLI types passed.
+No claim is made that all 100 related cases were re-run together at closure HEAD.
+
+During extra initial risk checks, a concurrent source edit was observed; that
+execution is retained as evidence but excluded from fixed-commit acceptance.
+Closure execution used the new pinned HEAD with no further writes. Frozen288
+paths were unchanged. Raw local logs include HEAD, command and exit/status.
+Summary: development/2026-10-15_PROFIT_IMPACT_PREFLIGHT_VALIDATION.md.
+Payload integrity and structural archival readiness do not prove original PDF
+bytes, source semantics, historical store lineage or calculation eligibility.
+Optional proof/date/composition checks remain partial; calculation stays
+NOT_EVALUATED. No full-product Gate, profit forecast, valuation or return claim
+is accepted by this diagnostic. Publication state is recorded separately.
