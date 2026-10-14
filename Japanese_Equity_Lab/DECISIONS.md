@@ -18947,3 +18947,45 @@ closed. D0110.1 itself remains byte-for-byte unchanged.
 New files remain local and untracked; no commit/push/merge was performed.
 Remote acceptance/FROZEN publication must not be claimed from this local result.
 Do not automatically proceed to D0110.3.
+
+### D0110.2 — Publication and CI follow-up (2026-10-14)
+
+The preceding LOCAL_ACCEPT and local/untracked statements describe the end of
+local implementation validation, before publication. Subsequently the seven-file
+implementation was committed as `4f8e3b3bf636677d7f30aa1318fd9c8e19288921`, pushed
+to `codex/d0110-2-event-window-response`, and published as Draft PR #2:
+https://github.com/shouishirakawa273-lab/shoui-/pull/2
+The base is `claude/investment-strategy-pipeline-jyfby5`, starting commit
+`1688d712095bf90b03e8cc9b38244f856a32aab2`. Publication is not merge or FROZEN
+acceptance. PR #1 and PR #2 remain unmerged. The original implementation manifest
+is a historical starting-state record, not authorization to rerun its writer.
+
+The receiving reviewer reported two failing CI check runs for the implementation
+commit; an inspected job passed lint/format/mypy and failed pytest. Earlier Codex
+reports of 2245 passed / 10 failed and all failures being caused by missing .venv
+cannot be reverified from saved raw CI logs at this follow-up. Those exact counts
+and the cause of every remote failure therefore remain unconfirmed.
+
+Static inspection does establish an environment mismatch: CI installed dependencies
+without creating a repository-local .venv, while the quality hook and its tests
+require that toolchain. This follow-up changes only CI configuration and this
+decision record: create .venv, install requirements-dev.txt there, prepend its
+bin directory to subsequent-step PATH, and invoke checks through its Python.
+Hook code, existing tests, and frozen production modules are unchanged.
+
+CI regression is explicitly restricted: ignore test_research_validation_pipeline.py,
+test_phase5_v1_1_real_data_script.py and test_short_term_reversal_strategy.py,
+and deselect names matching h0001 or locked. This is scoped acceptance, not an
+unrestricted full-suite success claim. No H0001/Locked Test execution is authorized.
+The existing 282-path frozen implementation baseline remains applicable; this
+CI follow-up does not change the original seven-file implementation manifest.
+
+CI repair is a hypothesis until new verification succeeds; historical remote
+failures must not be retroactively relabelled as verified. No merge, FROZEN
+acceptance, or D0110.3 implementation is performed by this follow-up.
+
+Follow-up local verification: 92 PASS (quality/protected-path hooks plus D0110.2
+dedicated tests), one existing unregistered integration-marker warning, Python
+3.12.14 with repository-local .venv and Git Bash. YAML/toolchain/exclusion checks
+PASS; frozen baseline comparison: 282 paths, zero changed. This validates the
+local subset and configuration, not Ubuntu/Python 3.11 CI or full regression.
