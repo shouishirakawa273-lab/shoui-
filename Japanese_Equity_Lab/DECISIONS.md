@@ -19185,3 +19185,22 @@ bytes, source semantics, historical store lineage or calculation eligibility.
 Optional proof/date/composition checks remain partial; calculation stays
 NOT_EVALUATED. No full-product Gate, profit forecast, valuation or return claim
 is accepted by this diagnostic. Publication state is recorded separately.
+
+### SMM manual fact archive case (2026-10-15)
+
+Status: CASE_CONSTRUCTED / INDEPENDENT_VALIDATION_PENDING. No new forecast,
+real-company PIT acceptance, merge or FROZEN is authorized by this case.
+Base: 4f680d28881ff55b2cab92abaebf1dae8c498654 (PR #5).
+One new request JSON uses direct constructors and the pinned existing SMM fact
+fixture as a caller excerpt, not original PDF bytes. Three pretax sensitivity
+magnitudes retain their original units without aggregation or signed outputs.
+Unknown scope/direction/applicability/base/range/composition and unknown public/
+retrieval/system-availability times remain unknown. values_verified is false;
+primary authority labels are caller source-classification declarations only.
+Construction time is actual current UTC, not historical source availability.
+record_only is true with no calculation inputs. No production code changes.
+Acceptance scope and provenance: development/2026-10-15_SMM_ARCHIVE_CASE.md.
+Separate design and verification roles review the fixed case commit. Existing
+production/test/manifest and frozen288 paths are unchanged. Restricted tests
+remain excluded. This is not real-company profit calculation or product Gate
+acceptance; unknown source facts must not be inferred from a successful archive.
