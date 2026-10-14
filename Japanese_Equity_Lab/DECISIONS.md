@@ -19132,3 +19132,56 @@ one pinned-start manifest, and append-only DECISIONS.md. The manifest protects
 288 existing frozen files. CI, old tests/modules and original manifests are
 unchanged. Working-tree differences were clean before the new branch; none were
 removed or overwritten. Draft publication does not authorize merge or FROZEN.
+
+### Profit Impact — Read-only request preflight (2026-10-15)
+
+Status: IMPLEMENTATION_IN_PROGRESS; no merge or FROZEN acceptance.
+The owner authorized autonomous continuation through ordinary specification,
+minimal implementation, independent verification and publication without another
+approval prompt. Scope remains a small request-readiness diagnostic, not a profit
+forecast, operating-income adapter, valuation or return integration.
+
+Starting HEAD: fba60cbc42b76021000a24663dce34fd51b13aea (PR #4).
+Specification: development/2026-10-15_PROFIT_IMPACT_PREFLIGHT_SPEC.md.
+The existing immutable store decoder is reused read-only to verify raw record
+hashes before constructing typed inputs. Duplicate JSON keys and nonstandard
+numeric constants are rejected. No source fields, timestamps or shocks are filled.
+
+The report separates structural archival prerequisites from partial calculation
+prerequisites. Calculation readiness remains NOT_EVALUATED even when no detected
+blocker exists. Original source bytes/semantic truth and prior store history are
+explicitly outside this inspection. Caller authority and verification flags do
+not independently prove a disclosure. No calculator or store write is invoked.
+
+One implementation agent writes the new production/CLI/test files. A separate
+design auditor reviewed the input/output contract before implementation; a
+separate verification agent will inspect the pinned commit and run focused checks.
+No new independent completion claim is made by this in-progress entry.
+The 288 existing frozen paths, original Profit Impact source/test/manifest, H0001
+and Locked Test remain outside the allowed edit/execute scope.
+
+### Profit Impact preflight — Independent validation (2026-10-15)
+
+Status: IMPLEMENTED / INDEPENDENTLY_VALIDATED within the partial read-only
+preflight specification; not merged, not FROZEN, and not D0110.3 real-data acceptance.
+Reviewed implementation: 8bfb90b45b5479ed0f81df459ec64423261e6b21.
+Reviewed closure: e69304c615ae45111d78433a8d9d20068d6fcd03.
+The design auditor found no blocking issue. One limited diagnostic omission for
+an unknown driver with an unknown unit was fixed by the sole implementation
+writer, with a dedicated regression test. The independent verifier checked this
+two-file delta and re-ran both the new case and the formerly filtered ordinary
+record-only test: 2 passed. Initial pinned execution: 98 passed / 1 deselected.
+The filter matched "blocked" in an ordinary test name; it was not a Locked Test.
+Final writer suite: 18 passed; lint/format and strict production/CLI types passed.
+No claim is made that all 100 related cases were re-run together at closure HEAD.
+
+During extra initial risk checks, a concurrent source edit was observed; that
+execution is retained as evidence but excluded from fixed-commit acceptance.
+Closure execution used the new pinned HEAD with no further writes. Frozen288
+paths were unchanged. Raw local logs include HEAD, command and exit/status.
+Summary: development/2026-10-15_PROFIT_IMPACT_PREFLIGHT_VALIDATION.md.
+Payload integrity and structural archival readiness do not prove original PDF
+bytes, source semantics, historical store lineage or calculation eligibility.
+Optional proof/date/composition checks remain partial; calculation stays
+NOT_EVALUATED. No full-product Gate, profit forecast, valuation or return claim
+is accepted by this diagnostic. Publication state is recorded separately.
