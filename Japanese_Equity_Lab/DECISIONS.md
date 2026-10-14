@@ -18570,3 +18570,170 @@ Valuation固有Assumptionは本Module自身には導入していない。
 `lib/forecasting/model.py`・`lib/forecasting/engine.py`・`test_
 forecasting_foundation.py`は本Entry記録と同時にTracked化し、以降は
 D0109 FROZEN。
+
+## D0110 — Forward + Reverse Valuation Engine
+
+**目的**: 最初の本番Valuation計算Layerを新設した
+(`lib/valuation/forward_reverse_model.py`・`engine.py`・
+`reverse.py`)。中心的要件——**Forward ValuationとReverse Valuationが
+同一のValuation Model実装を呼ぶこと**(D0110 §2)——を、`lib.valuation.
+engine`の3つの純粋関数(`compute_enterprise_value()`/`compute_equity_
+value()`/`compute_value_per_share()`)を唯一のFormula実装とし、
+`lib.valuation.reverse`のGeneric Bisection Solverがこれをそのまま
+呼ぶ構造で満たした——Forward専用/Reverse専用の別Formulaは一切存在
+しない(`13_tests/test_valuation_forward_reverse.py::test_forward_
+and_reverse_share_the_same_pure_functions`でSource Level確認)。
+
+**v1 Model選定: EV/Operating Income Multiple Model**: D0109 v1がEPS
+を予測しない(`lib/forecasting`参照)ため、EPS×PERモデルではなく
+`EnterpriseValue = ForecastOperatingIncome × EV_OPERATING_INCOME_
+MULTIPLE`・`EquityValue = EnterpriseValue - NetDebt`・`ValuePerShare
+= EquityValue / ShareCount`(ShareCount提供時のみ)を選定した
+(D0110 §4)。既存Peer Multiple Selection Engineは存在しないため新設
+せず、`ValuationMultiple`はCaller既決定値をProvenance付きで受け取る
+のみとした(D0110 §19、Scope Creep防止)。
+
+**既存`lib/valuation/`との共存(複製しない、衝突しない)**: 既存
+`lib/valuation/model.py`(D0077+、`LatestReportedFyPerRecord`等、
+Historical Trailing PER Derived Fact)とはCapability・目的が異なる
+別Productionであり、複製・変更しない——Fileは新しい名前
+(`forward_reverse_model.py`/`engine.py`/`reverse.py`)で衝突を避けて
+同じ`lib/valuation/`Namespace内に共存させた(D0110 §34)。
+
+**Valuation Assumption Provenance**: `ValuationMultiple`は`source`
+(`MultipleSource`: HISTORICAL_SELF/PEER_SET/MARKET_OBSERVED/
+RESEARCH_JUDGMENT)・`reference_period`・`available_at`・
+`method_version`を必須保持し、客観的Truthとして扱わない(D0110 §18)。
+`BalanceSheetInputs`は`net_debt`(任意符号、Net Cash許容)・
+`share_count`(Optional、設定時は`> 0`必須・PIT必須)を保持する
+(D0110 §20/§21/§30)。
+
+**PIT/Unit/Currency Policy**: Forward側はForecast自身の`evidence_
+cutoff`を単一のValuation Cutoffとして使い、Multiple/Balance Sheet
+いずれかの`available_at`がこれより後なら`PIT_INVALID`、Balance
+SheetのCurrencyがForecastのUnitと不一致なら`INVALID_ASSUMPTION`で
+Fail Closedする(D0110 §16/§17)。Reverse側は`ReverseValuationSpec.
+price_available_at`を`decision_at`と比較する(既存D0108 Contractを
+そのまま再利用)。
+
+**Numerical Solver(Decimal Bisection)**: `_bisect()`が`f(lower_
+bound)`/`f(upper_bound)`を実際に評価して方向を経験的に判定し(D0110
+§14、本Model各変数の解析的単調性はDocstringに明記——`OPERATING_
+INCOME`はMultiple>0下で単調増加・`NET_DEBT`は常に単調減少・
+`EV_OPERATING_INCOME_MULTIPLE`/`SHARE_COUNT`は対応する量の符号に
+依存——だがSolver自体はこれを仮定せず境界評価のみに依拠する)、
+縮退(`f(lo)==f(hi)`)時は`MULTIPLE_SOLUTIONS`/`NO_SOLUTION`を、
+Bounds外Targetは`NO_SOLUTION`を返す(偽の一意解を返さない、D0110
+§11/§13)。
+
+**Underdetermination/Assumption Surface**: `solve_reverse_valuation()`
+は`solver_mode != SINGLE_VARIABLE`(2変数以上)を常に`UNDERDETERMINED`
+とし、`compute_assumption_surface_for_valuation()`(2未知変数限定)が
+1変数をGrid走査しもう1変数を各点でBisection解くことで、実際の計算
+済みGridを生成する(D0110 §12、解けなかった点はPointsから除外し、
+存在しない解をInterpolationで補完しない)。
+
+**独立Adversarial Review(`/code-review high`)で検出・修正したFinding**:
+1. **(Blocking、修正済み)** `solve_reverse_valuation()`が
+   `decision_at`/`computed_at`のtz-aware検証を一切行わず、
+   `spec.price_available_at`との比較で生の`TypeError`が発生する
+   ことをReviewerが指摘(`lib/forecasting/engine.py`が既に同種の
+   Finding対応済みだったのと対照的)。修正: 関数冒頭で`require_tz_
+   aware()`を適用した。Regression Test`test_solve_reverse_
+   valuation_rejects_naive_decision_at`を追加。
+2. **(Blocking、修正済み)** `compute_assumption_surface_for_
+   valuation()`が、`remaining`変数のBound欠落等の構造的誤設定時に
+   全Grid点が個別にFailして「空のPoints」へ無言で埋没し、経済的に
+   正当な「Grid全域で解無し」と区別不能になることをReviewerが指摘。
+   修正: Model ID不一致・未来価格・remaining変数のBound欠落を
+   Loop開始前に一度だけ明示的にRaiseするようにした。Regression
+   Test`test_assumption_surface_rejects_missing_bound_for_
+   remaining_variable`・`test_assumption_surface_rejects_future_
+   price`を追加。
+3. **(Blocking、修正済み)** `evaluate_forward_valuation()`が
+   `operating_income_by_scenario`を素朴な`dict`代入で構築しており、
+   `FundamentalForecastResult.scenarios`に重複したScenario
+   (D0109側に重複禁止Checkが無い)が含まれる場合、片方を無言で
+   上書きすることをReviewerが指摘。修正: 辞書構築前に重複Scenario
+   Checkを追加し、`INVALID_ASSUMPTION`でFail Closedするようにした。
+   Regression Test`test_duplicate_scenario_in_forecast_result_is_
+   invalid_assumption`を追加。
+4. **(Non-blocking、修正済み)** `BalanceSheetInputs.source_id`が
+   `""`既定値のまま未検証で、`ValuationMultiple`の他の全
+   Provenance Field(`source`/`reference_period`/`method_version`)
+   とは非対称だったことをReviewerが指摘。修正: 既定値を削除し必須
+   化、`require_nonempty_str()`を追加した。Regression Test
+   `test_balance_sheet_requires_source_id`を追加。
+5. **(Non-blocking、修正済み、副産物として設計改善)** `evaluate_
+   forward_valuation()`の`currency="UNDETERMINED"`Sentinel文字列+
+   Closureの遅延Bindingが、将来のCheck順序変更に対して脆弱である
+   ことをReviewerが指摘。修正: `ValuationResult.currency`を
+   `multiple_used`/`balance_sheet_used`と同じ扱い(`str | None`、
+   `status=SUCCESS`時のみ必須)に変更し、Sentinel文字列自体を
+   廃止した(根本原因を修正、Workaroundの上塗りではない)。
+6. **(Non-blocking、Documentationで対応、意図的にCode変更しない)**
+   `ValuationMultiple.reference_period`と`forecast_result.target_
+   period`が一致しない場合でも`SUCCESS`になることをReviewerが指摘。
+   検討の結果、これを無条件Rejectにすることは**誤り**と判断した——
+   Forward/NTM Multiple(例: 現在の市場Multiple)をForward Forecast
+   へ適用することは財務的に正当な一般的手法であり、Reference
+   PeriodとTarget Periodの不一致は正常なケースが大半である。D0110
+   §18の要件は「Provenanceを可視化すること」(既に`result.multiple_
+   used.reference_period`で満たしている)であり「Periodの一致を
+   強制すること」ではないため、無条件Rejectを追加するとむしろ正当な
+   実務パターンを誤ってFail Closedしてしまう。本判断をここに明記
+   する(Silent Oversightではなく、検討済みの意図的なScope境界)。
+7. **(Non-blocking、既存Repository規約として許容、Code変更しない)**
+   `_typed_failure()`とSUCCESS Pathで`ValuationResult`の Payload
+   Dict+Constructor呼び出しが2回ずつ重複していることをReviewerが
+   指摘。この重複Patternは`lib.evaluation.model`・`lib.forecasting.
+   engine`等、D0107以降のRepository全体で一貫して使われている既存
+   規約であり、D0110単体でこれを変えると他Moduleとの一貫性が崩れる
+   ため、本Roundでは変更しない(Repository全体のRefactorは本Task
+   のScope外)。
+
+**Test(`test_valuation_forward_reverse.py`、45件、新規)**: D0110 §22
+(Forward/Reverse Round-Trip、必須)、§27 Forward A-J(決定論的計算・
+Bull/Base/Bear独立評価・順序非依存Hash・Multiple/Balance Sheet欠落・
+Currency不整合・PIT違反・確率/Decision出力の不在)、§28 Reverse A-J
+(Round-Trip・単一未知変数Success・複数未知変数Underdetermined・
+Bounds外No Solution・未対応変数/Model・未来価格PIT・Surface Grid
+生成・Fixed Assumption保存・変更影響・順序非依存)、§29数値安全性
+(Lower/Upper Bound・Zero Crossing・負のDomain拒否・極端なBounds・
+Tolerance記録・Max Iteration時のFake Success防止・NaN/inf不在)、
+§30会計Sanity(負のMultiple拒否・0 Shares拒否・負のNet Debt=Net Cash
+許容)、Reviewer Finding Closure 4件を網羅。既存D0102-D0109 Test・
+Consensus/Fundamentals Test・既存`lib/valuation/`Test(Historical PER
+系4File)は無修正で全件PASSを確認した。
+
+**Validation**: Targeted Test(`test_valuation_forward_reverse.py`)
+45件PASS。D0102-D0110+Consensus+Fundamentals+既存Valuation関連19
+File合計595件PASS。Repository全体`pytest`は本Entry記録前の直近実行で
+2144件PASS(0 Failure、Reviewer Finding修正前の計測。修正後も同一
+Targeted/Regression Testが全件PASSすることを確認済み)。`ruff check`・
+`ruff format --check`・`mypy --strict`はいずれも本Round唯一の変更
+Production File(`lib/valuation/forward_reverse_model.py`・
+`lib/valuation/engine.py`・`lib/valuation/reverse.py`)でPASS。
+
+**Manifest**: `scripts/manifests/d0110_forward_reverse_valuation_
+pilot.json`(新設、`task_id=D0110-FORWARD-REVERSE-VALUATION`、
+`allowed_files`は`lib/valuation/forward_reverse_model.py`・
+`engine.py`・`reverse.py`・`test_valuation_forward_reverse.py`のみ、
+`frozen_files`はD0103-D0109関連20 File+既存`lib/valuation/`既存7
+File、`expected_head=CURRENT`)。`dev_workflow.py run --dry-run`で
+`head_check`/`scope_check`両方`passed: true`を確認済み。
+
+**変更File**: `lib/valuation/forward_reverse_model.py`(新設)・
+`lib/valuation/engine.py`(新設)・`lib/valuation/reverse.py`(新設)・
+`13_tests/test_valuation_forward_reverse.py`(新設)・
+`scripts/manifests/d0110_forward_reverse_valuation_pilot.json`
+(新設)・本`DECISIONS.md`。既存Frozen File(D0102-D0109関連20 File)・
+既存`lib/valuation/model.py`等7Fileはいずれも無変更。Expected
+Return・Scenario Probability・BUY/SELL/HOLD・Portfolio構築・
+Position Sizing・自動DecisionRecord生成・Full Peer Selection
+Engineはいずれも導入していない。H0001は実行していない。
+
+**Status**: `D0110_ACCEPTED = YES`。`lib/valuation/forward_reverse_
+model.py`・`lib/valuation/engine.py`・`lib/valuation/reverse.py`・
+`test_valuation_forward_reverse.py`は本Entry記録と同時にTracked化し、
+以降はD0110 FROZEN。
