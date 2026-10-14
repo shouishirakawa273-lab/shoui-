@@ -18989,3 +18989,54 @@ dedicated tests), one existing unregistered integration-marker warning, Python
 3.12.14 with repository-local .venv and Git Bash. YAML/toolchain/exclusion checks
 PASS; frozen baseline comparison: 282 paths, zero changed. This validates the
 local subset and configuration, not Ubuntu/Python 3.11 CI or full regression.
+
+### D0110.2 — Formal acceptance / FROZEN (2026-10-14)
+
+**Status: D0110_2_FORMALLY_ACCEPTED = YES / FROZEN.**
+The project owner explicitly approved formal acceptance and the FROZEN record
+in this conversation on 2026-10-14: "D0110.2の正式受入とFROZEN記録を承認する。
+マージはまだしない". This entry applies that approval; it does not authorize merge.
+
+Reviewed implementation/CI HEAD: `9e9d98279a99de46b3bb162e2b5dbe905f547278`.
+Base: `1688d712095bf90b03e8cc9b38244f856a32aab2`.
+PR: https://github.com/shouishirakawa273-lab/shoui-/pull/2 (Draft, unmerged).
+The acceptance-record commit is a later documentation-only commit; this reviewed
+HEAD identifies the accepted file contents, not the eventual merge commit.
+
+Acceptance evidence: independent implementation review Closure ACCEPT with zero
+blocking findings; dedicated 67, related 300 and scoped local regression 2184 PASS
+(17 deselected); CI-follow-up local subset 92 PASS. Existing frozen baseline:
+282 paths, zero content changes. Both push and PR CI for the reviewed HEAD were
+confirmed completed/success, including lint, format, mypy and scoped pytest:
+https://github.com/shouishirakawa273-lab/shoui-/actions/runs/38541788289
+https://github.com/shouishirakawa273-lab/shoui-/actions/runs/38541796298
+Acceptance excludes H0001/Locked Test and the three explicitly ignored
+Phase5/reversal files documented above. It is not unrestricted full-suite
+acceptance. Historical remote failure counts and cause remain unconfirmed from
+saved raw logs; successful new CI does not retroactively establish those details.
+
+The following files are FROZEN at the reviewed HEAD (SHA-256):
+
+| Repository-relative path | SHA-256 |
+| --- | --- |
+| Japanese_Equity_Lab/lib/event_responses/__init__.py | ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62 |
+| Japanese_Equity_Lab/lib/event_responses/model.py | 3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1 |
+| Japanese_Equity_Lab/lib/event_responses/measurement.py | f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797 |
+| Japanese_Equity_Lab/lib/event_responses/store.py | d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437 |
+| Japanese_Equity_Lab/13_tests/test_event_window_response.py | 7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a |
+| Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json | 5702eaeeca1316886325f17a4c14903c816a6ec83d8a568a83fa9261489e8ed7 |
+
+DECISIONS.md remains append-only; CI configuration is maintained separately as
+development infrastructure, not frozen wholesale by this acceptance. Existing
+D0108/D0109/D0110/D0110.1 freeze boundaries remain unchanged. The original
+implementation manifest expected_head is historical and must not be used to rerun
+its writer after acceptance. Future writer scopes must protect these six files.
+
+Accepted limitations: caller-supplied point quotes; 5m/30m/UTC elapsed 24h windows;
+Japan next-session unsupported; no fetching API, causal/forecast/exposure/trading
+extension; single-writer Store; same-ID/same-content Adapter idempotency per v2;
+legacy Surprise validation uses explicit precision28/ROUND_HALF_EVEN and fails
+closed for incompatible contexts rather than inferring missing provenance.
+
+This record performs no merge of PR #1 or #2 and does not start D0110.3.
+Any eventual merge and its actual commit must be recorded separately.
