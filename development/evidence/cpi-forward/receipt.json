@@ -1,0 +1,16 @@
+{
+  "recorded_at": "2026-10-15T15:18:30.338404+00:00",
+  "scheduled_at_utc": "2026-11-10T13:30:00+00:00",
+  "source_excerpt_sha256": "c7a54a8e2d055b93edc1785550c7ec4077a52f41b7524cdcddfcd5ef8b5a7077",
+  "event_record_hash": "e6a184948426a3904dd7f9f13298411fed8e4c4e6fc2c4139678091d0dedcc6c",
+  "status": "SCHEDULE_ONLY",
+  "system_observation_claim": "CURRENT_WEB_READER_OBSERVATION_ONLY",
+  "original_http_bytes_archived": false,
+  "missing": [
+    "CONSENSUS",
+    "OWN_FORECAST",
+    "FIRST_RELEASE",
+    "MARKET_OBSERVATIONS"
+  ],
+  "empirical_certified": false
+}
