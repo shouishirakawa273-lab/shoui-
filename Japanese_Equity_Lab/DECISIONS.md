@@ -19221,3 +19221,24 @@ Evidence and limits: development/2026-10-16_MACRO_COMPARISON_CLI_RESULT.md.
 This is an operational interface completion, not empirical acceptance or source
 certification. No model or real forecast is invented. No H0001/Locked Test,
 merge or FROZEN. Existing draft stack remains unmerged.
+
+## 2026-10-16 — Forward validation protocol and parallel D0111 planning
+
+Following the user's approval, separate forward history collection from D0111
+dependency analysis and synthetic calculation design. Documents:
+development/2026-10-16_FORWARD_VALIDATION_PROTOCOL.md and
+development/2026-10-16_D0111_PARALLEL_SPEC_DRAFT.md.
+
+Existing macro comparison timing, pairing and descriptive-only rules are retained.
+An actual model definition, accessible consensus source and complete plan remain
+missing: no real experiment or forecast-history collection has been started.
+MAE uses valid pairs; expected roster and missing reasons are retained separately.
+
+D0111's recovered high-level intent is distinguished from the new formula and
+input-policy proposal. Original numbered requirements/full conversation remain
+unrecovered. Read-only document review found period/mapping and same-condition
+details to clarify; the proposal now records explicit time ordering, dividend
+interval, valuation-to-exit assumption, shared inputs, unaffected-scenario
+rejection and caller-attested share basis limits. No D0111 code was implemented.
+This is planning documentation, not FROZEN, empirical acceptance or a merge.
+No source changes, real-data fabrication, H0001/Locked Test or new tests.
