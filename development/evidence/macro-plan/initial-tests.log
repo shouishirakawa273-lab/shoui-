@@ -1,0 +1,10 @@
+cwd=C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\shoui-
+command=.venv/Scripts/python.exe -m pytest -q -p no:cacheprovider Japanese_Equity_Lab/13_tests/test_macro_plan_persistence.py Japanese_Equity_Lab/13_tests/test_macro_experiments.py Japanese_Equity_Lab/13_tests/test_d0110_demo.py --basetemp=<isolated>/pytest
+start_sha=f56230b7fb0d92ce123ba43e24c31f9a084a6c33
+start_status=
+........................................................................ [ 80%]
+..................                                                       [100%]
+90 passed in 8.32s
+exit=0
+end_sha=f56230b7fb0d92ce123ba43e24c31f9a084a6c33
+end_status=

@@ -1,0 +1,11 @@
+{
+  "head": "60be7381d35d37718566aed3a6f9d21584364f6e",
+  "frozen_count": 288,
+  "changed": [],
+  "diff": [
+    "M\tJapanese_Equity_Lab/13_tests/test_macro_plan_persistence.py",
+    "M\tJapanese_Equity_Lab/lib/macro_experiments/store.py",
+    "M\tdevelopment/2026-10-16_MACRO_PLAN_PERSISTENCE_SPEC.md"
+  ],
+  "status": null
+}

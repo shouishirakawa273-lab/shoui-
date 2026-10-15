@@ -1,0 +1,4 @@
+cwd=C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\shoui- python=C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\shoui-\.venv\Scripts\python.exe arguments=-m pytest -q -p no:cacheprovider Japanese_Equity_Lab/13_tests/test_macro_plan_persistence.py::test_horizon_lossless_store_and_cli --basetemp C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\validation\macro-plan-independent\closure-pytest TEMP=C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\validation\macro-plan-independent TMP=C:\Users\白川正威\.codex\.chatgpt-projects\g-p-6acf04f526688191b7d21e8f0223d910\validation\macro-plan-independent PYTHONDONTWRITEBYTECODE=1 start_sha=60be7381d35d37718566aed3a6f9d21584364f6e start_status=
+....                                                                     [100%]
+4 passed in 13.46s
+exit=0 end_sha=60be7381d35d37718566aed3a6f9d21584364f6e end_status=

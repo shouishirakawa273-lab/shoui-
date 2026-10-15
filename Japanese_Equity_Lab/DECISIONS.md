@@ -19187,3 +19187,20 @@ minimum sample count is a preregistered user policy, never statistical promotion
 Evidence/provenance limitations, execution command and remaining conditions:
 development/2026-10-15_D0110_DELIVERY_RESULT.md and D0110_COMPLETE_DELIVERY.md.
 Existing frozen production/tests/manifests were not changed. No merge/FROZEN.
+
+## D0110.4 registered-plan persistence and CLI (2026-10-16)
+
+Adds new MacroPlanStore and explicit JSON register/show operations using D0107
+append-only persistence. Nested/outer integrity and canonical registration are
+checked; duplicate IDs/keys and incompatible schemas fail closed. CLI uses current
+UTC for registration; show never creates a missing store. Historical store reload
+is not historical provenance certification. Existing comparison and frozen files
+are unchanged. Single-writer local operation only.
+
+Independent initial f56230b7fb0d92ce123ba43e24c31f9a084a6c33: 90 allowed tests passed.
+One lossless horizon_rule compatibility finding was fixed; closure on
+60be7381d35d37718566aed3a6f9d21584364f6e passed four focused cases and design closure.
+These are separate test runs. Evidence, commands and limits are published in
+development/2026-10-16_MACRO_PLAN_PERSISTENCE_RESULT.md and its evidence directory.
+No real forecast/consensus values, experimental efficacy or source authenticity
+are certified by this persistence addition. No H0001/Locked Test, merge or FROZEN.
