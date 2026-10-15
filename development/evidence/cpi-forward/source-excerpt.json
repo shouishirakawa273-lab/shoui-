@@ -1,0 +1,15 @@
+{
+  "source_id": "BLS_CPI_SCHEDULE_WEB_READER_20261016",
+  "artifact_kind": "WEB_READER_EXTRACT_NOT_ORIGINAL_HTTP_BYTES",
+  "schedule_url": "https://www.bls.gov/schedule/news_release/cpi.htm",
+  "timezone_confirmation_url": "https://www.bls.gov/cpi/home.htm",
+  "reference_period": "2026-10",
+  "release_date_local": "2026-11-10",
+  "release_time_local": "08:30:00",
+  "release_timezone": "America/New_York",
+  "direct_original_bytes_status": "HTTP_403_NOT_ARCHIVED",
+  "consensus": null,
+  "own_forecast": null,
+  "first_release": null,
+  "limitation": "Two official pages were read with the web tool. Structured facts transcribed by the coordinator; original HTML bytes unavailable. No historic observation or prediction efficacy is asserted."
+}
