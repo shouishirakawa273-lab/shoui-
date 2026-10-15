@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Context, Decimal, DivisionByZero, InvalidOperation, Overflow, localcontext
 
 from lib.evaluation.integrity import compute_record_hash, verify_record_integrity
 from lib.evaluation.model import (
@@ -26,6 +26,8 @@ from lib.evaluation.model import (
     evaluate_scalar_absolute_error,
 )
 from lib.macro_events.model import SUPPORTED_EVENT_TYPES, MacroConsensusSnapshot, MacroEvent, MacroFirstRelease
+
+CALCULATION_CONTRACT_VERSION = "D0110_4_DECIMAL_50_HALF_EVEN_E999999_V1"
 
 
 def _aware(value: datetime) -> None:
@@ -153,6 +155,7 @@ class MacroComparisonResult:
     synthetic: bool
     provenance_label: str
     interpretation: str
+    calculation_contract_version: str
     record_hash: str
 
 
@@ -259,6 +262,32 @@ def compare_macro_forecasts(
     samples: tuple[MacroComparisonSample, ...],
     evaluated_at: datetime,
 ) -> MacroComparisonResult:
+    """Evaluate under an explicit context, without reading or mutating caller state.
+
+    Precision 50, HALF_EVEN, exponent range +/-999999, capitals 1, clamp 0;
+    only InvalidOperation, DivisionByZero and Overflow trap. Flags start clear.
+    D0107 arithmetic and aggregate arithmetic share this versioned contract.
+    """
+    context = Context(
+        prec=50,
+        rounding=ROUND_HALF_EVEN,
+        Emin=-999999,
+        Emax=999999,
+        capitals=1,
+        clamp=0,
+        flags=[],
+        traps=[InvalidOperation, DivisionByZero, Overflow],
+    )
+    with localcontext(context):
+        return _compare_macro_forecasts(plan=plan, samples=samples, evaluated_at=evaluated_at)
+
+
+def _compare_macro_forecasts(
+    *,
+    plan: RegisteredMacroPlan,
+    samples: tuple[MacroComparisonSample, ...],
+    evaluated_at: datetime,
+) -> MacroComparisonResult:
     """Return every roster failure; never silently drop incomplete pairs.
 
     D0107 evaluates both arms against the same explicitly injected first-release
@@ -350,5 +379,6 @@ def compare_macro_forecasts(
         synthetic=plan.synthetic,
         provenance_label="EVIDENCE_NOT_INDEPENDENTLY_VERIFIED",
         interpretation="OBSERVATIONAL_ONLY; MINIMUM_SAMPLES_IS_USER_POLICY; NO_PROMOTION",
+        calculation_contract_version=CALCULATION_CONTRACT_VERSION,
     )
     return MacroComparisonResult(**payload, record_hash=compute_record_hash(payload))  # type: ignore[arg-type]

@@ -55,3 +55,12 @@ H0001/Locked Test禁止、sources読取専用、凍結288path保護。レビュ�
 - demoはテストhelperをimportしない。future consensus/post observation/driver availabilityは経路別拒否を専用testで確認。
 
 これらは技術接続の検証であり、実履歴での予測性能や原資料first-releaseの真偽を証明しない。
+
+## 独立監査の阻害解消: Decimal計算契約
+
+`.4`はD0107 absolute errorとMAE集計を共通の明示Contextで実行する。
+precision50、ROUND_HALF_EVEN、Emin=-999999/Emax=999999、capitals1、clamp0、flags空、
+trapsはInvalidOperation/DivisionByZero/Overflowのみ。呼出側Contextのprecision/rounding/指数範囲/traps/flagsを継承しない。
+結果とhashに`calculation_contract_version=D0110_4_DECIMAL_50_HALF_EVEN_E999999_V1`を保持する。
+呼出側precision2・逆方向rounding・全trap有効でも、D0107 errorと循環小数MAEを含む結果/hashが一致し、
+呼出側Context不変を専用回帰testで確認する。D0107の凍結コードは変更しない。

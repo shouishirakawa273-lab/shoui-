@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, ROUND_UP, Decimal, getcontext, localcontext
 
 import pytest
 from lib.evaluation.integrity import compute_record_hash, verify_record_integrity
@@ -261,3 +261,58 @@ def test_release_outside_registered_window():
 def test_invalid_registration(kwargs):
     with pytest.raises(ValueError):
         fixture(**kwargs)
+
+
+@pytest.mark.parametrize("rounding", [ROUND_DOWN, ROUND_UP])
+def test_fixed_context_controls_d0107_error_and_repeating_mae_without_mutating_caller(rounding):
+    plan, original = fixture(event_ids=("cpi", "cpi2", "cpi3"))
+    samples = []
+    for i, event_id in enumerate(plan.event_ids):
+        prediction = rehash(
+            original.prediction,
+            prediction_id=f"p{i}",
+            scalar_forecast=ScalarForecast(value=Decimal("3.123456789") if i == 0 else Decimal("3.1"), unit="PERCENT"),
+        )
+        samples.append(
+            replace(
+                original,
+                event=rehash(original.event, event_id=event_id),
+                consensus=rehash(original.consensus, event_id=event_id, consensus_snapshot_id=f"c{i}"),
+                release=rehash(original.release, event_id=event_id, release_id=f"r{i}"),
+                prediction=prediction,
+            )
+        )
+    baseline = compare_macro_forecasts(plan=plan, samples=tuple(samples), evaluated_at=T + 6 * H)
+    assert baseline.samples[0].own_evaluation.result_value == Decimal("0.176543211")
+    with localcontext() as caller:
+        caller.prec = 2
+        caller.rounding = rounding
+        caller.Emin, caller.Emax, caller.capitals, caller.clamp = -2, 2, 0, 1
+        for signal in caller.traps:
+            caller.traps[signal] = True
+        for signal in caller.flags:
+            caller.flags[signal] = True
+        before = (
+            caller.prec,
+            caller.rounding,
+            caller.Emin,
+            caller.Emax,
+            caller.capitals,
+            caller.clamp,
+            dict(caller.traps),
+            dict(caller.flags),
+        )
+        changed = compare_macro_forecasts(plan=plan, samples=tuple(samples), evaluated_at=T + 6 * H)
+        after = getcontext()
+        assert before == (
+            after.prec,
+            after.rounding,
+            after.Emin,
+            after.Emax,
+            after.capitals,
+            after.clamp,
+            dict(after.traps),
+            dict(after.flags),
+        )
+    assert changed == baseline and changed.record_hash == baseline.record_hash
+    assert changed.calculation_contract_version == "D0110_4_DECIMAL_50_HALF_EVEN_E999999_V1"
