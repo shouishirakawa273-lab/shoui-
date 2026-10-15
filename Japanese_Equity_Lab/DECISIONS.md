@@ -19165,3 +19165,25 @@ rounding quantum and individual future-availability rejection were verified.
 Evidence and limits: development/2026-10-15_EXPOSURE_VALUATION_INTEGRATION_RESULT.md.
 No merge, FROZEN, pretax adapter, expected return, historical replay or full
 product Gate is accepted by this limited integration evidence.
+
+## D0110 whole-scope runnable candidate (2026-10-15)
+
+The user authorized a minimal runnable D0110.1-.4 before optional refinements;
+D0111, merge and FROZEN remain excluded. New macro_experiments comparison uses
+D0107 records/evaluator without changing frozen modules. The standalone synthetic
+demo calls the .1 surprise, .2 observed link, .3 independent period assumption
+bridge/forecast/valuation and .4 preregistered comparison APIs.
+
+Initial independent review on 28be858e580552072a08b2a6e9508f3fc8e3852c:
+306 allowed tests passed, immutable store/CLI/frozen288 checks passed. One blocking
+Decimal context reproducibility finding was corrected; closure on
+3cfd8e3068b7224e0fd376127c4a258df17e2b0c passed 47 dedicated tests and an independent
+hostile-context probe. Design closure found no remaining blocker. Counts are
+separate runs, not a final full-suite total. No H0001 strategy or Locked Test ran.
+
+This is a synthetic technical candidate, not real-company PIT acceptance or
+empirical macro forecast certification. Insufficient history stays explicit;
+minimum sample count is a preregistered user policy, never statistical promotion.
+Evidence/provenance limitations, execution command and remaining conditions:
+development/2026-10-15_D0110_DELIVERY_RESULT.md and D0110_COMPLETE_DELIVERY.md.
+Existing frozen production/tests/manifests were not changed. No merge/FROZEN.
