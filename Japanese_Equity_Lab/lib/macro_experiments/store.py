@@ -56,8 +56,10 @@ def _decode_record(data: Any, cls: type[Any]) -> Any:
             if type(value) is not int:
                 raise ValueError("contract version must be integer")
             values[key] = value
-        elif key == "horizon_rule" and value is None:
-            values[key] = None
+        elif key == "horizon_rule":
+            if value is not None and type(value) is not str:
+                raise ValueError("horizon_rule must be string or null")
+            values[key] = value
         else:
             if type(value) is not str or not value.strip():
                 raise ValueError(f"{key} must be nonempty string")

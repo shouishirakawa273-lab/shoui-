@@ -194,3 +194,37 @@ def test_duplicate_store_records_and_changed_id(tmp_path: Path) -> None:
         MacroPlanStore(path).all()
     with pytest.raises(ValueError, match="duplicate stored"):
         read_plan(path, "synthetic-plan")
+
+
+@pytest.mark.parametrize("horizon", [None, "", "   ", "explicit horizon"])
+def test_horizon_lossless_store_and_cli(tmp_path: Path, horizon: str | None) -> None:
+    data = config()
+    data["contracts"][0]["horizon_rule"] = horizon
+    plan = build_current_plan(data)
+    assert plan_from_dict(plan_to_dict(plan)) == plan
+    path = tmp_path / "plans.jsonl"
+    MacroPlanStore(path).record(plan)
+    assert read_plan(path, plan.experiment.experiment_id) == plan
+    source = tmp_path / "config.json"
+    source.write_text(json.dumps(data), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "macro_plan.py"
+    registered_path = tmp_path / "cli.jsonl"
+    result = subprocess.run(
+        [sys.executable, "-X", "utf8", str(script), "register", "--input", str(source), "--store", str(registered_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 0, result.stderr
+    registered = json.loads(result.stdout)
+    assert registered["contracts"][0]["horizon_rule"] == horizon
+    shown = subprocess.run(
+        [sys.executable, "-X", "utf8", str(script), "show", "--store", str(registered_path), "--id", "synthetic-plan"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert shown.returncode == 0, shown.stderr
+    assert json.loads(shown.stdout) == registered
