@@ -19125,3 +19125,27 @@ This foundation is not real-company production acceptance or an investment-value
 demonstration. No fetching API, causal inference, statistical calibration,
 stock return, probability, trading, D0111 or D0110.4 implementation is included.
 Draft PR publication does not authorize merge or FROZEN acceptance.
+
+### Synthetic exposure/OI forecast/valuation integration (2026-10-15)
+
+Status: IMPLEMENTATION_IN_PROGRESS. Starting HEAD:
+a698832337a9b0d70f0a1a8c09cd74769ec60f2d (PR #3).
+The owner requested autonomous continuation. This bounded step adds one new
+integration test plus specification/evidence documents and this append-only
+record. Existing production, frozen paths and existing tests remain unchanged.
+It does not merge the sibling pretax foundation or downstream archive branches.
+
+The test routes the synthetic bridge's baseline/replay operating-income forecasts
+into the existing forward valuation API with identical multiple/net-debt/share
+inputs. Independent arithmetic checks the replay valuation and economic delta;
+non-selected scenarios and original request integrity must remain unchanged.
+Future availability is introduced one field at a time to verify PIT rejection.
+The explicit money-quantum/rounding contract is checked rather than silently
+equating target income and frozen-forecast replay income.
+
+Specification: development/2026-10-15_EXPOSURE_VALUATION_INTEGRATION_SPEC.md.
+One writer adds the test; separate design and verification roles review a pinned
+commit. No independent execution result is asserted by this in-progress entry.
+Success is only synthetic module integration, not actual company data, historical
+PIT acceptance, causal inference, expected return, D0111 or full-product Gates.
+H0001/Locked Test, existing frozen edits, merge and FROZEN remain prohibited.
