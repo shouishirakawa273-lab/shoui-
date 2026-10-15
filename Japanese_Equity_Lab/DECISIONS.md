@@ -19149,3 +19149,19 @@ commit. No independent execution result is asserted by this in-progress entry.
 Success is only synthetic module integration, not actual company data, historical
 PIT acceptance, causal inference, expected return, D0111 or full-product Gates.
 H0001/Locked Test, existing frozen edits, merge and FROZEN remain prohibited.
+
+### Synthetic valuation integration — Independent verification (2026-10-15)
+
+Status: SYNTHETIC_MODULE_CONNECTION_VERIFIED, not actual-company acceptance.
+Independent reviewed HEAD: b0d2dd9972a32f23c9c3200b16029c9ff674ceef.
+Separate design and verification roles found no blocking issue. Independent
+execution: 122 passed / 1 deselected, exit 0, matching start/end HEAD and clean
+status. The excluded node is the existing source-text H0001 guard; no H0001
+strategy or Locked Test was run. Frozen288, existing production and existing
+tests were unchanged. The new test connects real library calls, with synthetic
+inputs only: operating income100→120, multiple8, net debt50, shares10, per-share
+value75→91. Independent arithmetic, unchanged other scenarios/input integrity,
+rounding quantum and individual future-availability rejection were verified.
+Evidence and limits: development/2026-10-15_EXPOSURE_VALUATION_INTEGRATION_RESULT.md.
+No merge, FROZEN, pretax adapter, expected return, historical replay or full
+product Gate is accepted by this limited integration evidence.
