@@ -1,0 +1,44 @@
+{
+  "args": [
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\.venv\\Scripts\\python.exe",
+    "-B",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\Japanese_Equity_Lab\\scripts\\macro_compare.py",
+    "--store",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\probe\\plan.jsonl",
+    "--id",
+    "x",
+    "--input",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\probe\\empty.json"
+  ],
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\probe",
+  "exit_code": 0,
+  "result": {
+    "calculation_contract_version": "D0110_4_DECIMAL_50_HALF_EVEN_E999999_V1",
+    "consensus_mae": null,
+    "evaluated_at": "2026-10-15T20:54:24.296731+00:00",
+    "expected_samples": 1,
+    "interpretation": "OBSERVATIONAL_ONLY; MINIMUM_SAMPLES_IS_USER_POLICY; NO_PROMOTION",
+    "own_mae": null,
+    "own_minus_consensus_mae": null,
+    "paired_samples": 0,
+    "plan_hash": "82e8057225bd4572df85c31e52d9c786560351380d4b1e8f8502fd5c74945afe",
+    "provenance_label": "EVIDENCE_NOT_INDEPENDENTLY_VERIFIED",
+    "record_hash": "ca3a58cfa5793648cfbd52bf719c2ecb103a20fbfb486b2c58be4272bc1bb5a0",
+    "samples": [
+      {
+        "consensus_audit_snapshot": null,
+        "consensus_evaluation": null,
+        "consensus_prediction": null,
+        "event_id": "cpi",
+        "own_evaluation": null,
+        "reasons": [
+          "MISSING_EVENT"
+        ]
+      }
+    ],
+    "status": "INSUFFICIENT_HISTORY",
+    "synthetic": true
+  },
+  "input_and_store_unchanged": true,
+  "result_hash_verified": true
+}

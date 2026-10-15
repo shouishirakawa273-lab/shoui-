@@ -1,0 +1,30 @@
+{
+  "args": [
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\.venv\\Scripts\\python.exe",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\pytest",
+    "13_tests/test_macro_comparison_cli.py",
+    "13_tests/test_macro_experiments.py",
+    "13_tests/test_macro_plan_persistence.py"
+  ],
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\Japanese_Equity_Lab",
+  "TEMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\temp",
+  "TMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\comparison-cli-independent\\temp",
+  "start_sha": "11f72499906ae33128e66cfa55beacbf824321a8",
+  "start_status": "",
+  "end_sha": "11f72499906ae33128e66cfa55beacbf824321a8",
+  "end_status": "",
+  "exit_code": 0,
+  "frozen_count": 288,
+  "note": "Earlier pre-test raw-byte assertion stopped on CRLF/LF; no pytest was executed by that attempt. Blob comparisons and Git diff confirm frozen files unchanged."
+}
+........................................................................ [ 52%]
+................................................................         [100%]
+136 passed in 30.64s
+
