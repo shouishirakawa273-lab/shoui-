@@ -19204,3 +19204,20 @@ These are separate test runs. Evidence, commands and limits are published in
 development/2026-10-16_MACRO_PLAN_PERSISTENCE_RESULT.md and its evidence directory.
 No real forecast/consensus values, experimental efficacy or source authenticity
 are certified by this persistence addition. No H0001/Locked Test, merge or FROZEN.
+
+## 2026-10-16 — D0110.4 explicit comparison CLI technical acceptance
+
+Adds a strict external JSON boundary and a read-only saved-plan comparison CLI.
+Five existing codecs and compare_macro_forecasts are reused without modifying
+the comparison calculation, PIT policy, existing tests or frozen files.
+CLI evaluates at actual current UTC and preserves missing-data reasons and all
+result fields, hashes, calculation version and non-certification labels.
+
+Independent design and verification targeted 11f72499906ae33128e66cfa55beacbf824321a8.
+136 explicitly allowed tests passed; an independent CLI/hash/read-only probe passed.
+Frozen288 Git blobs and working Git diff are unchanged. An earlier pre-test raw
+CRLF/LF assertion stop is separately recorded; pytest had not run at that point.
+Evidence and limits: development/2026-10-16_MACRO_COMPARISON_CLI_RESULT.md.
+This is an operational interface completion, not empirical acceptance or source
+certification. No model or real forecast is invented. No H0001/Locked Test,
+merge or FROZEN. Existing draft stack remains unmerged.

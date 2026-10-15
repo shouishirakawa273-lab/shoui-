@@ -1,0 +1,2599 @@
+{
+  "count": 288,
+  "git_diff_empty": true,
+  "raw_line_endings_differ_count": 260,
+  "files": [
+    {
+      "path": "Japanese_Equity_Lab/13_tests/conftest.py",
+      "baseline_sha256": "c50c8305f585c9551191788e47ab0cbebac1b54229902d72a7bd11ce8f5ae4b5",
+      "fixed_sha256": "c50c8305f585c9551191788e47ab0cbebac1b54229902d72a7bd11ce8f5ae4b5",
+      "working_raw_sha256": "df9e6d467e3eed114f125529fc2c6deefca890aa458cf64545db9aa8c8323109",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/README.md",
+      "baseline_sha256": "49d503dda3407cd88f458b943121b9146f18acd06d298aef370b0a87c96e52af",
+      "fixed_sha256": "49d503dda3407cd88f458b943121b9146f18acd06d298aef370b0a87c96e52af",
+      "working_raw_sha256": "6e3aba6a787f969936e437eb0259f7b8e05fbb0c5aa42442e8fcb1cf0486c6d4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/disclosure_common_core_v1.json",
+      "baseline_sha256": "1c5b391d94bede710ed8fca80480b371dc296f844a99e3179eb6bb7bf56aae40",
+      "fixed_sha256": "1c5b391d94bede710ed8fca80480b371dc296f844a99e3179eb6bb7bf56aae40",
+      "working_raw_sha256": "1b3d81cebf8437e924686d2164d5d80b995cadaf18ceef67405dba41bd59f1a7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/equities_bars_daily_v2.json",
+      "baseline_sha256": "fda3dc9714e2e37bbcf86908fd58e179b304ac3969a62fc63ad420d036f159af",
+      "fixed_sha256": "fda3dc9714e2e37bbcf86908fd58e179b304ac3969a62fc63ad420d036f159af",
+      "working_raw_sha256": "823431da16c2faef34aaa4241cc035e9d1d22e399b78cb5361216f306107aeb5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/equities_master_v2.json",
+      "baseline_sha256": "95147880e48ffca20cc7fbe495e9c6271a8bc1e1fe550f599114576415cc1f43",
+      "fixed_sha256": "95147880e48ffca20cc7fbe495e9c6271a8bc1e1fe550f599114576415cc1f43",
+      "working_raw_sha256": "ad488f02e24f04970113b260e578c6e9865ae2bc6cbdb69fa15d839a6879f79f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/financial_summary_v2.json",
+      "baseline_sha256": "dacb34e5dab05b8515e04657611513a034456d02c2fdda36a633e3f1c0eecf4a",
+      "fixed_sha256": "dacb34e5dab05b8515e04657611513a034456d02c2fdda36a633e3f1c0eecf4a",
+      "working_raw_sha256": "5494131a2967aa7f485106a2fd0bf1326ad7507c95650b9a4e5e5e0acb26e0fb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/markets_calendar_v2.json",
+      "baseline_sha256": "7c8f7876c72fd9f6a72506af8dbed2a0f211c0d49785aad0377ffe9b941c7776",
+      "fixed_sha256": "7c8f7876c72fd9f6a72506af8dbed2a0f211c0d49785aad0377ffe9b941c7776",
+      "working_raw_sha256": "92463547576c6edd8f0121f939ad43c53b521695711a256b0d331f25162f6acf",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/portfolio_scenario_v2.json",
+      "baseline_sha256": "ecf71d2a13446e0452f9c1f4ebe2ed7dc98549e08c953381061d49c05cb965ac",
+      "fixed_sha256": "ecf71d2a13446e0452f9c1f4ebe2ed7dc98549e08c953381061d49c05cb965ac",
+      "working_raw_sha256": "c7eee317fbffc9d0fee0adfa7bace6d53306f93beda205e5022f0458211cc0cd",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/synthetic_jquants_v2_bars.json",
+      "baseline_sha256": "abaf2f679559df48b7ef67407aaa422eb1291e794ce09762c963593f3a744f35",
+      "fixed_sha256": "abaf2f679559df48b7ef67407aaa422eb1291e794ce09762c963593f3a744f35",
+      "working_raw_sha256": "946617f075e5b2fcf1188a8ef4192aedfef828e3afcd2637e501373f77647080",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/topix_bars_daily_v2.json",
+      "baseline_sha256": "a74dcad8ea97a84377dca434de8151ba12f8f1fcc93fc7bf77d87241ba00c7b7",
+      "fixed_sha256": "a74dcad8ea97a84377dca434de8151ba12f8f1fcc93fc7bf77d87241ba00c7b7",
+      "working_raw_sha256": "9f7f6d0f79485a1185d06caf7b6ca1b76f7257797f2e6c425a927afe01dba04e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_agent_governance.py",
+      "baseline_sha256": "f10500b149fcca774efa063c9a4fdfa6da87ae1cdf980256f4aeebd15f4ddda3",
+      "fixed_sha256": "f10500b149fcca774efa063c9a4fdfa6da87ae1cdf980256f4aeebd15f4ddda3",
+      "working_raw_sha256": "64a2df13cc6f1d54392cbba9827b044eb33df42080fe0b97e94a4b946481aa0c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_available_at_vs_retrieved_at.py",
+      "baseline_sha256": "eb5ff1ff0523bb694b8a397c0dbd817db5558b376f5b61631a2d7a921b12d735",
+      "fixed_sha256": "eb5ff1ff0523bb694b8a397c0dbd817db5558b376f5b61631a2d7a921b12d735",
+      "working_raw_sha256": "bc5315067cc2abb9f5727aeeeb8fedee0ba9975e84c5528bc4cbb7d8ccc6452c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_backtest_engine.py",
+      "baseline_sha256": "95fc482fca65548d4008139426d32f8eed1b7194ce4b04509ee11d399b2034c0",
+      "fixed_sha256": "95fc482fca65548d4008139426d32f8eed1b7194ce4b04509ee11d399b2034c0",
+      "working_raw_sha256": "858e184c8eae2ae22ff01d02988fde2d6c439ab7ff9080701c07f28d82bb2a18",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_benchmark.py",
+      "baseline_sha256": "5f3fc3ba40d523847370b8627c9b89e4e27bc76e49f4351e07c321150e5737c9",
+      "fixed_sha256": "5f3fc3ba40d523847370b8627c9b89e4e27bc76e49f4351e07c321150e5737c9",
+      "working_raw_sha256": "ba84e2433d77ca8b6129f8e3605fd58fc5ab6deb31c2bbf9994da7440947ee6c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_candidate_extraction.py",
+      "baseline_sha256": "bd32d33711088db1990ce0e262c745e22fc8e15351bcf241df978fc5e2218175",
+      "fixed_sha256": "bd32d33711088db1990ce0e262c745e22fc8e15351bcf241df978fc5e2218175",
+      "working_raw_sha256": "80b8206d9abe7f007c356a2a52a7eb5caade91553d8490d0c18b5c5b190e4103",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_company_ir_adapter.py",
+      "baseline_sha256": "f12cc1c92b54a62306459123be4ec72907f21111fc168d37b1bbeaa42646a5a4",
+      "fixed_sha256": "f12cc1c92b54a62306459123be4ec72907f21111fc168d37b1bbeaa42646a5a4",
+      "working_raw_sha256": "cf56ad52931f7283f8db143ab6e419744936296f904f66e58b48435475e6bcdb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_company_ir_normalize.py",
+      "baseline_sha256": "56bb604ae172d2ad4db8088871e410e88a90e48b6cd175112b0aabef2f23d5f5",
+      "fixed_sha256": "56bb604ae172d2ad4db8088871e410e88a90e48b6cd175112b0aabef2f23d5f5",
+      "working_raw_sha256": "14ded0c9dce0b7fd26eaa8cee42794f0166e6f3887cede14a16180f9aab42795",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_consensus_catalog.py",
+      "baseline_sha256": "ea63ea86961fae7b85e9e9f1626a9897b468d11ec445bebbdb588b15a5d404e6",
+      "fixed_sha256": "ea63ea86961fae7b85e9e9f1626a9897b468d11ec445bebbdb588b15a5d404e6",
+      "working_raw_sha256": "bd979ab90c2fbcf6eeaf0c05ed0f499c56b13749164930ee18a77095522c88fa",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_consensus_pit.py",
+      "baseline_sha256": "6ddc57111ffa201dc63ec28943cf5cb290f9a67489343da86155cd08b334eed8",
+      "fixed_sha256": "6ddc57111ffa201dc63ec28943cf5cb290f9a67489343da86155cd08b334eed8",
+      "working_raw_sha256": "59d5e222d45cca50e709b96017b8f48442a699f68d783cff37b5b4d1cad7c7ec",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_convert_phase3a.py",
+      "baseline_sha256": "85f1bee5167b958a072c589ef3a0cb50070093a6002a84b4ffc41c27946c34cf",
+      "fixed_sha256": "85f1bee5167b958a072c589ef3a0cb50070093a6002a84b4ffc41c27946c34cf",
+      "working_raw_sha256": "716afb2866bbe06c04e266c0f05dd0e1719e57473150639f07e5f127583c54ff",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_data_sources.py",
+      "baseline_sha256": "95c32402729fc8a5c96a3a441a98bb65a97bfd0c8d1e2e5767800f5abcd444ea",
+      "fixed_sha256": "95c32402729fc8a5c96a3a441a98bb65a97bfd0c8d1e2e5767800f5abcd444ea",
+      "working_raw_sha256": "7c2760870d4cedbdff67987cec30ee580be6d3d8150587a602e5c35e09f0116b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow.py",
+      "baseline_sha256": "85cb76998e9142c734ea1ca073e03baa252dfee615e998bb3c7da11ebf4f1a51",
+      "fixed_sha256": "85cb76998e9142c734ea1ca073e03baa252dfee615e998bb3c7da11ebf4f1a51",
+      "working_raw_sha256": "5ac9f04b8ef17ba1889058bd92609a4f3c5faef98be8788bef39d393fe42d9c4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_executor.py",
+      "baseline_sha256": "41e7aa19935fab3f667795ebe165d518d7e83977370753d18dba4b3830919fa6",
+      "fixed_sha256": "41e7aa19935fab3f667795ebe165d518d7e83977370753d18dba4b3830919fa6",
+      "working_raw_sha256": "66600cbdb9bc227bad840dfc815a1144e7506808fdd46cd98ec1c611346129d7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_orchestrator.py",
+      "baseline_sha256": "8e8dfc004b7ac411bc9109ebd00c8e88637bea79fe96484d259174fa0f0ba433",
+      "fixed_sha256": "8e8dfc004b7ac411bc9109ebd00c8e88637bea79fe96484d259174fa0f0ba433",
+      "working_raw_sha256": "0d45cc152b211ca6fcde306d2080794d985fc513a32083963d3e3913245734d8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+      "baseline_sha256": "08aa6ad9328e649371bb15823ff66bbfca77e2e9d4605fdc3783394abfae48c4",
+      "fixed_sha256": "08aa6ad9328e649371bb15823ff66bbfca77e2e9d4605fdc3783394abfae48c4",
+      "working_raw_sha256": "f47d9f09b84b6dbbc07872b59d6beed305cb9c09d0d7ddc19412258600d9e51d",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_pit.py",
+      "baseline_sha256": "7d697673f2c9bfee25b30078a78b3c4ac21a1eadfbe53ca6a60461b6d66d6c66",
+      "fixed_sha256": "7d697673f2c9bfee25b30078a78b3c4ac21a1eadfbe53ca6a60461b6d66d6c66",
+      "working_raw_sha256": "6c5507b133db2ad1969c5caf3bc42086c68dab33fadad7fa0dee0323b0b33c8f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_integration.py",
+      "baseline_sha256": "83d4292541dc5026be4543bfce8b3ba6976c57eacb31972dac49f3c3509478b2",
+      "fixed_sha256": "83d4292541dc5026be4543bfce8b3ba6976c57eacb31972dac49f3c3509478b2",
+      "working_raw_sha256": "526f43da394d0f9afbacc865ac17702b09a03e10695331a5cbc5e35910f3fc2e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_model.py",
+      "baseline_sha256": "d924330d9ecbfcaf1d2a66ab7b7cce4ccac10274a39fe20fd7f09f15dba2cac9",
+      "fixed_sha256": "d924330d9ecbfcaf1d2a66ab7b7cce4ccac10274a39fe20fd7f09f15dba2cac9",
+      "working_raw_sha256": "7ee1b653ba659fdde7bd4517d63bdf0b2f3a64bd9882e14ae3565ccc5b44fc63",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_normalization.py",
+      "baseline_sha256": "4a69f9abadd4a19a6228e5e8e7255f4fa16203e62f1da7f66988c4b548fb3175",
+      "fixed_sha256": "4a69f9abadd4a19a6228e5e8e7255f4fa16203e62f1da7f66988c4b548fb3175",
+      "working_raw_sha256": "e465d210687ed4463a6f6bc6b6f0861da977f0128099dde9e890cf7fa8e9ee88",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_normalize.py",
+      "baseline_sha256": "3cd6cd28f73eea780f9af3deec2a656a589f84e90f4fa23e7bfbb3e04524076e",
+      "fixed_sha256": "3cd6cd28f73eea780f9af3deec2a656a589f84e90f4fa23e7bfbb3e04524076e",
+      "working_raw_sha256": "13ba36a008504dc93035c613e69a9bb47b559210a903867e5d516c5cdb146b94",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_semantic_claims.py",
+      "baseline_sha256": "9f50ffdc6bea78b91a856c23a1f79fc1a3a6259f39f3e515b657932562e3e808",
+      "fixed_sha256": "9f50ffdc6bea78b91a856c23a1f79fc1a3a6259f39f3e515b657932562e3e808",
+      "working_raw_sha256": "ee7428f08c075b12c9514d594416b4009bea5cdb625cb817b3de5bcadbe23195",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_view.py",
+      "baseline_sha256": "093fc4f681e826d29f9d259d304ef553da0a4cca895c95c0464750654b9ad6d8",
+      "fixed_sha256": "093fc4f681e826d29f9d259d304ef553da0a4cca895c95c0464750654b9ad6d8",
+      "working_raw_sha256": "1ae9b7201eac2c773448ba1e88b5708b3df067e4856f55dfb559d66457ee4404",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_adapter.py",
+      "baseline_sha256": "616ff19a9cef74dda690ac8ae2551ad31ce95cac2bf65eb4e45ec74be2cab223",
+      "fixed_sha256": "616ff19a9cef74dda690ac8ae2551ad31ce95cac2bf65eb4e45ec74be2cab223",
+      "working_raw_sha256": "570a194c4d290153b1741aca4c1566ee9e2378d889525410097f0ce5618c13b5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_catalog.py",
+      "baseline_sha256": "37a681aa34bbb05bf1380a2eea5fc61b507eead45bcaa4090845c868dd0fa8e7",
+      "fixed_sha256": "37a681aa34bbb05bf1380a2eea5fc61b507eead45bcaa4090845c868dd0fa8e7",
+      "working_raw_sha256": "07c77864e155701c9c93a21cd52d9f1972762300c60574293ed7645c9c1fe606",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_integration.py",
+      "baseline_sha256": "e440ff05f0b4d7812186783d75ca6c4d05798aded6a976195accd748523eeb0e",
+      "fixed_sha256": "e440ff05f0b4d7812186783d75ca6c4d05798aded6a976195accd748523eeb0e",
+      "working_raw_sha256": "4411046b3db331b5d6b20c147f9fc2974c59726a248052a678aab9d445095a23",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_normalize.py",
+      "baseline_sha256": "0411422ef5806ea9c66f15603243f43295f26816dd23e43980ba6e237f3079b3",
+      "fixed_sha256": "0411422ef5806ea9c66f15603243f43295f26816dd23e43980ba6e237f3079b3",
+      "working_raw_sha256": "f44cbdbbb187421ddd530976c1c317adabe1775a1afa90162a64154376349fa6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_zip_canonicalize.py",
+      "baseline_sha256": "83f0abcd6a03e51a719629dc6d33424fb59b2913fdbe8d1e5d553b70c97ca470",
+      "fixed_sha256": "83f0abcd6a03e51a719629dc6d33424fb59b2913fdbe8d1e5d553b70c97ca470",
+      "working_raw_sha256": "29373e531c26b289258ca6588f6eef45f42d0e9901d56f5bb0232829f60ba732",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_entity_registry.py",
+      "baseline_sha256": "cc9a1972418c1a645361afb0e6b5b78219199f2f7a8ba8166840f07e39b9dc42",
+      "fixed_sha256": "cc9a1972418c1a645361afb0e6b5b78219199f2f7a8ba8166840f07e39b9dc42",
+      "working_raw_sha256": "eaf10d4ef37956089a81080bde728a82abb715d7d359385004b3a7f48558b24c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py",
+      "baseline_sha256": "12723e953167bc8efa57b3a6a598b084eb207ecf93641a0902852512f3d25ab2",
+      "fixed_sha256": "12723e953167bc8efa57b3a6a598b084eb207ecf93641a0902852512f3d25ab2",
+      "working_raw_sha256": "7d486238c4e6c8ca6af5db37cfdb4053122a371b149646f8e43e462d77922c71",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_event_window_response.py",
+      "baseline_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+      "fixed_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+      "working_raw_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_decision_log.py",
+      "baseline_sha256": "cbd1513cab4ed16c2e6454e260d1ae9ea25554a4ce94569d5c2fa11e7655de50",
+      "fixed_sha256": "cbd1513cab4ed16c2e6454e260d1ae9ea25554a4ce94569d5c2fa11e7655de50",
+      "working_raw_sha256": "fd5365d8c215fde7b1e28f1b0d30836e340d88363e03d036c1ed75e46d8dbab1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_integration.py",
+      "baseline_sha256": "ee0caf6c7dd3b83729a5e80ff9b14753fbd276bdbbd3c25419b061977b156cc2",
+      "fixed_sha256": "ee0caf6c7dd3b83729a5e80ff9b14753fbd276bdbbd3c25419b061977b156cc2",
+      "working_raw_sha256": "7133773a7e21f3541a3ec344a29cd306ac34b403568b2e7d9af06bb8782ea149",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_lineage.py",
+      "baseline_sha256": "ee9ee6cb591e1b701e1deab16a9ed910a9070d4a1248b11dde2e3cdca3c7909d",
+      "fixed_sha256": "ee9ee6cb591e1b701e1deab16a9ed910a9070d4a1248b11dde2e3cdca3c7909d",
+      "working_raw_sha256": "d7acd01d5bec351d1741a370f5078a3160945965cb0b8bdbcbfcb8323bb9ff2e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_model.py",
+      "baseline_sha256": "ddd5fc794640cf2404de63484c7a8ac7885265428aea4d1558481348b0916927",
+      "fixed_sha256": "ddd5fc794640cf2404de63484c7a8ac7885265428aea4d1558481348b0916927",
+      "working_raw_sha256": "9f598d21c806976a7bc5eab799ddad5045b5ec2620de51563586a3a30791dab2",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_news.py",
+      "baseline_sha256": "7d01b6f3bb6eb678735b3c4048da89bc739210a4f7744b392fed415ea246b86e",
+      "fixed_sha256": "7d01b6f3bb6eb678735b3c4048da89bc739210a4f7744b392fed415ea246b86e",
+      "working_raw_sha256": "43c1f0fd10efd55c319733bf25a3292dc3fc57b1711de6cb4eb98edc73a10539",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_packet.py",
+      "baseline_sha256": "816ca5702ba214e9581153040819c4d8808400e75b2a15838a07f0b21f74b672",
+      "fixed_sha256": "816ca5702ba214e9581153040819c4d8808400e75b2a15838a07f0b21f74b672",
+      "working_raw_sha256": "76dd87678db971d671b7c27bd9a34c7df98cc0a29232f2cd0f13bc658be89956",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_packet_registry.py",
+      "baseline_sha256": "d5739d5dbf4319d38eee3d8d7be701cf791a8b336ce0d6192d5e88c03c65e60f",
+      "fixed_sha256": "d5739d5dbf4319d38eee3d8d7be701cf791a8b336ce0d6192d5e88c03c65e60f",
+      "working_raw_sha256": "683042fde77b3aaa2fa980d66b53bf7df32e67ca1f2faea98ed83298e005fc71",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_registry.py",
+      "baseline_sha256": "c532af7d25e9eca3020653d36e71271d05479b0c588a037978e5a513125d6ea0",
+      "fixed_sha256": "c532af7d25e9eca3020653d36e71271d05479b0c588a037978e5a513125d6ea0",
+      "working_raw_sha256": "d831fb609d480fc3d84dedd78bd8c354efa089ca6f9ce296f6e379547aa6fe63",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_relation_assignment.py",
+      "baseline_sha256": "b29f00aa79a0777314667f60baa102ad079c25a48b64f14b2a42de6fdaf5d689",
+      "fixed_sha256": "b29f00aa79a0777314667f60baa102ad079c25a48b64f14b2a42de6fdaf5d689",
+      "working_raw_sha256": "6591ce1ac815dcbfe4b7e0823d83c4ae5e669647afff50fe44218311f7fe9bb6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_retrieval.py",
+      "baseline_sha256": "a0e3f1354e4357aa868eec4f33abb7f985a58dc87236f6afcd62eb38e72bc0ac",
+      "fixed_sha256": "a0e3f1354e4357aa868eec4f33abb7f985a58dc87236f6afcd62eb38e72bc0ac",
+      "working_raw_sha256": "218aad34ec92ac4462ec0deb8a7dcfba3319f5f5ab184d1330ff91833c9bdac7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_expectations_foundation.py",
+      "baseline_sha256": "4797edb04c9ad8332d9626d101cbf2fd0d857ec1e4afac79e5b98b2e10436228",
+      "fixed_sha256": "4797edb04c9ad8332d9626d101cbf2fd0d857ec1e4afac79e5b98b2e10436228",
+      "working_raw_sha256": "965420e748855f9edcf7238b208a48896e329a56450485de74780b892351c335",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_experiment_registry.py",
+      "baseline_sha256": "6470e528327bae0173a3f4629268b9a74feda9c5f243fc3a1dca04363b34caf2",
+      "fixed_sha256": "6470e528327bae0173a3f4629268b9a74feda9c5f243fc3a1dca04363b34caf2",
+      "working_raw_sha256": "971dc802d216ee25ab21f08db8dae79940676297a2a6fb26136991b4a2663a7e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_faithfulness.py",
+      "baseline_sha256": "c0aacdfe8fca6ef467bb53dd006b0633f2c2a744d81cf433395d21452ee47128",
+      "fixed_sha256": "c0aacdfe8fca6ef467bb53dd006b0633f2c2a744d81cf433395d21452ee47128",
+      "working_raw_sha256": "93bd6fe8663b2866b729c2a80bcb843f863196329598244cf9a4bb49f69fd82a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_forecasting_foundation.py",
+      "baseline_sha256": "f3d629ca82637ef51f3a2783f48e7ce3de39179962501bd13a79274d743a4b03",
+      "fixed_sha256": "f3d629ca82637ef51f3a2783f48e7ce3de39179962501bd13a79274d743a4b03",
+      "working_raw_sha256": "1192d08ccb957cdd789bdac28e0b0094d2fd12eba9c333bdfeea71bff587f355",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_market_public_at.py",
+      "baseline_sha256": "d3a18d7fe28aa88ff3609e1754d5310d7c1c316a395d13be4b3e17f266dc1bc8",
+      "fixed_sha256": "d3a18d7fe28aa88ff3609e1754d5310d7c1c316a395d13be4b3e17f266dc1bc8",
+      "working_raw_sha256": "65fe39e08597c0ee6655d426222af72245cfedbe9eb9e5e8727b5dbafa07d8b1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_pit.py",
+      "baseline_sha256": "075d4cc42133cabde461278664943903e99ced89c8e1580af8726a1ef1501880",
+      "fixed_sha256": "075d4cc42133cabde461278664943903e99ced89c8e1580af8726a1ef1501880",
+      "working_raw_sha256": "d7d0697a69ca5f0afc8ee0e89d0a4c3a6f5c7af8f4e7cda61f1615888bb29a05",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_financial_quality_evidence.py",
+      "baseline_sha256": "cf159803294f691470c541ffeda648c61ae76700fa5afd83cc2f89fbff03c473",
+      "fixed_sha256": "cf159803294f691470c541ffeda648c61ae76700fa5afd83cc2f89fbff03c473",
+      "working_raw_sha256": "5978707e1cc6ad8ce1b4ded96577a316cca22cbfd40c487dd8f2392466fba8fe",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_guidance_evidence.py",
+      "baseline_sha256": "0004b5063e9d5c352b99614ecfbd28b514c0539cb69dd8420e764d13c883130b",
+      "fixed_sha256": "0004b5063e9d5c352b99614ecfbd28b514c0539cb69dd8420e764d13c883130b",
+      "working_raw_sha256": "c9aaa56f29345e6f368e89dab514afbe9b03a5a00a40bccdf209595253b1bb89",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_integration.py",
+      "baseline_sha256": "e20b3b73adaef898eb8ec80b387bafa76c1cccbcdb5876f02d89eae5f3c8e84d",
+      "fixed_sha256": "e20b3b73adaef898eb8ec80b387bafa76c1cccbcdb5876f02d89eae5f3c8e84d",
+      "working_raw_sha256": "c59b1e57fe7258b9fb78fec0d6e71ebf177d0a489ac8f96179920a4c2fe1c640",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_model.py",
+      "baseline_sha256": "d2e1353b5bea760d8d682cf497f22b648f94dcd0affa690fd61001325392ba0a",
+      "fixed_sha256": "d2e1353b5bea760d8d682cf497f22b648f94dcd0affa690fd61001325392ba0a",
+      "working_raw_sha256": "0b743c24127d96b3336218beb50154671b3e83f5b1b871d9fe790b4c51aabaa8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_normalize.py",
+      "baseline_sha256": "53888bd751565fbf8ae761a577068015e45b8aa709d64f28a1441830f81bf5ff",
+      "fixed_sha256": "53888bd751565fbf8ae761a577068015e45b8aa709d64f28a1441830f81bf5ff",
+      "working_raw_sha256": "821040fd5ff2af0bc43f4c15f5c49290c0cf49cba80e360bf9c3008f2072eeb7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_pit_real_dates.py",
+      "baseline_sha256": "9af6e12e6c3eee40c48a77bedcb147201054756362c1193a3cfb4060a6c6bae0",
+      "fixed_sha256": "9af6e12e6c3eee40c48a77bedcb147201054756362c1193a3cfb4060a6c6bae0",
+      "working_raw_sha256": "551d0f303a9a37cf235ed0e89612bf558a5b52825db1796aaed7a8d960a3dcbe",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_same_period_yoy.py",
+      "baseline_sha256": "ea17f2c02a6115aa4b1cc5a521b0a6ea392f7b39401b3fa3b5c57440fa1b1298",
+      "fixed_sha256": "ea17f2c02a6115aa4b1cc5a521b0a6ea392f7b39401b3fa3b5c57440fa1b1298",
+      "working_raw_sha256": "6e9bcc23447170bca4bde250ce1de00b0fb9699c9ae458509715b87e39d2a020",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_view.py",
+      "baseline_sha256": "2eb28ee819face63e1eeb57dd918ab2f4c201e3e038a61daac3ed3cd31d58d7f",
+      "fixed_sha256": "2eb28ee819face63e1eeb57dd918ab2f4c201e3e038a61daac3ed3cd31d58d7f",
+      "working_raw_sha256": "a73c7370b60ae0b6ee4c18c0399d390b707b4d67fb05f37bb670fdc8e7e9bd6a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_wire_format.py",
+      "baseline_sha256": "09e51041b8114385dcaf883334ed53cf5c9328ec3eee7d4b0c363ecfa28f14e9",
+      "fixed_sha256": "09e51041b8114385dcaf883334ed53cf5c9328ec3eee7d4b0c363ecfa28f14e9",
+      "working_raw_sha256": "5974560ed685f925d144fb37169ab0231b2d841609388bf803fe8b087a02077b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_catalog.py",
+      "baseline_sha256": "4bae64b1e71545e159b19f4ca1eedbad2c52158244f1cf8cd0bcbbdfa138c2bc",
+      "fixed_sha256": "4bae64b1e71545e159b19f4ca1eedbad2c52158244f1cf8cd0bcbbdfa138c2bc",
+      "working_raw_sha256": "5cec3dd2d179a378168467ca8f0827fe8aae752ea026ff95ee24f55d3fec31eb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_model.py",
+      "baseline_sha256": "816d7a63c94a417e095eb060eafd2430756537c59267042ddb14e496d15d4e59",
+      "fixed_sha256": "816d7a63c94a417e095eb060eafd2430756537c59267042ddb14e496d15d4e59",
+      "working_raw_sha256": "f764bc44ecc30311a58a33c41e6db9016ac950db534946397b07ba4f1e2d1e31",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_pit.py",
+      "baseline_sha256": "ede4c2f99fd3367f3893ce77f4b4a292358e73afba3fb326f8bb3189069b425f",
+      "fixed_sha256": "ede4c2f99fd3367f3893ce77f4b4a292358e73afba3fb326f8bb3189069b425f",
+      "working_raw_sha256": "f10167a43e4505413c3a03741714bac3c9f0fbea9a26aac00ac684fd6923bdd6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_news_catalog.py",
+      "baseline_sha256": "30c0ac3221cdc8314e692e0f18636c4b19611eb59cf47e929cddeef389b7a5e2",
+      "fixed_sha256": "30c0ac3221cdc8314e692e0f18636c4b19611eb59cf47e929cddeef389b7a5e2",
+      "working_raw_sha256": "4cf4601ae511c3adae8a5c2031c8a08c518f2f9bd5ec621e81e729d1d3cae3e3",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_news_pit.py",
+      "baseline_sha256": "aa455b567c3f06994be085487d9d77871e2b22b26a7bf365772a8c0c0c6c4a38",
+      "fixed_sha256": "aa455b567c3f06994be085487d9d77871e2b22b26a7bf365772a8c0c0c6c4a38",
+      "working_raw_sha256": "9217af49076d2adc9d576bac8a56261e58a27521f880b0da29c0d333d9730228",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_host_validation.py",
+      "baseline_sha256": "bd617a51450006d7b6c213fec618ec32653dfbd66dab8158b72c02a67f09678e",
+      "fixed_sha256": "bd617a51450006d7b6c213fec618ec32653dfbd66dab8158b72c02a67f09678e",
+      "working_raw_sha256": "4fa965595d4909d432f28a3bd8168a83b4af64425eb7d08c2cd9cc84b9c2ef1f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_hypothesis_schema.py",
+      "baseline_sha256": "e9902e95c369f7cce69f3a5dd72dd53f2e47f2d5fa5b8bb0baa26621b975a403",
+      "fixed_sha256": "e9902e95c369f7cce69f3a5dd72dd53f2e47f2d5fa5b8bb0baa26621b975a403",
+      "working_raw_sha256": "9770ffa9822fcba667a4716e84c3c459fd4d01ca6f30ae7fdc2b6f8016d84779",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_idea_schema.py",
+      "baseline_sha256": "51d490591360ade2b90b68aac6f1e868c8ee185a5a283b357bef865ea3512ec3",
+      "fixed_sha256": "51d490591360ade2b90b68aac6f1e868c8ee185a5a283b357bef865ea3512ec3",
+      "working_raw_sha256": "b7f6e3c26a7367d55ef0145a8c14681e03f55eff4da47d7e95919fb4ce1941a5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_incremental_research_update.py",
+      "baseline_sha256": "ec8d6e5502fa0109ea6e93f5dacf17580a5442ae45a521b5c6267d9be04a3e12",
+      "fixed_sha256": "ec8d6e5502fa0109ea6e93f5dacf17580a5442ae45a521b5c6267d9be04a3e12",
+      "working_raw_sha256": "acc0f3d5ed2a0537950c91abe697f8c18af1cf8e82ce06d242dcc48bc7cb1470",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_knowledge_schema.py",
+      "baseline_sha256": "5722c0a78986a563dcf7303ae51a47071128190001b95ac1fa676f48e3e884c4",
+      "fixed_sha256": "5722c0a78986a563dcf7303ae51a47071128190001b95ac1fa676f48e3e884c4",
+      "working_raw_sha256": "72d6e72787d7b92cd1f9d42c906c39a7ea185028f033da9bdb8155f54e36adb4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_lab_source_health.py",
+      "baseline_sha256": "1359e64ef953df8086bea482f39137be94fdca6aa2ee5965b9a9187b403d64fc",
+      "fixed_sha256": "1359e64ef953df8086bea482f39137be94fdca6aa2ee5965b9a9187b403d64fc",
+      "working_raw_sha256": "04a6ac065376344b03dccecb7bcaf09a98a2d002c67a640804d0dd94dd52c2c1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_local_snapshot.py",
+      "baseline_sha256": "85d29afe142d6bcb93da89ea47d14d727a746386a72c24af2752054cbffcff17",
+      "fixed_sha256": "85d29afe142d6bcb93da89ea47d14d727a746386a72c24af2752054cbffcff17",
+      "working_raw_sha256": "e6483afb042c08203d1ce2026636acf7ff3db3f98a7a1f39cc2eeff5461f275a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_catalog.py",
+      "baseline_sha256": "9b976d8d7f20654dd1bfe662fbdf788de62ff0956ca78416eee6d28ca48118f2",
+      "fixed_sha256": "9b976d8d7f20654dd1bfe662fbdf788de62ff0956ca78416eee6d28ca48118f2",
+      "working_raw_sha256": "3500342f025ee1861ea47bdf53b57c08641129a0fa6c2b787406822924e44650",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_event_surprise.py",
+      "baseline_sha256": "986005071d658b2f1e48b5500cd071ceb3aa857f8da740a411ef2470b18f60d6",
+      "fixed_sha256": "986005071d658b2f1e48b5500cd071ceb3aa857f8da740a411ef2470b18f60d6",
+      "working_raw_sha256": "acbaae9f51f5fd300e5849c665b37d5216847fd4f94f931d9ac265c9cc003780",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_model.py",
+      "baseline_sha256": "b00e362270d8c5a54e93bacfe35be68455f5010770089d477c1009f4b94cd2e7",
+      "fixed_sha256": "b00e362270d8c5a54e93bacfe35be68455f5010770089d477c1009f4b94cd2e7",
+      "working_raw_sha256": "b28297f96f7205192ba60582de46e0fa585812037f64946643cd119d090a9572",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_pit.py",
+      "baseline_sha256": "07dab80a2c377c3c4f9190b1a52b35661ee82690aaf1aaf759d417caa5344415",
+      "fixed_sha256": "07dab80a2c377c3c4f9190b1a52b35661ee82690aaf1aaf759d417caa5344415",
+      "working_raw_sha256": "499e18c9ad871057e7d09a235ef40a4397e4c21c1df40aba48a37498e1170b55",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_market_calendar.py",
+      "baseline_sha256": "a5e8a6c75e7bd9955a5839021582abd0dae8ce5d6bb1d527f717c6e97c824197",
+      "fixed_sha256": "a5e8a6c75e7bd9955a5839021582abd0dae8ce5d6bb1d527f717c6e97c824197",
+      "working_raw_sha256": "65378de2fc09fc8abd20f7f84022868211175b2105cd0ab15a9d03e3d08c43b9",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_catalog.py",
+      "baseline_sha256": "59afb496808e9afe51cefcc9d24f85a1d9aa9b2ba88e3714834dcd8ff54d4a93",
+      "fixed_sha256": "59afb496808e9afe51cefcc9d24f85a1d9aa9b2ba88e3714834dcd8ff54d4a93",
+      "working_raw_sha256": "f7a041280c8a2528d2cd3640b6bccf6c4beeadd6f22b3b191180a0e00eeccf4a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_model.py",
+      "baseline_sha256": "e2242e7a00e5e3b93d50a203de72a0061e9a2d60bc179393a0c03bc97daaeacd",
+      "fixed_sha256": "e2242e7a00e5e3b93d50a203de72a0061e9a2d60bc179393a0c03bc97daaeacd",
+      "working_raw_sha256": "58a6191306a5b21fa6a2ada10f05f7521ea1d9ea5f1cee13566d8aa6a0ffc9be",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_pit.py",
+      "baseline_sha256": "4405a7d8e9599487c3de1b6e7293c8396f889c4123e9d426daac28c0a3780b83",
+      "fixed_sha256": "4405a7d8e9599487c3de1b6e7293c8396f889c4123e9d426daac28c0a3780b83",
+      "working_raw_sha256": "2e99a65781018ec3fda7fda89dcf22a706c8277e48ef3622863c930e0f48b03c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_paper_trade_schema.py",
+      "baseline_sha256": "cb023e6ada074fcf8b10d6210aa7327542dbc9b85df22448f1db98c0b7b4f865",
+      "fixed_sha256": "cb023e6ada074fcf8b10d6210aa7327542dbc9b85df22448f1db98c0b7b4f865",
+      "working_raw_sha256": "199fa255546dbbef090aae8f7e9938a12b084f88e9cc0660b54d11f21276408f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_builder.py",
+      "baseline_sha256": "0b28c7a86f0edcec40b898128ce43c54db32cf869ff3072901a68861b17f68a9",
+      "fixed_sha256": "0b28c7a86f0edcec40b898128ce43c54db32cf869ff3072901a68861b17f68a9",
+      "working_raw_sha256": "83a71cf689708046e77f068373c17d61a7348a30a09762e28e14ee379662d0f7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_catalog_capability.py",
+      "baseline_sha256": "49b6e3c3ba88a1e910ae539024551969d1334ef7c2068c34283e4eddb5667f7d",
+      "fixed_sha256": "49b6e3c3ba88a1e910ae539024551969d1334ef7c2068c34283e4eddb5667f7d",
+      "working_raw_sha256": "1695133dc3f7bac9938b03c97fe5edbefd53c5a70ecce9694da1ff2b3e67f789",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_comparability.py",
+      "baseline_sha256": "e0ec31e230c7a8a0f027dab7931cd56a0a0ee5287d7d4760d591a515a182fff1",
+      "fixed_sha256": "e0ec31e230c7a8a0f027dab7931cd56a0a0ee5287d7d4760d591a515a182fff1",
+      "working_raw_sha256": "8dbeedd42f9f4db56dc2a3457254594cc375a049a302f28a3a59ed7817949291",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_evidence_provenance.py",
+      "baseline_sha256": "9617faceec650780769476253f4075a7ca90b9f2493172165707b0cba1df9c5d",
+      "fixed_sha256": "9617faceec650780769476253f4075a7ca90b9f2493172165707b0cba1df9c5d",
+      "working_raw_sha256": "583195ffde84fc1d1a8a8efce923f495836515cd4608750828ec2dc69a07a29a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_model.py",
+      "baseline_sha256": "2399f5799df1cab3fb611d2406d644ffede133816c03ee133d015c31928f83f5",
+      "fixed_sha256": "2399f5799df1cab3fb611d2406d644ffede133816c03ee133d015c31928f83f5",
+      "working_raw_sha256": "b34ceee5439e7ea67ed0a98bcd8806145462a54eefb45c1fee9a20ec1ab02644",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_research_artifact_integration.py",
+      "baseline_sha256": "77b202398d4b8ea251885e84743770a864338388765f913b816f5ace7b0e7f80",
+      "fixed_sha256": "77b202398d4b8ea251885e84743770a864338388765f913b816f5ace7b0e7f80",
+      "working_raw_sha256": "6a3a52532bb274440033915eb119b7e022a5397b64c2c2ede68a55291b3ae48e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_universe.py",
+      "baseline_sha256": "7245f3e37a739918c4fe107d77e5ee78e2b57742ec17b138e06042449ca12c91",
+      "fixed_sha256": "7245f3e37a739918c4fe107d77e5ee78e2b57742ec17b138e06042449ca12c91",
+      "working_raw_sha256": "810c7649d87c4ebf19e477e53698dec8a72e64e94f0461b665f0c9c83f996acc",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_script.py",
+      "baseline_sha256": "943acf440959af3e016c6b1812e233a5012b9d1c40e0713cad760c5f8737b8e1",
+      "fixed_sha256": "943acf440959af3e016c6b1812e233a5012b9d1c40e0713cad760c5f8737b8e1",
+      "working_raw_sha256": "a0fc0fd74804025f94b4bbd21bf5bb0a4a46fd090adcd1fc2a88bddfa34697d6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pipeline_integration.py",
+      "baseline_sha256": "7f94fc2fbfabc94ddbd4a5506981bdc19301119eac82166c1939c9721e852221",
+      "fixed_sha256": "7f94fc2fbfabc94ddbd4a5506981bdc19301119eac82166c1939c9721e852221",
+      "working_raw_sha256": "6b9abea849a17e69ef7fa74ec3a682677536c66ddb03047c055d700fb3ae2b9d",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_as_of_adjustment.py",
+      "baseline_sha256": "20a2a7b17e7a03b44708bc26860896099e91438e1c9fa1dd396d3dc2285ceded",
+      "fixed_sha256": "20a2a7b17e7a03b44708bc26860896099e91438e1c9fa1dd396d3dc2285ceded",
+      "working_raw_sha256": "e7c80a44d20b909cb276012a640c58a6a1cbdd98381f605012d0c07bc46f320a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_gate_cross_capability_semantics.py",
+      "baseline_sha256": "a8b04d647723b661abc715e1c0930af454aa7efcf5bd4774a3e8fa3f53091238",
+      "fixed_sha256": "a8b04d647723b661abc715e1c0930af454aa7efcf5bd4774a3e8fa3f53091238",
+      "working_raw_sha256": "49ce3cae7421fabeb30cac2f5fde8c5175ff71422434bb5b4f1987bb708eb444",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_principles.py",
+      "baseline_sha256": "f664a2a7893b8ba396edb0c76adca9980a16fdd65495c9e2deb917a4fab2e080",
+      "fixed_sha256": "f664a2a7893b8ba396edb0c76adca9980a16fdd65495c9e2deb917a4fab2e080",
+      "working_raw_sha256": "b4ec664f001c2ab211c7811c2837d520cf53035a221027cd4eb634b374b743ee",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_point_in_time.py",
+      "baseline_sha256": "430ccfad0d4b31cc707552c286a518a9988d3c799877a2ce766472bac7b5fa85",
+      "fixed_sha256": "430ccfad0d4b31cc707552c286a518a9988d3c799877a2ce766472bac7b5fa85",
+      "working_raw_sha256": "a346582b6ec63bf6168ee2f603d947218eb04abeadc5df9f6c8d45c4aafad07b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_portfolio_scenario.py",
+      "baseline_sha256": "b41664a5edbfb53bed3a4f3a139b349b00bcb8922157b8aaf5102b8889a17098",
+      "fixed_sha256": "b41664a5edbfb53bed3a4f3a139b349b00bcb8922157b8aaf5102b8889a17098",
+      "working_raw_sha256": "ea8e4065d4daac6cdff39366bd4da1ed2de1a864ccc23dd3cf171e2e54e90de5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_catalog.py",
+      "baseline_sha256": "dd134c6f87fd8cc9302e2f097b76b87e502f4fb62bbd43b6104b166185843c98",
+      "fixed_sha256": "dd134c6f87fd8cc9302e2f097b76b87e502f4fb62bbd43b6104b166185843c98",
+      "working_raw_sha256": "bae377df365a1d07f5198eb498b7c1a69e13d540a0936faf5f59baed8ae252d5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_model.py",
+      "baseline_sha256": "22923db9213f4ec479f7c8948e2f9773687fbb068857fa1cea1885e1fc6734d2",
+      "fixed_sha256": "22923db9213f4ec479f7c8948e2f9773687fbb068857fa1cea1885e1fc6734d2",
+      "working_raw_sha256": "679d5132e246b0e523e0ac04a7018d5fde1e5bae84ea5c50dacf2937e84820e7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_pit.py",
+      "baseline_sha256": "87edfa015f2e43216a33ca029bf92e425ea01527779d6ec4fef9cfaa327fea77",
+      "fixed_sha256": "87edfa015f2e43216a33ca029bf92e425ea01527779d6ec4fef9cfaa327fea77",
+      "working_raw_sha256": "4f87f0ec81250f2da83bf1e8e1a35ecb5e36c484254c6b6bfbb87ec98f1daa37",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_price_derived.py",
+      "baseline_sha256": "bded1f46693595f1fc5f6fe2f57f072fd543279ea33a4e7c1363e2243d083679",
+      "fixed_sha256": "bded1f46693595f1fc5f6fe2f57f072fd543279ea33a4e7c1363e2243d083679",
+      "working_raw_sha256": "4b924861f27a22fa75d3c669ed012a4950ae8495755a91c446414c24624d5955",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py",
+      "baseline_sha256": "2e4e98f085fb183ade8bfcf547d0a4929033097a994d585ae31c0de1e53263e5",
+      "fixed_sha256": "2e4e98f085fb183ade8bfcf547d0a4929033097a994d585ae31c0de1e53263e5",
+      "working_raw_sha256": "c0e99ebae6f6939ffdc65a4df95d759b9bfd17fefda88a5291f72a3e1023899b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_price_data.py",
+      "baseline_sha256": "f2fef8b224d8814b927933ec85f680aec1636635effb795023ded070be69f90c",
+      "fixed_sha256": "f2fef8b224d8814b927933ec85f680aec1636635effb795023ded070be69f90c",
+      "working_raw_sha256": "aded2d0f7f8950afd51cb3ac30636d6782860a4ac27fe86fa2ec039cfdb58efc",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_protected_path_hook.py",
+      "baseline_sha256": "d1c6e7d4335e428ca86314be9f72dcd6e0f216850f49aeb50f5126cb4e20d3aa",
+      "fixed_sha256": "d1c6e7d4335e428ca86314be9f72dcd6e0f216850f49aeb50f5126cb4e20d3aa",
+      "working_raw_sha256": "ffca1e2b26272e64e969a31888ed2420f156430b888670a8eafa8571739c9232",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_provenance.py",
+      "baseline_sha256": "78e1947662eae027135a8f03548e4240f792b7b7f13e668fc0f033da85c16c02",
+      "fixed_sha256": "78e1947662eae027135a8f03548e4240f792b7b7f13e668fc0f033da85c16c02",
+      "working_raw_sha256": "f5e442ef03be0e4ff3234451232c4cadeb7eecc788c2af9933b93c67d36db1d7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_reproducibility.py",
+      "baseline_sha256": "342a7ac5db1452aba749e6d255af106961ea72229f149edbda68617dede50ab3",
+      "fixed_sha256": "342a7ac5db1452aba749e6d255af106961ea72229f149edbda68617dede50ab3",
+      "working_raw_sha256": "25ebce0150f665042066a41e4f9959a2171307eff3d2f5ab4f7fcfc827e9c616",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_artifact.py",
+      "baseline_sha256": "15e24b5fbb13aa99ee267e299766deef2381cacdabe4a55145316e5f4a399ee8",
+      "fixed_sha256": "15e24b5fbb13aa99ee267e299766deef2381cacdabe4a55145316e5f4a399ee8",
+      "working_raw_sha256": "3cae985dbde4aa5338aac189d286c99aa4dc393c13c79babd3aa1fbc47b4681a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_artifact_registry.py",
+      "baseline_sha256": "4f857d9381a27558cd042d18ab96f4de98918ce2a542a25b4acdf9e353a7799a",
+      "fixed_sha256": "4f857d9381a27558cd042d18ab96f4de98918ce2a542a25b4acdf9e353a7799a",
+      "working_raw_sha256": "84f319d2b448ef8e395474a40a47e10783a35e6a8be56aa23a4f7ee73940895f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_validation_pipeline.py",
+      "baseline_sha256": "cb6884d380af3ee2e32f2d865d81a4fbda3b44e16cef6d2793942effb3446c5e",
+      "fixed_sha256": "cb6884d380af3ee2e32f2d865d81a4fbda3b44e16cef6d2793942effb3446c5e",
+      "working_raw_sha256": "bafbbe4d439d54ab779f29cb327134cc47889ee683b937be74adeebd4d742b4a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_short_term_reversal_strategy.py",
+      "baseline_sha256": "e9abcf3a2107cdbad31023ba2674c35eb7e5fa4fa5b79ceebd3dd02f3dc9fb5f",
+      "fixed_sha256": "e9abcf3a2107cdbad31023ba2674c35eb7e5fa4fa5b79ceebd3dd02f3dc9fb5f",
+      "working_raw_sha256": "7bbd24dfdb52854d086cd83519eb928facae394d453b2254fdf405510e4babf6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_snapshot.py",
+      "baseline_sha256": "440021056dec1a5a0610fed5ec16833e14e1858595b3c1ffd18fd4beb5f210c2",
+      "fixed_sha256": "440021056dec1a5a0610fed5ec16833e14e1858595b3c1ffd18fd4beb5f210c2",
+      "working_raw_sha256": "c75ddce7f16070c6093892415534f5b8ecd36ca12e10f2677eabc9823e7313ce",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_source_catalog.py",
+      "baseline_sha256": "49a61d48f129ad69a3300ab6578ecb9ec3b6943349bbbcbe5ac29df93261ee68",
+      "fixed_sha256": "49a61d48f129ad69a3300ab6578ecb9ec3b6943349bbbcbe5ac29df93261ee68",
+      "working_raw_sha256": "a74f734a1c8757d7651c4f2360436c9766e18da5a483660c5c3ffca031e53665",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_source_providers.py",
+      "baseline_sha256": "c6f8f9cf968d64187fa29e614b6f6fc2e971f29959f2a6e1934a3c4dab358baf",
+      "fixed_sha256": "c6f8f9cf968d64187fa29e614b6f6fc2e971f29959f2a6e1934a3c4dab358baf",
+      "working_raw_sha256": "263fe89b6a18955e05fb6d0ff22dd656eed3611bd49b10834a23d48d1e43c2cf",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_strategy_schema.py",
+      "baseline_sha256": "466a36801ba2855539f9a7d15f18e89d55e97909be400dc150651409066143a9",
+      "fixed_sha256": "466a36801ba2855539f9a7d15f18e89d55e97909be400dc150651409066143a9",
+      "working_raw_sha256": "d4c8fadd1c2960484aab39ea8c4fa88802e743abbe81a81bdb0da4deaf741e22",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_adapter.py",
+      "baseline_sha256": "9d78275acb5ac4e60eefcd5252896183ff9b6909efe00a8c247e9c17392d90f5",
+      "fixed_sha256": "9d78275acb5ac4e60eefcd5252896183ff9b6909efe00a8c247e9c17392d90f5",
+      "working_raw_sha256": "75d4b7c8d0cb7ef6e4c93a2d17deb6a0ab1d53767f8f43c9ff05dd66736803bb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_catalog.py",
+      "baseline_sha256": "8bca9d6bfd765231c1abc18b6d1433b60249c957c5233ef66936d6e8d9c8d142",
+      "fixed_sha256": "8bca9d6bfd765231c1abc18b6d1433b60249c957c5233ef66936d6e8d9c8d142",
+      "working_raw_sha256": "8efc1e7b31b77a229f6176a86abebfb7b5010536c86c86683e4979ad73e0a3c0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_cursor.py",
+      "baseline_sha256": "34aa7da94d4fc22eba78ab7b31251f7a228faaf5e560c6c50992c4c5244526f4",
+      "fixed_sha256": "34aa7da94d4fc22eba78ab7b31251f7a228faaf5e560c6c50992c4c5244526f4",
+      "working_raw_sha256": "219854fe1dc38877c9fddc28d90086895533dcfdd98572086d8e01b338b185a1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_integration.py",
+      "baseline_sha256": "7e092c1aca8cb85c7d537fc149db7597e948be612794d33d6584f37c5fb235e0",
+      "fixed_sha256": "7e092c1aca8cb85c7d537fc149db7597e948be612794d33d6584f37c5fb235e0",
+      "working_raw_sha256": "b2bf7b87e4fb53af111eea153d9af11a3a98f6d6acce09109b008b9935a304f3",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_normalize.py",
+      "baseline_sha256": "b99e257244a967689e7e49efca82b79a460be7572638051582785d02e91717c6",
+      "fixed_sha256": "b99e257244a967689e7e49efca82b79a460be7572638051582785d02e91717c6",
+      "working_raw_sha256": "dd1bb0d6b31f4219c3cb1879a6141cea49209c864e87e85f3987e2fc82460fc6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_thesis_impact.py",
+      "baseline_sha256": "a98b1b35dfd6b7446a795957b2340dced6df28466600ffd6dac362a63394b27b",
+      "fixed_sha256": "a98b1b35dfd6b7446a795957b2340dced6df28466600ffd6dac362a63394b27b",
+      "working_raw_sha256": "14c7e206ef780d4db9264433c51f4370b0f0b1b0499da9963461333a082100e3",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_ticker_codes.py",
+      "baseline_sha256": "df77632aee0e2fe556f2cc310f0631340fdf1118f9cd739ab104ca8694fd5530",
+      "fixed_sha256": "df77632aee0e2fe556f2cc310f0631340fdf1118f9cd739ab104ca8694fd5530",
+      "working_raw_sha256": "0f6badf2f3dae4aad30fc0949015d9ecaaca3bf2b0afbf36b2fc031ac4d95bbe",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_trading_calendar_real_holidays.py",
+      "baseline_sha256": "608c603640881a82946ddef27284bee82572ce349a08d052b2f7416dfd151c94",
+      "fixed_sha256": "608c603640881a82946ddef27284bee82572ce349a08d052b2f7416dfd151c94",
+      "working_raw_sha256": "9cf12b438f20f48e5b402f1b4b3afd11ad419feb33b7c2d3f6a8c6a09da7b257",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_universe.py",
+      "baseline_sha256": "be4fed62c4214dd259260dfbdf33d1fde9dcb5b9e67034a6d07f01e53c66b1d8",
+      "fixed_sha256": "be4fed62c4214dd259260dfbdf33d1fde9dcb5b9e67034a6d07f01e53c66b1d8",
+      "working_raw_sha256": "70dfd2fea867edfb2160710360be845edbf50dfeb1587fabf8352bbb6b04aae7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_universe_survivorship.py",
+      "baseline_sha256": "6044b2b3523f5fe6026c9edc61d191bc586d1cb495774fcb286141a25c892bef",
+      "fixed_sha256": "6044b2b3523f5fe6026c9edc61d191bc586d1cb495774fcb286141a25c892bef",
+      "working_raw_sha256": "3d49b7acef30347e66c6c340f5ba3760f56ed5a67ee6d1cb5d3f3f7f10c1d3b8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_current_fy_company_forecast_per.py",
+      "baseline_sha256": "b2f4bf35f4244a0f8965e4bc00cc9ac526bc26e6b8f347e2b0834f13ee16705b",
+      "fixed_sha256": "b2f4bf35f4244a0f8965e4bc00cc9ac526bc26e6b8f347e2b0834f13ee16705b",
+      "working_raw_sha256": "c984395042cc1065422b8a0a4eda42085d9620b166e31ccafd33949a072b25e7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py",
+      "baseline_sha256": "2e76ce929a5f2ae05495a2d023bc30bed203d5383fe6671df9c6c28568626c96",
+      "fixed_sha256": "2e76ce929a5f2ae05495a2d023bc30bed203d5383fe6671df9c6c28568626c96",
+      "working_raw_sha256": "05d51fa61aa350b02129997ca68f5930f27a7e8718c77cb71ffec81522245a3a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_historical_context.py",
+      "baseline_sha256": "a0f31deb9bc2ea6dbb9e332467c144e162d3f21e090738b386f0a1b8100c2d73",
+      "fixed_sha256": "a0f31deb9bc2ea6dbb9e332467c144e162d3f21e090738b386f0a1b8100c2d73",
+      "working_raw_sha256": "5e346213e87f3a4949cc7139ee71dec956f56b69385cca72aa1d82c38c4a94cf",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_latest_reported_fy_per.py",
+      "baseline_sha256": "4e47e44584d231f82581dfa97e5ec07551f19fb49f7017b83ecea6c13d514c01",
+      "fixed_sha256": "4e47e44584d231f82581dfa97e5ec07551f19fb49f7017b83ecea6c13d514c01",
+      "working_raw_sha256": "72de5fa81c6e4a51360fb0c785af9daf9cb03c25ca54262798db2d2549ddc15f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_provenance.py",
+      "baseline_sha256": "ad1596e44cf5022613b3237d7efd87367513323d9f2bd27409a228a8073b4a50",
+      "fixed_sha256": "ad1596e44cf5022613b3237d7efd87367513323d9f2bd27409a228a8073b4a50",
+      "working_raw_sha256": "ba72e20ff29ede7e63de9bc4538c725e1873b18b07ee5706f42c121f7657f09d",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/benchmark.py",
+      "baseline_sha256": "7bf5c9b33078155dd2c24effe9a74facdd436c0af4ac873d3ffe8e90519357ab",
+      "fixed_sha256": "7bf5c9b33078155dd2c24effe9a74facdd436c0af4ac873d3ffe8e90519357ab",
+      "working_raw_sha256": "f49162a6a882950472d15298018c6f5a63f8e97b8024ce3adcf477bb5260a863",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/engine.py",
+      "baseline_sha256": "fa219fbc79bf460f39612e9ae2d9f32fba745ccaf7c7134ef190dd749b2822ec",
+      "fixed_sha256": "fa219fbc79bf460f39612e9ae2d9f32fba745ccaf7c7134ef190dd749b2822ec",
+      "working_raw_sha256": "0dcaca0640aeef34a2f760533992eb5bc30ca03b5a43f4ee8a13aaa63b7fe7e0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/price_history.py",
+      "baseline_sha256": "7b9da5953d8ed8cd730856085920837a1e199d32c6d79ed842d0a9919f079986",
+      "fixed_sha256": "7b9da5953d8ed8cd730856085920837a1e199d32c6d79ed842d0a9919f079986",
+      "working_raw_sha256": "bca125b64d7041b9841052f8f4fbf729bb15274926e553b94040cd608eea9593",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/catalog.py",
+      "baseline_sha256": "96ed4786333adb864139435065f00ddb7b461262dbc655fce8aba582402c4bb2",
+      "fixed_sha256": "96ed4786333adb864139435065f00ddb7b461262dbc655fce8aba582402c4bb2",
+      "working_raw_sha256": "8049fcbe8ccfc905c13ba8f34ad9595d3be109c57b8dd4c3a7aaa5175d8ced2f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/evidence.py",
+      "baseline_sha256": "251a188b32ca7349c13878a65f8b262b9c6e9b26550e6c8b70333eee160e843a",
+      "fixed_sha256": "251a188b32ca7349c13878a65f8b262b9c6e9b26550e6c8b70333eee160e843a",
+      "working_raw_sha256": "a3d4e0e8c75b6bfae13f738a73acb1843243fe327b0698f203f5f63e3252f8a8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/model.py",
+      "baseline_sha256": "3055b5a97e99b8519b41e76bfa542ed94beaa587b7a107a8f87644bb9509fd77",
+      "fixed_sha256": "3055b5a97e99b8519b41e76bfa542ed94beaa587b7a107a8f87644bb9509fd77",
+      "working_raw_sha256": "80b773f19b4fa9093934a43f4df542333798549e4ef4b980e4cd2c3637c2079e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/normalize.py",
+      "baseline_sha256": "857d50a41623c4d90774fb1d55b8c5d8b78a2e803884f95b864c864b4b37d984",
+      "fixed_sha256": "857d50a41623c4d90774fb1d55b8c5d8b78a2e803884f95b864c864b4b37d984",
+      "working_raw_sha256": "9b067a144f5e31397a105767bfe62e48885a4b9f4fcf7fa81d10a34c683a9077",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/view.py",
+      "baseline_sha256": "37583729ff85e1fdf6efa044f5ca91273f32a67aeb174b1a00669be05dd36d81",
+      "fixed_sha256": "37583729ff85e1fdf6efa044f5ca91273f32a67aeb174b1a00669be05dd36d81",
+      "working_raw_sha256": "fb48b00793d1426e08bb1d6aaef08171d17df3bbaca441e65b6d8ee8d0e433ed",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/base.py",
+      "baseline_sha256": "f22e85c3c4c889e912efe0ec3332342301983aee733a4d55b9a4335b3ccc7c03",
+      "fixed_sha256": "f22e85c3c4c889e912efe0ec3332342301983aee733a4d55b9a4335b3ccc7c03",
+      "working_raw_sha256": "a8092502fdcba9a1b4783a2ba58ba26a23b0fc655179919afd5ea806a5dfc1ae",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/convert.py",
+      "baseline_sha256": "20b94947cf1e87012dd4b255c91d27f45a0f8456745161042d6c97d66a57629e",
+      "fixed_sha256": "20b94947cf1e87012dd4b255c91d27f45a0f8456745161042d6c97d66a57629e",
+      "working_raw_sha256": "57ca06298a80db1db32e28b1d85f0cffdbf8b7354152c355900a773ee21b4c50",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/fixture.py",
+      "baseline_sha256": "7ac9f391198476ee57dadb80bd0374a2c790bb2615ec36b06fce31f210d6f942",
+      "fixed_sha256": "7ac9f391198476ee57dadb80bd0374a2c790bb2615ec36b06fce31f210d6f942",
+      "working_raw_sha256": "5cf9b7e6f16a0c000a5ee2792c736822d0ff4db9d9117ab00d8a367b6bbbae4e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/jquants.py",
+      "baseline_sha256": "f0a227d5a157e6ae81df05ef0c42713f0f4fcd700df013b7ce79c84286291c14",
+      "fixed_sha256": "f0a227d5a157e6ae81df05ef0c42713f0f4fcd700df013b7ce79c84286291c14",
+      "working_raw_sha256": "677c6f21fec07009d7a529091152a4200a15f1d87707cbcbe8795163053dea11",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/local_snapshot.py",
+      "baseline_sha256": "72b72c5e917633345da3a1e37c6b7b599398934a66e10e4b16fdf06aedef7c9f",
+      "fixed_sha256": "72b72c5e917633345da3a1e37c6b7b599398934a66e10e4b16fdf06aedef7c9f",
+      "working_raw_sha256": "19dbcd74c4b31af7b3bd4fe1f5a9119c949ad104287764589fc3d6d13602a361",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/ticker_codes.py",
+      "baseline_sha256": "9c330d2173efdef5f61457fcadf3fd8ff85a7ec9d99f8f3ea8ee7fddc11d53d6",
+      "fixed_sha256": "9c330d2173efdef5f61457fcadf3fd8ff85a7ec9d99f8f3ea8ee7fddc11d53d6",
+      "working_raw_sha256": "ec23b65f90ce45f7d5313aa90a3a93deb7227d47c2321b481797c3ab7e1ede21",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+      "baseline_sha256": "edf51a6161ef40556b093f282a241ea95e1208c4a22b5be2651a66735b11b4b3",
+      "fixed_sha256": "edf51a6161ef40556b093f282a241ea95e1208c4a22b5be2651a66735b11b4b3",
+      "working_raw_sha256": "c8df12435a6ee09e76750db86acd8c4dfc4449d0fdd83481e124f37d9e119cc3",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/catalog.py",
+      "baseline_sha256": "b35ea149d4277308737b57f465406da7cb933738c050226f05eb45630efad7b6",
+      "fixed_sha256": "b35ea149d4277308737b57f465406da7cb933738c050226f05eb45630efad7b6",
+      "working_raw_sha256": "9299617bcc73f9b97fd3de15f248fb54368451e7ed23e8ac4f39555bb04882f7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence.py",
+      "baseline_sha256": "96b3a4b90d6d9b4122287cab75bc12e08368ecbb1093ea2dd9fc5e523c62065f",
+      "fixed_sha256": "96b3a4b90d6d9b4122287cab75bc12e08368ecbb1093ea2dd9fc5e523c62065f",
+      "working_raw_sha256": "92c6bf759c6101dc653b72578dcb680aa3d9cb36c820dfb3d329cb4ceb1f13d6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+      "baseline_sha256": "df116251877ccaa87c16b53a0128cfb4a86386ad57f391f04ff2d57bca529ec0",
+      "fixed_sha256": "df116251877ccaa87c16b53a0128cfb4a86386ad57f391f04ff2d57bca529ec0",
+      "working_raw_sha256": "9c12453fa8ba1c49d751df131bc0851838467fc99455c4f950e5cc3b2d43bc2a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+      "baseline_sha256": "36f2eb88769b5586f6eaa497ffabd2ca249dec559b1af5612b29fd037fcb3e82",
+      "fixed_sha256": "36f2eb88769b5586f6eaa497ffabd2ca249dec559b1af5612b29fd037fcb3e82",
+      "working_raw_sha256": "d56d0d2b6835040fe2420ababa6a020cad9122eea9f94acb0480ef2d5f7d0edb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+      "baseline_sha256": "10d4e283ac46ff7f50f517da3ea379be65738ce45c398656fa42671a8490cbe7",
+      "fixed_sha256": "10d4e283ac46ff7f50f517da3ea379be65738ce45c398656fa42671a8490cbe7",
+      "working_raw_sha256": "83de5b11ed38776ee9edffff0c3fbc54f63df8dae6f7a11f8928574431303c4a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/model.py",
+      "baseline_sha256": "eab2d3b07036b1140d9802760a629e2c8144b1961b152de6a71d9e9c31422984",
+      "fixed_sha256": "eab2d3b07036b1140d9802760a629e2c8144b1961b152de6a71d9e9c31422984",
+      "working_raw_sha256": "b687a76ca75950d554c908ec9edfb665fbddae71a0114a5d8d310f3f856470b9",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+      "baseline_sha256": "53823e9d140dd7b35ade4e3d44f6602bc273f7f29919ad5e4896db8b360656ff",
+      "fixed_sha256": "53823e9d140dd7b35ade4e3d44f6602bc273f7f29919ad5e4896db8b360656ff",
+      "working_raw_sha256": "f23806ac76c772f27465b87ca2fd543145aa0735e04ca45b7dbf0c41af24fc00",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/normalize.py",
+      "baseline_sha256": "073da604051c2d919c627e4a3726c70cec30b0c6927352b847fa33e6990bff87",
+      "fixed_sha256": "073da604051c2d919c627e4a3726c70cec30b0c6927352b847fa33e6990bff87",
+      "working_raw_sha256": "2b7fff20d7fd9c89cae2a519d32b13f1aa2953a6ca44617d6f6a5b89eb33c79a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/__init__.py",
+      "baseline_sha256": "839f5df573ba44c1eae435ae7a5b903b9f578a406095993dbf2907153e1b7a6d",
+      "fixed_sha256": "839f5df573ba44c1eae435ae7a5b903b9f578a406095993dbf2907153e1b7a6d",
+      "working_raw_sha256": "24416204fc1bf0dd4d497acca9010c2512e3e6cb0e69ec51ec3a7c273ce80573",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/company_ir.py",
+      "baseline_sha256": "580e35018527e6921f78ed7d06c1f56fdc5fab99dc4662f597befaacc18b8005",
+      "fixed_sha256": "580e35018527e6921f78ed7d06c1f56fdc5fab99dc4662f597befaacc18b8005",
+      "working_raw_sha256": "8c639ca06b749ca4df56b20beb90518e1b7cf567af1b1a16a25a208864d5c248",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/company_ir_normalize.py",
+      "baseline_sha256": "08e25e812fdb940bb4f29da5b0ee254a08ac775c0a4e411919aa9a064457ae20",
+      "fixed_sha256": "08e25e812fdb940bb4f29da5b0ee254a08ac775c0a4e411919aa9a064457ae20",
+      "working_raw_sha256": "906b52b785cbd3f84e9685960e7ee6f58feab85801e7f5a7d0a1a61a93617c8f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet.py",
+      "baseline_sha256": "c8f3b6918fb805bcbb71a1446846de071abf3d564b08f4e77916fc7825008a25",
+      "fixed_sha256": "c8f3b6918fb805bcbb71a1446846de071abf3d564b08f4e77916fc7825008a25",
+      "working_raw_sha256": "c18a34188738650d4a2d8d52ae46ff6afcf41998b32b8ffaa4ff65a46558a8d8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet_normalize.py",
+      "baseline_sha256": "7a943cf205480b89144c705d17dae71911781a5215ef693ee367729ea8f3d100",
+      "fixed_sha256": "7a943cf205480b89144c705d17dae71911781a5215ef693ee367729ea8f3d100",
+      "working_raw_sha256": "addc4d224f93456ff7cef4fac40106319c6fb53222792d8e80653aae351befe3",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet_zip.py",
+      "baseline_sha256": "a34e2c5c9ac273d1a7a40796293e3154f38953fbfad2372907e213709aeb2dd6",
+      "fixed_sha256": "a34e2c5c9ac273d1a7a40796293e3154f38953fbfad2372907e213709aeb2dd6",
+      "working_raw_sha256": "71766d3eb291554d800f23a37b316e73863e585ef5f83d713cab2e400ac390a4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet.py",
+      "baseline_sha256": "c92dd3dbb64a0a275b2fcba560d42973596f405dd95d53c6b2c3c0aa4e719c7c",
+      "fixed_sha256": "c92dd3dbb64a0a275b2fcba560d42973596f405dd95d53c6b2c3c0aa4e719c7c",
+      "working_raw_sha256": "454934e0c4f42f3e8e6d1479d15f179dc6bf56edb7cbb49d5484c4b86beccb2c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet_cursor.py",
+      "baseline_sha256": "78ed88ae6455d944c9b3e8ed2992461eaafe1e09973ff152de8b6d0f7093780d",
+      "fixed_sha256": "78ed88ae6455d944c9b3e8ed2992461eaafe1e09973ff152de8b6d0f7093780d",
+      "working_raw_sha256": "c25226140d8144290a95dac11e506d2bd51602d94901de0fe44ed58b6f2ef27c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet_normalize.py",
+      "baseline_sha256": "59a5b75c133e955e3f900f59c005fd4b53f9a728fdb8262f8d63267e038bb916",
+      "fixed_sha256": "59a5b75c133e955e3f900f59c005fd4b53f9a728fdb8262f8d63267e038bb916",
+      "working_raw_sha256": "44561cce2a87ef5455194df09255137281f8eacff1ecdc8b95fe3faac5f22f32",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+      "baseline_sha256": "41c72044539cc47468bc7a4b2a92826f4dfd418de386ce7e61187821d76ce7bc",
+      "fixed_sha256": "41c72044539cc47468bc7a4b2a92826f4dfd418de386ce7e61187821d76ce7bc",
+      "working_raw_sha256": "1296ff9cda1315c5ef36346fe2c523030d0aa9f8eb1bbb2691a0f85e80bcdfc1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/view.py",
+      "baseline_sha256": "7e2c80a4476c633debcdace42dcf7744bb18b83373e2d0e24607c6a07c4e734b",
+      "fixed_sha256": "7e2c80a4476c633debcdace42dcf7744bb18b83373e2d0e24607c6a07c4e734b",
+      "working_raw_sha256": "71b163bec38776203fe7ebb061ae8708f0e663c47fbf5393d945cf7cc6b43961",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/errors.py",
+      "baseline_sha256": "17096e3e528f68332384fcd0faac28c1eb8cee628d415c3b37ecf0efd624e9c5",
+      "fixed_sha256": "17096e3e528f68332384fcd0faac28c1eb8cee628d415c3b37ecf0efd624e9c5",
+      "working_raw_sha256": "58ed068e8395c254591c016a5a4486d2fe7a923108ecb52fc18a610e0463a377",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/integrity.py",
+      "baseline_sha256": "25a51045e584408e638d76b8ce6d9630d62deb67b602c541b83213e195a46a4e",
+      "fixed_sha256": "25a51045e584408e638d76b8ce6d9630d62deb67b602c541b83213e195a46a4e",
+      "working_raw_sha256": "a8bdcb1eac26e5796cfce7a98063831ce1a68df118e583f9a2d8ce99ac302f0a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/model.py",
+      "baseline_sha256": "86e295f75556174af006650eb57d040d7cf644c98edd4d20b2ac72cb752cff3e",
+      "fixed_sha256": "86e295f75556174af006650eb57d040d7cf644c98edd4d20b2ac72cb752cff3e",
+      "working_raw_sha256": "27de19dcd4781b868a12f003d694debc3c2d33e0369890effd5a85a54fffee35",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/store.py",
+      "baseline_sha256": "acde16a49d84d6c8685226130cc0cb9908dc4bbf5c3b50ab77fe83c730048dac",
+      "fixed_sha256": "acde16a49d84d6c8685226130cc0cb9908dc4bbf5c3b50ab77fe83c730048dac",
+      "working_raw_sha256": "d4cae43ddba09116dfdd81624117cece1600ffbdbfa0f9c6b02d847042276c57",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/__init__.py",
+      "baseline_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+      "fixed_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+      "working_raw_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/measurement.py",
+      "baseline_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+      "fixed_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+      "working_raw_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/model.py",
+      "baseline_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+      "fixed_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+      "working_raw_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/store.py",
+      "baseline_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+      "fixed_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+      "working_raw_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/decision_log.py",
+      "baseline_sha256": "0889536c85c5b75854e80f89af9f11327faf5997679976f9235002ecc1c58cfd",
+      "fixed_sha256": "0889536c85c5b75854e80f89af9f11327faf5997679976f9235002ecc1c58cfd",
+      "working_raw_sha256": "509f9af1d15b007585e1bf1ba1930708ef87159422259d6ae53b54be7f1599fc",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+      "baseline_sha256": "e2bf2082c5b536110b5199db70f51a706105156fafbdb08035a1b2a318bdf7cc",
+      "fixed_sha256": "e2bf2082c5b536110b5199db70f51a706105156fafbdb08035a1b2a318bdf7cc",
+      "working_raw_sha256": "0719784cf4ad7a7266d7f8cf3fe45edcd558c0940689be69c490b56939b3063a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/model.py",
+      "baseline_sha256": "39a8f93138de2d61a2ea048f2647d5c2f3c6704bdb00cf03d43f2e84733379ad",
+      "fixed_sha256": "39a8f93138de2d61a2ea048f2647d5c2f3c6704bdb00cf03d43f2e84733379ad",
+      "working_raw_sha256": "f0daf8fe36af80af666eb08c2faf7f8b0808b4da2478ab035a044a240ce8a6f9",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/news.py",
+      "baseline_sha256": "de5f5e0c9d9045bd281a788856a4aff35b4d0b2c3c5b30561fa689cad78867f3",
+      "fixed_sha256": "de5f5e0c9d9045bd281a788856a4aff35b4d0b2c3c5b30561fa689cad78867f3",
+      "working_raw_sha256": "2b5a0eeaad4c6fd198ded1af172202a6a198960e2c7d590c764347a3183272a7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/packet.py",
+      "baseline_sha256": "b2ffe22900484506d07522c97bab06b46111970a47ce559159d487dccd232293",
+      "fixed_sha256": "b2ffe22900484506d07522c97bab06b46111970a47ce559159d487dccd232293",
+      "working_raw_sha256": "8409a203a57c8f1628c4aa05a28d20b19affc7201e7abc2a082d9c509afca545",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+      "baseline_sha256": "d1847250a18f2729e9f878f3cee7f6e7066af82f3cbc0c28be7df721bebcb7b5",
+      "fixed_sha256": "d1847250a18f2729e9f878f3cee7f6e7066af82f3cbc0c28be7df721bebcb7b5",
+      "working_raw_sha256": "2431fe51fbde2af741c859d7dd2bccd237a0a30c79d5ca5adf3a1e3c6011bcec",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/retrieval.py",
+      "baseline_sha256": "d17e3f64fac9efb0b33aced51c0111a81de3187e7764bd4eca316ffaa4496e4b",
+      "fixed_sha256": "d17e3f64fac9efb0b33aced51c0111a81de3187e7764bd4eca316ffaa4496e4b",
+      "working_raw_sha256": "80bdef597d44b380c1ae2d8ed8079468ee40211ed2547ba2f308fe962dd2bd11",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+      "baseline_sha256": "34904b983b4d15a6e48e4156d3327917c2e1338652cd155426668aa8a2eb68fa",
+      "fixed_sha256": "34904b983b4d15a6e48e4156d3327917c2e1338652cd155426668aa8a2eb68fa",
+      "working_raw_sha256": "0ac4658f73c4eac765e0990897b3f00945d6fd290b7286cd3d087f74f4fdc47e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/comparison.py",
+      "baseline_sha256": "b8a3d742ab8d2c517461d49c55bc76bc401dcb3fcaea3c55123d3413b8f6bb7d",
+      "fixed_sha256": "b8a3d742ab8d2c517461d49c55bc76bc401dcb3fcaea3c55123d3413b8f6bb7d",
+      "working_raw_sha256": "814aca5ea1ab20368472b684c461e871a5d3899fe7d03b4ee40f12b97e1c6f0f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/model.py",
+      "baseline_sha256": "24c2d094e239e0206c14087e27f87c5b9f4901d603133bd300fd20577937a64f",
+      "fixed_sha256": "24c2d094e239e0206c14087e27f87c5b9f4901d603133bd300fd20577937a64f",
+      "working_raw_sha256": "2688a99f07c1672463f42ae17e55c575876ae48f64f34ad90bca2b2e14ad0987",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/reverse_spec.py",
+      "baseline_sha256": "5437ab04c7cb5e771f0d9549f21ad471acc9b813a6c31fec3284e6b84fe00daa",
+      "fixed_sha256": "5437ab04c7cb5e771f0d9549f21ad471acc9b813a6c31fec3284e6b84fe00daa",
+      "working_raw_sha256": "438e440cbb6ef121cf6030890d528e85b88bd05b09d20de0fc4de114de311747",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/engine.py",
+      "baseline_sha256": "bc9188b1460f5bcd434e7b7751c959d84463196862ccc6d632c6a886fd91e0f1",
+      "fixed_sha256": "bc9188b1460f5bcd434e7b7751c959d84463196862ccc6d632c6a886fd91e0f1",
+      "working_raw_sha256": "7b61122bca9db1505a673c359e8da3846d7bf94a46a82e6cf45325fa3bb1f13a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/model.py",
+      "baseline_sha256": "456b46ebcc9ec658eef4d0f4b4c3a96fe6744445059aefa1b0c2792f89632ebb",
+      "fixed_sha256": "456b46ebcc9ec658eef4d0f4b4c3a96fe6744445059aefa1b0c2792f89632ebb",
+      "working_raw_sha256": "d9003101e9cbcee9238b4c6ee5e76c67a27a93b9699b1ce1f2ec2b090f1c48a5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/catalog.py",
+      "baseline_sha256": "708d880c3c704007eccaf42fc524196f0a9b591d4e87b2d5e5e0c52e2813f4bf",
+      "fixed_sha256": "708d880c3c704007eccaf42fc524196f0a9b591d4e87b2d5e5e0c52e2813f4bf",
+      "working_raw_sha256": "289a4783cab5bb9cf75a553bc54052152a2d18b5397fcf486edbb707fd715256",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/evidence.py",
+      "baseline_sha256": "1aa8f006e2a740da2086b700d530d6f8969af490129bf39140895498c8defbf6",
+      "fixed_sha256": "1aa8f006e2a740da2086b700d530d6f8969af490129bf39140895498c8defbf6",
+      "working_raw_sha256": "f516df37f5c6840d70520ec46413533d8bcbcc1bf53da84a081c42a28ca8a6c8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/model.py",
+      "baseline_sha256": "90737e1c8af323db9f60706f27703c9d87dbbbbdf07d871e9179b1f13a1fa2c9",
+      "fixed_sha256": "90737e1c8af323db9f60706f27703c9d87dbbbbdf07d871e9179b1f13a1fa2c9",
+      "working_raw_sha256": "b22cbb22a5f82173eadb03de8c43cfbb417638e924447ff3067e1f5eebf8f02f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/normalize.py",
+      "baseline_sha256": "9ff927f18312a197a1be7f5b1695d8309cdda9bfbe23c042e56b2783b5730ef0",
+      "fixed_sha256": "9ff927f18312a197a1be7f5b1695d8309cdda9bfbe23c042e56b2783b5730ef0",
+      "working_raw_sha256": "3ea92d5dd4ccd1a73770f4d7157de734b87124428b6952fe9055dd6960123147",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_builder.py",
+      "baseline_sha256": "85297183febe1f5eba604ca8ec192afd5904279d76f1d9c1e1a9fbab9421fe64",
+      "fixed_sha256": "85297183febe1f5eba604ca8ec192afd5904279d76f1d9c1e1a9fbab9421fe64",
+      "working_raw_sha256": "414e222f1ffa9e7f2bc216b535ce604dbbe706f43a31f29b30c29e732326bc67",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_evidence.py",
+      "baseline_sha256": "dc0ebb514c3bf8a5ba384d8aea7397e9d64376695f6776fcb3d3635fbe438fa3",
+      "fixed_sha256": "dc0ebb514c3bf8a5ba384d8aea7397e9d64376695f6776fcb3d3635fbe438fa3",
+      "working_raw_sha256": "0230c361e3e61c1440d09464ce8d457b796b94b44908cc5e8a0c7bda03ab4d8e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_model.py",
+      "baseline_sha256": "759ffd816b7fe0858540f3590b29eb5eed03f05f08e3fc09f186cfd64554ee78",
+      "fixed_sha256": "759ffd816b7fe0858540f3590b29eb5eed03f05f08e3fc09f186cfd64554ee78",
+      "working_raw_sha256": "fe56078476afec534e49753c74d584f1c2023e93f052b8f9e23e81c02855f141",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/view.py",
+      "baseline_sha256": "9dedcb40ec66a2c07ec2a7c76e5bf4591934c885cb5b12f727b86839dd47b0d6",
+      "fixed_sha256": "9dedcb40ec66a2c07ec2a7c76e5bf4591934c885cb5b12f727b86839dd47b0d6",
+      "working_raw_sha256": "8ac3b4e8368536e9276602fc04562c82e43320f94f64e9cbc793f832d2e7af3f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/catalog.py",
+      "baseline_sha256": "230f66d5d3f1cfc7c7fcf681cebbf902711362652b3fe725aac0662629c9937d",
+      "fixed_sha256": "230f66d5d3f1cfc7c7fcf681cebbf902711362652b3fe725aac0662629c9937d",
+      "working_raw_sha256": "db334c76859269acd5f2a67616835cbd03106224b8ed4aaa605a437518b74848",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/evidence.py",
+      "baseline_sha256": "f5730bbce447a1af52371757b16609c710cb40e727486746bbda79a98c4e5e42",
+      "fixed_sha256": "f5730bbce447a1af52371757b16609c710cb40e727486746bbda79a98c4e5e42",
+      "working_raw_sha256": "3aa7c6ac47fbb985d4e63233a8681483af73f99467e6bd00bc51d6d9b287ec32",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/model.py",
+      "baseline_sha256": "f049aec35b6985613d7560cdf77551f84a93d3cb68295ab34f92cbc1bd17d974",
+      "fixed_sha256": "f049aec35b6985613d7560cdf77551f84a93d3cb68295ab34f92cbc1bd17d974",
+      "working_raw_sha256": "f1f7aaef87f7c505d56d0d60581ecf5e123e7cec527e2f7ce49dc465e68d05f7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/normalize.py",
+      "baseline_sha256": "d686397eaaba1be76064deb717e1c3a09f51f3d2a4752b8fc316082d1c118a55",
+      "fixed_sha256": "d686397eaaba1be76064deb717e1c3a09f51f3d2a4752b8fc316082d1c118a55",
+      "working_raw_sha256": "2c06f103985930b4d8d75bb306b500fa75ce5903296ce6570f453d05ee4dfd5b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/view.py",
+      "baseline_sha256": "a35be39c7bae96de2a1ace1a4ed95bb3e475a7b9894b7338c8502ffec4c3f068",
+      "fixed_sha256": "a35be39c7bae96de2a1ace1a4ed95bb3e475a7b9894b7338c8502ffec4c3f068",
+      "working_raw_sha256": "ca7a3869ff6831e88181887bd5ba7aec872a15ffd14be7c82655a735e102bba8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/catalog.py",
+      "baseline_sha256": "254db6019b121ffb7ec8c192c64f3f7f852ea0fbcb6235fadd8037ced1709ede",
+      "fixed_sha256": "254db6019b121ffb7ec8c192c64f3f7f852ea0fbcb6235fadd8037ced1709ede",
+      "working_raw_sha256": "68805ab01e463ade66ef9bc75cd985af185436803fde85564726979224c56b4c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/evidence.py",
+      "baseline_sha256": "eb2c53cc4c3fea561da664cd061073e72f787df7a2c805bcdad65da1d9af24b3",
+      "fixed_sha256": "eb2c53cc4c3fea561da664cd061073e72f787df7a2c805bcdad65da1d9af24b3",
+      "working_raw_sha256": "ed3df20e605b743957340ba24a692ad404e2202aca8f55fb2594c5e60cfe5413",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/model.py",
+      "baseline_sha256": "f2495df6a462b4717bdb042bd3304c1671924c59548cadf0b04cbc212b5d32bb",
+      "fixed_sha256": "f2495df6a462b4717bdb042bd3304c1671924c59548cadf0b04cbc212b5d32bb",
+      "working_raw_sha256": "dda7ed2200bb47d2687377905bfeb13653386acbf080c06e07ffd86c2773babb",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/normalize.py",
+      "baseline_sha256": "5d1317b177f52e139255c050862c31cc2644a866e49ed27e6a8f93acccb35828",
+      "fixed_sha256": "5d1317b177f52e139255c050862c31cc2644a866e49ed27e6a8f93acccb35828",
+      "working_raw_sha256": "30ca0855c9f236eec91541ed40758eea84ed6fbe269d85cbcae01d71c5d9a197",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/view.py",
+      "baseline_sha256": "0813aaff0f0704e1b5572870d86f3c085f4685a9877229d2e9c361b001198bad",
+      "fixed_sha256": "0813aaff0f0704e1b5572870d86f3c085f4685a9877229d2e9c361b001198bad",
+      "working_raw_sha256": "9efa78f16ecb0d408c397dd7a4a32a8910a1a803b9c925686a4c58d423a70189",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/model.py",
+      "baseline_sha256": "b9ad3135b3a6f9c0ec609e8a06a4179222e7e55fee57958c7381a5ced5f40eb3",
+      "fixed_sha256": "b9ad3135b3a6f9c0ec609e8a06a4179222e7e55fee57958c7381a5ced5f40eb3",
+      "working_raw_sha256": "ad9ffab76f8a3ea132ebc7a872ce1a5f804c2953e5ecd96a9e41c57ce974e5b0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/store.py",
+      "baseline_sha256": "f3a9ccad292f094c500088bdd7f2c5fbf5055098f28ca0724230488297669208",
+      "fixed_sha256": "f3a9ccad292f094c500088bdd7f2c5fbf5055098f28ca0724230488297669208",
+      "working_raw_sha256": "081617ec38c29db586a9e484b6debc61b57ed2322de5e27f2e28f4adca79e305",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/surprise.py",
+      "baseline_sha256": "35773b785d22d94f5e0c699040d396c313c9a05488acf5366332d61ce6484b77",
+      "fixed_sha256": "35773b785d22d94f5e0c699040d396c313c9a05488acf5366332d61ce6484b77",
+      "working_raw_sha256": "d0901ea03831253e25426aa2d40a0e9265c629104db753888993229c76abe2bf",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/market_calendar.py",
+      "baseline_sha256": "fec035ece4bed9c0385a826d4744bd786b56fa15b63e0c39ea4db70253abcaf8",
+      "fixed_sha256": "fec035ece4bed9c0385a826d4744bd786b56fa15b63e0c39ea4db70253abcaf8",
+      "working_raw_sha256": "7f73400492b5939fdac10774a34875ce7fc06fe2b6fa2390747117950ca5417f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/catalog.py",
+      "baseline_sha256": "798341870fb9427a00d1d609edbd0b9548eb81c18450e68298da65b7837cdfdb",
+      "fixed_sha256": "798341870fb9427a00d1d609edbd0b9548eb81c18450e68298da65b7837cdfdb",
+      "working_raw_sha256": "f1ca53d69dd5b47d75d7b2055f6e51310572320f5c2d6289c1cd9b4c3ed30b6a",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/evidence.py",
+      "baseline_sha256": "b11ae4105a42846ff69da5d73e1d89e7263f37205249e36efd1406b094f58a0e",
+      "fixed_sha256": "b11ae4105a42846ff69da5d73e1d89e7263f37205249e36efd1406b094f58a0e",
+      "working_raw_sha256": "f7a53bfeea9e49e3fcc87a070b5264ab9b4be70549c2e291e559e11df63599a4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/model.py",
+      "baseline_sha256": "730d9c5cbe7010d1eb6113aa4783c4a8a117290072ad598b728b7d24d1e7fe67",
+      "fixed_sha256": "730d9c5cbe7010d1eb6113aa4783c4a8a117290072ad598b728b7d24d1e7fe67",
+      "working_raw_sha256": "17ddf38b83fae45349c586dfe090f98c763d1b693196ca1fdcd3844572c7864b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/normalize.py",
+      "baseline_sha256": "379764643d6df5609599166ebce9669c79d69421051a3bd1b10030a0267e0c4c",
+      "fixed_sha256": "379764643d6df5609599166ebce9669c79d69421051a3bd1b10030a0267e0c4c",
+      "working_raw_sha256": "ed8b13806e7ddb3b9fae0316a5c61cbc5a4316a09a368cf06c7942df0f80a1ef",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/view.py",
+      "baseline_sha256": "d1c134e33b33fb8d504beecd6a3d4c00f47ccbf52648682e172017473072c22b",
+      "fixed_sha256": "d1c134e33b33fb8d504beecd6a3d4c00f47ccbf52648682e172017473072c22b",
+      "working_raw_sha256": "7e56b095cc267f35cf3fd9af71bd1639926bc0cbf8b8f0ab04f8c1995d86ed83",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/builder.py",
+      "baseline_sha256": "98b654abe82fa83ad261e68920b82113f968b135d7d46e3657bcf82aaae34e24",
+      "fixed_sha256": "98b654abe82fa83ad261e68920b82113f968b135d7d46e3657bcf82aaae34e24",
+      "working_raw_sha256": "80e0d7f3559bcf86a826be7544c5006037a5b80f193cd3a66950e80e0985ec61",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/comparability.py",
+      "baseline_sha256": "291f77f57b09eeecb54df9da678c1e0fa0561e1c673bc68ffd3e4863da60a28b",
+      "fixed_sha256": "291f77f57b09eeecb54df9da678c1e0fa0561e1c673bc68ffd3e4863da60a28b",
+      "working_raw_sha256": "a8a5e070a49bbd41d0942727cdb4702ab2e108910e25761dc34a634d92d8418e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/evidence.py",
+      "baseline_sha256": "6a71634e010a8791e6e2cd52419aca2173e8a96b27d77df5f63c3bdb1f16e3e5",
+      "fixed_sha256": "6a71634e010a8791e6e2cd52419aca2173e8a96b27d77df5f63c3bdb1f16e3e5",
+      "working_raw_sha256": "641acdb005e86b99991ca3400306cd58f2a49b57dbfdb2768cb1eba2837a04c6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/model.py",
+      "baseline_sha256": "55aac8495914a66fbce7175e40b36708ed61b45834e605ee8b142d82880fd8cd",
+      "fixed_sha256": "55aac8495914a66fbce7175e40b36708ed61b45834e605ee8b142d82880fd8cd",
+      "working_raw_sha256": "b1fd06faddef541fd264306412766d0bdfacc6cbe66c46e0a1495e24e2de73ad",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/provenance.py",
+      "baseline_sha256": "bff4b7e2986b6657eb5a23671fc5530228aed6e746fb0e3821da09bf6b70b5c9",
+      "fixed_sha256": "bff4b7e2986b6657eb5a23671fc5530228aed6e746fb0e3821da09bf6b70b5c9",
+      "working_raw_sha256": "91171c88ee0699ab46362474ea4dbbf45f7c0b7e0a52b7c118cfcb7e1bd5dc68",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/universe.py",
+      "baseline_sha256": "d039512d83001c4e0afaf932cc127527a92e303ed3cdcecb02223c336fd77b92",
+      "fixed_sha256": "d039512d83001c4e0afaf932cc127527a92e303ed3cdcecb02223c336fd77b92",
+      "working_raw_sha256": "4824533109ad31e7bcee3e41d3fda305bac8c89c6a3f6c1ea3f37e3415a564f0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/point_in_time.py",
+      "baseline_sha256": "01da3d61c13d0cfd3dad7fe94690c5413281b963ebc103f1855df0f594c092b8",
+      "fixed_sha256": "01da3d61c13d0cfd3dad7fe94690c5413281b963ebc103f1855df0f594c092b8",
+      "working_raw_sha256": "5e3110f0fe40ee08e0538e7168a2c18174fd57e0c4ee1b944609756c38f03dc5",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/catalog.py",
+      "baseline_sha256": "b05500d5ea3cc04368821c7362b99fed1aa34a504049ebbe0a2b79fd744f9e0b",
+      "fixed_sha256": "b05500d5ea3cc04368821c7362b99fed1aa34a504049ebbe0a2b79fd744f9e0b",
+      "working_raw_sha256": "a9f31f416914d7d2fa66ae31cf942c441ff5d919e31a4012ef5aa5d5bd6ccb71",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/derived/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/derived/price_derived.py",
+      "baseline_sha256": "e8dcc48ceec54c9af8a13cca89606d824d4c1517ac2627c01e47dfa3a42b361e",
+      "fixed_sha256": "e8dcc48ceec54c9af8a13cca89606d824d4c1517ac2627c01e47dfa3a42b361e",
+      "working_raw_sha256": "b4f40c8f4e0d2d6d78da8693f477229347fc9394b7872601ca952989b7b2eb4f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/evidence.py",
+      "baseline_sha256": "512d00b0b188b4d4bc44a2f73d936935a794cafbb8323db8a371a6d684085438",
+      "fixed_sha256": "512d00b0b188b4d4bc44a2f73d936935a794cafbb8323db8a371a6d684085438",
+      "working_raw_sha256": "2c03d9feb83e7a01877981e364ce5170c9604043c97333819d88b4a4799c298c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/model.py",
+      "baseline_sha256": "429aa81f6dd1ddb9010e8a095b2afe62420989787b39b9c8680dc62055d2dbd4",
+      "fixed_sha256": "429aa81f6dd1ddb9010e8a095b2afe62420989787b39b9c8680dc62055d2dbd4",
+      "working_raw_sha256": "d4f2f1cfbbea94a95b92fa8bdb999080c977c170de0c7cf9beebb35d47e3d361",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/normalize.py",
+      "baseline_sha256": "0ea6e2c47cb7e21057ade1db48812f80c81360721dc931baa5682ac90bae06f6",
+      "fixed_sha256": "0ea6e2c47cb7e21057ade1db48812f80c81360721dc931baa5682ac90bae06f6",
+      "working_raw_sha256": "d7ebd7cb2dacaff0517e5cb6e2caa637444e25be2ef167e5a216ecf60ad9408d",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/view.py",
+      "baseline_sha256": "5c5748b8cd6966f1ec7283f90ec46a6dbc604f7596b8a0515497b39a9973c7d9",
+      "fixed_sha256": "5c5748b8cd6966f1ec7283f90ec46a6dbc604f7596b8a0515497b39a9973c7d9",
+      "working_raw_sha256": "801e96f61a0ad15ee957a2e9dee8faccbaf90bf0241a089a2c15d1da02eca40e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/evidence_packet_registry.py",
+      "baseline_sha256": "c5678fad0344e83f094c38e9839226a3fc092994a51c1d1dc9f6e402e92bc46f",
+      "fixed_sha256": "c5678fad0344e83f094c38e9839226a3fc092994a51c1d1dc9f6e402e92bc46f",
+      "working_raw_sha256": "58dfdde115f14f962532484d5e0ca09fba90eb30eed6fb2d28e708331bc60079",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/evidence_registry.py",
+      "baseline_sha256": "54f9c404e20c7ed706383b90b94e52ff5ea146dc4595c0c49510280454f3abcd",
+      "fixed_sha256": "54f9c404e20c7ed706383b90b94e52ff5ea146dc4595c0c49510280454f3abcd",
+      "working_raw_sha256": "cca09585bff3e7a197c146fe9246677bbc9a2733dabac5a6e9483b7d55f39e3e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/experiment_registry.py",
+      "baseline_sha256": "3773783347e88465f3ea236c6c4220ef2567ffa27eb39f6d9602545fc2cbe12b",
+      "fixed_sha256": "3773783347e88465f3ea236c6c4220ef2567ffa27eb39f6d9602545fc2cbe12b",
+      "working_raw_sha256": "279ebff7f01ad6d63093ee9174aa1c99c65a5d19ccd4d26095f8a66da773b171",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/provenance.py",
+      "baseline_sha256": "b53019b3248424535d18dce940fdc704f8bb2c04c0db764dd0ccbce26c10f7e4",
+      "fixed_sha256": "b53019b3248424535d18dce940fdc704f8bb2c04c0db764dd0ccbce26c10f7e4",
+      "working_raw_sha256": "6965cdeaa168cdd59fc6eb3ba6a132aeca2288ba24d0de5f98531cb14e953f19",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py",
+      "baseline_sha256": "de9115ea4d96a3a57b08b84ea66717fac5f655f769f17e5f4675bed09758a970",
+      "fixed_sha256": "de9115ea4d96a3a57b08b84ea66717fac5f655f769f17e5f4675bed09758a970",
+      "working_raw_sha256": "5dcea6aa89ed2cfe7a5d6d02b034dc49a3d4a6a84679c8bf714c4670cf4d68f7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/reproducibility.py",
+      "baseline_sha256": "6390b8370db1e0d35b3a248895c4ad4ab8ed8665e17a8b7878e3413ce1770c56",
+      "fixed_sha256": "6390b8370db1e0d35b3a248895c4ad4ab8ed8665e17a8b7878e3413ce1770c56",
+      "working_raw_sha256": "0294755c4b2700e9361a6e1939705c689dd64bf22665fabe0e9d7a2dd458e9e7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/dataset_contract.py",
+      "baseline_sha256": "012c04073c03d7ff178a7260e580d340dcb5ef6e66ecfe7bdef3e25951f422e0",
+      "fixed_sha256": "012c04073c03d7ff178a7260e580d340dcb5ef6e66ecfe7bdef3e25951f422e0",
+      "working_raw_sha256": "ce33f5cbd95b9269eab9166ef18b9c91350c6a99bdd4ed970ce83b22740ebcb0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/locked_test.py",
+      "baseline_sha256": "b973a9ba8a7ea1d44c7749bbe16750a96eff35d2a978c4b32a88d4518c144617",
+      "fixed_sha256": "b973a9ba8a7ea1d44c7749bbe16750a96eff35d2a978c4b32a88d4518c144617",
+      "working_raw_sha256": "42af4eec0e08962a3bf1f4de00b9b417da09ba8308f448f6d88070264f206c27",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/preregistration.py",
+      "baseline_sha256": "8b6148389249d81309207d76e66fbc33a0da26b88e4d7fef6516ff4af9c5d611",
+      "fixed_sha256": "8b6148389249d81309207d76e66fbc33a0da26b88e4d7fef6516ff4af9c5d611",
+      "working_raw_sha256": "babaea4aa3e6c16a1842d9112b08352ef25abe9d283d25f810d1f1c7dafa519b",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/registry.py",
+      "baseline_sha256": "196d248f5e3483f9d89d5b66c1397025bdad74931afcb4dfd5ccfa57ca6b6aaa",
+      "fixed_sha256": "196d248f5e3483f9d89d5b66c1397025bdad74931afcb4dfd5ccfa57ca6b6aaa",
+      "working_raw_sha256": "26429cd530244fd2f6fd834a549652151e738c565b9489f5f685c351a440e9f8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/runner.py",
+      "baseline_sha256": "a5cc16be78ace9c13950a0665b1da64faff7e3acf7d943fca39740f8f7ca90a4",
+      "fixed_sha256": "a5cc16be78ace9c13950a0665b1da64faff7e3acf7d943fca39740f8f7ca90a4",
+      "working_raw_sha256": "56693e083aaefa4b0fa65aa026496901bc5857427514c28021b20ebbe7f97f52",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/base.py",
+      "baseline_sha256": "750817a1b9021ec3ba8241108e966105727dc96cb5fb8a182bd25136b3b7653b",
+      "fixed_sha256": "750817a1b9021ec3ba8241108e966105727dc96cb5fb8a182bd25136b3b7653b",
+      "working_raw_sha256": "a61ca85dce555515b529897e97016fa331ec9005b341583cdd35009071511816",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/experiment.py",
+      "baseline_sha256": "9809ea1537ac338d353a19605baa0870e37f2d52a375f05dc6ce20b5c295e5ea",
+      "fixed_sha256": "9809ea1537ac338d353a19605baa0870e37f2d52a375f05dc6ce20b5c295e5ea",
+      "working_raw_sha256": "cf59d1a87fd52ed6f468bb4d61aced1b042f804530568644ff228e6f863ef706",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/hypothesis.py",
+      "baseline_sha256": "08fec2ca2223aa66bf29ae52ae4014c65de3a02039362350b1eefefd1fb23620",
+      "fixed_sha256": "08fec2ca2223aa66bf29ae52ae4014c65de3a02039362350b1eefefd1fb23620",
+      "working_raw_sha256": "df2d076043650b7607f5b04cd15e57fbdd8592972fc20c81c20ec03e50243e84",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/idea.py",
+      "baseline_sha256": "7440f8b8ce1be15d79a9b0688575e4646453a453a4139f068439e8ccca47fba0",
+      "fixed_sha256": "7440f8b8ce1be15d79a9b0688575e4646453a453a4139f068439e8ccca47fba0",
+      "working_raw_sha256": "71129551e5d7ab867c174dd1d0c64214484a894722fc8db0edbedf6757e1eae0",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/knowledge.py",
+      "baseline_sha256": "cbb3c28257334c6e4da54ed2094c9630ec3d16d2d11ae9a045e83a1efe0dd207",
+      "fixed_sha256": "cbb3c28257334c6e4da54ed2094c9630ec3d16d2d11ae9a045e83a1efe0dd207",
+      "working_raw_sha256": "3912ef971f928d5ee97f8f7f85a69abeeb6126ac9b6c11fbc6fbf7536fbe0fb1",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/paper_trade.py",
+      "baseline_sha256": "a68cd4cacab1827c7fe82e2d06e1e2a4b068ea9536e02abc5c89843ebcdc86e5",
+      "fixed_sha256": "a68cd4cacab1827c7fe82e2d06e1e2a4b068ea9536e02abc5c89843ebcdc86e5",
+      "working_raw_sha256": "75433f0418b894cb1011cd6c905f5583668f28f1f7e2f68a4d319b1188de87bc",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/portfolio_rules.py",
+      "baseline_sha256": "9beae39dd316933ed586bab14d29fb8616aa4be8845dd49e42bb248122d23640",
+      "fixed_sha256": "9beae39dd316933ed586bab14d29fb8616aa4be8845dd49e42bb248122d23640",
+      "working_raw_sha256": "b05e52df1858cba4091f3e39186186a113c170eb11f17509e7bbf36ccfdefd31",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/price_data.py",
+      "baseline_sha256": "1cf1593fad6989ebb7e58294117c3b8d356136bdbbc8122d37f298e0930d86ea",
+      "fixed_sha256": "1cf1593fad6989ebb7e58294117c3b8d356136bdbbc8122d37f298e0930d86ea",
+      "working_raw_sha256": "ca85c54bb6d2114744a7be0d3947643e6823d3a882cae158855764636b94d285",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/strategy.py",
+      "baseline_sha256": "3bf31f4fdb5581cf64846b759939772ace73447c52587380053b7d3889181d61",
+      "fixed_sha256": "3bf31f4fdb5581cf64846b759939772ace73447c52587380053b7d3889181d61",
+      "working_raw_sha256": "a6d54fba4424d8b1358afeb37fc6735be208e30a5d003a31b8d3e9556913927f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/snapshot.py",
+      "baseline_sha256": "734c1af046b3b539d3737560e67d8f3c5b49ffa050788d62caaa882bd3e43442",
+      "fixed_sha256": "734c1af046b3b539d3737560e67d8f3c5b49ffa050788d62caaa882bd3e43442",
+      "working_raw_sha256": "7056bb1014187d95a41ca0a4ba1e45d0eb0741b676c1269f22f3a6ccb6af3837",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/catalog.py",
+      "baseline_sha256": "7f138058dc479a21374b7bd47fed993f6fdf23894fafef4ed7b04616c963b168",
+      "fixed_sha256": "7f138058dc479a21374b7bd47fed993f6fdf23894fafef4ed7b04616c963b168",
+      "working_raw_sha256": "fdb335509f89defccc8b6892511f6d4fc8e5f0aaa71eeb3b2f1dd0533e0865d6",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/entity_registry.py",
+      "baseline_sha256": "34006255232b27d044176c2018e04674c4cb311a803acffd8eeaeface4e96723",
+      "fixed_sha256": "34006255232b27d044176c2018e04674c4cb311a803acffd8eeaeface4e96723",
+      "working_raw_sha256": "49980bdb6bc035be39da356d98e728e125feaab671598eb994e58c1690ba1af8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/providers.py",
+      "baseline_sha256": "fad8f53c7dc2e0be303bddddedb986c24a34c9d19103277529a3a885e53221f9",
+      "fixed_sha256": "fad8f53c7dc2e0be303bddddedb986c24a34c9d19103277529a3a885e53221f9",
+      "working_raw_sha256": "6f2f0f8eb0660ed6084c018fec2029491ea68b470555bcec86cbc041a15d212e",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/fixed_pipeline_validation.py",
+      "baseline_sha256": "6fba835eb0e1f2120ad0926ead11e4c9f975b1cceca648ec7a43f28b23e23a7b",
+      "fixed_sha256": "6fba835eb0e1f2120ad0926ead11e4c9f975b1cceca648ec7a43f28b23e23a7b",
+      "working_raw_sha256": "440fc1b2d33c97fbeda5f8968962036d964393b80a3080f4cd76d297ba19c425",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/short_term_reversal.py",
+      "baseline_sha256": "723b1dd240fd803c8912dc26c4da10a4d27c8b59b1355f0548b24f0ea70c4e53",
+      "fixed_sha256": "723b1dd240fd803c8912dc26c4da10a4d27c8b59b1355f0548b24f0ea70c4e53",
+      "working_raw_sha256": "a568424c6f1eeb9c3f1ee261e65d398041549a9be792560d56f7b205be267e5f",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/universe.py",
+      "baseline_sha256": "7239e3c6073764e7d2d5cb86975467ac808a6843538bf41b3c8575ff988867ec",
+      "fixed_sha256": "7239e3c6073764e7d2d5cb86975467ac808a6843538bf41b3c8575ff988867ec",
+      "working_raw_sha256": "48700c002a1346db3c7074838b339418ab852e4b5d3fa71a1a80ef5bd7a874ff",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/__init__.py",
+      "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fixed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "working_raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "git_blobs_equal": true,
+      "working_equals_blob": true,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/builder.py",
+      "baseline_sha256": "f1f3591b3f613075afda4a9d348359d8082b9cba1533c2ebf83974e2a871d60a",
+      "fixed_sha256": "f1f3591b3f613075afda4a9d348359d8082b9cba1533c2ebf83974e2a871d60a",
+      "working_raw_sha256": "dc1417d28bd64d2c3576e0b13849f5cac045b78717e73e97268a0d049cbc9242",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/current_fy_forecast_builder.py",
+      "baseline_sha256": "acf577ce1b5aa2ec3549058701175d776a6cc4718d62be7f79faf4ad3e8002b2",
+      "fixed_sha256": "acf577ce1b5aa2ec3549058701175d776a6cc4718d62be7f79faf4ad3e8002b2",
+      "working_raw_sha256": "a078ea9bd18b4822190c945fb2f43f492c10701c70b9670fae12d8e17196fe94",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/engine.py",
+      "baseline_sha256": "8d4c4ed05d1c5ee6a3a20ecd22c1bd02e152be25464242f3f21cd1d38bac5fae",
+      "fixed_sha256": "8d4c4ed05d1c5ee6a3a20ecd22c1bd02e152be25464242f3f21cd1d38bac5fae",
+      "working_raw_sha256": "e069ba2a9791209a78edfd489416aa9695673b4d43f028d86a961b4e020f7a24",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/evidence.py",
+      "baseline_sha256": "d12447ad518a19eed804f51626c8d2b8f009a7e7259458d6f7f5982daed60a27",
+      "fixed_sha256": "d12447ad518a19eed804f51626c8d2b8f009a7e7259458d6f7f5982daed60a27",
+      "working_raw_sha256": "993c80aa028fc8438c2f504ac26b78fa7506e466d1309930a565590a1e3b9ff8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/forward_reverse_model.py",
+      "baseline_sha256": "3628b8ccbaf94f98a363464a92347953c57a0d77ed65bc1449bf3aebf4564190",
+      "fixed_sha256": "3628b8ccbaf94f98a363464a92347953c57a0d77ed65bc1449bf3aebf4564190",
+      "working_raw_sha256": "f290c85e52019dd3c8d5cb246fd4ee102fbf169a1902c7e19683296ee96fe3e8",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/historical_context_builder.py",
+      "baseline_sha256": "4b695235adb51d109c3090f5fa81535ba8e0a0fe4946c3c2a9fc91b494ab4c9c",
+      "fixed_sha256": "4b695235adb51d109c3090f5fa81535ba8e0a0fe4946c3c2a9fc91b494ab4c9c",
+      "working_raw_sha256": "7540e9e9c2da1eac055102b5872457e07479baa735662a13958d8bd9ca6a9ebe",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/historical_context_evidence.py",
+      "baseline_sha256": "7cbb74c71c9730a55ed2264e830d6f8f36cda46a4f6457a4a847c13cb6216719",
+      "fixed_sha256": "7cbb74c71c9730a55ed2264e830d6f8f36cda46a4f6457a4a847c13cb6216719",
+      "working_raw_sha256": "1b79e350b01bc90d9e5da06d4e9392dbb1d8c4f9d072b96abad95034618310cd",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/model.py",
+      "baseline_sha256": "ba34430ea2e750d341ef0b04553d38deababa965d940b8fbbe5db59c538fec80",
+      "fixed_sha256": "ba34430ea2e750d341ef0b04553d38deababa965d940b8fbbe5db59c538fec80",
+      "working_raw_sha256": "99c0a143316dd3f6b584bbebbb24069b8c330c93ebd6148a9630bb3afe56b5e4",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/provenance.py",
+      "baseline_sha256": "8aa1c6d23f2d7630ae8ba0eca031d090ecb3cea23ccd1bbc20d44240a29503a4",
+      "fixed_sha256": "8aa1c6d23f2d7630ae8ba0eca031d090ecb3cea23ccd1bbc20d44240a29503a4",
+      "working_raw_sha256": "1527e2e3c8e7592169c496cf08aff3be563cffa3483f244e94d0711f3fdf580c",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/reverse.py",
+      "baseline_sha256": "16f627711f05e9b1a09945e4a62c567eaf986b3309fb98463fd57db4ecae92f7",
+      "fixed_sha256": "16f627711f05e9b1a09945e4a62c567eaf986b3309fb98463fd57db4ecae92f7",
+      "working_raw_sha256": "a671cb3c82f25aebadaf3b89a0cd3a2f849eefcd7fc5db249537bead26671aaf",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json",
+      "baseline_sha256": "62ea3cf954dc503b1c9efb1d0f810aa1cb2b13af2c8c3484b4a3502f847e6556",
+      "fixed_sha256": "62ea3cf954dc503b1c9efb1d0f810aa1cb2b13af2c8c3484b4a3502f847e6556",
+      "working_raw_sha256": "5702eaeeca1316886325f17a4c14903c816a6ec83d8a568a83fa9261489e8ed7",
+      "git_blobs_equal": true,
+      "working_equals_blob": false,
+      "working_crlf_to_lf_equals_blob": true
+    }
+  ]
+}
