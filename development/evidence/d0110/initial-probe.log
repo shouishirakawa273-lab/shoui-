@@ -1,0 +1,8 @@
+{
+  "sha": "28be858e580552072a08b2a6e9508f3fc8e3852c",
+  "frozen_unchanged": 288,
+  "cli_exact_reproducible": true,
+  "d0107_record_types_roundtrip": 5,
+  "plan_wrapper_store_claimed": false,
+  "status_clean": true
+}

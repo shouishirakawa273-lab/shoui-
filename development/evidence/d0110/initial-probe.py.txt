@@ -1,0 +1,47 @@
+import json, os, subprocess, sys, runpy
+from pathlib import Path
+from decimal import Decimal
+ROOT=Path(__file__).resolve().parents[1]
+REPO=ROOT/'shoui-'
+LAB=REPO/'Japanese_Equity_Lab'
+sys.path.insert(0,str(LAB))
+from lib.evaluation.integrity import verify_record_integrity
+from lib.evaluation.store import new_experiment_spec_store,new_prediction_store,new_evaluation_contract_store,new_evaluation_record_store,new_research_snapshot_store
+from lib.errors import AppendOnlyViolationError
+from lib.macro_experiments.comparison import compare_macro_forecasts
+sha=subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()
+assert sha=='28be858e580552072a08b2a6e9508f3fc8e3852c'
+assert not subprocess.check_output(['git','-C',str(REPO),'status','--short'],text=True).strip()
+manifest=json.loads((LAB/'scripts/manifests/d0110_3_company_exposure_pilot.json').read_text(encoding='utf-8'))
+frozen=manifest['frozen_files']
+changed=subprocess.check_output(['git','-C',str(REPO),'diff','--name-only','de42298ca3a6871c5db1ed3e8e51bce722f5c42e',sha],text=True).splitlines()
+assert len(frozen)==288 and not set(frozen).intersection(changed)
+script=LAB/'scripts/d0110_demo.py'
+a=subprocess.check_output([sys.executable,'-B',str(script)],cwd=ROOT/'validation',text=True)
+b=subprocess.check_output([sys.executable,'-B',str(script)],cwd=ROOT/'validation/d0110-independent-tmp',text=True)
+assert a==b
+d=json.loads(a)
+assert d['synthetic'] and not d['empirical_certified']
+assert d['d0110_2']['response']['non_causal_label']=='OBSERVED_ASSOCIATION_ONLY'
+bridge=d['d0110_3']['bridge']
+assert Decimal(bridge['replay_operating_income_jpy'])-Decimal(bridge['baseline_operating_income_jpy'])==Decimal('20')
+assert d['d0110_4']['status']=='INSUFFICIENT_HISTORY'
+fixture=runpy.run_path(str(LAB/'13_tests/test_macro_experiments.py'))
+plan,sample=fixture['fixture']()
+result=compare_macro_forecasts(plan=plan,samples=(sample,),evaluated_at=fixture['T']+6*fixture['H'])
+pair=result.samples[0]
+records=[(new_experiment_spec_store,plan.experiment),(new_prediction_store,sample.prediction),(new_evaluation_contract_store,plan.contracts[0]),(new_evaluation_record_store,pair.own_evaluation),(new_research_snapshot_store,sample.snapshot)]
+out=ROOT/'validation/d0110-independent-tmp/roundtrip'
+out.mkdir(exist_ok=True)
+for i,(factory,record) in enumerate(records):
+    path=out/f'{i}.jsonl'
+    assert not path.exists(), 'probe must use fresh storage'
+    store=factory(path)
+    store.record(record)
+    assert store.all()==[record] and verify_record_integrity(store.all()[0])
+    try: store.record(record)
+    except AppendOnlyViolationError: pass
+    else: raise AssertionError('duplicate accepted')
+assert subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip()==sha
+assert not subprocess.check_output(['git','-C',str(REPO),'status','--short'],text=True).strip()
+print(json.dumps({'sha':sha,'frozen_unchanged':len(frozen),'cli_exact_reproducible':True,'d0107_record_types_roundtrip':len(records),'plan_wrapper_store_claimed':False,'status_clean':True},indent=2))
