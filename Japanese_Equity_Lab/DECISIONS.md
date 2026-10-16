@@ -19285,3 +19285,16 @@ in the new calculation module; corrected at58470d850bf06c2a8160e5955931ff5efef03
 Independent closure confirmed193-source mypy success,100pass/1deselected,
 unchanged full demo JSON/hash and frozen288. Initial independent test success
 alone did not establish CI success. No merge/FROZEN; real acceptance still open.
+
+## 2026-10-16 — D0111 v1 scope closure and one-company readiness
+
+The current explicit v1 calculation design is complete for its agreed scope;
+original historical requirements remain unrecovered, not silently reconstructed.
+Synthetic engineering acceptance and real-company/empirical gates remain separate.
+SMM input inventory is BLOCKED_INPUT_EVIDENCE: known pretax sensitivity is not
+compatible with the operating-income route without verifiable reconciliation.
+No eligible price/dividend/share-basis/common-cutoff bundle identified in scoped
+current-branch inventory. Existing secondary research records retained with limits;
+no repeated source search, invented historical observation, or company calculation.
+See development/2026-10-16_D0111_SCOPE_AND_ACCEPTANCE.md and
+2026-10-16_D0111_SMM_INPUT_READINESS.md. Code unchanged; no merge/FROZEN.
