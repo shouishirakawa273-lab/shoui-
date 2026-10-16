@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from lib.macro_capture.bls import capture, digest, encode, parse, show, writer_lock
+from lib.macro_capture.bls import capture, digest, encode, fetch_http, parse, show, writer_lock
 
 NOW = datetime(2026, 10, 16, tzinfo=UTC)
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "bls_capture.py"
@@ -73,6 +74,71 @@ def test_receipt_uses_response_time_not_request_start(tmp_path: Path) -> None:
     row = json.loads((tmp_path / "timing" / "records.jsonl").read_text())
     assert result["started_at"] == NOW.isoformat()
     assert result["received_at"] == row["retrieved_at"] == received.isoformat()
+
+
+@pytest.mark.parametrize("case", ["length-short", "length-invalid", "incomplete", "http-exception", "os-error", "oversize"])
+def test_failed_entity_read_is_persisted_without_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+    raw = fixture()
+    calls = []
+
+    class Response:
+        code = 200
+        headers = {
+            "Content-Length": str(len(raw) + 7)
+            if case == "length-short"
+            else "invalid"
+            if case == "length-invalid"
+            else str(len(raw))
+        }
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, count):
+            assert count == 1024 * 1024 + 1
+            if case == "incomplete":
+                raise http.client.IncompleteRead(raw, 7)
+            if case == "http-exception":
+                raise http.client.HTTPException("connection interrupted")
+            if case == "os-error":
+                raise OSError("connection interrupted")
+            return b"x" * count if case == "oversize" else raw
+
+    class Opener:
+        def open(self, request, timeout):
+            calls.append(request.full_url)
+            return Response()
+
+    monkeypatch.setattr("urllib.request.build_opener", lambda *args: Opener())
+    received = NOW.replace(hour=2)
+    clock = iter([NOW, received])
+    result = capture(tmp_path, "cut", _fetch=fetch_http, _now=lambda: next(clock))
+    assert result["outcome"] == "FAILED" and result["http_status"] == 200
+    assert result["received_at"] == received.isoformat()
+    expected = b"" if case in {"http-exception", "os-error"} else b"x" * (1024 * 1024 + 1) if case == "oversize" else raw
+    assert (tmp_path / "cut" / "response.bin").read_bytes() == expected
+    assert not (tmp_path / "cut" / "records.jsonl").read_bytes()
+    assert show(tmp_path, "cut") == result
+    assert capture(tmp_path, "cut", _fetch=fetch_http) == result and len(calls) == 1
+    cli = subprocess.run(
+        [sys.executable, str(SCRIPT), "show", "--root", str(tmp_path), "--run-id", "cut"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert cli.returncode == 1 and cli.stderr
+    assert json.loads(cli.stdout)["outcome"] == "FAILED"
+
+
+def test_parse_failure_keeps_response_timestamp(tmp_path: Path) -> None:
+    received = NOW.replace(hour=3)
+    clock = iter([NOW, received])
+    result = capture(tmp_path, "parse-fail", _fetch=lambda: (200, b"{}"), _now=lambda: next(clock))
+    assert result["outcome"] == "FAILED" and result["received_at"] == received.isoformat()
 
 
 @pytest.mark.parametrize("status", [301, 302, 401, 403, 429, 500])

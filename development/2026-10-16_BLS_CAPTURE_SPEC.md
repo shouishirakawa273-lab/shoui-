@@ -46,3 +46,6 @@ bundle内のSHA256は変更検出であり電子署名・原資料の独立真�
 再表示時はhashだけでなくrawから再正規化し、全recordの内容・受信時刻との一致を検査する。
 SYSTEM_OBSERVEDは意味label。既存as-of resolverのenumはAvailabilityBasis.OBSERVEDであり、
 MacroRecord.market_public_at_basisはUNKNOWNのまま。過去の市場公開時刻や初報を推測しない。
+HTTP途中切断は、既知HTTP状態と回収可能partial bytesをFAILED receiptに残す。
+partialが回収不能ならerrorにその旨を記し空bytesを保存する。Content-Lengthは任意だが、
+存在する場合は厳密な数字文字列と受信byte長の一致を要求し、有効JSONの途中prefixでも成功扱いしない。

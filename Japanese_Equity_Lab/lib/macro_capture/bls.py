@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import hashlib
+import http.client
 import json
 import re
 import sys
@@ -134,6 +135,15 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+class CaptureReadError(OSError):
+    """Failed entity read with observed status and any recoverable partial bytes."""
+
+    def __init__(self, message: str, status: int | None, partial: bytes) -> None:
+        super().__init__(message)
+        self.status = status
+        self.partial = partial
+
+
 def fetch_http() -> tuple[int, bytes]:
     """One attempt, no redirect/retry; bounded entity response and socket timeout."""
     opener = urllib.request.build_opener(NoRedirect())
@@ -142,9 +152,28 @@ def fetch_http() -> tuple[int, bytes]:
         response = opener.open(request, timeout=15)
     except urllib.error.HTTPError as exc:
         response = exc
+    except http.client.HTTPException as exc:
+        raise CaptureReadError(f"HTTP connection failure; partial bytes unavailable: {exc}", None, b"") from exc
     with response:
-        raw = response.read(LIMIT + 1)
-        return int(response.code), raw
+        status = int(response.code)
+        try:
+            raw = response.read(LIMIT + 1)
+        except http.client.IncompleteRead as exc:
+            raise CaptureReadError(
+                "incomplete entity read; saved recoverable prefix, not complete response", status, exc.partial[: LIMIT + 1]
+            ) from exc
+        except (http.client.HTTPException, OSError) as exc:
+            raise CaptureReadError(f"entity read failed; partial bytes unavailable: {exc}", status, b"") from exc
+        length = response.headers.get("Content-Length")
+        if length is not None and (not isinstance(length, str) or not re.fullmatch(r"[0-9]+", length)):
+            raise CaptureReadError("invalid Content-Length; completeness unverified", status, raw)
+        if len(raw) > LIMIT:
+            raise CaptureReadError(
+                "response exceeds 1MiB limit; saved entity prefix only, not complete response hash", status, raw
+            )
+        if length is not None and int(length) != len(raw):
+            raise CaptureReadError("Content-Length mismatch; saved entity may be incomplete", status, raw)
+        return status, raw
 
 
 @contextmanager
@@ -301,6 +330,11 @@ def capture(
             if status != 200:
                 raise ValueError(f"HTTP {status}; single attempt, no retry")
             records, annual = parse(raw, received, run_id)
+        except CaptureReadError as exc:
+            received = _now()
+            status, raw = exc.status, exc.partial
+            error = f"{type(exc).__name__}: {exc}"
+            records, annual = [], 0
         except (OSError, ValueError) as exc:
             if status is None:
                 received = _now()
