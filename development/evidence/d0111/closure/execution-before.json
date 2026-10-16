@@ -1,0 +1,9 @@
+{
+  "status": null,
+  "mypy": ".venv/Scripts/python.exe -B -m mypy --cache-dir <isolated>/mypy-cache core app.py scripts Japanese_Equity_Lab/lib",
+  "TEMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\d0111-closure\\temp",
+  "tests": ".venv/Scripts/python.exe -B -m pytest Japanese_Equity_Lab/13_tests/test_scenario_returns.py Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py Japanese_Equity_Lab/13_tests/test_company_exposure_valuation_integration.py -k \"not h0001 and not locked\" -p no:cacheprovider --basetemp <isolated>/pytest -q",
+  "head": "58470d850bf06c2a8160e5955931ff5efef03b2b",
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-",
+  "TMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\d0111-closure\\temp"
+}

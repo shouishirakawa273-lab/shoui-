@@ -19279,3 +19279,9 @@ development/2026-10-16_D0111_RESULT.md and development/evidence/d0111/.
 Accepted as a synthetic engineering delivery candidate only; real-company and
 empirical forecast acceptance remain open. Draft publication does not imply
 merge or FROZEN. BLS runtime/task unchanged; prohibited tests not executed.
+
+D0111 publication follow-up: Draft PR #14. Initial CI exposed eight mypy errors
+in the new calculation module; corrected at58470d850bf06c2a8160e5955931ff5efef03b2b.
+Independent closure confirmed193-source mypy success,100pass/1deselected,
+unchanged full demo JSON/hash and frozen288. Initial independent test success
+alone did not establish CI success. No merge/FROZEN; real acceptance still open.
