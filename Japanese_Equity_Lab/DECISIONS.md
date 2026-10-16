@@ -19266,3 +19266,16 @@ Detailed limits/evidence: development/2026-10-16_BLS_CAPTURE_RESULT.md.
 Capture-only operation is accepted as a minimal engineering slice; empirical
 forecast validity/product completion remain unaccepted. No merge/FROZEN or
 H0001/Locked Test. D0111 can proceed without waiting months for data maturity.
+
+## 2026-10-16 — D0111 conditional scenario-return engineering slice
+
+Code ff7910f51d2307f616d76568b4690ba41833cace implements the explicit
+2026-10-16 contract, without claiming recovery of unavailable old requirements.
+Shared explicit price/cash/exit/basis terms support pretax nonannualized scenario
+comparisons and replay deltas; no probabilities, recommendations or causal claim.
+Independent fixed-SHA validation:100 passed/1 deselected/exit0, separate design
+audit with no blockers, frozen288 unchanged. Evidence and limitations are in
+development/2026-10-16_D0111_RESULT.md and development/evidence/d0111/.
+Accepted as a synthetic engineering delivery candidate only; real-company and
+empirical forecast acceptance remain open. Draft publication does not imply
+merge or FROZEN. BLS runtime/task unchanged; prohibited tests not executed.
