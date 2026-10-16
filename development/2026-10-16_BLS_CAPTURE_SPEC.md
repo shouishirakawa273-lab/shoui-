@@ -49,3 +49,11 @@ MacroRecord.market_public_at_basisはUNKNOWNのまま。過去の市場公開時
 HTTP途中切断は、既知HTTP状態と回収可能partial bytesをFAILED receiptに残す。
 partialが回収不能ならerrorにその旨を記し空bytesを保存する。Content-Lengthは任意だが、
 存在する場合は厳密な数字文字列と受信byte長の一致を要求し、有効JSONの途中prefixでも成功扱いしない。
+
+実原応答の2025年10月は`value="-"`、footnote code X/text
+`Data unavailable due to the 2025 lapse in appropriations`が明示される。
+解釈版bls-capture-2は、この年月・marker・理由が全一致する場合のみ、既存
+ValueAvailability.MISSING_OR_UNSPECIFIED/value=None/raw_value="-"として保持する。
+0補完・補間・一般的な非数値許可は行わず、理由不明markerや未知tokenは従来どおり失敗とする。
+monthly_countはこの明示欠測月も含む。保存原応答fixtureでは35rows中M13を2件除外し、
+月次33件（PRESENT32件・明示欠測1件）。旧失敗bundle/旧runtimeは書換しない。

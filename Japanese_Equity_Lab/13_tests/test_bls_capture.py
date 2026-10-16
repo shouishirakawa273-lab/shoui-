@@ -141,6 +141,46 @@ def test_parse_failure_keeps_response_timestamp(tmp_path: Path) -> None:
     assert result["outcome"] == "FAILED" and result["received_at"] == received.isoformat()
 
 
+def test_official_captured_fixture_retains_explicit_missing_month(tmp_path: Path) -> None:
+    raw = (Path(__file__).parent / "fixtures" / "bls_cpi_capture_sample.json").read_bytes()
+    records, annual = parse(raw, NOW, "official-sample")
+    missing = [record for record in records if record.value is None]
+    assert len(records) == 33 and annual == 2
+    assert sum(record.value_availability == "PRESENT" for record in records) == 32
+    assert len(missing) == 1
+    record = missing[0]
+    assert record.reference_period_start.isoformat() == "2025-10-01"
+    assert record.value_availability == "MISSING_OR_UNSPECIFIED" and record.raw_value == "-"
+    assert record.normalizer_version == "bls-capture-2"
+    result = make(tmp_path, "official-sample", raw)
+    assert result["outcome"] == "CAPTURED" and result["monthly_count"] == 33
+    assert result == show(tmp_path, "official-sample")
+    assert (tmp_path / "official-sample" / "response.bin").read_bytes() == raw
+    rows = [json.loads(line) for line in (tmp_path / "official-sample" / "records.jsonl").read_text().splitlines()]
+    stored_missing = [row for row in rows if row["value_availability"] == "MISSING_OR_UNSPECIFIED"]
+    assert len(stored_missing) == 1 and stored_missing[0]["value"] is None
+    assert stored_missing[0]["raw_value"] == "-"
+
+
+@pytest.mark.parametrize("change", ["no-footnote", "wrong-reason", "wrong-code", "unknown-token", "wrong-month"])
+def test_unrecognized_missing_marker_is_rejected(change: str) -> None:
+    raw = (Path(__file__).parent / "fixtures" / "bls_cpi_capture_sample.json").read_bytes()
+    payload = json.loads(raw)
+    row = next(row for row in payload["Results"]["series"][0]["data"] if row["value"] == "-")
+    if change == "no-footnote":
+        row.pop("footnotes")
+    elif change == "wrong-reason":
+        row["footnotes"][0]["text"] = "unspecified"
+    elif change == "wrong-code":
+        row["footnotes"][0]["code"] = "?"
+    elif change == "unknown-token":
+        row["value"] = "NA"
+    else:
+        row["year"] = "2023"
+    with pytest.raises(ValueError, match="unsupported missing"):
+        parse(encode(payload), NOW, "invalid-missing")
+
+
 @pytest.mark.parametrize("status", [301, 302, 401, 403, 429, 500])
 def test_http_failures_saved_no_retry(tmp_path: Path, status: int) -> None:
     receipt = make(tmp_path, status=status)

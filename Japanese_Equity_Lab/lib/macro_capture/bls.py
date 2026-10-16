@@ -25,7 +25,8 @@ from lib.macro.model import MacroRecord, SeasonalAdjustment
 
 URL = "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0"
 SERIES = "CUUR0000SA0"
-VERSION = "bls-capture-1"
+VERSION = "bls-capture-2"
+MISSING_FOOTNOTE = {"code": "X", "text": "Data unavailable due to the 2025 lapse in appropriations"}
 LIMIT = 1024 * 1024
 DISCLAIMER = "Source: U.S. Bureau of Labor Statistics. BLS does not guarantee subsequent analysis."
 
@@ -87,14 +88,20 @@ def parse(raw: bytes, received: datetime, run_id: str) -> tuple[list[MacroRecord
         if identity in seen:
             raise ValueError("duplicate period")
         seen.add(identity)
-        if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
-            raise ValueError("invalid index string")
-        try:
-            number = Decimal(value)
-        except InvalidOperation as exc:
-            raise ValueError("invalid decimal") from exc
-        if not number.is_finite() or number <= 0:
-            raise ValueError("index must be finite and positive")
+        number: Decimal | None
+        availability = ValueAvailability.PRESENT
+        if value == "-" and year == "2025" and period == "M10" and row.get("footnotes") == [MISSING_FOOTNOTE]:
+            number = None
+            availability = ValueAvailability.MISSING_OR_UNSPECIFIED
+        else:
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+                raise ValueError("invalid index string or unsupported missing marker/reason")
+            try:
+                number = Decimal(value)
+            except InvalidOperation as exc:
+                raise ValueError("invalid decimal") from exc
+            if not number.is_finite() or number <= 0:
+                raise ValueError("index must be finite and positive")
         month = int(period[1:])
         if month == 13:
             annual += 1
@@ -118,7 +125,7 @@ def parse(raw: bytes, received: datetime, run_id: str) -> tuple[list[MacroRecord
                 value=number,
                 unit="INDEX_1982_84_100",
                 seasonal_adjustment=SeasonalAdjustment.NOT_SEASONALLY_ADJUSTED,
-                value_availability=ValueAvailability.PRESENT,
+                value_availability=availability,
                 retrieved_at=received,
                 raw_snapshot_ref=f"{run_id}/response.bin",
                 source_field=f"Results.series[{SERIES}].data[{identity}].value",
