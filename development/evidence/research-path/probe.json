@@ -1,0 +1,13 @@
+{
+  "head": "2a458a848966a52a1f1bcddd738a8a4c3bcc7a3c",
+  "base": "51c36eb01d0be6fab0240be804f91766016960f7",
+  "fraction_all_scenarios": true,
+  "actual_forecast_lineage_hashes": true,
+  "context_input_invariance": true,
+  "future_bridge_rejection_downstream_null": true,
+  "separate_process_cwd_json_identical": true,
+  "frozen288_git_diffs_empty": true,
+  "raw_byte_identity_not_claimed": "Git content check; CRLF may differ in working files.",
+  "artifact_hash": "47ffb1fe73bc1ebd646c58ce4abcbf97dd05c00b724f26c7343349e89d729013",
+  "status": "clean"
+}

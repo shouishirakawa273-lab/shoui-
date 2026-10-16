@@ -19309,3 +19309,14 @@ BLS task October17 00:20 JST returned0 and matching CAPTURED receipt HTTP200;
 actual observation is later than planned00:15, with cause uninvestigated.
 See development/2026-10-17_D0111_SUPPLEMENTARY_EVIDENCE.md. Code and runtime
 unchanged; no real-company calculation, prohibited tests, merge or FROZEN.
+
+## 2026-10-17 — single synthetic exposure-to-return path
+
+Code2a458a848966a52a1f1bcddd738a8a4c3bcc7a3c connects actual bridge
+baseline/replay forecasts through valuation and D0111 returns in one reproducible
+JSON artifact. Full inputs/intermediate hashes/terms/limitations are retained;
+future-driver rejection prevents downstream outputs. Independent107pass/1deselected,
+193-source mypy success and frozen288 unchanged; separate design audit no blockers.
+See development/2026-10-17_PRODUCT_BACKLOG_AND_PATH_SPEC.md and
+2026-10-17_RESEARCH_PATH_RESULT.md. Synthetic engineering slice accepted only;
+real-company/empirical/product gates remain open. No merge/FROZEN/prohibited tests.
