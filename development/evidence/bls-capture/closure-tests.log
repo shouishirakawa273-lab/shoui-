@@ -1,0 +1,24 @@
+{
+  "args": [
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\closure-tmp\\pytest",
+    "Japanese_Equity_Lab/13_tests/test_bls_capture.py::test_failed_entity_read_is_persisted_without_retry",
+    "Japanese_Equity_Lab/13_tests/test_bls_capture.py::test_parse_failure_keeps_response_timestamp"
+  ],
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-",
+  "TEMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\closure-tmp",
+  "TMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\closure-tmp",
+  "start_sha": "17adb2415e441a2fb394611c333c4f1fdffa1fd0",
+  "end_sha": "17adb2415e441a2fb394611c333c4f1fdffa1fd0",
+  "start_status": "",
+  "end_status": "",
+  "exit": 0
+}
+.......                                                                  [100%]
+7 passed in 4.93s

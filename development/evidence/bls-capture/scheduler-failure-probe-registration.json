@@ -1,0 +1,7 @@
+{
+  "network_used": false,
+  "synthetic_transport": true,
+  "task_name": "JapaneseEquityLab-BlsCpiCapture-FailureProbe",
+  "production_data_modified": false,
+  "scheduled_at": "2026-10-16T12:51:27.8392346+09:00"
+}

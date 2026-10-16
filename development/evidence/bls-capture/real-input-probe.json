@@ -1,0 +1,16 @@
+{
+  "sha": "f075802dcafd35451b84f301ec00907c74536738",
+  "end_sha": "f075802dcafd35451b84f301ec00907c74536738",
+  "end_status": "",
+  "expected_from_raw": {
+    "monthly": 33,
+    "present": 32,
+    "missing": 1,
+    "annual_excluded": 2
+  },
+  "roundtrip": "PASS",
+  "frozen_count": 288,
+  "frozen_changes": [],
+  "frozen_dirty": [],
+  "network_used": false
+}

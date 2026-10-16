@@ -19242,3 +19242,27 @@ interval, valuation-to-exit assumption, shared inputs, unaffected-scenario
 rejection and caller-attested share basis limits. No D0111 code was implemented.
 This is planning documentation, not FROZEN, empirical acceptance or a merge.
 No source changes, real-data fabrication, H0001/Locked Test or new tests.
+
+## 2026-10-16 — Single-series BLS capture and scheduled operation
+
+Implements a new capture-only namespace/CLI using existing MacroRecord and
+append-only persistence; frozen288 and existing production/tests are unchanged.
+Raw entity bytes, actual UTC, provenance, checksums, strict interpretation and
+immutable per-run bundles are retained. No event first-release, forecast or
+experiment records are manufactured from current series observations.
+
+Independent initial69c3fce:85 tests; HTTP completeness closure17adb24:7 tests;
+real-input acceptance f075802:6 tests, in separate runs. HTTP read failure and
+declared-length mismatch now fail closed with retained partial evidence.
+Live application also identified the official 2025-10 unavailable marker; version2
+preserves it as value=None/MISSING_OR_UNSPECIFIED, without imputation.
+
+Fixed runtime f075802dcafd35451b84f301ec00907c74536738 completed one live acceptance
+and two real scheduled fetches, with independent reread/byte-integrity checks.
+Monthly33 = present32 + explicitly missing1; annual2 excluded. A separately
+isolated synthetic503 demonstrated failure visibility and is not a BLS outage.
+Windows daily00:15 Japan time requires machine running and user logged in.
+Detailed limits/evidence: development/2026-10-16_BLS_CAPTURE_RESULT.md.
+Capture-only operation is accepted as a minimal engineering slice; empirical
+forecast validity/product completion remain unaccepted. No merge/FROZEN or
+H0001/Locked Test. D0111 can proceed without waiting months for data maturity.

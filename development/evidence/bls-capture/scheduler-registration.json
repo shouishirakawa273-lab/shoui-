@@ -1,0 +1,14 @@
+{
+  "code_sha": "f075802dcafd35451b84f301ec00907c74536738",
+  "timezone": "Tokyo Standard Time",
+  "unattended_conditions": "Windows running, user logged in; wake/start-when-available best effort; no 24x7 guarantee",
+  "second_scheduled": "2026-10-16T12:52:31.8403578+09:00",
+  "registered_at": "2026-10-16T03:50:17.3203437Z",
+  "action_arguments": "-B \"C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\ops\\bls-runtime-f075802\\Japanese_Equity_Lab\\scripts\\bls_capture.py\" fetch --root \"C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\ops\\bls-data-v2\"",
+  "first_scheduled": "2026-10-16T12:51:31.8403578+09:00",
+  "daily_time": "00:15",
+  "data_root": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\ops\\bls-data-v2",
+  "task_name": "JapaneseEquityLab-BlsCpiCapture",
+  "logon_type": "Interactive",
+  "action_executable": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\.venv\\Scripts\\pythonw.exe"
+}
