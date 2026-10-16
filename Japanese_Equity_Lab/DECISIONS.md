@@ -19298,3 +19298,14 @@ current-branch inventory. Existing secondary research records retained with limi
 no repeated source search, invented historical observation, or company calculation.
 See development/2026-10-16_D0111_SCOPE_AND_ACCEPTANCE.md and
 2026-10-16_D0111_SMM_INPUT_READINESS.md. Code unchanged; no merge/FROZEN.
+
+## 2026-10-17 — bounded new-source check and daily capture observation
+
+Two additional official SMM HTML resources did not establish a compatible
+operating-income sensitivity reconciliation. Keep BLOCKED_INPUT_EVIDENCE;
+segment profit before eliminations is not consolidated operating income.
+No further repeated search on the same issue absent new evidence.
+BLS task October17 00:20 JST returned0 and matching CAPTURED receipt HTTP200;
+actual observation is later than planned00:15, with cause uninvestigated.
+See development/2026-10-17_D0111_SUPPLEMENTARY_EVIDENCE.md. Code and runtime
+unchanged; no real-company calculation, prohibited tests, merge or FROZEN.
