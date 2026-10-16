@@ -7,7 +7,7 @@ Share basis and exit mapping are caller attestations, not independent certificat
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from decimal import ROUND_HALF_EVEN, Context, Decimal, DecimalException, DivisionByZero, InvalidOperation, Overflow, localcontext
 
@@ -207,11 +207,11 @@ def _validate(baseline: ValuationResult, replay: ValuationResult, terms: SharedT
         multiple, bs = result.multiple_used, result.balance_sheet_used
         if multiple is None or bs is None:
             raise ValueError("multiple and balance sheet required")
-        for stamp in (multiple.available_at, bs.net_debt_available_at, bs.share_count_available_at):
-            if stamp is None:
+        for input_stamp in (multiple.available_at, bs.net_debt_available_at, bs.share_count_available_at):
+            if input_stamp is None:
                 raise ValueError("missing balance sheet availability")
-            _aware(stamp)
-            if stamp > cutoff:
+            _aware(input_stamp)
+            if input_stamp > cutoff:
                 raise ValueError("valuation input PIT invalid")
         _decimal(multiple.value, minimum=Decimal(0))
         _decimal(bs.net_debt)
@@ -230,8 +230,8 @@ def _validate(baseline: ValuationResult, replay: ValuationResult, terms: SharedT
         for s in result.scenarios:
             if s.currency != p.currency:
                 raise ValueError("scenario currency mismatch")
-            for value in (s.input_operating_income, s.estimated_enterprise_value, s.estimated_equity_value):
-                _decimal(value)
+            for economic_value in (s.input_operating_income, s.estimated_enterprise_value, s.estimated_equity_value):
+                _decimal(economic_value)
             _decimal(s.estimated_value_per_share, minimum=Decimal(0))
     if (
         baseline.valuation_model_id != replay.valuation_model_id
@@ -292,7 +292,7 @@ def _compare_scenario_returns(
         bear = pairs[2]
         ld = max(Decimal(0), -bear.baseline.net_before_tax_return)
         rd = max(Decimal(0), -bear.replay.net_before_tax_return)
-        payload = dict(
+        result = ReturnComparison(
             baseline_hash=baseline.record_hash,
             replay_hash=replay.record_hash,
             baseline_reference=baseline.result_id,
@@ -316,8 +316,10 @@ def _compare_scenario_returns(
                 "SYNTHETIC" if terms.synthetic else "REAL_INPUTS_NOT_EMPIRICALLY_VALIDATED",
             ),
             calculation_contract_version=CONTRACT,
+            record_hash="",
         )
-        return ReturnComparison(**payload, record_hash=compute_record_hash(payload))
+        payload = {field.name: getattr(result, field.name) for field in fields(result) if field.name != "record_hash"}
+        return replace(result, record_hash=compute_record_hash(payload))
 
 
 def compare_scenario_returns(
