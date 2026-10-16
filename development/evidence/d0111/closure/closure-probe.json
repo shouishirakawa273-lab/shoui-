@@ -1,0 +1,12 @@
+{
+  "head": "58470d850bf06c2a8160e5955931ff5efef03b2b",
+  "base": "28fb26edcc9439833370949e4501264beb286e97",
+  "demo_exit": 0,
+  "entire_demo_json_identical_to_initial": true,
+  "result_hash": "19d016110f9eaabda28e6b3c406151f4e890c8a52f6f8b167c293d4b52c60a49",
+  "frozen288_base_head_git_diff_empty": true,
+  "frozen288_head_working_git_diff_empty": true,
+  "raw_crlf_comparison": "Not reinterpreted as byte identity; initial verification reported 260 CRLF-only differences.",
+  "status": "clean",
+  "semantic_diff": "Loop variable renames; typed ReturnComparison construction followed by fields excluding record_hash and replace; identical hashing payload fields."
+}

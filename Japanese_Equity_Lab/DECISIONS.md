@@ -19266,3 +19266,46 @@ Detailed limits/evidence: development/2026-10-16_BLS_CAPTURE_RESULT.md.
 Capture-only operation is accepted as a minimal engineering slice; empirical
 forecast validity/product completion remain unaccepted. No merge/FROZEN or
 H0001/Locked Test. D0111 can proceed without waiting months for data maturity.
+
+## 2026-10-16 — D0111 conditional scenario-return engineering slice
+
+Code ff7910f51d2307f616d76568b4690ba41833cace implements the explicit
+2026-10-16 contract, without claiming recovery of unavailable old requirements.
+Shared explicit price/cash/exit/basis terms support pretax nonannualized scenario
+comparisons and replay deltas; no probabilities, recommendations or causal claim.
+Independent fixed-SHA validation:100 passed/1 deselected/exit0, separate design
+audit with no blockers, frozen288 unchanged. Evidence and limitations are in
+development/2026-10-16_D0111_RESULT.md and development/evidence/d0111/.
+Accepted as a synthetic engineering delivery candidate only; real-company and
+empirical forecast acceptance remain open. Draft publication does not imply
+merge or FROZEN. BLS runtime/task unchanged; prohibited tests not executed.
+
+D0111 publication follow-up: Draft PR #14. Initial CI exposed eight mypy errors
+in the new calculation module; corrected at58470d850bf06c2a8160e5955931ff5efef03b2b.
+Independent closure confirmed193-source mypy success,100pass/1deselected,
+unchanged full demo JSON/hash and frozen288. Initial independent test success
+alone did not establish CI success. No merge/FROZEN; real acceptance still open.
+
+## 2026-10-16 — D0111 v1 scope closure and one-company readiness
+
+The current explicit v1 calculation design is complete for its agreed scope;
+original historical requirements remain unrecovered, not silently reconstructed.
+Synthetic engineering acceptance and real-company/empirical gates remain separate.
+SMM input inventory is BLOCKED_INPUT_EVIDENCE: known pretax sensitivity is not
+compatible with the operating-income route without verifiable reconciliation.
+No eligible price/dividend/share-basis/common-cutoff bundle identified in scoped
+current-branch inventory. Existing secondary research records retained with limits;
+no repeated source search, invented historical observation, or company calculation.
+See development/2026-10-16_D0111_SCOPE_AND_ACCEPTANCE.md and
+2026-10-16_D0111_SMM_INPUT_READINESS.md. Code unchanged; no merge/FROZEN.
+
+## 2026-10-17 — bounded new-source check and daily capture observation
+
+Two additional official SMM HTML resources did not establish a compatible
+operating-income sensitivity reconciliation. Keep BLOCKED_INPUT_EVIDENCE;
+segment profit before eliminations is not consolidated operating income.
+No further repeated search on the same issue absent new evidence.
+BLS task October17 00:20 JST returned0 and matching CAPTURED receipt HTTP200;
+actual observation is later than planned00:15, with cause uninvestigated.
+See development/2026-10-17_D0111_SUPPLEMENTARY_EVIDENCE.md. Code and runtime
+unchanged; no real-company calculation, prohibited tests, merge or FROZEN.
