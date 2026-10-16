@@ -1,0 +1,14 @@
+{
+  "sha": "69c3fced1f3a53aa775f71b2f3315bfafe9a9988",
+  "count": 288,
+  "changed_frozen": [],
+  "dirty_frozen": [],
+  "all_changes": [
+    "Japanese_Equity_Lab/13_tests/test_bls_capture.py",
+    "Japanese_Equity_Lab/lib/macro_capture/__init__.py",
+    "Japanese_Equity_Lab/lib/macro_capture/bls.py",
+    "Japanese_Equity_Lab/scripts/bls_capture.py",
+    "development/2026-10-16_BLS_CAPTURE_SPEC.md"
+  ],
+  "git_status": ""
+}

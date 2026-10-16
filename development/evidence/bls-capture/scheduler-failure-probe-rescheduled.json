@@ -1,0 +1,7 @@
+{
+  "network_used": false,
+  "note": "Initial one-off did not execute (TASK_HAS_NOT_RUN). Matched primary power/start conditions and rescheduled once.",
+  "synthetic_transport": true,
+  "rescheduled_at": "2026-10-16T12:53:18.2421532+09:00",
+  "task_name": "JapaneseEquityLab-BlsCpiCapture-FailureProbe"
+}

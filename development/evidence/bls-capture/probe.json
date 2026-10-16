@@ -1,0 +1,15 @@
+{
+  "sha": "69c3fced1f3a53aa775f71b2f3315bfafe9a9988",
+  "status": "",
+  "result": "PASS",
+  "network_used": false,
+  "raw_receipt_records_match": true,
+  "received_not_start_time": true,
+  "same_run_no_fetch_no_write": true,
+  "observed_before_capture_excluded": true,
+  "receipt_semantics": "SYSTEM_OBSERVED",
+  "record_basis": "UNKNOWN",
+  "resolver_basis": "OBSERVED",
+  "initial_release_not_generated": true,
+  "probe_note": "First probe used nonexistent AvailabilityBasis.SYSTEM_OBSERVED enum and stopped; corrected to existing OBSERVED. Production unchanged."
+}

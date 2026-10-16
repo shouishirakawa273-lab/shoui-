@@ -1,0 +1,14 @@
+{
+  "JapaneseEquityLab-BlsCpiCapture-FailureProbe": {
+    "last_run": "1999-11-30T00:00:00+09:00",
+    "state": "Ready",
+    "next_run": null,
+    "last_result": 267011
+  },
+  "JapaneseEquityLab-BlsCpiCapture": {
+    "last_run": "2026-10-16T12:51:31+09:00",
+    "state": "Ready",
+    "next_run": "2026-10-16T12:52:31+09:00",
+    "last_result": 0
+  }
+}

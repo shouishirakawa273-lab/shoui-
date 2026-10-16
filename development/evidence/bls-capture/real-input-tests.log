@@ -1,0 +1,22 @@
+{
+  "args": [
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp",
+    "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\real-input-tmp\\pytest",
+    "Japanese_Equity_Lab/13_tests/test_bls_capture.py::test_official_captured_fixture_retains_explicit_missing_month",
+    "Japanese_Equity_Lab/13_tests/test_bls_capture.py::test_unrecognized_missing_marker_is_rejected"
+  ],
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-",
+  "TEMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\real-input-tmp",
+  "TMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\bls-capture-independent\\real-input-tmp",
+  "start_sha": "f075802dcafd35451b84f301ec00907c74536738",
+  "start_status": "",
+  "exit": 0
+}
+......                                                                   [100%]
+6 passed in 1.05s
