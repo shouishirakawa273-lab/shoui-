@@ -252,5 +252,13 @@
       "head": "071cff9c18632461c207a08c20e7c721a983221b",
       "base": "claude/repo-creation-setup-ejmkje"
     }
-  ]
+  ],
+  "observation": {
+    "date": "2026-10-17",
+    "timezone": "Asia/Tokyo",
+    "timestamp_precision": "date only; exact retrieval time not retained",
+    "source": "GitHub REST GET repository, branches?per_page=100, pulls?state=all&per_page=100",
+    "repository": "shouishirakawa273-lab/shoui-",
+    "limitations": "Saved observation; independent reviewer did not refetch remote state. protected flags are not a complete security-settings audit."
+  }
 }
