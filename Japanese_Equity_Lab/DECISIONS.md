@@ -19357,3 +19357,13 @@ checks, frozen288 unchanged; separate design audit no blockers. See
 Synthetic integration accepted only; product_acceptance remains false. Real data/
 PIT/joint-scenario suitability and efficacy remain open. No merge/FROZEN or
 prohibited tests, source/runtime changes or invented new D-number.
+
+## 2026-10-17 — acceptance-candidate entry point and dependency snapshot
+
+Pinned synthetic candidate598e8d25010e4ed1b13e4a7be570a62124b840ac, reviewed
+integration9b36bbe765596f67d4ec2a4a68dfef43f03ee852. New documentation entry
+ development/ACCEPTANCE_CANDIDATE.md and dated JSON consolidate actual contracts,
+evidence/command limits,13 Draft ancestor PRs, excluded sibling4–6/governance
+branch, CI success and remaining real-data/experiment/portfolio/operational gates.
+Direct GitHub read-only and local ancestry checks; no code review/test repetition.
+No merge/FROZEN or new functionality. Whole-product percentage remains unassessed.
