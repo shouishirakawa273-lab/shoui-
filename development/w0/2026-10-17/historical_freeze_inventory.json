@@ -1,0 +1,1277 @@
+{
+  "audit_document_base": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+  "code_baseline": "0e915c81fafc26535001680e5fbd0b9c5fc1eb67",
+  "method": "Static Git tree/blob/history and recorded declarations; no tests or research execution",
+  "limitations": [
+    "Early scope candidates are not formal accepted scope manifests",
+    "Git blob IDs and SHA256 byte hashes are distinct",
+    "A line introduction commit is not acceptance authorization",
+    "Documented later edits are not retroactively owner-approved by W0"
+  ],
+  "early": {
+    "head": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+    "method": "git ls-tree blob identity; no tests/collect/API/secrets",
+    "entries": [
+      {
+        "id": "STAGE3.15",
+        "declaration_lines": [
+          11083,
+          11099
+        ],
+        "record_commit": "983e32ef5566047237140d0213c792d35389c191",
+        "content_commit": "983e32ef5566047237140d0213c792d35389c191",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_valuation_historical_context.py",
+          "Japanese_Equity_Lab/lib/evidence/__init__.py",
+          "Japanese_Equity_Lab/lib/evidence/decision_log.py",
+          "Japanese_Equity_Lab/lib/evidence/model.py",
+          "Japanese_Equity_Lab/lib/evidence/news.py",
+          "Japanese_Equity_Lab/lib/evidence/packet.py",
+          "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+          "Japanese_Equity_Lab/lib/evidence/retrieval.py",
+          "Japanese_Equity_Lab/lib/registry/__init__.py",
+          "Japanese_Equity_Lab/lib/registry/evidence_packet_registry.py",
+          "Japanese_Equity_Lab/lib/registry/evidence_registry.py",
+          "Japanese_Equity_Lab/lib/registry/experiment_registry.py",
+          "Japanese_Equity_Lab/lib/registry/provenance.py",
+          "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py",
+          "Japanese_Equity_Lab/lib/valuation/__init__.py",
+          "Japanese_Equity_Lab/lib/valuation/builder.py",
+          "Japanese_Equity_Lab/lib/valuation/current_fy_forecast_builder.py",
+          "Japanese_Equity_Lab/lib/valuation/evidence.py",
+          "Japanese_Equity_Lab/lib/valuation/historical_context_builder.py",
+          "Japanese_Equity_Lab/lib/valuation/historical_context_evidence.py",
+          "Japanese_Equity_Lab/lib/valuation/model.py",
+          "Japanese_Equity_Lab/lib/valuation/provenance.py",
+          "scripts/verify_stage3_15_7203_closure.py"
+        ],
+        "scope_basis": "Historical record + milestone tree inspection; paths are bounded audit candidates, not a recovered exact owner-approved hash manifest",
+        "unresolved": [
+          "Exact full accepted scope/hash manifest not present in cited record; no starting_head used as acceptance."
+        ],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_valuation_historical_context.py",
+            "accepted_blob": "e5863660057afd39ab62345ffa51f3cb78e82181",
+            "current_blob": "e5863660057afd39ab62345ffa51f3cb78e82181",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/decision_log.py",
+            "accepted_blob": "6a0a76d9b68a20e1f3900debd345e91109a89797",
+            "current_blob": "6a0a76d9b68a20e1f3900debd345e91109a89797",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/model.py",
+            "accepted_blob": "2c06413c74fcc238f83a2d5b2ef4820dd35b5b52",
+            "current_blob": "2c06413c74fcc238f83a2d5b2ef4820dd35b5b52",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/news.py",
+            "accepted_blob": "f03a0d70197f54e5facfbc8468eb739f1b48bdfe",
+            "current_blob": "f03a0d70197f54e5facfbc8468eb739f1b48bdfe",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/packet.py",
+            "accepted_blob": "ab5ddfa8b4917a72e7057e294810516e205a72d9",
+            "current_blob": "ab5ddfa8b4917a72e7057e294810516e205a72d9",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+            "accepted_blob": "e24a5430bb66bb99d7b6fb83ecd8cf7505af6648",
+            "current_blob": "e24a5430bb66bb99d7b6fb83ecd8cf7505af6648",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/retrieval.py",
+            "accepted_blob": "1b094878d9867b31be02463ba10eb08db8a397a1",
+            "current_blob": "1b094878d9867b31be02463ba10eb08db8a397a1",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/evidence_packet_registry.py",
+            "accepted_blob": "0192f3271c36536390fa3d0d94d983c4fc6411b3",
+            "current_blob": "0192f3271c36536390fa3d0d94d983c4fc6411b3",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/evidence_registry.py",
+            "accepted_blob": "98c6d66c459b0ca72456fe1d50ef3d26e5a5842e",
+            "current_blob": "98c6d66c459b0ca72456fe1d50ef3d26e5a5842e",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/experiment_registry.py",
+            "accepted_blob": "27819f24dc3c3eeb0f594ea44b62108a9b2b6e82",
+            "current_blob": "27819f24dc3c3eeb0f594ea44b62108a9b2b6e82",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/provenance.py",
+            "accepted_blob": "cc5a9309f7822d2ab1d77dc1b64a2dd7ac14d438",
+            "current_blob": "cc5a9309f7822d2ab1d77dc1b64a2dd7ac14d438",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py",
+            "accepted_blob": "16c0933877947b356831ea7bf7882b074434fe47",
+            "current_blob": "16c0933877947b356831ea7bf7882b074434fe47",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/builder.py",
+            "accepted_blob": "8ce9719c3c34153c5a2be9afab47170993cc21c8",
+            "current_blob": "8ce9719c3c34153c5a2be9afab47170993cc21c8",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/current_fy_forecast_builder.py",
+            "accepted_blob": "482e0c39449b18dfbee77e364a213807272336ff",
+            "current_blob": "482e0c39449b18dfbee77e364a213807272336ff",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/evidence.py",
+            "accepted_blob": "63a2c98cf539bcabcf70768c205c069f79f5bcf0",
+            "current_blob": "63a2c98cf539bcabcf70768c205c069f79f5bcf0",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/historical_context_builder.py",
+            "accepted_blob": "efa09bdeca597cefd77925c78bb51938a671a257",
+            "current_blob": "efa09bdeca597cefd77925c78bb51938a671a257",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/historical_context_evidence.py",
+            "accepted_blob": "b7011ece4d4379e7e67d27f0b718fe14fd1bd987",
+            "current_blob": "b7011ece4d4379e7e67d27f0b718fe14fd1bd987",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/model.py",
+            "accepted_blob": "3f625fea4467526846683dc4f0ab19716b46af2a",
+            "current_blob": "3f625fea4467526846683dc4f0ab19716b46af2a",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/provenance.py",
+            "accepted_blob": "d0b32d6c0e232b44d0d09e8dd4f9dc5ebb4b867b",
+            "current_blob": "d0b32d6c0e232b44d0d09e8dd4f9dc5ebb4b867b",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "scripts/verify_stage3_15_7203_closure.py",
+            "accepted_blob": "903bdd516e88f99d3eb5df2c6d6e6a9cd952b5d9",
+            "current_blob": "903bdd516e88f99d3eb5df2c6d6e6a9cd952b5d9",
+            "status": "UNCHANGED"
+          }
+        ],
+        "reference_line_provenance": [
+          {
+            "line": 11083,
+            "line_introduced_commit": "983e32ef5566047237140d0213c792d35389c191",
+            "line_text": "`lib/evidence/*`・`lib/valuation/*`・`lib/registry/*`・Historical",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 11099,
+            "line_introduced_commit": "d401971be93a6c6571cfd1f3ff72a5b6e711c7ba",
+            "line_text": "Frozen——変更していない。H0001は実行していない)",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          }
+        ],
+        "record_commit_role": "Content milestone candidate, not the first freeze declaration record"
+      },
+      {
+        "id": "STAGE3.17",
+        "declaration_lines": [
+          12088,
+          12092
+        ],
+        "record_commit": "3e17f7e67466deb8a0c9de2b13e683d94bd4f8c1",
+        "content_commit": "3e17f7e67466deb8a0c9de2b13e683d94bd4f8c1",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_peer_builder.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_catalog_capability.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_comparability.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_evidence_provenance.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_model.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_research_artifact_integration.py",
+          "Japanese_Equity_Lab/13_tests/test_peer_universe.py",
+          "Japanese_Equity_Lab/lib/peer/__init__.py",
+          "Japanese_Equity_Lab/lib/peer/builder.py",
+          "Japanese_Equity_Lab/lib/peer/comparability.py",
+          "Japanese_Equity_Lab/lib/peer/evidence.py",
+          "Japanese_Equity_Lab/lib/peer/model.py",
+          "Japanese_Equity_Lab/lib/peer/provenance.py",
+          "Japanese_Equity_Lab/lib/peer/universe.py"
+        ],
+        "scope_basis": "Historical record + milestone tree inspection; paths are bounded audit candidates, not a recovered exact owner-approved hash manifest",
+        "unresolved": [
+          "Exact full accepted scope/hash manifest not present in cited record; no starting_head used as acceptance."
+        ],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_builder.py",
+            "accepted_blob": "48fd480a0a2918a58cd8c15d2271b4a6a0dffa27",
+            "current_blob": "48fd480a0a2918a58cd8c15d2271b4a6a0dffa27",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_catalog_capability.py",
+            "accepted_blob": "e8c29f26104768b5b3f1ad4f2a510ac07b2ce1ca",
+            "current_blob": "e8c29f26104768b5b3f1ad4f2a510ac07b2ce1ca",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_comparability.py",
+            "accepted_blob": "ba0f1c00e6fa1c0d71b5b412c38c6c32f8550e9d",
+            "current_blob": "ba0f1c00e6fa1c0d71b5b412c38c6c32f8550e9d",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_evidence_provenance.py",
+            "accepted_blob": "ea5f6154e517dfb4fc92acc8042da4ad3549b748",
+            "current_blob": "ea5f6154e517dfb4fc92acc8042da4ad3549b748",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_model.py",
+            "accepted_blob": "f4a570b444d831f2d9ffd0cb82f467cd191d2359",
+            "current_blob": "f4a570b444d831f2d9ffd0cb82f467cd191d2359",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_research_artifact_integration.py",
+            "accepted_blob": "ea0348715efb7974bec3d2ed51d8cdc85e95309b",
+            "current_blob": "ea0348715efb7974bec3d2ed51d8cdc85e95309b",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_peer_universe.py",
+            "accepted_blob": "165b6066c51e601b2d92496a5252a4ae3532c05a",
+            "current_blob": "165b6066c51e601b2d92496a5252a4ae3532c05a",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/builder.py",
+            "accepted_blob": "a756fa253ae032c055077f8c9f55034129e49346",
+            "current_blob": "a756fa253ae032c055077f8c9f55034129e49346",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/comparability.py",
+            "accepted_blob": "31fcd62db04540574f59e367e79bcd45278cd674",
+            "current_blob": "31fcd62db04540574f59e367e79bcd45278cd674",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/evidence.py",
+            "accepted_blob": "f5581ec713ddc0364772138ccd8936ad9db822dd",
+            "current_blob": "f5581ec713ddc0364772138ccd8936ad9db822dd",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/model.py",
+            "accepted_blob": "eb5657bc19e12c5437edfba15977d42abafa2e17",
+            "current_blob": "eb5657bc19e12c5437edfba15977d42abafa2e17",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/provenance.py",
+            "accepted_blob": "5b40a51f78e0592e95551afcceb2295b6b23a83f",
+            "current_blob": "5b40a51f78e0592e95551afcceb2295b6b23a83f",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/peer/universe.py",
+            "accepted_blob": "615c4ce0351768f9f3b5b44a2319b0471a7f583d",
+            "current_blob": "615c4ce0351768f9f3b5b44a2319b0471a7f583d",
+            "status": "UNCHANGED"
+          }
+        ],
+        "reference_line_provenance": [
+          {
+            "line": 12088,
+            "line_introduced_commit": "deec037905c7588a418b70ab4e5f26ba36997c6c",
+            "line_text": "## D0098 — Claude Code Post-Edit Hookの安全化(Fast Gate / Explicit Acceptance分離)",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 12092,
+            "line_introduced_commit": "deec037905c7588a418b70ab4e5f26ba36997c6c",
+            "line_text": "見直したInfrastructure Decisionである。Stage 3.15/3.17 Freezeは無変更。",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          }
+        ],
+        "record_commit_role": "Content milestone candidate, not the first freeze declaration record"
+      },
+      {
+        "id": "D0098.1",
+        "declaration_lines": [
+          12797
+        ],
+        "record_commit": "1626bdbaa55db53acc65ed520ce798494b2da670",
+        "content_commit": "1626bdbaa55db53acc65ed520ce798494b2da670",
+        "scope_paths": [
+          ".claude/hooks/post_edit_quality_gate.sh",
+          "Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py"
+        ],
+        "scope_basis": "Historical record + milestone tree inspection; paths are bounded audit candidates, not a recovered exact owner-approved hash manifest",
+        "unresolved": [
+          "Exact full accepted scope/hash manifest not present in cited record; no starting_head used as acceptance."
+        ],
+        "comparisons": [
+          {
+            "path": ".claude/hooks/post_edit_quality_gate.sh",
+            "accepted_blob": "bf1725545465fdd51fdcf477d2547f12392e8cf9",
+            "current_blob": "4952f7c6a3a0ad49cf8285aeb31e7763f142119f",
+            "status": "CHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py",
+            "accepted_blob": "8a791761699e135e8c02543d5482938a72d9f256",
+            "current_blob": "8a791761699e135e8c02543d5482938a72d9f256",
+            "status": "UNCHANGED"
+          }
+        ],
+        "reference_line_provenance": [
+          {
+            "line": 12797,
+            "line_introduced_commit": "c8a8954f052fa38f1152e9069ef6d5930472c16b",
+            "line_text": "3.17はFROZENのまま。D0098.1はFROZENのまま。H0001は実行していない。",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          }
+        ],
+        "record_commit_role": "Content milestone candidate, not the first freeze declaration record"
+      },
+      {
+        "id": "D0102.4.final",
+        "declaration_lines": [
+          15935,
+          15938
+        ],
+        "record_commit": "cb5baaafb8d5de6052b70a00abc2e52eea37d293",
+        "content_commit": "cb5baaafb8d5de6052b70a00abc2e52eea37d293",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_faithfulness.py",
+          "Japanese_Equity_Lab/lib/disclosures/faithfulness.py"
+        ],
+        "scope_basis": "Historical record + milestone tree inspection; paths are bounded audit candidates, not a recovered exact owner-approved hash manifest",
+        "unresolved": [
+          "Exact full accepted scope/hash manifest not present in cited record; no starting_head used as acceptance."
+        ],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_faithfulness.py",
+            "accepted_blob": "c1159b5bdd2cc404ca453a0bef64715aaf1fb230",
+            "current_blob": "c1159b5bdd2cc404ca453a0bef64715aaf1fb230",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+            "accepted_blob": "73445530c92f3dae1cdb0c82a43f354a64d1931d",
+            "current_blob": "73445530c92f3dae1cdb0c82a43f354a64d1931d",
+            "status": "UNCHANGED"
+          }
+        ],
+        "reference_line_provenance": [
+          {
+            "line": 15935,
+            "line_introduced_commit": "1802a49e8742c4d7db08705ed2af2d8a7f0f6500",
+            "line_text": "## DEV-AUTO-01 — Development Workflow Automation",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 15938,
+            "line_introduced_commit": "1802a49e8742c4d7db08705ed2af2d8a7f0f6500",
+            "line_text": "`cb5baaa`でACCEPTED/FROZEN。SemanticClaim → Evidence統合(次Stage)へ",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          }
+        ],
+        "record_commit_role": "Content milestone candidate, not the first freeze declaration record"
+      },
+      {
+        "id": "DEV-AUTO.latest",
+        "declaration_lines": [
+          16113,
+          16285,
+          16488,
+          16646,
+          16794,
+          16872,
+          16963
+        ],
+        "record_commit": "0f92e97f38268b4a5c59e8b11db1b00e89c8f801",
+        "content_commit": "0f92e97f38268b4a5c59e8b11db1b00e89c8f801",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_dev_workflow.py",
+          "Japanese_Equity_Lab/13_tests/test_dev_workflow_executor.py",
+          "Japanese_Equity_Lab/13_tests/test_dev_workflow_orchestrator.py",
+          "Japanese_Equity_Lab/13_tests/test_host_validation.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/__init__.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/acceptance.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/agent_results.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/executor.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/gates.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/host_validation.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/human_gate.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/model.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/orchestrator.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/prompts.py",
+          "Japanese_Equity_Lab/scripts/dev_workflow_lib/run_record.py",
+          "Japanese_Equity_Lab/scripts/executor_config.example.json"
+        ],
+        "scope_basis": "Historical record + milestone tree inspection; paths are bounded audit candidates, not a recovered exact owner-approved hash manifest",
+        "unresolved": [
+          "Content milestone is inferred from matching git commit/record, not a separately signed formal acceptance SHA. Stage-wide complete scope remains UNKNOWN.",
+          "DEV-AUTO latest 02.4 has implementation record but a subsequent explicit ACCEPTED/FROZEN declaration for 02.4 was not located; older milestones are explicitly referenced as frozen."
+        ],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow.py",
+            "accepted_blob": "dcaa16ccfdfe563b8b18d658c320d17359f58c23",
+            "current_blob": "35157bc985e64dc321e9eec0ded658b53e769f50",
+            "status": "CHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_executor.py",
+            "accepted_blob": "10a7560e6537f9aed1b92851d97353ae8dc86d4d",
+            "current_blob": "10a7560e6537f9aed1b92851d97353ae8dc86d4d",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_orchestrator.py",
+            "accepted_blob": "e692bea613f706c3ba1c9572c7689830b8cae3ad",
+            "current_blob": "3fe95a359f9107ba6bdca9bbd20add03c887706c",
+            "status": "CHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_host_validation.py",
+            "accepted_blob": "78136724d214984aa25b799cdaafb2eed2d8c144",
+            "current_blob": "78136724d214984aa25b799cdaafb2eed2d8c144",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow.py",
+            "accepted_blob": "60e6cf3d7f8823762f6e0e2656dfcd31edd95d68",
+            "current_blob": "60e6cf3d7f8823762f6e0e2656dfcd31edd95d68",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/__init__.py",
+            "accepted_blob": "0559f3723c8c52b04bdf6100c24de7a3b2bdb5a0",
+            "current_blob": "0559f3723c8c52b04bdf6100c24de7a3b2bdb5a0",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/acceptance.py",
+            "accepted_blob": "e41a00c41bfb54f38dfab69c49632623dce451df",
+            "current_blob": "e41a00c41bfb54f38dfab69c49632623dce451df",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/agent_results.py",
+            "accepted_blob": "63e81c5ec70c5aa6d43176e525e4e8dc684526fe",
+            "current_blob": "63e81c5ec70c5aa6d43176e525e4e8dc684526fe",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/executor.py",
+            "accepted_blob": "6a9ee45f97e338675e5fbee536e23ecad31b2f05",
+            "current_blob": "6a9ee45f97e338675e5fbee536e23ecad31b2f05",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/gates.py",
+            "accepted_blob": "b239a01e509db4263a7f3d67040505dbf64d75d0",
+            "current_blob": "da01810ba7b1cbb6254c2899e8e97c53a5762a6a",
+            "status": "CHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/host_validation.py",
+            "accepted_blob": "4dd4d9bff620f6a27694df5c3658bb13e74b9303",
+            "current_blob": "4dd4d9bff620f6a27694df5c3658bb13e74b9303",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/human_gate.py",
+            "accepted_blob": "3ee1bbe02bdac15290cf509b1eb4092790205d32",
+            "current_blob": "3ee1bbe02bdac15290cf509b1eb4092790205d32",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/model.py",
+            "accepted_blob": "4b6644625836223513093f6ae70830a8cd334728",
+            "current_blob": "4b6644625836223513093f6ae70830a8cd334728",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/orchestrator.py",
+            "accepted_blob": "507c846517a1efcefa78b9d9adc3c370d22b138c",
+            "current_blob": "507c846517a1efcefa78b9d9adc3c370d22b138c",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/prompts.py",
+            "accepted_blob": "8bde007aadae9f7642d156502f08177dc903f411",
+            "current_blob": "8bde007aadae9f7642d156502f08177dc903f411",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/dev_workflow_lib/run_record.py",
+            "accepted_blob": "5e68e827c7c96adf75120590431dbc5054b91e5d",
+            "current_blob": "5e68e827c7c96adf75120590431dbc5054b91e5d",
+            "status": "UNCHANGED"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/executor_config.example.json",
+            "accepted_blob": "a8e90317d714559c9c9385aed8c9a398b564657e",
+            "current_blob": "a8e90317d714559c9c9385aed8c9a398b564657e",
+            "status": "UNCHANGED"
+          }
+        ],
+        "reference_line_provenance": [
+          {
+            "line": 16113,
+            "line_introduced_commit": "a81d9794b5d263ff7dbd89c6e5a9e7551cd70d4c",
+            "line_text": "DEV-AUTO-01(`1802a49`)は既にACCEPTED/FROZEN。DEV-AUTO-01が実装した",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16285,
+            "line_introduced_commit": "f36c3e6f55e4d1abbe43f13653cb548483595d9e",
+            "line_text": "DEV-AUTO-02(`a81d979`)はACCEPTED/FROZENのまま。本Roundは新機能を",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16488,
+            "line_introduced_commit": "7af19f22c261b0bc5720ed089702d967fecf1a51",
+            "line_text": "DEV-AUTO-02.1(`f36c3e6`)はACCEPTED/FROZENのまま。本Roundは新機能を",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16646,
+            "line_introduced_commit": "9f214ec7258c0fbcda443ea0c4afe565c7b98d5e",
+            "line_text": "DEV-AUTO-02.1.1(`7af19f2`)はACCEPTED/FROZENのまま。本Roundも新機能を",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16794,
+            "line_introduced_commit": "b962721dd8fca33ddb0c322e8e7961e3434cd786",
+            "line_text": "DEV-AUTO-02.2(`9f214ec`)はACCEPTED/FROZENのまま。本RoundもD0103は",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16872,
+            "line_introduced_commit": "0556d05210fa22b6531ada6c90cedc9ca2415e55",
+            "line_text": "DEV-AUTO-02.2.1(`b962721`)はACCEPTED/FROZENのまま。本RoundもD0103は",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          },
+          {
+            "line": 16963,
+            "line_introduced_commit": "e9faf36f085f3ae3bad6be798a1fe29c3b0800e2",
+            "line_text": "DEV-AUTO-02.2.2(`0556d05`)はACCEPTED/FROZENのまま。本RoundもD0103は",
+            "meaning": "Line provenance only; not owner acceptance authorization"
+          }
+        ],
+        "record_commit_role": "Content milestone candidate, not the first freeze declaration record"
+      }
+    ]
+  },
+  "late": {
+    "audit_head": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+    "requested_code_baseline": "0e915c81fafc26535001680e5fbd0b9c5fc1eb67",
+    "blob_algorithm": "Git object IDs, not SHA256",
+    "entries": [
+      {
+        "id": "D0103",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 17439,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "f82b9bda3e1a4c33a08fcef498798840e58aba34",
+        "content_commit": "f82b9bda3e1a4c33a08fcef498798840e58aba34",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_evidence_integration.py",
+          "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_evidence_integration.py",
+            "accepted_blob": "7dd70e720076d865b81d52619bfdbcb85cffc9ba",
+            "current_blob": "7dd70e720076d865b81d52619bfdbcb85cffc9ba",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+            "accepted_blob": "5af1b60b6d80194d6ead78a8c3de8de16612388f",
+            "current_blob": "5af1b60b6d80194d6ead78a8c3de8de16612388f",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0103_semantic_claim_evidence_integration_pilot.json",
+            "accepted_blob": "b839539f81f1f6474f522b6ab599099bfe23a8e6",
+            "current_blob": "b839539f81f1f6474f522b6ab599099bfe23a8e6",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0104",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 17595,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "c159ee245e0894f8da0e9d6655b2505a349a15a3",
+        "content_commit": "c159ee245e0894f8da0e9d6655b2505a349a15a3",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+          "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0104_evidence_lineage_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+            "accepted_blob": "fbe51639ef62f81194db2cd3b146cdf07c1ee731",
+            "current_blob": "90ac3c4e5453ac06c4166001bb9ece95b4324d02",
+            "status": "DIFFERENT",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+            "accepted_blob": "43d8171ea66bc9e2e8fbe87e59bf36604906b750",
+            "current_blob": "4b95c7729b985801984557f81c98c79c0e3ca5a8",
+            "status": "DIFFERENT",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0104_evidence_lineage_pilot.json",
+            "accepted_blob": "e4c9deab41da2eb11be763e9f9326fb70a1e38e8",
+            "current_blob": "e4c9deab41da2eb11be763e9f9326fb70a1e38e8",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": "D0104.1"
+      },
+      {
+        "id": "D0104.1",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 17750,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "52cac1c768730f2b1a92367edcbecc5b2c66497f",
+        "content_commit": "52cac1c768730f2b1a92367edcbecc5b2c66497f",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+          "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0104_evidence_lineage_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+            "accepted_blob": "90ac3c4e5453ac06c4166001bb9ece95b4324d02",
+            "current_blob": "90ac3c4e5453ac06c4166001bb9ece95b4324d02",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+            "accepted_blob": "4b95c7729b985801984557f81c98c79c0e3ca5a8",
+            "current_blob": "4b95c7729b985801984557f81c98c79c0e3ca5a8",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0104_evidence_lineage_pilot.json",
+            "accepted_blob": "e4c9deab41da2eb11be763e9f9326fb70a1e38e8",
+            "current_blob": "e4c9deab41da2eb11be763e9f9326fb70a1e38e8",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0105",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 17928,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "a42ad2d6f3184fe36f49ae6eae0dacfaee076111",
+        "content_commit": "a42ad2d6f3184fe36f49ae6eae0dacfaee076111",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_incremental_research_update.py",
+          "Japanese_Equity_Lab/lib/evidence/incremental_update.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0105_incremental_research_update_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_incremental_research_update.py",
+            "accepted_blob": "826a23b94861e55ee762eb32242ef896170e0d14",
+            "current_blob": "826a23b94861e55ee762eb32242ef896170e0d14",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+            "accepted_blob": "891ed3c7d3388f7eb9dd1bc5390a173047dddd6a",
+            "current_blob": "891ed3c7d3388f7eb9dd1bc5390a173047dddd6a",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0105_incremental_research_update_pilot.json",
+            "accepted_blob": "28b6dbdc753d5cd1e54f3eb845234b896c949948",
+            "current_blob": "28b6dbdc753d5cd1e54f3eb845234b896c949948",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0106",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18097,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "0d4acc5d875518244e189592b514aa0fdeb5b244",
+        "content_commit": "0d4acc5d875518244e189592b514aa0fdeb5b244",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_thesis_impact.py",
+          "Japanese_Equity_Lab/lib/evidence/thesis_impact.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0106_thesis_break_monitor_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_thesis_impact.py",
+            "accepted_blob": "8d1f528cfe7dad87b4e6e9aa408cc6ba70a3099a",
+            "current_blob": "8d1f528cfe7dad87b4e6e9aa408cc6ba70a3099a",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+            "accepted_blob": "2e4c951aac74bbd65182dafe89d488da08fb4f5d",
+            "current_blob": "2e4c951aac74bbd65182dafe89d488da08fb4f5d",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0106_thesis_break_monitor_pilot.json",
+            "accepted_blob": "a4b80015a4f147d7132024e46915cf5889926aa6",
+            "current_blob": "a4b80015a4f147d7132024e46915cf5889926aa6",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0107",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18240,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "ded9a74ba8602ec3579b67edec1aebdbeee38330",
+        "content_commit": "ded9a74ba8602ec3579b67edec1aebdbeee38330",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py",
+          "Japanese_Equity_Lab/lib/evaluation/__init__.py",
+          "Japanese_Equity_Lab/lib/evaluation/integrity.py",
+          "Japanese_Equity_Lab/lib/evaluation/model.py",
+          "Japanese_Equity_Lab/lib/evaluation/store.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0107_immutable_evaluation_foundation_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py",
+            "accepted_blob": "2a15d5adb34a4af852074da03223a92e59a3010e",
+            "current_blob": "2a15d5adb34a4af852074da03223a92e59a3010e",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evaluation/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evaluation/integrity.py",
+            "accepted_blob": "f57d08c783cafd77d23ee3d84274107aa41e849c",
+            "current_blob": "f57d08c783cafd77d23ee3d84274107aa41e849c",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evaluation/model.py",
+            "accepted_blob": "7da1d8c3042d34f6eacfcf05f8daa7dd87b1b134",
+            "current_blob": "7da1d8c3042d34f6eacfcf05f8daa7dd87b1b134",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/evaluation/store.py",
+            "accepted_blob": "9a324267408be3059973fae59ffdb209acae8881",
+            "current_blob": "9a324267408be3059973fae59ffdb209acae8881",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0107_immutable_evaluation_foundation_pilot.json",
+            "accepted_blob": "a9089ce7d92f1b4de3a6e767391d720ed2e9ba9d",
+            "current_blob": "a9089ce7d92f1b4de3a6e767391d720ed2e9ba9d",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0108",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18405,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "bae44d956723c8fe291e9b11ec36d40c3e5d4103",
+        "content_commit": "bae44d956723c8fe291e9b11ec36d40c3e5d4103",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_expectations_foundation.py",
+          "Japanese_Equity_Lab/lib/expectations/__init__.py",
+          "Japanese_Equity_Lab/lib/expectations/comparison.py",
+          "Japanese_Equity_Lab/lib/expectations/model.py",
+          "Japanese_Equity_Lab/lib/expectations/reverse_spec.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0108_market_expectations_foundation_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_expectations_foundation.py",
+            "accepted_blob": "9cf51742e6e2b3fe0e1c556e16aec12c217e8480",
+            "current_blob": "9cf51742e6e2b3fe0e1c556e16aec12c217e8480",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/expectations/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/expectations/comparison.py",
+            "accepted_blob": "0204287e0c764c64d4b4ea4916b15c877f3aaf54",
+            "current_blob": "0204287e0c764c64d4b4ea4916b15c877f3aaf54",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/expectations/model.py",
+            "accepted_blob": "e65aa2b5e0caad0c2d774617118ca914b9b1122b",
+            "current_blob": "e65aa2b5e0caad0c2d774617118ca914b9b1122b",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/expectations/reverse_spec.py",
+            "accepted_blob": "39d6cd0c81c85398825cc2eec25d92cfef0e309d",
+            "current_blob": "39d6cd0c81c85398825cc2eec25d92cfef0e309d",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0108_market_expectations_foundation_pilot.json",
+            "accepted_blob": "afa8b414033c9f39dfec065fc5158076fb520f41",
+            "current_blob": "afa8b414033c9f39dfec065fc5158076fb520f41",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0109",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18569,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "c2421a67c151c9bfb24ba5356d1932715f5836ca",
+        "content_commit": "c2421a67c151c9bfb24ba5356d1932715f5836ca",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_forecasting_foundation.py",
+          "Japanese_Equity_Lab/lib/forecasting/__init__.py",
+          "Japanese_Equity_Lab/lib/forecasting/engine.py",
+          "Japanese_Equity_Lab/lib/forecasting/model.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0109_fundamental_forecast_engine_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_forecasting_foundation.py",
+            "accepted_blob": "ac809eabb347ab4ef943c749a36373913944210d",
+            "current_blob": "ac809eabb347ab4ef943c749a36373913944210d",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/forecasting/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/forecasting/engine.py",
+            "accepted_blob": "4da7e75ddef261e9e9fb74fd059612fea8c1a4e8",
+            "current_blob": "4da7e75ddef261e9e9fb74fd059612fea8c1a4e8",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/forecasting/model.py",
+            "accepted_blob": "eb1986817592aad67e33094fc102eea608c783af",
+            "current_blob": "eb1986817592aad67e33094fc102eea608c783af",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0109_fundamental_forecast_engine_pilot.json",
+            "accepted_blob": "145ec0f3ea8b24ec6ce6339f1af2b09a08447b21",
+            "current_blob": "145ec0f3ea8b24ec6ce6339f1af2b09a08447b21",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0110",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18736,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "6b76de84b42d9a873f893be48f115d97d8c5c74a",
+        "content_commit": "6b76de84b42d9a873f893be48f115d97d8c5c74a",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py",
+          "Japanese_Equity_Lab/lib/valuation/engine.py",
+          "Japanese_Equity_Lab/lib/valuation/forward_reverse_model.py",
+          "Japanese_Equity_Lab/lib/valuation/reverse.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0110_forward_reverse_valuation_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py",
+            "accepted_blob": "1f80c9a47e6c6fc9aced1316852f91ded8a3d8ec",
+            "current_blob": "1f80c9a47e6c6fc9aced1316852f91ded8a3d8ec",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/engine.py",
+            "accepted_blob": "bd7b92ccaf973ca3ba5c835e0072862d299e591b",
+            "current_blob": "bd7b92ccaf973ca3ba5c835e0072862d299e591b",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/forward_reverse_model.py",
+            "accepted_blob": "0b3ac46174a572aa1418c66c1175d2a489b13941",
+            "current_blob": "0b3ac46174a572aa1418c66c1175d2a489b13941",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/valuation/reverse.py",
+            "accepted_blob": "02e66339af900faaa6c6dd84344048a1b712322d",
+            "current_blob": "02e66339af900faaa6c6dd84344048a1b712322d",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0110_forward_reverse_valuation_pilot.json",
+            "accepted_blob": "00ac349a400420d9c02f1d114339145137886aec",
+            "current_blob": "00ac349a400420d9c02f1d114339145137886aec",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0110.1",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18867,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "1688d712095bf90b03e8cc9b38244f856a32aab2",
+        "content_commit": "1688d712095bf90b03e8cc9b38244f856a32aab2",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_macro_event_surprise.py",
+          "Japanese_Equity_Lab/lib/macro_events/__init__.py",
+          "Japanese_Equity_Lab/lib/macro_events/model.py",
+          "Japanese_Equity_Lab/lib/macro_events/store.py",
+          "Japanese_Equity_Lab/lib/macro_events/surprise.py"
+        ],
+        "context_manifest_paths": [
+          "Japanese_Equity_Lab/scripts/manifests/d0110_1_macro_event_surprise_foundation_pilot.json"
+        ],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_macro_event_surprise.py",
+            "accepted_blob": "1ecb59f7601a8abe04034f2011b4c6f9b471701d",
+            "current_blob": "1ecb59f7601a8abe04034f2011b4c6f9b471701d",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/macro_events/__init__.py",
+            "accepted_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "current_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/macro_events/model.py",
+            "accepted_blob": "eb6549137b7f39a7096413aa2b00f498831567f0",
+            "current_blob": "eb6549137b7f39a7096413aa2b00f498831567f0",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/macro_events/store.py",
+            "accepted_blob": "d35f6f8df3b633573e4cd96d22714fb3f21b1c55",
+            "current_blob": "d35f6f8df3b633573e4cd96d22714fb3f21b1c55",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/macro_events/surprise.py",
+            "accepted_blob": "fc1c968f80de2a9d2b9a3e8c804946a3e59ab9be",
+            "current_blob": "fc1c968f80de2a9d2b9a3e8c804946a3e59ab9be",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0110_1_macro_event_surprise_foundation_pilot.json",
+            "accepted_blob": "3a9cdfabdde464e1915c566896805b36efbfd7c1",
+            "current_blob": "3a9cdfabdde464e1915c566896805b36efbfd7c1",
+            "status": "SAME",
+            "scope_basis": "MANIFEST_CONTEXT_NOT_EXPLICITLY_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null
+      },
+      {
+        "id": "D0110.2",
+        "declaration_lines": {
+          "path": "Japanese_Equity_Lab/DECISIONS.md",
+          "start": 18993,
+          "basis_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d"
+        },
+        "record_commit": "794da6b5d1e0b6a748b983736c83191d7a65bd06",
+        "content_commit": "9e9d98279a99de46b3bb162e2b5dbe905f547278",
+        "current_commit": "5fca694e53c902bb221a05d494d3dc6724530b3d",
+        "scope_paths": [
+          "Japanese_Equity_Lab/13_tests/test_event_window_response.py",
+          "Japanese_Equity_Lab/lib/event_responses/__init__.py",
+          "Japanese_Equity_Lab/lib/event_responses/measurement.py",
+          "Japanese_Equity_Lab/lib/event_responses/model.py",
+          "Japanese_Equity_Lab/lib/event_responses/store.py",
+          "Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json"
+        ],
+        "context_manifest_paths": [],
+        "scope_basis": "DECLARATION_NAMED_CODE_AND_TESTS_MATCHED_AGAINST_COMMIT_DIFF; MANIFEST_CONTEXT_SEPARATE; D0110.2_EXPLICIT_SIX_PATH_TABLE",
+        "unresolved": [
+          "Formal manifest SHA256 differs from accepted/current Git bytes. Calculated CRLF conversion reproduces declared hash, but original hashing byte convention not independently established. No blob drift."
+        ],
+        "comparisons": [
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_event_window_response.py",
+            "accepted_blob": "2e43ff1382d555b08e992dc4a442e4425edc8e49",
+            "current_blob": "2e43ff1382d555b08e992dc4a442e4425edc8e49",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/__init__.py",
+            "accepted_blob": "96173ba5eb818bf7c4f8978480bca3dc8f681ef9",
+            "current_blob": "96173ba5eb818bf7c4f8978480bca3dc8f681ef9",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/measurement.py",
+            "accepted_blob": "01e47a4512334b45362378b80b81187a931f2386",
+            "current_blob": "01e47a4512334b45362378b80b81187a931f2386",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/model.py",
+            "accepted_blob": "e2d0fcaf4595223f1ee2e337871971044661b67c",
+            "current_blob": "e2d0fcaf4595223f1ee2e337871971044661b67c",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/store.py",
+            "accepted_blob": "5d41d90a2981f1f0e814c20f15b57695f8a6c16e",
+            "current_blob": "5d41d90a2981f1f0e814c20f15b57695f8a6c16e",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json",
+            "accepted_blob": "7526b24113e06e75fe4ee5c1bf798b8e3f272feb",
+            "current_blob": "7526b24113e06e75fe4ee5c1bf798b8e3f272feb",
+            "status": "SAME",
+            "scope_basis": "DECLARED_FROZEN"
+          }
+        ],
+        "historical_superseded_by": null,
+        "sha256_declaration_checks": [
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/__init__.py",
+            "declared_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+            "reviewed_git_bytes_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+            "current_git_bytes_sha256": "ac5901fba7908436bec51712767c4fffdccbf200bc76404c2e2341c9a5be8b62",
+            "status": "MATCH"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/model.py",
+            "declared_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+            "reviewed_git_bytes_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+            "current_git_bytes_sha256": "3b0746eb2629fdd2c952d291840aa914db1bbc3db66a5ddc0077f514ed6b0fd1",
+            "status": "MATCH"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/measurement.py",
+            "declared_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+            "reviewed_git_bytes_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+            "current_git_bytes_sha256": "f0f2f39d21e162408acd9f537e7dafba325cdac577468bb4f008312a62243797",
+            "status": "MATCH"
+          },
+          {
+            "path": "Japanese_Equity_Lab/lib/event_responses/store.py",
+            "declared_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+            "reviewed_git_bytes_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+            "current_git_bytes_sha256": "d40c5303158bdd804a0bd4596bc8bc03594625e0c10dcb65d25504888ad70437",
+            "status": "MATCH"
+          },
+          {
+            "path": "Japanese_Equity_Lab/13_tests/test_event_window_response.py",
+            "declared_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+            "reviewed_git_bytes_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+            "current_git_bytes_sha256": "7956aecbb0a020bad2965865b03bab1c8906fd6f9198affc65e8e0a957c8be4a",
+            "status": "MATCH"
+          },
+          {
+            "path": "Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json",
+            "declared_sha256": "5702eaeeca1316886325f17a4c14903c816a6ec83d8a568a83fa9261489e8ed7",
+            "reviewed_git_bytes_sha256": "62ea3cf954dc503b1c9efb1d0f810aa1cb2b13af2c8c3484b4a3502f847e6556",
+            "current_git_bytes_sha256": "62ea3cf954dc503b1c9efb1d0f810aa1cb2b13af2c8c3484b4a3502f847e6556",
+            "status": "MISMATCH",
+            "derived_crlf_sha256": "5702eaeeca1316886325f17a4c14903c816a6ec83d8a568a83fa9261489e8ed7"
+          }
+        ]
+      }
+    ]
+  }
+}

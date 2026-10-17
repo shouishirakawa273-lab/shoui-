@@ -21,3 +21,5 @@ D0110.2の正式受入対象コードは `9e9d98279a99de46b3bb162e2b5dbe905f5472
 `scripts/manifests/d0110_3_company_exposure_pilot.json` は071cff9を基準とする288ファイルの保護リスト。`freeze_inventory.json` に全path・基準/調査SHAのGit blobと差分を保存。これはそのタスクの保護範囲であり、全時代の正式FROZEN対象を完全網羅する証明ではない。古いmanifestのexpected_head=CURRENTも歴史的SHAの代替にならない。歴史manifestからWriterを再実行しない。
 
 未確定: 古い全FROZEN宣言からの完全な統合台帳、将来の安定版としてどのブランチを採用するか、GitHub上の文書を正式採用する手順。既存ファイルは今回変更しない。
+
+追加: [対応確認結果](FREEZE_RECONCILIATION_RESULT.md)とhistorical_freeze_inventory.jsonへ、後期11記録と早期5境界を追記。D0103〜D0110.2の欠落索引は補完済み。早期は内容版候補と引用行初出まで追跡したが、正式scope/承認不明を解消済みとはしない。

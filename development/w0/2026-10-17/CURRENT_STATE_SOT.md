@@ -24,3 +24,5 @@ GitHub既定ブランチとLabの受入先は別。現在コードもDraft候補
 ## 確認状況
 
 [機能一覧](CAPABILITY_MATRIX.md) / [証拠台帳](EVIDENCE_REGISTER.md) / [W0結果・W1条件](W0_RESULT.md)。独立確認の結論は別紙 `INDEPENDENT_REVIEW.md` を参照。完成品の進捗率は、重み・実データ受入証拠が未監査のため未算定。
+
+追加調査: [過去のFROZEN対応確認](FREEZE_RECONCILIATION_RESULT.md)。後期の全対象path/SHA対応を補完。早期の完全な正式scope・承認原証拠の不足は継続しており、W0全面受入とW1移行は保留。
