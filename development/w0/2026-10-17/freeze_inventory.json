@@ -1,0 +1,1737 @@
+{
+  "baseline": "071cff9c18632461c207a08c20e7c721a983221b",
+  "candidate": "0e915c81fafc26535001680e5fbd0b9c5fc1eb67",
+  "manifest": "Japanese_Equity_Lab/scripts/manifests/d0110_3_company_exposure_pilot.json",
+  "count": 288,
+  "changed_count": 0,
+  "files": [
+    {
+      "path": "Japanese_Equity_Lab/13_tests/conftest.py",
+      "baseline_blob": "ece8e0c12890f4adafde2604b63c13ac3c01b1cf",
+      "candidate_blob": "ece8e0c12890f4adafde2604b63c13ac3c01b1cf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/README.md",
+      "baseline_blob": "aa5d90977c36670a895586e3c80899a0d584acfa",
+      "candidate_blob": "aa5d90977c36670a895586e3c80899a0d584acfa",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/disclosure_common_core_v1.json",
+      "baseline_blob": "133e30ae3a052c8b8fc9dbd4fc5fb46cb4be31fd",
+      "candidate_blob": "133e30ae3a052c8b8fc9dbd4fc5fb46cb4be31fd",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/equities_bars_daily_v2.json",
+      "baseline_blob": "056931584763901c9f0a729e193e6874247f8b4b",
+      "candidate_blob": "056931584763901c9f0a729e193e6874247f8b4b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/equities_master_v2.json",
+      "baseline_blob": "875258e77f3007e10fcf192695dbd3bee53bffcb",
+      "candidate_blob": "875258e77f3007e10fcf192695dbd3bee53bffcb",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/financial_summary_v2.json",
+      "baseline_blob": "51e8d76e7fb352d0489b273a892afc1e80d48618",
+      "candidate_blob": "51e8d76e7fb352d0489b273a892afc1e80d48618",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/markets_calendar_v2.json",
+      "baseline_blob": "8518ff8c79259ed8e76ec633feafaae724f78300",
+      "candidate_blob": "8518ff8c79259ed8e76ec633feafaae724f78300",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/portfolio_scenario_v2.json",
+      "baseline_blob": "49cf5e1dc8cb941adbb1c255c6cbd493fb593936",
+      "candidate_blob": "49cf5e1dc8cb941adbb1c255c6cbd493fb593936",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/synthetic_jquants_v2_bars.json",
+      "baseline_blob": "36f30871042444a5c56b83554e115b5862c76a3d",
+      "candidate_blob": "36f30871042444a5c56b83554e115b5862c76a3d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/fixtures/topix_bars_daily_v2.json",
+      "baseline_blob": "41988bf3a4bb1d25f4a94229e29c0af1aed873d0",
+      "candidate_blob": "41988bf3a4bb1d25f4a94229e29c0af1aed873d0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_agent_governance.py",
+      "baseline_blob": "0a50e0ae229e1d87bf735367c16c990a87e694c9",
+      "candidate_blob": "0a50e0ae229e1d87bf735367c16c990a87e694c9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_available_at_vs_retrieved_at.py",
+      "baseline_blob": "5ead1de4265cbeb68da2c9322801fd309e10701d",
+      "candidate_blob": "5ead1de4265cbeb68da2c9322801fd309e10701d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_backtest_engine.py",
+      "baseline_blob": "c4cae59b93ce1f07a18856e847713c60b614cff4",
+      "candidate_blob": "c4cae59b93ce1f07a18856e847713c60b614cff4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_benchmark.py",
+      "baseline_blob": "5bc63e532c163cb8c155677a908e98ebd47ab6f6",
+      "candidate_blob": "5bc63e532c163cb8c155677a908e98ebd47ab6f6",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_candidate_extraction.py",
+      "baseline_blob": "8b42effd80beaa52abd2d721cae736425372e962",
+      "candidate_blob": "8b42effd80beaa52abd2d721cae736425372e962",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_company_ir_adapter.py",
+      "baseline_blob": "c26261c60fb37d26843385045d7e84c857d95d78",
+      "candidate_blob": "c26261c60fb37d26843385045d7e84c857d95d78",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_company_ir_normalize.py",
+      "baseline_blob": "343da04488f9b45d35a31f39aeb3f2538ab732ec",
+      "candidate_blob": "343da04488f9b45d35a31f39aeb3f2538ab732ec",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_consensus_catalog.py",
+      "baseline_blob": "22e8aef89cf03302317703d6e9c494f2c63cac40",
+      "candidate_blob": "22e8aef89cf03302317703d6e9c494f2c63cac40",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_consensus_pit.py",
+      "baseline_blob": "efe6f9bdaff1e5f181907e4e00339d78c8a609bc",
+      "candidate_blob": "efe6f9bdaff1e5f181907e4e00339d78c8a609bc",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_convert_phase3a.py",
+      "baseline_blob": "284d5cf0e6efd3ed8af762208b39f0416df9fb7a",
+      "candidate_blob": "284d5cf0e6efd3ed8af762208b39f0416df9fb7a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_data_sources.py",
+      "baseline_blob": "1cb90573c9f8872495e31925a6f390a555cbbc35",
+      "candidate_blob": "1cb90573c9f8872495e31925a6f390a555cbbc35",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow.py",
+      "baseline_blob": "35157bc985e64dc321e9eec0ded658b53e769f50",
+      "candidate_blob": "35157bc985e64dc321e9eec0ded658b53e769f50",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_executor.py",
+      "baseline_blob": "10a7560e6537f9aed1b92851d97353ae8dc86d4d",
+      "candidate_blob": "10a7560e6537f9aed1b92851d97353ae8dc86d4d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_dev_workflow_orchestrator.py",
+      "baseline_blob": "3fe95a359f9107ba6bdca9bbd20add03c887706c",
+      "candidate_blob": "3fe95a359f9107ba6bdca9bbd20add03c887706c",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_lineage.py",
+      "baseline_blob": "90ac3c4e5453ac06c4166001bb9ece95b4324d02",
+      "candidate_blob": "90ac3c4e5453ac06c4166001bb9ece95b4324d02",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_evidence_pit.py",
+      "baseline_blob": "17fd17c32278ec1a8172416bd8c027f92014f0e7",
+      "candidate_blob": "17fd17c32278ec1a8172416bd8c027f92014f0e7",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_integration.py",
+      "baseline_blob": "8a364e2fad80961b9d9ec10212b0729819b946a4",
+      "candidate_blob": "8a364e2fad80961b9d9ec10212b0729819b946a4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_model.py",
+      "baseline_blob": "f8a5a3c5244fa0808b9054fd1df190a6aaf40757",
+      "candidate_blob": "f8a5a3c5244fa0808b9054fd1df190a6aaf40757",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_normalization.py",
+      "baseline_blob": "f7ffcdbdb8a0404dc934bf3173b62c1fc4f06a83",
+      "candidate_blob": "f7ffcdbdb8a0404dc934bf3173b62c1fc4f06a83",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_normalize.py",
+      "baseline_blob": "2752621607881e22f85a635e85ccb70da8b7e659",
+      "candidate_blob": "2752621607881e22f85a635e85ccb70da8b7e659",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_semantic_claims.py",
+      "baseline_blob": "affaef13c861f39777d98f12c27b8d84afb2f910",
+      "candidate_blob": "affaef13c861f39777d98f12c27b8d84afb2f910",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_disclosures_view.py",
+      "baseline_blob": "00eea9060d0a5e43af8d05196f039a0e16c2ecea",
+      "candidate_blob": "00eea9060d0a5e43af8d05196f039a0e16c2ecea",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_adapter.py",
+      "baseline_blob": "0abd4dbd942df54cdbce313631f7d91543382782",
+      "candidate_blob": "0abd4dbd942df54cdbce313631f7d91543382782",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_catalog.py",
+      "baseline_blob": "d843b041d81bfd3afb17d80cf65a19f2878050b2",
+      "candidate_blob": "d843b041d81bfd3afb17d80cf65a19f2878050b2",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_integration.py",
+      "baseline_blob": "dbb3862a1ec01fb540fff8603e63551bb62fdbfd",
+      "candidate_blob": "dbb3862a1ec01fb540fff8603e63551bb62fdbfd",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_normalize.py",
+      "baseline_blob": "70107c64bf1984534bfa1e915ba51b083686f141",
+      "candidate_blob": "70107c64bf1984534bfa1e915ba51b083686f141",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_edinet_zip_canonicalize.py",
+      "baseline_blob": "2569a6c8a6b93dcae1dff34628ac8e6f8ccbe0a7",
+      "candidate_blob": "2569a6c8a6b93dcae1dff34628ac8e6f8ccbe0a7",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_entity_registry.py",
+      "baseline_blob": "6bf5066971ce6b3f68180a51527aef3bbd0fcd6e",
+      "candidate_blob": "6bf5066971ce6b3f68180a51527aef3bbd0fcd6e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evaluation_foundation.py",
+      "baseline_blob": "2a15d5adb34a4af852074da03223a92e59a3010e",
+      "candidate_blob": "2a15d5adb34a4af852074da03223a92e59a3010e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_event_window_response.py",
+      "baseline_blob": "2e43ff1382d555b08e992dc4a442e4425edc8e49",
+      "candidate_blob": "2e43ff1382d555b08e992dc4a442e4425edc8e49",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_decision_log.py",
+      "baseline_blob": "734850885626ee9fbad5434684f19757380b2a5d",
+      "candidate_blob": "734850885626ee9fbad5434684f19757380b2a5d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_integration.py",
+      "baseline_blob": "7dd70e720076d865b81d52619bfdbcb85cffc9ba",
+      "candidate_blob": "7dd70e720076d865b81d52619bfdbcb85cffc9ba",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_lineage.py",
+      "baseline_blob": "74796cd460f9e1b2d21d5ff4622e5734b24f3900",
+      "candidate_blob": "74796cd460f9e1b2d21d5ff4622e5734b24f3900",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_model.py",
+      "baseline_blob": "75944a79c80c0f31429a0fdfa107fe793c007f2a",
+      "candidate_blob": "75944a79c80c0f31429a0fdfa107fe793c007f2a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_news.py",
+      "baseline_blob": "bd7dd1e4121bd5e75ac9e59e2932adf12e6374ed",
+      "candidate_blob": "bd7dd1e4121bd5e75ac9e59e2932adf12e6374ed",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_packet.py",
+      "baseline_blob": "0ab65cb81526eeffed12fbc3ac7742558a218649",
+      "candidate_blob": "0ab65cb81526eeffed12fbc3ac7742558a218649",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_packet_registry.py",
+      "baseline_blob": "23f8fa7312ac1354e292a6de8ff6666bb85320b8",
+      "candidate_blob": "23f8fa7312ac1354e292a6de8ff6666bb85320b8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_registry.py",
+      "baseline_blob": "48ecacc1d05165175d5d3922758d448261caf646",
+      "candidate_blob": "48ecacc1d05165175d5d3922758d448261caf646",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_relation_assignment.py",
+      "baseline_blob": "9cdd6adf44d326f5ff052d422f008cba66dd29b2",
+      "candidate_blob": "9cdd6adf44d326f5ff052d422f008cba66dd29b2",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_evidence_retrieval.py",
+      "baseline_blob": "dab38a320bf3bfd0835d1a2e5a9c0540b26848ab",
+      "candidate_blob": "dab38a320bf3bfd0835d1a2e5a9c0540b26848ab",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_expectations_foundation.py",
+      "baseline_blob": "9cf51742e6e2b3fe0e1c556e16aec12c217e8480",
+      "candidate_blob": "9cf51742e6e2b3fe0e1c556e16aec12c217e8480",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_experiment_registry.py",
+      "baseline_blob": "0ee4852c0504ec22203981c7b9a352c4d9621a89",
+      "candidate_blob": "0ee4852c0504ec22203981c7b9a352c4d9621a89",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_faithfulness.py",
+      "baseline_blob": "c1159b5bdd2cc404ca453a0bef64715aaf1fb230",
+      "candidate_blob": "c1159b5bdd2cc404ca453a0bef64715aaf1fb230",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_forecasting_foundation.py",
+      "baseline_blob": "ac809eabb347ab4ef943c749a36373913944210d",
+      "candidate_blob": "ac809eabb347ab4ef943c749a36373913944210d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_market_public_at.py",
+      "baseline_blob": "dca91a7baa8f8dd7cf2e9be089d5859762ee75cc",
+      "candidate_blob": "dca91a7baa8f8dd7cf2e9be089d5859762ee75cc",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_evidence_pit.py",
+      "baseline_blob": "864567db82d7bb24eefae801220f75e5540163f0",
+      "candidate_blob": "864567db82d7bb24eefae801220f75e5540163f0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_financial_quality_evidence.py",
+      "baseline_blob": "1c1e9bf865af049c15e24c00aabba23f22761663",
+      "candidate_blob": "1c1e9bf865af049c15e24c00aabba23f22761663",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_guidance_evidence.py",
+      "baseline_blob": "a47f1d9fd3b4db9a148d844c871ccbd35db02687",
+      "candidate_blob": "a47f1d9fd3b4db9a148d844c871ccbd35db02687",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_integration.py",
+      "baseline_blob": "0c50ff8f5539227d697bb8870364379d6725782e",
+      "candidate_blob": "0c50ff8f5539227d697bb8870364379d6725782e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_model.py",
+      "baseline_blob": "a256b2c8fee752e6f8c2b68594cc025f3f984481",
+      "candidate_blob": "a256b2c8fee752e6f8c2b68594cc025f3f984481",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_normalize.py",
+      "baseline_blob": "9b98197702743be475980c00a558502526d37f8e",
+      "candidate_blob": "9b98197702743be475980c00a558502526d37f8e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_pit_real_dates.py",
+      "baseline_blob": "fec948d29302693c6cb8de55baa012a8fe1a96b4",
+      "candidate_blob": "fec948d29302693c6cb8de55baa012a8fe1a96b4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_same_period_yoy.py",
+      "baseline_blob": "273b39d19645a47d57b96443e8d6bcead9d8002b",
+      "candidate_blob": "273b39d19645a47d57b96443e8d6bcead9d8002b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_view.py",
+      "baseline_blob": "feca41007fb24a3884ec1f16e3bc3bfa0a17ac4a",
+      "candidate_blob": "feca41007fb24a3884ec1f16e3bc3bfa0a17ac4a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_fundamentals_wire_format.py",
+      "baseline_blob": "10c28ad7aaf43f38676fc75c98507f75db9744e9",
+      "candidate_blob": "10c28ad7aaf43f38676fc75c98507f75db9744e9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_catalog.py",
+      "baseline_blob": "3073be917b751de04a43dd8490d361c62bd36192",
+      "candidate_blob": "3073be917b751de04a43dd8490d361c62bd36192",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_model.py",
+      "baseline_blob": "95f6d173575b9a18d0ac19300adae77c10938fcf",
+      "candidate_blob": "95f6d173575b9a18d0ac19300adae77c10938fcf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_market_pit.py",
+      "baseline_blob": "8891dc17a8ca93d2d91ef6d145df0cee87f52ffc",
+      "candidate_blob": "8891dc17a8ca93d2d91ef6d145df0cee87f52ffc",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_news_catalog.py",
+      "baseline_blob": "5f121a2a001243eba51a8d28eaaf770e3da0ad57",
+      "candidate_blob": "5f121a2a001243eba51a8d28eaaf770e3da0ad57",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_global_news_pit.py",
+      "baseline_blob": "b39232f144f97378bef3516ee88447fa5da2b33b",
+      "candidate_blob": "b39232f144f97378bef3516ee88447fa5da2b33b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_host_validation.py",
+      "baseline_blob": "78136724d214984aa25b799cdaafb2eed2d8c144",
+      "candidate_blob": "78136724d214984aa25b799cdaafb2eed2d8c144",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_hypothesis_schema.py",
+      "baseline_blob": "c8c2df90319a56be6fdc8ccff7105d951df58faa",
+      "candidate_blob": "c8c2df90319a56be6fdc8ccff7105d951df58faa",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_idea_schema.py",
+      "baseline_blob": "da96dbc0dfd33277b219ea0bc7011372a3ded89e",
+      "candidate_blob": "da96dbc0dfd33277b219ea0bc7011372a3ded89e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_incremental_research_update.py",
+      "baseline_blob": "826a23b94861e55ee762eb32242ef896170e0d14",
+      "candidate_blob": "826a23b94861e55ee762eb32242ef896170e0d14",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_knowledge_schema.py",
+      "baseline_blob": "b8f349bb5092e6052f309c6a3ed3c8c41abde214",
+      "candidate_blob": "b8f349bb5092e6052f309c6a3ed3c8c41abde214",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_lab_source_health.py",
+      "baseline_blob": "78a27ca2219f53f4a084a1b81667304b42113c77",
+      "candidate_blob": "78a27ca2219f53f4a084a1b81667304b42113c77",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_local_snapshot.py",
+      "baseline_blob": "a855e58dda3adf82c78032094d113658909e543a",
+      "candidate_blob": "a855e58dda3adf82c78032094d113658909e543a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_catalog.py",
+      "baseline_blob": "dc920d77f1150c0249dd3cf7aad47580a1db7433",
+      "candidate_blob": "dc920d77f1150c0249dd3cf7aad47580a1db7433",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_event_surprise.py",
+      "baseline_blob": "1ecb59f7601a8abe04034f2011b4c6f9b471701d",
+      "candidate_blob": "1ecb59f7601a8abe04034f2011b4c6f9b471701d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_model.py",
+      "baseline_blob": "594f39709ac500b2b6208b7b2f981afb720f69e4",
+      "candidate_blob": "594f39709ac500b2b6208b7b2f981afb720f69e4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_macro_pit.py",
+      "baseline_blob": "be9d9ea45834b0e18314f8303ef1f5ffa75f1522",
+      "candidate_blob": "be9d9ea45834b0e18314f8303ef1f5ffa75f1522",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_market_calendar.py",
+      "baseline_blob": "bf84f28b6d022bc844ed4efd2f1da0dfc2ae92fb",
+      "candidate_blob": "bf84f28b6d022bc844ed4efd2f1da0dfc2ae92fb",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_catalog.py",
+      "baseline_blob": "62adc10433ca4d25d1f0deea89ee267067f6ad68",
+      "candidate_blob": "62adc10433ca4d25d1f0deea89ee267067f6ad68",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_model.py",
+      "baseline_blob": "ddc34a1b1cbf3a134093b4c125fe734a1be5b2c9",
+      "candidate_blob": "ddc34a1b1cbf3a134093b4c125fe734a1be5b2c9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_news_pit.py",
+      "baseline_blob": "edb6c4145d14c96a5b6bd7a43b59304ef93f9cdf",
+      "candidate_blob": "edb6c4145d14c96a5b6bd7a43b59304ef93f9cdf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_paper_trade_schema.py",
+      "baseline_blob": "f93a569f365dfa7d7ff9964a09ec9ebe2a3113d4",
+      "candidate_blob": "f93a569f365dfa7d7ff9964a09ec9ebe2a3113d4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_builder.py",
+      "baseline_blob": "48fd480a0a2918a58cd8c15d2271b4a6a0dffa27",
+      "candidate_blob": "48fd480a0a2918a58cd8c15d2271b4a6a0dffa27",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_catalog_capability.py",
+      "baseline_blob": "e8c29f26104768b5b3f1ad4f2a510ac07b2ce1ca",
+      "candidate_blob": "e8c29f26104768b5b3f1ad4f2a510ac07b2ce1ca",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_comparability.py",
+      "baseline_blob": "ba0f1c00e6fa1c0d71b5b412c38c6c32f8550e9d",
+      "candidate_blob": "ba0f1c00e6fa1c0d71b5b412c38c6c32f8550e9d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_evidence_provenance.py",
+      "baseline_blob": "ea5f6154e517dfb4fc92acc8042da4ad3549b748",
+      "candidate_blob": "ea5f6154e517dfb4fc92acc8042da4ad3549b748",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_model.py",
+      "baseline_blob": "f4a570b444d831f2d9ffd0cb82f467cd191d2359",
+      "candidate_blob": "f4a570b444d831f2d9ffd0cb82f467cd191d2359",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_research_artifact_integration.py",
+      "baseline_blob": "ea0348715efb7974bec3d2ed51d8cdc85e95309b",
+      "candidate_blob": "ea0348715efb7974bec3d2ed51d8cdc85e95309b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_peer_universe.py",
+      "baseline_blob": "165b6066c51e601b2d92496a5252a4ae3532c05a",
+      "candidate_blob": "165b6066c51e601b2d92496a5252a4ae3532c05a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_phase5_v1_1_real_data_script.py",
+      "baseline_blob": "265d7705a9050d066486b41727e2ae2daff72ee1",
+      "candidate_blob": "265d7705a9050d066486b41727e2ae2daff72ee1",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pipeline_integration.py",
+      "baseline_blob": "459d94d883d91eb4dde22d382166d99b916c3904",
+      "candidate_blob": "459d94d883d91eb4dde22d382166d99b916c3904",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_as_of_adjustment.py",
+      "baseline_blob": "aa6de34e8249ade7652f998b36c29a8fa4f1053a",
+      "candidate_blob": "aa6de34e8249ade7652f998b36c29a8fa4f1053a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_gate_cross_capability_semantics.py",
+      "baseline_blob": "80347aa493b1c0df87d1b078998c6a3c09316f90",
+      "candidate_blob": "80347aa493b1c0df87d1b078998c6a3c09316f90",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_pit_principles.py",
+      "baseline_blob": "cd062f51baf8215c0f99008aa2fc87270fe3478a",
+      "candidate_blob": "cd062f51baf8215c0f99008aa2fc87270fe3478a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_point_in_time.py",
+      "baseline_blob": "61bce4cc0371bd6f52d605b0eb470acb32b1897f",
+      "candidate_blob": "61bce4cc0371bd6f52d605b0eb470acb32b1897f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_portfolio_scenario.py",
+      "baseline_blob": "3565a351e234e1ef828376d19af5407780d8dff9",
+      "candidate_blob": "3565a351e234e1ef828376d19af5407780d8dff9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_catalog.py",
+      "baseline_blob": "a46634343e159db709977abe51f52629cdcaf682",
+      "candidate_blob": "a46634343e159db709977abe51f52629cdcaf682",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_model.py",
+      "baseline_blob": "191dcbcd93fa2122cf680feda3104fad425430a7",
+      "candidate_blob": "191dcbcd93fa2122cf680feda3104fad425430a7",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_pit.py",
+      "baseline_blob": "adcb1a367e0c60411a8c47defff52878aa9a52c3",
+      "candidate_blob": "adcb1a367e0c60411a8c47defff52878aa9a52c3",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_positioning_price_derived.py",
+      "baseline_blob": "cff977a36c5c944cd5740ae1c0b71a795ac30fbe",
+      "candidate_blob": "cff977a36c5c944cd5740ae1c0b71a795ac30fbe",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_post_edit_quality_gate_hook.py",
+      "baseline_blob": "8a791761699e135e8c02543d5482938a72d9f256",
+      "candidate_blob": "8a791761699e135e8c02543d5482938a72d9f256",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_price_data.py",
+      "baseline_blob": "f6e37401ae5a0141e05a608ffc219ec76fd4df31",
+      "candidate_blob": "f6e37401ae5a0141e05a608ffc219ec76fd4df31",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_protected_path_hook.py",
+      "baseline_blob": "883e48c73b15682be03d04cddb989c022e907f09",
+      "candidate_blob": "883e48c73b15682be03d04cddb989c022e907f09",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_provenance.py",
+      "baseline_blob": "16f3941913a6855329f311ee087cf0a02b4e91b5",
+      "candidate_blob": "16f3941913a6855329f311ee087cf0a02b4e91b5",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_reproducibility.py",
+      "baseline_blob": "e2fbf330be2e02c1fdd3b112de4de8bd422ad647",
+      "candidate_blob": "e2fbf330be2e02c1fdd3b112de4de8bd422ad647",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_artifact.py",
+      "baseline_blob": "63909cc85babbfefc7260a51fa64a411b7823408",
+      "candidate_blob": "63909cc85babbfefc7260a51fa64a411b7823408",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_artifact_registry.py",
+      "baseline_blob": "ec76e13f0832b21fb668dc0a59db42deec365e46",
+      "candidate_blob": "ec76e13f0832b21fb668dc0a59db42deec365e46",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_research_validation_pipeline.py",
+      "baseline_blob": "5425715d1bbdf5c89f7476d64c77690a15243ad5",
+      "candidate_blob": "5425715d1bbdf5c89f7476d64c77690a15243ad5",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_short_term_reversal_strategy.py",
+      "baseline_blob": "35d6cdcc794e86c457e25d56f2f597170a32ecc5",
+      "candidate_blob": "35d6cdcc794e86c457e25d56f2f597170a32ecc5",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_snapshot.py",
+      "baseline_blob": "8c92be446b89eecd3278fc61b19b2d12c1f6a79d",
+      "candidate_blob": "8c92be446b89eecd3278fc61b19b2d12c1f6a79d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_source_catalog.py",
+      "baseline_blob": "e6d7c9ec087d290fcf92e11f948ea297fff53992",
+      "candidate_blob": "e6d7c9ec087d290fcf92e11f948ea297fff53992",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_source_providers.py",
+      "baseline_blob": "11a4fba9573cfa98a1ab46a58e41065286cced94",
+      "candidate_blob": "11a4fba9573cfa98a1ab46a58e41065286cced94",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_strategy_schema.py",
+      "baseline_blob": "53e14303436d8792b27666549af7ab75402932fc",
+      "candidate_blob": "53e14303436d8792b27666549af7ab75402932fc",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_adapter.py",
+      "baseline_blob": "01760fcf51c21f41f6e187e8469149bd17299e2a",
+      "candidate_blob": "01760fcf51c21f41f6e187e8469149bd17299e2a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_catalog.py",
+      "baseline_blob": "1d7fa6081b02e97a4b975e3a34f2118f3394e676",
+      "candidate_blob": "1d7fa6081b02e97a4b975e3a34f2118f3394e676",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_cursor.py",
+      "baseline_blob": "48f5f25137d16ff769e5adf632924b76a06f30c8",
+      "candidate_blob": "48f5f25137d16ff769e5adf632924b76a06f30c8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_integration.py",
+      "baseline_blob": "ceef25196b6a18c00c36e200b8feaa117356b337",
+      "candidate_blob": "ceef25196b6a18c00c36e200b8feaa117356b337",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_tdnet_normalize.py",
+      "baseline_blob": "53d78e8c96dc4091fef40a59cf0d56e3f75c2fbf",
+      "candidate_blob": "53d78e8c96dc4091fef40a59cf0d56e3f75c2fbf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_thesis_impact.py",
+      "baseline_blob": "8d1f528cfe7dad87b4e6e9aa408cc6ba70a3099a",
+      "candidate_blob": "8d1f528cfe7dad87b4e6e9aa408cc6ba70a3099a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_ticker_codes.py",
+      "baseline_blob": "eb0d5d0ac8e2727d07ef73a1fcb4ce6c4dcb1afe",
+      "candidate_blob": "eb0d5d0ac8e2727d07ef73a1fcb4ce6c4dcb1afe",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_trading_calendar_real_holidays.py",
+      "baseline_blob": "9719938befc00c18220b5ffeafab4122959d8d19",
+      "candidate_blob": "9719938befc00c18220b5ffeafab4122959d8d19",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_universe.py",
+      "baseline_blob": "13f77d9ccd8c4ca196825f8a43fdc0922e14ffb0",
+      "candidate_blob": "13f77d9ccd8c4ca196825f8a43fdc0922e14ffb0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_universe_survivorship.py",
+      "baseline_blob": "f318b076acbbf287aa17665fe6d7fb10a6824dca",
+      "candidate_blob": "f318b076acbbf287aa17665fe6d7fb10a6824dca",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_current_fy_company_forecast_per.py",
+      "baseline_blob": "37e4ebc6073ddd809b7234b2bf471fc18a7cd613",
+      "candidate_blob": "37e4ebc6073ddd809b7234b2bf471fc18a7cd613",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py",
+      "baseline_blob": "1f80c9a47e6c6fc9aced1316852f91ded8a3d8ec",
+      "candidate_blob": "1f80c9a47e6c6fc9aced1316852f91ded8a3d8ec",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_historical_context.py",
+      "baseline_blob": "e5863660057afd39ab62345ffa51f3cb78e82181",
+      "candidate_blob": "e5863660057afd39ab62345ffa51f3cb78e82181",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_latest_reported_fy_per.py",
+      "baseline_blob": "23d5278163fe8c4d52d419f6f8f69e1f2cb41a0f",
+      "candidate_blob": "23d5278163fe8c4d52d419f6f8f69e1f2cb41a0f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/13_tests/test_valuation_provenance.py",
+      "baseline_blob": "aa1398b5368b6d2402aa07cc9cb7072777dddda0",
+      "candidate_blob": "aa1398b5368b6d2402aa07cc9cb7072777dddda0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/benchmark.py",
+      "baseline_blob": "f8aa03d399f3294718a2dc782704f6ad819ef1db",
+      "candidate_blob": "f8aa03d399f3294718a2dc782704f6ad819ef1db",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/engine.py",
+      "baseline_blob": "bb78290f6cd842e39f1493ca04d85eab41c9c14c",
+      "candidate_blob": "bb78290f6cd842e39f1493ca04d85eab41c9c14c",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/backtest/price_history.py",
+      "baseline_blob": "76076b4ca2cb76c655ca47f40e01d467348dead0",
+      "candidate_blob": "76076b4ca2cb76c655ca47f40e01d467348dead0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/catalog.py",
+      "baseline_blob": "d72b80644cba9e40326909e477a76bf8c021a5fa",
+      "candidate_blob": "d72b80644cba9e40326909e477a76bf8c021a5fa",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/evidence.py",
+      "baseline_blob": "1f815bf7bb5333ea754e038ace7ed6e5fbc94ec4",
+      "candidate_blob": "1f815bf7bb5333ea754e038ace7ed6e5fbc94ec4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/model.py",
+      "baseline_blob": "b5a4d30c8accf97b1a762637345d2894599c0083",
+      "candidate_blob": "b5a4d30c8accf97b1a762637345d2894599c0083",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/normalize.py",
+      "baseline_blob": "03b2fab49ec538e7747f96f499a78de095e16352",
+      "candidate_blob": "03b2fab49ec538e7747f96f499a78de095e16352",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/consensus/view.py",
+      "baseline_blob": "73c3e4c83cedf1073d8d5e82a1e85dfe5a04c23a",
+      "candidate_blob": "73c3e4c83cedf1073d8d5e82a1e85dfe5a04c23a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/base.py",
+      "baseline_blob": "aa9782fc630844bec8e4e3f35278e9edb6ad29a9",
+      "candidate_blob": "aa9782fc630844bec8e4e3f35278e9edb6ad29a9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/convert.py",
+      "baseline_blob": "901081885634cded2446e8c02d6dc67d19f91be1",
+      "candidate_blob": "901081885634cded2446e8c02d6dc67d19f91be1",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/fixture.py",
+      "baseline_blob": "8faa20181ac059173f680f1a16043aa2170464bf",
+      "candidate_blob": "8faa20181ac059173f680f1a16043aa2170464bf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/jquants.py",
+      "baseline_blob": "246267effd6be1036f98d30b7dc49635fdd03bf6",
+      "candidate_blob": "246267effd6be1036f98d30b7dc49635fdd03bf6",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/local_snapshot.py",
+      "baseline_blob": "e27d947d751f5384087cf0c4e2f6164d87fcb12a",
+      "candidate_blob": "e27d947d751f5384087cf0c4e2f6164d87fcb12a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/data_sources/ticker_codes.py",
+      "baseline_blob": "5463db79189175b3ff749c9bacb7cc53f8ab7b53",
+      "candidate_blob": "5463db79189175b3ff749c9bacb7cc53f8ab7b53",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/candidate_extraction.py",
+      "baseline_blob": "ad0b8432b9c2a8dfacc9965a1975f0e8fef07a65",
+      "candidate_blob": "ad0b8432b9c2a8dfacc9965a1975f0e8fef07a65",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/catalog.py",
+      "baseline_blob": "7039ae74943e072e8bc29c0b9b04e2e1f4f76bc9",
+      "candidate_blob": "7039ae74943e072e8bc29c0b9b04e2e1f4f76bc9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence.py",
+      "baseline_blob": "2df75d22ca4ff3222c46b904c6331c1f875cfc76",
+      "candidate_blob": "2df75d22ca4ff3222c46b904c6331c1f875cfc76",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence_integration.py",
+      "baseline_blob": "5af1b60b6d80194d6ead78a8c3de8de16612388f",
+      "candidate_blob": "5af1b60b6d80194d6ead78a8c3de8de16612388f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/evidence_lineage.py",
+      "baseline_blob": "4b95c7729b985801984557f81c98c79c0e3ca5a8",
+      "candidate_blob": "4b95c7729b985801984557f81c98c79c0e3ca5a8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/faithfulness.py",
+      "baseline_blob": "73445530c92f3dae1cdb0c82a43f354a64d1931d",
+      "candidate_blob": "73445530c92f3dae1cdb0c82a43f354a64d1931d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/model.py",
+      "baseline_blob": "2ab9e6b3eb6ed3e497d0215e2d8e1534ee7dd569",
+      "candidate_blob": "2ab9e6b3eb6ed3e497d0215e2d8e1534ee7dd569",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/normalization.py",
+      "baseline_blob": "e51b8f07bc87d1ed418e86baf91104c082ffb1db",
+      "candidate_blob": "e51b8f07bc87d1ed418e86baf91104c082ffb1db",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/normalize.py",
+      "baseline_blob": "5e76c400451243149066662bfd0d8381291d78d3",
+      "candidate_blob": "5e76c400451243149066662bfd0d8381291d78d3",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/__init__.py",
+      "baseline_blob": "71e794b2f9d261eaa754347d2431186f80424c24",
+      "candidate_blob": "71e794b2f9d261eaa754347d2431186f80424c24",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/company_ir.py",
+      "baseline_blob": "17b54ebd0eb1b9204206265bb9bf5244a241e870",
+      "candidate_blob": "17b54ebd0eb1b9204206265bb9bf5244a241e870",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/company_ir_normalize.py",
+      "baseline_blob": "248a7442599b945e3ecb68ea0e4b129f53295df4",
+      "candidate_blob": "248a7442599b945e3ecb68ea0e4b129f53295df4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet.py",
+      "baseline_blob": "7c498e0bdd998b1c7865a210b6f1b6bc2c42049e",
+      "candidate_blob": "7c498e0bdd998b1c7865a210b6f1b6bc2c42049e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet_normalize.py",
+      "baseline_blob": "eb34431c787155be4d9553c36818e030f3304808",
+      "candidate_blob": "eb34431c787155be4d9553c36818e030f3304808",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/edinet_zip.py",
+      "baseline_blob": "b791c9985dff3c8e36c9e82edc663f6e9f78d781",
+      "candidate_blob": "b791c9985dff3c8e36c9e82edc663f6e9f78d781",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet.py",
+      "baseline_blob": "517c0f68a8112d86d4f99a218ce3918c60e2bc55",
+      "candidate_blob": "517c0f68a8112d86d4f99a218ce3918c60e2bc55",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet_cursor.py",
+      "baseline_blob": "74e3f3e00047d9ced8d2d5add3fe348a3ffdef7b",
+      "candidate_blob": "74e3f3e00047d9ced8d2d5add3fe348a3ffdef7b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/providers/tdnet_normalize.py",
+      "baseline_blob": "115e0241ffcb5ef72c073af36bcfab269673f166",
+      "candidate_blob": "115e0241ffcb5ef72c073af36bcfab269673f166",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/semantic_claims.py",
+      "baseline_blob": "9f65f226d6a4ffa351158f4d045786ae770edfa6",
+      "candidate_blob": "9f65f226d6a4ffa351158f4d045786ae770edfa6",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/disclosures/view.py",
+      "baseline_blob": "ed3f27fdecc79d40c60429a4699b0d8735759a9b",
+      "candidate_blob": "ed3f27fdecc79d40c60429a4699b0d8735759a9b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/errors.py",
+      "baseline_blob": "e02769a0952a7f420709016e71d447c08406487d",
+      "candidate_blob": "e02769a0952a7f420709016e71d447c08406487d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/integrity.py",
+      "baseline_blob": "f57d08c783cafd77d23ee3d84274107aa41e849c",
+      "candidate_blob": "f57d08c783cafd77d23ee3d84274107aa41e849c",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/model.py",
+      "baseline_blob": "7da1d8c3042d34f6eacfcf05f8daa7dd87b1b134",
+      "candidate_blob": "7da1d8c3042d34f6eacfcf05f8daa7dd87b1b134",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evaluation/store.py",
+      "baseline_blob": "9a324267408be3059973fae59ffdb209acae8881",
+      "candidate_blob": "9a324267408be3059973fae59ffdb209acae8881",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/__init__.py",
+      "baseline_blob": "96173ba5eb818bf7c4f8978480bca3dc8f681ef9",
+      "candidate_blob": "96173ba5eb818bf7c4f8978480bca3dc8f681ef9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/measurement.py",
+      "baseline_blob": "01e47a4512334b45362378b80b81187a931f2386",
+      "candidate_blob": "01e47a4512334b45362378b80b81187a931f2386",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/model.py",
+      "baseline_blob": "e2d0fcaf4595223f1ee2e337871971044661b67c",
+      "candidate_blob": "e2d0fcaf4595223f1ee2e337871971044661b67c",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/event_responses/store.py",
+      "baseline_blob": "5d41d90a2981f1f0e814c20f15b57695f8a6c16e",
+      "candidate_blob": "5d41d90a2981f1f0e814c20f15b57695f8a6c16e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/decision_log.py",
+      "baseline_blob": "6a0a76d9b68a20e1f3900debd345e91109a89797",
+      "candidate_blob": "6a0a76d9b68a20e1f3900debd345e91109a89797",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/incremental_update.py",
+      "baseline_blob": "891ed3c7d3388f7eb9dd1bc5390a173047dddd6a",
+      "candidate_blob": "891ed3c7d3388f7eb9dd1bc5390a173047dddd6a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/model.py",
+      "baseline_blob": "2c06413c74fcc238f83a2d5b2ef4820dd35b5b52",
+      "candidate_blob": "2c06413c74fcc238f83a2d5b2ef4820dd35b5b52",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/news.py",
+      "baseline_blob": "f03a0d70197f54e5facfbc8468eb739f1b48bdfe",
+      "candidate_blob": "f03a0d70197f54e5facfbc8468eb739f1b48bdfe",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/packet.py",
+      "baseline_blob": "ab5ddfa8b4917a72e7057e294810516e205a72d9",
+      "candidate_blob": "ab5ddfa8b4917a72e7057e294810516e205a72d9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/research_artifact.py",
+      "baseline_blob": "e24a5430bb66bb99d7b6fb83ecd8cf7505af6648",
+      "candidate_blob": "e24a5430bb66bb99d7b6fb83ecd8cf7505af6648",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/retrieval.py",
+      "baseline_blob": "1b094878d9867b31be02463ba10eb08db8a397a1",
+      "candidate_blob": "1b094878d9867b31be02463ba10eb08db8a397a1",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/evidence/thesis_impact.py",
+      "baseline_blob": "2e4c951aac74bbd65182dafe89d488da08fb4f5d",
+      "candidate_blob": "2e4c951aac74bbd65182dafe89d488da08fb4f5d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/comparison.py",
+      "baseline_blob": "0204287e0c764c64d4b4ea4916b15c877f3aaf54",
+      "candidate_blob": "0204287e0c764c64d4b4ea4916b15c877f3aaf54",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/model.py",
+      "baseline_blob": "e65aa2b5e0caad0c2d774617118ca914b9b1122b",
+      "candidate_blob": "e65aa2b5e0caad0c2d774617118ca914b9b1122b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/expectations/reverse_spec.py",
+      "baseline_blob": "39d6cd0c81c85398825cc2eec25d92cfef0e309d",
+      "candidate_blob": "39d6cd0c81c85398825cc2eec25d92cfef0e309d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/engine.py",
+      "baseline_blob": "4da7e75ddef261e9e9fb74fd059612fea8c1a4e8",
+      "candidate_blob": "4da7e75ddef261e9e9fb74fd059612fea8c1a4e8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/forecasting/model.py",
+      "baseline_blob": "eb1986817592aad67e33094fc102eea608c783af",
+      "candidate_blob": "eb1986817592aad67e33094fc102eea608c783af",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/catalog.py",
+      "baseline_blob": "59afbe61cf4412411fee18d13fb5fd2d6e10d0b4",
+      "candidate_blob": "59afbe61cf4412411fee18d13fb5fd2d6e10d0b4",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/evidence.py",
+      "baseline_blob": "8bd43880890764f19b10ec447c5b23bc9a21af3f",
+      "candidate_blob": "8bd43880890764f19b10ec447c5b23bc9a21af3f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/model.py",
+      "baseline_blob": "b532794da0cc0cdcf8d02c6bcbe9f399d969c2f0",
+      "candidate_blob": "b532794da0cc0cdcf8d02c6bcbe9f399d969c2f0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/normalize.py",
+      "baseline_blob": "0678c14a987ba3362b6aaf44523b9147efd7d23e",
+      "candidate_blob": "0678c14a987ba3362b6aaf44523b9147efd7d23e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_builder.py",
+      "baseline_blob": "ab2a5759c9fb038378b9fa6c452257d869367ec8",
+      "candidate_blob": "ab2a5759c9fb038378b9fa6c452257d869367ec8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_evidence.py",
+      "baseline_blob": "b571a900c79f977bdadaa1a4bc9b538a1a6d90cf",
+      "candidate_blob": "b571a900c79f977bdadaa1a4bc9b538a1a6d90cf",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/same_period_yoy_model.py",
+      "baseline_blob": "fb101b237b579e4bbe926b5ee39d421221609a32",
+      "candidate_blob": "fb101b237b579e4bbe926b5ee39d421221609a32",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/fundamentals/view.py",
+      "baseline_blob": "5b5fefa1a771d4342bdfc46a0432bdd6fe29bdb3",
+      "candidate_blob": "5b5fefa1a771d4342bdfc46a0432bdd6fe29bdb3",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/catalog.py",
+      "baseline_blob": "8d16a862b3718ab98bcb6ec8902d869aa7be8c7f",
+      "candidate_blob": "8d16a862b3718ab98bcb6ec8902d869aa7be8c7f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/evidence.py",
+      "baseline_blob": "b42f3f12d18b05d21018d16fa0f3d9b2b521384f",
+      "candidate_blob": "b42f3f12d18b05d21018d16fa0f3d9b2b521384f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/model.py",
+      "baseline_blob": "72d073def8f0a3470667e6dce27a61c23cd3eefb",
+      "candidate_blob": "72d073def8f0a3470667e6dce27a61c23cd3eefb",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/normalize.py",
+      "baseline_blob": "63ff3b6f8282a6a8e94a8ddb0d4302dd8bc5cd74",
+      "candidate_blob": "63ff3b6f8282a6a8e94a8ddb0d4302dd8bc5cd74",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/global_market/view.py",
+      "baseline_blob": "3273fdd504209186681e415308526a89ffcbdc24",
+      "candidate_blob": "3273fdd504209186681e415308526a89ffcbdc24",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/catalog.py",
+      "baseline_blob": "ac23490fa6418b116b349ca284bf5e2dff4b3843",
+      "candidate_blob": "ac23490fa6418b116b349ca284bf5e2dff4b3843",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/evidence.py",
+      "baseline_blob": "4f4d89bfa20f1e299e36b9405353b4b49ad91c72",
+      "candidate_blob": "4f4d89bfa20f1e299e36b9405353b4b49ad91c72",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/model.py",
+      "baseline_blob": "597be49ee346143009941b4366ca8d7ceb8afd0b",
+      "candidate_blob": "597be49ee346143009941b4366ca8d7ceb8afd0b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/normalize.py",
+      "baseline_blob": "7fefd0f72dcf59fb538aa520184d179cf37ad9f0",
+      "candidate_blob": "7fefd0f72dcf59fb538aa520184d179cf37ad9f0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro/view.py",
+      "baseline_blob": "d5693d850e4c31f5dae3829f56a5e01e9c578978",
+      "candidate_blob": "d5693d850e4c31f5dae3829f56a5e01e9c578978",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/model.py",
+      "baseline_blob": "eb6549137b7f39a7096413aa2b00f498831567f0",
+      "candidate_blob": "eb6549137b7f39a7096413aa2b00f498831567f0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/store.py",
+      "baseline_blob": "d35f6f8df3b633573e4cd96d22714fb3f21b1c55",
+      "candidate_blob": "d35f6f8df3b633573e4cd96d22714fb3f21b1c55",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/macro_events/surprise.py",
+      "baseline_blob": "fc1c968f80de2a9d2b9a3e8c804946a3e59ab9be",
+      "candidate_blob": "fc1c968f80de2a9d2b9a3e8c804946a3e59ab9be",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/market_calendar.py",
+      "baseline_blob": "6b7545c9ab97b2cf73992646633150ab006d1bcd",
+      "candidate_blob": "6b7545c9ab97b2cf73992646633150ab006d1bcd",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/catalog.py",
+      "baseline_blob": "58f4c61729716511aae793298940b3d84b8d1bd2",
+      "candidate_blob": "58f4c61729716511aae793298940b3d84b8d1bd2",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/evidence.py",
+      "baseline_blob": "bca52e5581d894d16a1448b4e22ff88aabfaf227",
+      "candidate_blob": "bca52e5581d894d16a1448b4e22ff88aabfaf227",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/model.py",
+      "baseline_blob": "505700f21c7c8206d531e3d7fb63671768e10d79",
+      "candidate_blob": "505700f21c7c8206d531e3d7fb63671768e10d79",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/normalize.py",
+      "baseline_blob": "9884a10ffe9e3ce21e6a13f9c45c824a1660c925",
+      "candidate_blob": "9884a10ffe9e3ce21e6a13f9c45c824a1660c925",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/news/view.py",
+      "baseline_blob": "6e9ba0ea660140f46a194fab944a61eae8c09812",
+      "candidate_blob": "6e9ba0ea660140f46a194fab944a61eae8c09812",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/builder.py",
+      "baseline_blob": "a756fa253ae032c055077f8c9f55034129e49346",
+      "candidate_blob": "a756fa253ae032c055077f8c9f55034129e49346",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/comparability.py",
+      "baseline_blob": "31fcd62db04540574f59e367e79bcd45278cd674",
+      "candidate_blob": "31fcd62db04540574f59e367e79bcd45278cd674",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/evidence.py",
+      "baseline_blob": "f5581ec713ddc0364772138ccd8936ad9db822dd",
+      "candidate_blob": "f5581ec713ddc0364772138ccd8936ad9db822dd",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/model.py",
+      "baseline_blob": "eb5657bc19e12c5437edfba15977d42abafa2e17",
+      "candidate_blob": "eb5657bc19e12c5437edfba15977d42abafa2e17",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/provenance.py",
+      "baseline_blob": "5b40a51f78e0592e95551afcceb2295b6b23a83f",
+      "candidate_blob": "5b40a51f78e0592e95551afcceb2295b6b23a83f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/peer/universe.py",
+      "baseline_blob": "615c4ce0351768f9f3b5b44a2319b0471a7f583d",
+      "candidate_blob": "615c4ce0351768f9f3b5b44a2319b0471a7f583d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/point_in_time.py",
+      "baseline_blob": "f775958534fa02e140c6a5b68c0ba442890f1007",
+      "candidate_blob": "f775958534fa02e140c6a5b68c0ba442890f1007",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/catalog.py",
+      "baseline_blob": "21e65d1a7828d7836be397b55c355116b230e5a5",
+      "candidate_blob": "21e65d1a7828d7836be397b55c355116b230e5a5",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/derived/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/derived/price_derived.py",
+      "baseline_blob": "945d603d057548569b8e087bddf7c388ad52b642",
+      "candidate_blob": "945d603d057548569b8e087bddf7c388ad52b642",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/evidence.py",
+      "baseline_blob": "b5e5b1e3efab447291f51dfc8d9980cf7e9f284a",
+      "candidate_blob": "b5e5b1e3efab447291f51dfc8d9980cf7e9f284a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/model.py",
+      "baseline_blob": "19f9a3b6c716a869580418cf2103b7c1c8e23a76",
+      "candidate_blob": "19f9a3b6c716a869580418cf2103b7c1c8e23a76",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/normalize.py",
+      "baseline_blob": "187ebb422ec666df1a504b87514d1845a62ad5b8",
+      "candidate_blob": "187ebb422ec666df1a504b87514d1845a62ad5b8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/positioning/view.py",
+      "baseline_blob": "6450b7bb3294522b945c6fd92385ec1c52f20779",
+      "candidate_blob": "6450b7bb3294522b945c6fd92385ec1c52f20779",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/evidence_packet_registry.py",
+      "baseline_blob": "0192f3271c36536390fa3d0d94d983c4fc6411b3",
+      "candidate_blob": "0192f3271c36536390fa3d0d94d983c4fc6411b3",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/evidence_registry.py",
+      "baseline_blob": "98c6d66c459b0ca72456fe1d50ef3d26e5a5842e",
+      "candidate_blob": "98c6d66c459b0ca72456fe1d50ef3d26e5a5842e",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/experiment_registry.py",
+      "baseline_blob": "27819f24dc3c3eeb0f594ea44b62108a9b2b6e82",
+      "candidate_blob": "27819f24dc3c3eeb0f594ea44b62108a9b2b6e82",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/provenance.py",
+      "baseline_blob": "cc5a9309f7822d2ab1d77dc1b64a2dd7ac14d438",
+      "candidate_blob": "cc5a9309f7822d2ab1d77dc1b64a2dd7ac14d438",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/registry/research_artifact_registry.py",
+      "baseline_blob": "16c0933877947b356831ea7bf7882b074434fe47",
+      "candidate_blob": "16c0933877947b356831ea7bf7882b074434fe47",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/reproducibility.py",
+      "baseline_blob": "eae1c75231cac34a3b2f87ff4cd0ff078b77fcf9",
+      "candidate_blob": "eae1c75231cac34a3b2f87ff4cd0ff078b77fcf9",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/dataset_contract.py",
+      "baseline_blob": "89b3fa2de339509ccaf36ccb671ea7ebf66923dd",
+      "candidate_blob": "89b3fa2de339509ccaf36ccb671ea7ebf66923dd",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/locked_test.py",
+      "baseline_blob": "c9c96a13188cdc2695993d5a26cea8736f5e1a7d",
+      "candidate_blob": "c9c96a13188cdc2695993d5a26cea8736f5e1a7d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/preregistration.py",
+      "baseline_blob": "67e3bc60fc56e19ac4eadf0f867e9e4ad02bb9ac",
+      "candidate_blob": "67e3bc60fc56e19ac4eadf0f867e9e4ad02bb9ac",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/registry.py",
+      "baseline_blob": "d9505688551f89fa0f7603ee5b8f37c00106af9d",
+      "candidate_blob": "d9505688551f89fa0f7603ee5b8f37c00106af9d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/research/runner.py",
+      "baseline_blob": "5a28a84bda6a8714520d5db5eb3d490e0daee16f",
+      "candidate_blob": "5a28a84bda6a8714520d5db5eb3d490e0daee16f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/base.py",
+      "baseline_blob": "4a89abb904bc99f5251642bac72fef9446102fbe",
+      "candidate_blob": "4a89abb904bc99f5251642bac72fef9446102fbe",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/experiment.py",
+      "baseline_blob": "55ddad72fd00a4b5a8e4f4c025225c57c1f7befb",
+      "candidate_blob": "55ddad72fd00a4b5a8e4f4c025225c57c1f7befb",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/hypothesis.py",
+      "baseline_blob": "259f8311a417d51a424ffb2b77acea3d53cfce29",
+      "candidate_blob": "259f8311a417d51a424ffb2b77acea3d53cfce29",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/idea.py",
+      "baseline_blob": "ca5c8c29714baf907eaf3d5f201457662c7505c0",
+      "candidate_blob": "ca5c8c29714baf907eaf3d5f201457662c7505c0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/knowledge.py",
+      "baseline_blob": "74c22aa08d7c6e5c9680b5d4aa7f2ea776489696",
+      "candidate_blob": "74c22aa08d7c6e5c9680b5d4aa7f2ea776489696",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/paper_trade.py",
+      "baseline_blob": "5cd111399118fe6080f723bca5fec00cc72f6e4f",
+      "candidate_blob": "5cd111399118fe6080f723bca5fec00cc72f6e4f",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/portfolio_rules.py",
+      "baseline_blob": "8dd98ee55d6c5c32487101653bf7ec6f31270295",
+      "candidate_blob": "8dd98ee55d6c5c32487101653bf7ec6f31270295",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/price_data.py",
+      "baseline_blob": "f96a8d24479e520b792abbd23335f4b63b442609",
+      "candidate_blob": "f96a8d24479e520b792abbd23335f4b63b442609",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/schemas/strategy.py",
+      "baseline_blob": "3e2b5c1624fc387f0472aee8ef08a93aec852058",
+      "candidate_blob": "3e2b5c1624fc387f0472aee8ef08a93aec852058",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/snapshot.py",
+      "baseline_blob": "b89208d812079fb5c777de261a6789c27d69d659",
+      "candidate_blob": "b89208d812079fb5c777de261a6789c27d69d659",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/catalog.py",
+      "baseline_blob": "17fc18df734fcb27f7940343fbd9b3deefd71d86",
+      "candidate_blob": "17fc18df734fcb27f7940343fbd9b3deefd71d86",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/entity_registry.py",
+      "baseline_blob": "dbc105245e391cc6067d68e23460cedf30ddfc57",
+      "candidate_blob": "dbc105245e391cc6067d68e23460cedf30ddfc57",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/sources/providers.py",
+      "baseline_blob": "a7a329b9ec8334267f1624b44719daab187e0236",
+      "candidate_blob": "a7a329b9ec8334267f1624b44719daab187e0236",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/fixed_pipeline_validation.py",
+      "baseline_blob": "bd7919b59a3e1da871419724777d44b2827e264c",
+      "candidate_blob": "bd7919b59a3e1da871419724777d44b2827e264c",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/strategies/short_term_reversal.py",
+      "baseline_blob": "8a53a510287ebb41639667ba86a21c48055f76e6",
+      "candidate_blob": "8a53a510287ebb41639667ba86a21c48055f76e6",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/universe.py",
+      "baseline_blob": "371900f6bc319e4b54f41e1038866c4a82e347ca",
+      "candidate_blob": "371900f6bc319e4b54f41e1038866c4a82e347ca",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/__init__.py",
+      "baseline_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "candidate_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/builder.py",
+      "baseline_blob": "8ce9719c3c34153c5a2be9afab47170993cc21c8",
+      "candidate_blob": "8ce9719c3c34153c5a2be9afab47170993cc21c8",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/current_fy_forecast_builder.py",
+      "baseline_blob": "482e0c39449b18dfbee77e364a213807272336ff",
+      "candidate_blob": "482e0c39449b18dfbee77e364a213807272336ff",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/engine.py",
+      "baseline_blob": "bd7b92ccaf973ca3ba5c835e0072862d299e591b",
+      "candidate_blob": "bd7b92ccaf973ca3ba5c835e0072862d299e591b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/evidence.py",
+      "baseline_blob": "63a2c98cf539bcabcf70768c205c069f79f5bcf0",
+      "candidate_blob": "63a2c98cf539bcabcf70768c205c069f79f5bcf0",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/forward_reverse_model.py",
+      "baseline_blob": "0b3ac46174a572aa1418c66c1175d2a489b13941",
+      "candidate_blob": "0b3ac46174a572aa1418c66c1175d2a489b13941",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/historical_context_builder.py",
+      "baseline_blob": "efa09bdeca597cefd77925c78bb51938a671a257",
+      "candidate_blob": "efa09bdeca597cefd77925c78bb51938a671a257",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/historical_context_evidence.py",
+      "baseline_blob": "b7011ece4d4379e7e67d27f0b718fe14fd1bd987",
+      "candidate_blob": "b7011ece4d4379e7e67d27f0b718fe14fd1bd987",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/model.py",
+      "baseline_blob": "3f625fea4467526846683dc4f0ab19716b46af2a",
+      "candidate_blob": "3f625fea4467526846683dc4f0ab19716b46af2a",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/provenance.py",
+      "baseline_blob": "d0b32d6c0e232b44d0d09e8dd4f9dc5ebb4b867b",
+      "candidate_blob": "d0b32d6c0e232b44d0d09e8dd4f9dc5ebb4b867b",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/lib/valuation/reverse.py",
+      "baseline_blob": "02e66339af900faaa6c6dd84344048a1b712322d",
+      "candidate_blob": "02e66339af900faaa6c6dd84344048a1b712322d",
+      "unchanged": true
+    },
+    {
+      "path": "Japanese_Equity_Lab/scripts/manifests/d0110_2_event_window_response_pilot.json",
+      "baseline_blob": "7526b24113e06e75fe4ee5c1bf798b8e3f272feb",
+      "candidate_blob": "7526b24113e06e75fe4ee5c1bf798b8e3f272feb",
+      "unchanged": true
+    }
+  ]
+}

@@ -1,0 +1,256 @@
+{
+  "repository": {
+    "default_branch": "claude/repo-creation-setup-ejmkje",
+    "private": false,
+    "visibility": "public",
+    "url": "https://github.com/shouishirakawa273-lab/shoui-"
+  },
+  "branches": [
+    {
+      "name": "claude/investment-strategy-pipeline-jyfby5",
+      "sha": "071cff9c18632461c207a08c20e7c721a983221b",
+      "protected": false
+    },
+    {
+      "name": "claude/repo-creation-setup-ejmkje",
+      "sha": "4a931eb12b9567a6d78593decc69053ff37d38e0",
+      "protected": false
+    },
+    {
+      "name": "codex/bls-cpi-capture",
+      "sha": "28fb26edcc9439833370949e4501264beb286e97",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-2-event-window-response",
+      "sha": "794da6b5d1e0b6a748b983736c83191d7a65bd06",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-3-company-exposure-bridge",
+      "sha": "a698832337a9b0d70f0a1a8c09cd74769ec60f2d",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-comparison-cli",
+      "sha": "a35220f3704d994f791fe2ed8a6e68faf573bc91",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-complete-delivery",
+      "sha": "03d231b5af0422abeae660a996134b4f113101c2",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-experiment-persistence",
+      "sha": "113a0c54dd0030ae96cc478b8cb0c8c837980fbf",
+      "protected": false
+    },
+    {
+      "name": "codex/d0110-forward-cpi-evidence",
+      "sha": "313201e0ce0476265a1c37415289ec94fa83c3e0",
+      "protected": false
+    },
+    {
+      "name": "codex/d0111-scenario-returns",
+      "sha": "51c36eb01d0be6fab0240be804f91766016960f7",
+      "protected": false
+    },
+    {
+      "name": "codex/d0112-portfolio-risk",
+      "sha": "444bddf405b7d9f61dc0cc1d44397bda276a163f",
+      "protected": false
+    },
+    {
+      "name": "codex/d0113-portfolio-construction",
+      "sha": "505fd456d5ac10612be414acf8fa624e40b53a9b",
+      "protected": false
+    },
+    {
+      "name": "codex/development-governance",
+      "sha": "aee342cb2251d7085a8834b2455027a45383216c",
+      "protected": false
+    },
+    {
+      "name": "codex/exposure-valuation-integration",
+      "sha": "de42298ca3a6871c5db1ed3e8e51bce722f5c42e",
+      "protected": false
+    },
+    {
+      "name": "codex/forward-validation-d0111-plan",
+      "sha": "ba4155405b1d92ed30d0bfef7974826e6422e582",
+      "protected": false
+    },
+    {
+      "name": "codex/integrated-research-portfolio",
+      "sha": "0e915c81fafc26535001680e5fbd0b9c5fc1eb67",
+      "protected": false
+    },
+    {
+      "name": "codex/profit-impact-preflight",
+      "sha": "4f680d28881ff55b2cab92abaebf1dae8c498654",
+      "protected": false
+    },
+    {
+      "name": "codex/profit-impact-pretax-foundation",
+      "sha": "fba60cbc42b76021000a24663dce34fd51b13aea",
+      "protected": false
+    },
+    {
+      "name": "codex/research-path-integration",
+      "sha": "8ebd6d0e3e460290bbd9dbfc717b3ec7654be762",
+      "protected": false
+    },
+    {
+      "name": "codex/smm-source-archive-case",
+      "sha": "442da335353f1a0c51bfd71c0018def32e52a2d3",
+      "protected": false
+    }
+  ],
+  "pulls": [
+    {
+      "number": 18,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "0e915c81fafc26535001680e5fbd0b9c5fc1eb67",
+      "base": "codex/d0113-portfolio-construction"
+    },
+    {
+      "number": 17,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "505fd456d5ac10612be414acf8fa624e40b53a9b",
+      "base": "codex/d0112-portfolio-risk"
+    },
+    {
+      "number": 16,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "444bddf405b7d9f61dc0cc1d44397bda276a163f",
+      "base": "codex/research-path-integration"
+    },
+    {
+      "number": 15,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "8ebd6d0e3e460290bbd9dbfc717b3ec7654be762",
+      "base": "codex/d0111-scenario-returns"
+    },
+    {
+      "number": 14,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "51c36eb01d0be6fab0240be804f91766016960f7",
+      "base": "codex/bls-cpi-capture"
+    },
+    {
+      "number": 13,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "28fb26edcc9439833370949e4501264beb286e97",
+      "base": "codex/forward-validation-d0111-plan"
+    },
+    {
+      "number": 12,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "ba4155405b1d92ed30d0bfef7974826e6422e582",
+      "base": "codex/d0110-comparison-cli"
+    },
+    {
+      "number": 11,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "a35220f3704d994f791fe2ed8a6e68faf573bc91",
+      "base": "codex/d0110-experiment-persistence"
+    },
+    {
+      "number": 10,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "113a0c54dd0030ae96cc478b8cb0c8c837980fbf",
+      "base": "codex/d0110-forward-cpi-evidence"
+    },
+    {
+      "number": 9,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "313201e0ce0476265a1c37415289ec94fa83c3e0",
+      "base": "codex/d0110-complete-delivery"
+    },
+    {
+      "number": 8,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "03d231b5af0422abeae660a996134b4f113101c2",
+      "base": "codex/exposure-valuation-integration"
+    },
+    {
+      "number": 7,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "de42298ca3a6871c5db1ed3e8e51bce722f5c42e",
+      "base": "codex/d0110-3-company-exposure-bridge"
+    },
+    {
+      "number": 6,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "442da335353f1a0c51bfd71c0018def32e52a2d3",
+      "base": "codex/profit-impact-preflight"
+    },
+    {
+      "number": 5,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "4f680d28881ff55b2cab92abaebf1dae8c498654",
+      "base": "codex/profit-impact-pretax-foundation"
+    },
+    {
+      "number": 4,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "fba60cbc42b76021000a24663dce34fd51b13aea",
+      "base": "claude/investment-strategy-pipeline-jyfby5"
+    },
+    {
+      "number": 3,
+      "state": "open",
+      "draft": true,
+      "merged_at": null,
+      "head": "a698832337a9b0d70f0a1a8c09cd74769ec60f2d",
+      "base": "claude/investment-strategy-pipeline-jyfby5"
+    },
+    {
+      "number": 2,
+      "state": "closed",
+      "draft": false,
+      "merged_at": "2026-10-14T09:44:53Z",
+      "head": "794da6b5d1e0b6a748b983736c83191d7a65bd06",
+      "base": "claude/investment-strategy-pipeline-jyfby5"
+    },
+    {
+      "number": 1,
+      "state": "open",
+      "draft": false,
+      "merged_at": null,
+      "head": "071cff9c18632461c207a08c20e7c721a983221b",
+      "base": "claude/repo-creation-setup-ejmkje"
+    }
+  ]
+}
