@@ -19333,3 +19333,14 @@ Independent134pass/1deselected,195-source mypy issues0, fixedSHAclean and frozen
 unchanged; separate design audit no blockers. See development/2026-10-17_D0112_RESULT.md
 and evidence/d0112/. Real portfolio suitability/efficacy and unsupported checks
 are not accepted. No optimizer, merge/FROZEN, prohibited tests or runtime changes.
+
+## 2026-10-17 — D0113 explicit-priority rule construction
+
+Codecc0d1918460e6ef32c342e5f570ed3dd28c1e4b0 validates all desired D0112
+inputs, applies exact company/sector/cash caps and quantum floor in caller
+priority, retains reductions as cash, derives subset lineage and rechecks D0112.
+New v1 policy, not recovery of original detailed requirements or optimal advice.
+Independent156pass/1deselected,197-source mypy issues0; separate design audit no
+blockers, frozen288 unchanged. See development/2026-10-17_D0113_RESULT.md and
+evidence/d0113/. Minimum synthetic engineering slice only; actual policy/data/
+portfolio efficacy remains unaccepted. No merge/FROZEN or prohibited tests.

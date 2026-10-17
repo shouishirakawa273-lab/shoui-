@@ -1,0 +1,21 @@
+{
+  "head": "cc0d1918460e6ef32c342e5f570ed3dd28c1e4b0",
+  "base": "444bddf405b7d9f61dc0cc1d44397bda276a163f",
+  "exact_fraction_priority_grid_conservation": true,
+  "subset_hash_availability_retained": true,
+  "same_company_tiny_excess_nongrid_cash": true,
+  "all_cash_zero_allocation": true,
+  "rejected": [
+    "invalid-zero",
+    "priority",
+    "future-policy",
+    "quantum",
+    "hash"
+  ],
+  "context_reorder_input_hash_invariance": true,
+  "demo_exit": 0,
+  "frozen288_git_content_unchanged": true,
+  "raw_byte_identity_not_claimed": true,
+  "status": "clean",
+  "result_hash": "6158df3d9bcb414961337bec2e5e4e1008b5d2c88371a1ac1dd822c42249bedf"
+}
