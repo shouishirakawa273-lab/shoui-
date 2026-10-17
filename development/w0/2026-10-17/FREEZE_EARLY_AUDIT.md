@@ -8,7 +8,7 @@
 
 | 境界 | 宣言・scope根拠 | 内容commit候補と現blob比較 |
 |---|---|---|
-| Stage 3.15（D0089〜D0093） | :11083–11088はD0092 production freeze維持、:11092はD0093 acceptance harness変更、:11097–11099はStage3.15 Frozen。 | D0093 `983e32ef5566047237140d0213c792d35389c191`。当時存在したvaluation/evidence/registry全22fileとhistorical-context test1file、計23/23不変。harness含む。これは範囲候補の広め照合で完全な正式全scope確定ではない。 |
+| Stage 3.15（D0089〜D0093） | :11083–11088はD0092 production freeze維持、:11092はD0093 acceptance harness変更、:11097–11099はStage3.15 Frozen。 | D0093 `983e32ef5566047237140d0213c792d35389c191`。当時存在したvaluation/evidence/registryのlib21file、historical-context test1file、script/harness1file、計23/23不変。これは範囲候補の広め照合で完全な正式全scope確定ではない。 |
 | Stage 3.17（D0095〜D0097） | :12066–12085は変更scope peer builder/provenance/tests、:12088–12092は3.15/3.17 freeze維持。 | D0097 `3e17f7e67466deb8a0c9de2b13e683d94bd4f8c1`。peer全7production+全7test=14/14不変。共有sources catalog等の完全境界は別途UNKNOWN。 |
 | D0098.1 hook guard | :12351–12361で2file scope、:12797でD0098.1 FROZEN参照。 | `1626bdbaa55db53acc65ed520ce798494b2da670`。test不変、hook変更。変更は`18258f6eb86ddf48444f260a37dd4adf96961996` DEV-HOOK-01、:15063以降にtoolchain調査/修正記録あり。したがって即freeze違反としない。owner解除/再凍結SHAはUNKNOWN。 |
 | D0102.4設計/実装系列 | :13921設計のみ、:14608設計closure。実装:14872以下、:15537–15538でdeterministic旧版ACCEPTED/FROZEN、:15935–15938で系列全体cb5baaa ACCEPTED/FROZEN。 | 最終`cb5baaafb8d5de6052b70a00abc2e52eea37d293`、faithfulness.py/test_faithfulness.py 2/2不変。途中deterministic凍結はsymbol/behavior境界として同fileのmodel layer追加を許す形（:15538–15540、:15925–15931）。旧file全体blob不変を要求しない。 |
