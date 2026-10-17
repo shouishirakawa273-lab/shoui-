@@ -1,0 +1,28 @@
+# Existing analysis-to-portfolio path: integrated synthetic acceptance contract
+
+2026-10-17 Japan. Starting505fd456d5ac10612be414acf8fa624e40b53a9b (Draft PR17). User requested integration of existing analysis and construction. No new D-number, financial formula or production module changes. New scripts/integrated_research_portfolio_demo.py plus dedicated test, specification/result/evidence only.
+
+## Exact path and fixed inputs
+
+Reuse explicit synthetic_bridge_request from scripts.d0110_demo, then public compute_exposure_bridge, evaluate_forward_valuation, compare_scenario_returns, make_request/evaluate_portfolio_risk, make_construction_request/construct_portfolio. Pass the ACTUAL typed outputs into the next stage, not independent substitute forecasts, manually supplied returns or reconstructed unrelated valuation hashes. Existing demos/production/frozen288 unchanged. Small script orchestration may repeat fixture assembly to keep production modules untouched; do not create a general input loader/persistence framework.
+
+One fictional company, one position, full3scenario baseline/replay. Existing independent period copper assumption100→110 gives BASE operating income100→120, value75→91 at multiple8/netdebt50/shares10. Non-target scenarios unchanged. Price80/dividend3/entry1/exit2; matching shared entity/currency/cutoff from bridge request and exit=request.period_end, explicit caller-attested basis/mapping. Return net BASE-5/81→11/81, no annualization/probabilities. No external observed event is auto-converted into a driver; event surprise/response and macro experiment comparison are separate paths, NOT certified by this integration.
+
+Desired capitalweight0.8/cash0.2, companylimit0.5/sectorlimit0.6/mincash0.2, explicit priority singleton and quantum0.01. Desired risk must report company and sector breaches; construction must produce weight0.5/cash0.5/releasedcash0.3, exact sum1 and no declared constraint breaches. Single fictional company with cash is not diversified or recommended. Existing unsupported risk checks remain explicit even on pass.
+
+## Artifact and failure contract
+
+Return JSON-safe full bridge request/result+both forecasts, valuation inputs/results, D0111sharedterms/result, desiredrequest/risk, constructionrequest/result including finalrisk, fixed cutoff/rule versions, synthetic=true/empirical_validation=false/product_acceptance=false, limitations and artifact_hash. Canonical hash excludes artifact_hash and covers all emitted JSON. Keep source references and actual stage hashes intact. Labels explain caller joint scenario/basis assumptions, source-trust limit, conditional/pretax/nonannualized/fractionalweights/notorders/nooptimization, no real-company/historical/empirical certification.
+
+--future-driver injection causes expected nonSUCCESS bridge and rejection phase/reason; all valuations/returns/portfolio/construction downstream fields null.
+--bad-joint-binding injects wrong constituent binding into the D0112 desired request; preserve valid upstream results, report PORTFOLIO_RISK rejection ValueError, no successful desiredrisk/construction. Do not filter or repair invalid inputs. D0113 must not be called after either upstream rejection. Refusal report exit0 is a demonstration outcome, not acceptance; callers inspect rejection/product_acceptance. No network or file writes, no wall-clock. Unexpected programming errors must not be hidden as successful acceptance.
+
+Every phase runs in explicit fixed Decimal context50/HALF_EVEN/E±999999/traps/flags, caller context/input unchanged. Identical artifact hash/fullJSON across separate processes and other working directories. Newtest verifies direct typed object handoff or identity capture where needed, not merely matching convenient labels. Each record/artifact hash recomputed; forecast references, return valuation hashes and jointcomparisonhashes and derived subset lineages must align.
+
+## Evidence and gate limits
+
+One writer, separate read-only design audit and independent verifier on fixed complete SHA, writer self-evaluation not supplied first. Independent Fraction formulas all3scenarios and both sides; desired/output conditionalportfolio returns equal0.8/0.5 times actual constituent net, downside computed after aggregation, exact cash conservation and bound. Independent CLI for success/two rejections, altered Decimal context, input immutability and cross-stage integrity. Newtest plus existing necessary research-path/portfolio/scenario/valuation integration explicit allowlist, -k noth0001/notlocked. CI-equivalent fullmypy, scopedruff/format; no broad/prohibitedtest execution. Review1 +blockerclosure1 max.
+
+Freeze/sources/existingdiff/runtime/scheduler protection, no merge/FROZEN. Publish new DraftPR based on17, preserve existing stack. Synthetic integration accepted separately; real-company G1..G5 and expandedportfolio suitability/effectiveness remain open. Existing event/.4branches not part of this vertical path. No claimed whole-product percentage or completion date; pending real sources are not patched with fabricated observations. Stop after this bounded integrated artifact and evidence publication; do not invent D0114 or add optional UI/loader.
+
+Pre-implementation audit note: desiredrisk's declared company/sector breaches are valid diagnostic outputs and must not prevent construction; malformed binding/PIT is a different hard rejection. Show desired and constructed returns separately. Weight reduction effects are construction policy effects, never macro effects. Each arm's baseline/replay uses the same holdings; do not attribute cross-weight changes causally.

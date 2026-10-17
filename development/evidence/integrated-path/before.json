@@ -1,0 +1,18 @@
+{
+  "TEMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\integrated-path-independent\\temp",
+  "test_arguments": "-B -m pytest <test_files> -k \"not h0001 and not locked\" -p no:cacheprovider --basetemp <isolated>/pytest -q",
+  "test_files": [
+    "Japanese_Equity_Lab/13_tests/test_integrated_research_portfolio.py",
+    "Japanese_Equity_Lab/13_tests/test_research_path_demo.py",
+    "Japanese_Equity_Lab/13_tests/test_portfolio_construction.py",
+    "Japanese_Equity_Lab/13_tests/test_portfolio_risk.py",
+    "Japanese_Equity_Lab/13_tests/test_scenario_returns.py",
+    "Japanese_Equity_Lab/13_tests/test_valuation_forward_reverse.py",
+    "Japanese_Equity_Lab/13_tests/test_company_exposure_valuation_integration.py"
+  ],
+  "head": "9b36bbe765596f67d4ec2a4a68dfef43f03ee852",
+  "status": null,
+  "TMP": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\validation\\integrated-path-independent\\temp",
+  "mypy": ".venv/Scripts/python.exe -B -m mypy --cache-dir <isolated>/mypy-cache core app.py scripts Japanese_Equity_Lab/lib",
+  "cwd": "C:\\Users\\白川正威\\.codex\\.chatgpt-projects\\g-p-6acf04f526688191b7d21e8f0223d910\\shoui-"
+}

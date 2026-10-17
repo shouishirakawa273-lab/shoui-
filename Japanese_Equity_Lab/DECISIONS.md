@@ -19344,3 +19344,26 @@ Independent156pass/1deselected,197-source mypy issues0; separate design audit no
 blockers, frozen288 unchanged. See development/2026-10-17_D0113_RESULT.md and
 evidence/d0113/. Minimum synthetic engineering slice only; actual policy/data/
 portfolio efficacy remains unaccepted. No merge/FROZEN or prohibited tests.
+
+## 2026-10-17 — analysis-to-portfolio synthetic integration acceptance
+
+Code9b36bbe765596f67d4ec2a4a68dfef43f03ee852 passes actual typed bridge
+forecasts through valuation, D0111 returns, D0112 desired risk, D0113 construction
+and final risk. Desired constraint breaches remain diagnostic; future driver and
+bad joint-binding cases stop downstream execution. Independent171pass/1deselected,
+197-source mypy no issues, object-identity handoff and all nestedhash/CLI/context
+checks, frozen288 unchanged; separate design audit no blockers. See
+ development/2026-10-17_INTEGRATED_PATH_RESULT.md and evidence/integrated-path/.
+Synthetic integration accepted only; product_acceptance remains false. Real data/
+PIT/joint-scenario suitability and efficacy remain open. No merge/FROZEN or
+prohibited tests, source/runtime changes or invented new D-number.
+
+## 2026-10-17 — acceptance-candidate entry point and dependency snapshot
+
+Pinned synthetic candidate598e8d25010e4ed1b13e4a7be570a62124b840ac, reviewed
+integration9b36bbe765596f67d4ec2a4a68dfef43f03ee852. New documentation entry
+ development/ACCEPTANCE_CANDIDATE.md and dated JSON consolidate actual contracts,
+evidence/command limits,13 Draft ancestor PRs, excluded sibling4–6/governance
+branch, CI success and remaining real-data/experiment/portfolio/operational gates.
+Direct GitHub read-only and local ancestry checks; no code review/test repetition.
+No merge/FROZEN or new functionality. Whole-product percentage remains unassessed.

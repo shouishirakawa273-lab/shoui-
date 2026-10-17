@@ -1,0 +1,217 @@
+{
+  "observed_date_japan": "2026-10-17",
+  "candidate_commit": "598e8d25010e4ed1b13e4a7be570a62124b840ac",
+  "reviewed_code_commit": "9b36bbe765596f67d4ec2a4a68dfef43f03ee852",
+  "status": "SYNTHETIC_INTEGRATION_ACCEPTANCE_CANDIDATE",
+  "product_acceptance": false,
+  "frozen": false,
+  "merged": false,
+  "pr_chain": [
+    {
+      "number": 3,
+      "title": "D0110.3: add synthetic company exposure bridge and frozen-engine replay",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "claude/investment-strategy-pipeline-jyfby5",
+      "base_sha": "071cff9c18632461c207a08c20e7c721a983221b",
+      "head": "codex/d0110-3-company-exposure-bridge",
+      "head_sha": "a698832337a9b0d70f0a1a8c09cd74769ec60f2d",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/3"
+    },
+    {
+      "number": 7,
+      "title": "Test synthetic exposure-to-valuation integration",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0110-3-company-exposure-bridge",
+      "base_sha": "a698832337a9b0d70f0a1a8c09cd74769ec60f2d",
+      "head": "codex/exposure-valuation-integration",
+      "head_sha": "de42298ca3a6871c5db1ed3e8e51bce722f5c42e",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/7"
+    },
+    {
+      "number": 8,
+      "title": "Add D0110 runnable synthetic flow and preregistered macro comparison",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/exposure-valuation-integration",
+      "base_sha": "de42298ca3a6871c5db1ed3e8e51bce722f5c42e",
+      "head": "codex/d0110-complete-delivery",
+      "head_sha": "03d231b5af0422abeae660a996134b4f113101c2",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/8"
+    },
+    {
+      "number": 9,
+      "title": "Record forward CPI schedule with explicit source and missing-data limits",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0110-complete-delivery",
+      "base_sha": "03d231b5af0422abeae660a996134b4f113101c2",
+      "head": "codex/d0110-forward-cpi-evidence",
+      "head_sha": "313201e0ce0476265a1c37415289ec94fa83c3e0",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/9"
+    },
+    {
+      "number": 10,
+      "title": "Persist macro experiment plans and add strict register/show CLI",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0110-forward-cpi-evidence",
+      "base_sha": "313201e0ce0476265a1c37415289ec94fa83c3e0",
+      "head": "codex/d0110-experiment-persistence",
+      "head_sha": "113a0c54dd0030ae96cc478b8cb0c8c837980fbf",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/10"
+    },
+    {
+      "number": 11,
+      "title": "Run macro comparisons from saved plans and strict explicit inputs",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0110-experiment-persistence",
+      "base_sha": "113a0c54dd0030ae96cc478b8cb0c8c837980fbf",
+      "head": "codex/d0110-comparison-cli",
+      "head_sha": "a35220f3704d994f791fe2ed8a6e68faf573bc91",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/11"
+    },
+    {
+      "number": 12,
+      "title": "Document forward-validation gates and parallel D0111 design",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0110-comparison-cli",
+      "base_sha": "a35220f3704d994f791fe2ed8a6e68faf573bc91",
+      "head": "codex/forward-validation-d0111-plan",
+      "head_sha": "ba4155405b1d92ed30d0bfef7974826e6422e582",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/12"
+    },
+    {
+      "number": 13,
+      "title": "Capture BLS CPI observations with immutable evidence and scheduled operation",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/forward-validation-d0111-plan",
+      "base_sha": "ba4155405b1d92ed30d0bfef7974826e6422e582",
+      "head": "codex/bls-cpi-capture",
+      "head_sha": "28fb26edcc9439833370949e4501264beb286e97",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/13"
+    },
+    {
+      "number": 14,
+      "title": "Compare conditional scenario returns on explicit shared terms",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/bls-cpi-capture",
+      "base_sha": "28fb26edcc9439833370949e4501264beb286e97",
+      "head": "codex/d0111-scenario-returns",
+      "head_sha": "51c36eb01d0be6fab0240be804f91766016960f7",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/14"
+    },
+    {
+      "number": 15,
+      "title": "Connect synthetic exposure forecasts through valuation and scenario returns",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0111-scenario-returns",
+      "base_sha": "51c36eb01d0be6fab0240be804f91766016960f7",
+      "head": "codex/research-path-integration",
+      "head_sha": "8ebd6d0e3e460290bbd9dbfc717b3ec7654be762",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/15"
+    },
+    {
+      "number": 16,
+      "title": "Add D0112 conditional portfolio risk and exact constraint checks",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/research-path-integration",
+      "base_sha": "8ebd6d0e3e460290bbd9dbfc717b3ec7654be762",
+      "head": "codex/d0112-portfolio-risk",
+      "head_sha": "444bddf405b7d9f61dc0cc1d44397bda276a163f",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/16"
+    },
+    {
+      "number": 17,
+      "title": "Add D0113 explicit-priority portfolio construction with risk recheck",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0112-portfolio-risk",
+      "base_sha": "444bddf405b7d9f61dc0cc1d44397bda276a163f",
+      "head": "codex/d0113-portfolio-construction",
+      "head_sha": "505fd456d5ac10612be414acf8fa624e40b53a9b",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/17"
+    },
+    {
+      "number": 18,
+      "title": "Verify analysis through portfolio construction in one synthetic path",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/d0113-portfolio-construction",
+      "base_sha": "505fd456d5ac10612be414acf8fa624e40b53a9b",
+      "head": "codex/integrated-research-portfolio",
+      "head_sha": "598e8d25010e4ed1b13e4a7be570a62124b840ac",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/18"
+    }
+  ],
+  "excluded_sibling_prs": [
+    {
+      "number": 4,
+      "title": "Add source-faithful pretax profit impact foundation",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "claude/investment-strategy-pipeline-jyfby5",
+      "head": "codex/profit-impact-pretax-foundation",
+      "head_sha": "fba60cbc42b76021000a24663dce34fd51b13aea",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/4"
+    },
+    {
+      "number": 5,
+      "title": "Profit Impact: read-only request preflight",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/profit-impact-pretax-foundation",
+      "head": "codex/profit-impact-preflight",
+      "head_sha": "4f680d28881ff55b2cab92abaebf1dae8c498654",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/5"
+    },
+    {
+      "number": 6,
+      "title": "SMM: explicit unknown-preserving source archive case",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "base": "codex/profit-impact-preflight",
+      "head": "codex/smm-source-archive-case",
+      "head_sha": "442da335353f1a0c51bfd71c0018def32e52a2d3",
+      "url": "https://github.com/shouishirakawa273-lab/shoui-/pull/6"
+    }
+  ],
+  "ci": [
+    {
+      "id": 117317431684,
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/shouishirakawa273-lab/shoui-/actions/runs/39005639295/job/117317431684"
+    },
+    {
+      "id": 117317395586,
+      "status": "completed",
+      "conclusion": "success",
+      "html_url": "https://github.com/shouishirakawa273-lab/shoui-/actions/runs/39005626854/job/117317395586"
+    }
+  ],
+  "whole_product_percentage": null
+}

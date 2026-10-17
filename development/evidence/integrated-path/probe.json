@@ -1,0 +1,15 @@
+{
+  "head": "9b36bbe765596f67d4ec2a4a68dfef43f03ee852",
+  "base": "505fd456d5ac10612be414acf8fa624e40b53a9b",
+  "actual_typed_identity_handoff": true,
+  "fraction_all_scenarios_and_capital": true,
+  "all_nested_hashes_valid": true,
+  "desired_breaches_diagnostic_output_pass": true,
+  "future_bad_binding_downstream_blocked": true,
+  "context_input_immutable": true,
+  "all_three_cli_json_other_cwd_identical": true,
+  "frozen288_git_content_unchanged": true,
+  "raw_byte_identity_not_claimed": true,
+  "status": "clean",
+  "artifact_hash": "2d908e887ef4ed3a95529a59bb077f18bf4bd94266a9fbdd74249defe84e4f91"
+}
