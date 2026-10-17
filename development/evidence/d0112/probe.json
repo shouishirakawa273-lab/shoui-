@@ -1,0 +1,22 @@
+{
+  "head": "68fcc74f8dd7cf4c7e846016e7204433b991c456",
+  "base": "8ebd6d0e3e460290bbd9dbfc717b3ec7654be762",
+  "fraction_all_scenarios_both_sides": true,
+  "offset_downside_after_aggregation": true,
+  "equal_limits_pass_and_tiny_excess_breaches": true,
+  "same_company_sector_aggregation": true,
+  "rejected": [
+    "tiny-overweight",
+    "binding",
+    "future-policy",
+    "same-company-sector",
+    "request-hash"
+  ],
+  "all_cash": true,
+  "reorder_context_input_hash_invariant": true,
+  "demo_exit": 0,
+  "frozen288_git_content_unchanged": true,
+  "raw_bytes_identity_not_claimed": "CRLF working differences not equated with content modification",
+  "status": "clean",
+  "result_hash": "6e13617d90ab83d2a220b2231f54a1d34cb2f4a6ad985793523e1aad4f758f1b"
+}

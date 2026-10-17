@@ -19320,3 +19320,16 @@ future-driver rejection prevents downstream outputs. Independent107pass/1deselec
 See development/2026-10-17_PRODUCT_BACKLOG_AND_PATH_SPEC.md and
 2026-10-17_RESEARCH_PATH_RESULT.md. Synthetic engineering slice accepted only;
 real-company/empirical/product gates remain open. No merge/FROZEN/prohibited tests.
+
+## 2026-10-17 — D0112 Portfolio Risk minimal engineering delivery
+
+Recovered D0112 Portfolio Risk Engine/D0113 Portfolio Construction role names
+from user-supplied architecture attachment; details are new explicit v1 policy,
+not a reconstructed old frozen specification. Code68fcc74f8dd7cf4c7e846016e7204433b991c456
+consumes D0111 comparisons with explicit exact capital weights, common terms and
+hash-bound joint scenario attestation. Reports conditional weighted returns,
+aggregate bear downside and company/sector/cash constraint breaches only.
+Independent134pass/1deselected,195-source mypy issues0, fixedSHAclean and frozen288
+unchanged; separate design audit no blockers. See development/2026-10-17_D0112_RESULT.md
+and evidence/d0112/. Real portfolio suitability/efficacy and unsupported checks
+are not accepted. No optimizer, merge/FROZEN, prohibited tests or runtime changes.

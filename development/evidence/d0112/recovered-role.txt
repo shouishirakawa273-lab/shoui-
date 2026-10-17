@@ -1,0 +1,5 @@
+Recovered role excerpt (user-supplied conversation attachment; not a detailed specification):
+D0112 Portfolio Risk Engine
+D0113 Portfolio Construction
+Source attachment:c16209b0-07f1-400b-a26c-ee60698e8e2e/貼り付けたテキスト.txt
+Role text found at line1219 and roadmap lines1384 onward. Numeric progress estimates in that conversation are not adopted. Detailed typed inputs, formulas and constraint policy are newly defined by the 2026-10-17 implementation contract.
