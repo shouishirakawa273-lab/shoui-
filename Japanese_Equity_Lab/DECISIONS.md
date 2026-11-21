@@ -19638,3 +19638,49 @@ invariance through the path actually taken.
 The auditor could not confirm tests existed because it had no search tooling and
 guessed filenames. They exist as `13_tests/test_pretrade_liquidity.py` and
 `test_pretrade_correlation.py`, now joined by `test_pretrade_window.py`.
+
+## 2026-11-21 — Step 1 real-data validation on the user's local PC
+
+Ran `scripts/pretrade_check.py` against the live J-Quants Standard plan from the
+owner's machine; this session has no egress to that API. Acceptance for Step 1
+is met: a list of codes produces both warnings, on real data, over three names
+including a small one.
+
+Confirmed fact, previously unverified: **J-Quants V2
+`/equities/bars/daily` covers J-REITs.** 3283, 2979 and 8967 each returned 20 of
+20 known sessions with no gaps and no duplicates. This was an open question when
+the CLI was written and is now settled for these codes; it is not a claim about
+every REIT or every period.
+
+Single-name check (7203, position 1,000,000): average daily turnover
+96,294,619,610 JPY, days_to_liquidate 1.04e-05, sessions 2026-10-23..2026-11-20,
+staleness_days 1. The staleness figure is correct — as_of fell on a Saturday and
+the latest session was the Friday — so the HIGH 2 guard behaves as intended
+against live data, not only fixtures.
+
+Three-name check (3283, 2979, 8967, position 1,000,000 each): turnover
+1,119,658,660 / 232,664,070 / 431,803,615 JPY per day, all OK. No liquidity
+constraint binds at this size; 2979 is the smallest and still clears the 3-day
+threshold by three orders of magnitude.
+
+Correlations came in at 0.673 (3283/8967), 0.610 (2979/8967) and 0.565
+(3283/2979) over 249 overlapping returns — all below the 0.7 threshold, so no
+warning fired. This contradicts the pre-run expectation, stated in conversation,
+that three logistics REITs would correlate high enough to warn. Recording the
+miss rather than the result alone: the estimate corrected a guess, which is the
+reason the module exists. 3283/8967 at 0.673 sits close enough to the threshold
+that the binary verdict hides the margin.
+
+**The 0.7 threshold is deliberately left unchanged.** Lowering it now, having
+seen three pairs land in the 0.56-0.67 band, would be fitting the parameter to
+the sample — the pattern RESEARCH_RULES.md forbids. Any change must come from a
+stated policy about tolerable co-movement, recorded before the next set of names
+is examined.
+
+`max_interval_days` reported 6 for every pair. Over a ~250-session window that is
+a year-end or Golden Week closure, not a defect; the audit's unresolvable
+halt-versus-gap ambiguity is visible to the reader as designed rather than
+silently absorbed.
+
+Snapshot persistence and offline rerun remain unwired, so sections D through G of
+the local-validation procedure were not performed. The run was live-fetch only.
