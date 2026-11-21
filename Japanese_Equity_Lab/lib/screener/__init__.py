@@ -32,21 +32,37 @@ from lib.screener.forecast_revisions import (
     ForecastRevision,
     ForecastRevisionSeries,
     RevisionDirection,
+    RevisionUnknownReason,
     build_forecast_revision_series,
     metric_family,
     present_forecast_metrics,
     target_fiscal_year_end,
 )
+from lib.screener.per_share import (
+    DEFAULT_DIVISOR_SOURCE,
+    DEFAULT_DIVISOR_TOLERANCE,
+    PER_SHARE_METRICS,
+    PerShareBreak,
+    PerShareComparability,
+    assess_per_share_comparability,
+)
 from lib.screener.visibility import visible_versions
 
 __all__ = [
+    "DEFAULT_DIVISOR_SOURCE",
+    "DEFAULT_DIVISOR_TOLERANCE",
+    "PER_SHARE_METRICS",
     "UNMAPPED_METRICS",
     "AnnualObservation",
     "FinancialTrend",
     "ForecastRevision",
     "ForecastRevisionSeries",
     "MetricTrend",
+    "PerShareBreak",
+    "PerShareComparability",
     "RevisionDirection",
+    "RevisionUnknownReason",
+    "assess_per_share_comparability",
     "build_financial_trend",
     "build_forecast_revision_series",
     "metric_family",

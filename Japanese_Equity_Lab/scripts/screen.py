@@ -5,6 +5,11 @@
 - 実績財務の年次推移(売上・営業利益・経常利益・純利益・EPS・総資産)
 - 会社予想の改定履歴(いつ・どちら向きに・何%)
 - 流動性と相関の警告(Step 1、`lib/pretrade_risk`)
+- 1株当たり指標の比較可能性(`per_share_comparability`)
+
+実績は**開示時点のまま**で、株式分割をさかのぼって調整していない(株価側は調整
+する)。この非対称性でEPSの推移を読み違えないよう、基準が切り替わった境界を
+`per_share_comparability.breaks` に出す。値は補正しない。
 
 推奨判定・スコアリング・自動ランキングは行わない。最終的なBUY/HOLD/SELL判断は
 必ず人間が行う(`CLAUDE.md`)。
@@ -58,8 +63,12 @@ from lib.evidence.model import AvailabilitySemantics  # noqa: E402
 from lib.fundamentals.normalize import build_revision_histories, parse_financial_summary_payload  # noqa: E402
 from lib.market_calendar import JST, session_close_at  # noqa: E402
 from lib.pretrade_risk import assess_correlation, assess_liquidity  # noqa: E402
-from lib.pretrade_risk.liquidity import DEFAULT_MAX_STALENESS_DAYS  # noqa: E402
-from lib.screener import build_financial_trend, build_forecast_revision_series  # noqa: E402
+from lib.pretrade_risk.liquidity import DEFAULT_MAX_STALENESS_DAYS, LiquidityOutcome  # noqa: E402
+from lib.screener import (  # noqa: E402
+    assess_per_share_comparability,
+    build_financial_trend,
+    build_forecast_revision_series,
+)
 from lib.screener.financial_trend import UNMAPPED_METRICS  # noqa: E402
 
 PRICE_FETCH_MARGIN_DAYS = 600
@@ -159,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     cutoff = date(as_of.year - args.years, as_of.month, as_of.day)
 
     entries = []
+    # 警告の集計はdataclassから直接取る。整形済みJSONを読み返して判定しない。
+    liquidity_warned: list[str] = []
+    per_share_warned: list[str] = []
     for code in codes:
         code_metrics = metrics_by_code.get(code, [])
         histories = build_revision_histories(envelopes_by_code.get(code, []), code_metrics)
@@ -188,6 +200,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         kept_targets = set(known_targets[: args.forecast_years])
         forecasts = tuple(s for s in forecasts if s.target_fiscal_year_end in kept_targets)
+        # 会計基準上そもそも存在しない指標は、改定履歴として並べても中身が無い。
+        # 取得不可とも違うので別枠へ移す(IFRS採用銘柄の経常利益など)。
+        not_applicable_families = sorted({s.metric_family for s in forecasts if s.is_not_applicable_under_standard})
+        forecasts = tuple(s for s in forecasts if not s.is_not_applicable_under_standard)
+
+        code_bars = raw_by_code.get(code, [])
+        per_share = assess_per_share_comparability(
+            code=code,
+            trend=trend,
+            corporate_actions=events_by_code.get(code, []),
+            corporate_actions_known_from=min((b.session_date for b in code_bars), default=None),
+        )
         liquidity = assess_liquidity(
             source=price_source,
             code=code,
@@ -195,6 +219,10 @@ def main(argv: list[str] | None = None) -> int:
             as_of=as_of,
             max_staleness_days=args.max_staleness_days,
         )
+        if liquidity.outcome is LiquidityOutcome.WARN:
+            liquidity_warned.append(code)
+        if per_share.breaks:
+            per_share_warned.append(code)
 
         entries.append(
             {
@@ -224,12 +252,42 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     for t in trend.trends
                 ],
+                "per_share_comparability": {
+                    "metrics": list(per_share.per_share_metrics),
+                    "divisor_source_metric": per_share.divisor_source_metric,
+                    "tolerance": float(per_share.tolerance),
+                    "corporate_action_dates": [d.isoformat() for d in per_share.corporate_action_dates],
+                    "corporate_actions_known_from": (
+                        per_share.corporate_actions_known_from.isoformat() if per_share.corporate_actions_known_from else None
+                    ),
+                    "unchecked_metrics": list(per_share.unchecked_metrics),
+                    "breaks": [
+                        {
+                            "metric_type": b.metric_type,
+                            "accounting_standard": b.accounting_standard,
+                            "from_fiscal_period_end": (
+                                b.from_fiscal_period_end.isoformat() if b.from_fiscal_period_end else None
+                            ),
+                            "to_fiscal_period_end": (b.to_fiscal_period_end.isoformat() if b.to_fiscal_period_end else None),
+                            "divisor_ratio": _num(b.divisor_ratio),
+                            "detail": b.detail,
+                        }
+                        for b in per_share.breaks
+                    ],
+                    "note": (
+                        "1株当たり指標は開示時点のまま(as-reported)で、株式分割をさかのぼって"
+                        "調整していない。corporate_actions_known_from より前のCorporate Actionは"
+                        "観測できておらず、無かったという意味ではない(UNKNOWN)。"
+                    ),
+                },
+                "not_applicable_under_standard": not_applicable_families,
                 "forecast_revisions": [
                     {
                         "metric_family": s.metric_family,
                         "target_fiscal_year_end": (s.target_fiscal_year_end.isoformat() if s.target_fiscal_year_end else None),
                         "accounting_standards": list(s.accounting_standards),
                         "revision_count": s.revision_count,
+                        "observation_count": s.observation_count,
                         "revisions": [
                             {
                                 "published_at": r.published_at.isoformat() if r.published_at else None,
@@ -239,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "direction": r.direction.value,
                                 "change_ratio": _num(r.change_ratio),
                                 "source_metric_type": r.source_metric_type,
-                                "unknown_reason": r.unknown_reason,
+                                "unknown_reason": r.unknown_reason.value if r.unknown_reason else None,
                             }
                             for r in s.revisions
                         ],
@@ -281,8 +339,9 @@ def main(argv: list[str] | None = None) -> int:
             "per_percentile": "lib/valuation にモデルはあるがOrchestrationが未整備のため未実装",
         },
         "warnings": {
-            "liquidity": [e["code"] for e in entries if e["liquidity"]["outcome"] == "WARN"],
+            "liquidity": liquidity_warned,
             "correlation": [[p.code_a, p.code_b] for p in correlation.warned_pairs],
+            "per_share_basis": per_share_warned,
         },
     }
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))

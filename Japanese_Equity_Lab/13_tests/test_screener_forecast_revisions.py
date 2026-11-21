@@ -22,11 +22,19 @@ from lib.fundamentals.model import (
     PeriodType,
     ValueAvailability,
 )
-from lib.screener.forecast_revisions import RevisionDirection, build_forecast_revision_series
+from lib.screener.forecast_revisions import (
+    RevisionDirection,
+    RevisionUnknownReason,
+    build_forecast_revision_series,
+)
 
 DECISION_AT = datetime(2026, 11, 21, 15, 30, tzinfo=UTC)
+FY2025 = date(2025, 3, 31)
 FY2026 = date(2026, 3, 31)
 FY2027 = date(2027, 3, 31)
+_CUR = FiscalYearTarget.CURRENT_FISCAL_YEAR
+_NXT = FiscalYearTarget.NEXT_FISCAL_YEAR
+_NA = ValueAvailability.NOT_APPLICABLE
 
 
 def _envelope(
@@ -54,6 +62,7 @@ def _metric(
     target: FiscalYearTarget,
     metric_type: str = "eps_current_year_forecast",
     accounting_standard: str | None = "IFRS",
+    availability: ValueAvailability = ValueAvailability.PRESENT,
 ) -> FundamentalMetric:
     return FundamentalMetric(
         metric_id=mid,
@@ -63,7 +72,7 @@ def _metric(
         metric_type=metric_type,
         raw_value="0",
         value=Decimal(0),
-        value_availability=ValueAvailability.PRESENT,
+        value_availability=availability,
         actual_or_forecast=ActualOrForecast.COMPANY_FORECAST,
         fiscal_year_target=target,
         period_type=PeriodType.FY,
@@ -170,7 +179,7 @@ def test_direction_and_ratio_within_one_fiscal_year() -> None:
 
     first, second, third = series.revisions
     assert first.direction is RevisionDirection.UNKNOWN
-    assert "first observed forecast for this fiscal year" in (first.unknown_reason or "")
+    assert first.unknown_reason is RevisionUnknownReason.FIRST_OBSERVED
     assert second.direction is RevisionDirection.UP
     assert second.change_ratio == Decimal("0.2")
     assert third.direction is RevisionDirection.DOWN
@@ -203,7 +212,7 @@ def test_ratio_from_a_zero_base_is_unknown_not_infinite() -> None:
     _, second = series.revisions
     assert second.direction is RevisionDirection.UP
     assert second.change_ratio is None
-    assert "zero" in (second.unknown_reason or "")
+    assert second.unknown_reason is RevisionUnknownReason.PREVIOUS_VALUE_IS_ZERO
 
 
 def test_negative_base_uses_absolute_denominator() -> None:
@@ -316,3 +325,123 @@ def test_naive_decision_at_is_rejected() -> None:
             decision_at=datetime(2026, 11, 21, 15, 30),
             availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
         )
+
+
+def _build_with_availability(
+    rows: list[tuple[str, str, datetime, PeriodType, FiscalYearTarget, date, date | None, ValueAvailability]],
+    *,
+    metric_type: str = "eps_current_year_forecast",
+):
+    """`_build` と同じだが、Metricごとに `value_availability` を指定できる。"""
+    metrics, envelopes, histories = [], [], {}
+    for mid, value, published, period_type, target, cur_fy, next_fy, availability in rows:
+        mtype = (
+            metric_type
+            if target is FiscalYearTarget.CURRENT_FISCAL_YEAR
+            else metric_type.replace("_current_year_", "_next_year_")
+        )
+        metrics.append(_metric(mid, target=target, metric_type=mtype, availability=availability))
+        envelopes.append(_envelope(f"E_{mid}", period_type=period_type, current_fy_end=cur_fy, next_fy_end=next_fy))
+        version = _version(mid, value, published)
+        histories[version.source_record_id] = RevisionHistory(series_id=version.source_record_id, versions=(version,))
+    return build_forecast_revision_series(
+        revision_histories=histories,
+        metrics=metrics,
+        envelopes=envelopes,
+        decision_at=DECISION_AT,
+        availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+    )
+
+
+def test_fy_disclosure_of_the_target_year_is_a_closed_slot_not_a_gap() -> None:
+    """[回帰] 対象決算期のFY開示で当期予想枠が空になるのは、欠損ではない。
+
+    実データ(7203)では FY2026 EPS の最後の1件が2026-05-08のFY開示で空になり、
+    未取得の欠損と同じ「値が数値でない」で出ていた。予想する対象が無くなっただけ。
+    """
+    series = _build(
+        [
+            ("v1", "237.57", datetime(2025, 5, 8, 13, 55, tzinfo=UTC), PeriodType.FY, _NXT, FY2025, FY2026),
+            ("v2", "204.09", datetime(2025, 8, 7, 14, 0, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027),
+            ("v3", "", datetime(2026, 5, 8, 13, 55, tzinfo=UTC), PeriodType.FY, _CUR, FY2026, FY2027),
+        ]
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    last = fy2026.revisions[-1]
+    assert last.value is None
+    assert last.unknown_reason is RevisionUnknownReason.TARGET_YEAR_ALREADY_REPORTED
+
+
+def test_a_live_quarter_with_an_empty_value_stays_genuinely_unknown() -> None:
+    """四半期開示で予想が空なら、それは本当に不明な欠損。closed slotにしない。"""
+    series = _build(
+        [
+            ("v1", "100", datetime(2025, 5, 8, tzinfo=UTC), PeriodType.FY, _NXT, FY2025, FY2026),
+            ("v2", "", datetime(2025, 8, 7, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027),
+        ]
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    assert fy2026.revisions[-1].unknown_reason is RevisionUnknownReason.VALUE_NOT_NUMERIC
+
+
+def test_not_applicable_under_standard_is_not_reported_as_a_gap() -> None:
+    """IFRS採用銘柄の経常利益は「存在しない」。取得不可と混ぜない。"""
+    series = _build_with_availability(
+        [
+            ("v1", "", datetime(2025, 8, 7, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027, _NA),
+            ("v2", "", datetime(2025, 11, 5, tzinfo=UTC), PeriodType.Q2, _CUR, FY2026, FY2027, _NA),
+        ],
+        metric_type="ordinary_profit_current_year_forecast",
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    assert all(r.unknown_reason is RevisionUnknownReason.NOT_APPLICABLE_UNDER_STANDARD for r in fy2026.revisions)
+    assert fy2026.is_not_applicable_under_standard
+
+
+def test_not_applicable_flag_is_false_when_any_value_exists() -> None:
+    """1件でも値があれば「存在しない指標」ではない。"""
+    series = _build_with_availability(
+        [
+            ("v1", "", datetime(2025, 8, 7, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027, _NA),
+            ("v2", "120", datetime(2025, 11, 5, tzinfo=UTC), PeriodType.Q2, _CUR, FY2026, FY2027, ValueAvailability.PRESENT),
+        ],
+        metric_type="ordinary_profit_current_year_forecast",
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    assert not fy2026.is_not_applicable_under_standard
+
+
+def test_revision_count_excludes_the_closed_slot() -> None:
+    """[回帰] 7203 FY2026 EPSの改定は3回。以前は空枠を数えて4と出していた。"""
+    series = _build(
+        [
+            ("v1", "237.57", datetime(2025, 5, 8, tzinfo=UTC), PeriodType.FY, _NXT, FY2025, FY2026),
+            ("v2", "204.09", datetime(2025, 8, 7, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027),
+            ("v3", "224.81", datetime(2025, 11, 5, tzinfo=UTC), PeriodType.Q2, _CUR, FY2026, FY2027),
+            ("v4", "273.91", datetime(2026, 2, 6, tzinfo=UTC), PeriodType.Q3, _CUR, FY2026, FY2027),
+            ("v5", "", datetime(2026, 5, 8, tzinfo=UTC), PeriodType.FY, _CUR, FY2026, FY2027),
+        ]
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    assert fy2026.observation_count == 5
+    assert fy2026.revision_count == 3
+    assert [r.direction for r in fy2026.revisions] == [
+        RevisionDirection.UNKNOWN,
+        RevisionDirection.DOWN,
+        RevisionDirection.UP,
+        RevisionDirection.UP,
+        RevisionDirection.UNKNOWN,
+    ]
+
+
+def test_flat_counts_as_a_measured_revision() -> None:
+    """据え置きも「比較できた公表」。改定0回とは違う。"""
+    series = _build(
+        [
+            ("v1", "100", datetime(2025, 5, 8, tzinfo=UTC), PeriodType.FY, _NXT, FY2025, FY2026),
+            ("v2", "100", datetime(2025, 8, 7, tzinfo=UTC), PeriodType.Q1, _CUR, FY2026, FY2027),
+        ]
+    )
+    (fy2026,) = [s for s in series if s.target_fiscal_year_end == FY2026]
+    assert fy2026.revision_count == 1
+    assert fy2026.revisions[-1].is_measured_revision

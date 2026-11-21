@@ -19797,3 +19797,63 @@ step called for. The CLI now keeps the most recent `--forecast-years` target
 periods, default 3.
 
 Suite 2784 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-21 — Per-share actuals are not split-adjusted; three labelling defects
+
+The regrouped output read correctly, so the next read went to the numbers
+themselves. Three findings, one of which would have misled a decision.
+
+**1. EPS crosses a per-share basis change with no flag.** The actuals trend for
+7203 runs 803.23 (FY2021) then 205.23 (FY2022) — a 74% drop on its face. Taking
+`net_profit / eps` for each period gives a divisor of roughly 2.795bn then
+13.887bn, a factor of 4.97; every other year moves 0.98–0.99x. The per-share
+basis changed, the business did not. Prices in this screener are already
+as-of adjusted by `AsOfAdjustedPriceHistory`, while fundamentals are
+as-reported — and nothing in the output said so. Any PER built across that
+boundary would have been garbage, which is one more reason the deferred PER
+percentile stays deferred until this is in place.
+
+`lib/screener/per_share.py` now reports comparability over two independent
+paths. The first is provider-confirmed: `CorporateAction.raw_adj_factor` from
+J-Quants AdjFactor, official spec per D0034, which carries no inference but only
+reaches as far back as the price window (600 days). The second is a rule-based
+divisor discontinuity that needs no extra fetch and covers the whole trend. The
+output always carries `corporate_actions_known_from`, because an empty event
+list before that boundary is UNKNOWN, not "no events".
+
+Nothing is corrected. The module detects and warns, per the root CLAUDE.md rule
+that anomalies can only be judged mechanically. It also does not name a cause:
+a split, a consolidation, an issuance and a restatement all produce the same
+shape, so the finding stops at "the per-share basis is discontinuous". The
+divisor is documented as a diagnostic quantity only — never displayed as a share
+count and never fed into another calculation, since share count remains unmapped
+in `normalize.py`.
+
+Tolerance is ±25%, chosen from general properties rather than this name: the
+smallest Japanese split changes the basis 2x, while buybacks and issuance move
+share count by single-digit percent a year, so the band clears both by a wide
+margin. Recorded honestly — the threshold was set *after* observing 7203's
+4.97x. It gates a warning, not a strategy parameter, so it does not contaminate
+a Locked Test, but it was not preregistered.
+
+**2. One label covered three different situations.** `unknown_reason` was free
+text, and "forecast value is not numeric" was emitted for the IFRS filer's
+ordinary profit (which does not exist under that standard), for the current-year
+forecast slot at the FY disclosure of the year just reported (where there is
+nothing left to forecast), and for a genuinely absent value. `normalize.py`
+already distinguishes the first via `ValueAvailability.NOT_APPLICABLE` on
+confirmed spec (D0043); the screener was discarding that. `RevisionUnknownReason`
+now separates FIRST_OBSERVED, NOT_APPLICABLE_UNDER_STANDARD,
+TARGET_YEAR_ALREADY_REPORTED, VALUE_NOT_NUMERIC and PREVIOUS_VALUE_IS_ZERO. The
+closed-slot case is decided from `fiscal_year_target` and `current_period_type`
+alone, with no string interpretation. Series that are entirely
+not-applicable move to `not_applicable_under_standard` instead of printing 15
+empty rows — not-applicable is reported separately from unavailable, because
+they are different claims.
+
+**3. `revision_count` over-reported.** It returned `len(revisions) - 1`, which
+counted the closed-out slot as a revision: 7203's FY2026 EPS showed 4 against
+three actual changes (Q1 cut, Q2 raise, Q3 raise). It now counts entries that
+were measured against a previous value; `observation_count` keeps the raw total.
+
+Suite 2806 passed (+22), same 10 pre-existing hook-environment failures.

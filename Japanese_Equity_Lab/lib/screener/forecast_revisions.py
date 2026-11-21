@@ -43,7 +43,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from enum import Enum
+from enum import Enum, StrEnum
 
 from lib.evidence.model import AvailabilitySemantics, RevisionHistory, SourceVersion
 from lib.fundamentals.model import (
@@ -70,6 +70,29 @@ class RevisionDirection(Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class RevisionUnknownReason(StrEnum):
+    """向きが`UNKNOWN`になった理由。
+
+    以前はどれも「値が数値でない」の一語にまとめていたが、意味が全く違う3つを
+    同じ文言で出していた。2026-11-21の実データ(7203)では、IFRS採用で存在しない
+    経常利益と、年度確定によって役目を終えた当期予想枠が、未取得の欠損と区別
+    できなかった。
+    """
+
+    FIRST_OBSERVED = "FIRST_OBSERVED"
+    """この決算期に対して最初に観測された予想。比較対象が無い。"""
+    NOT_APPLICABLE_UNDER_STANDARD = "NOT_APPLICABLE_UNDER_STANDARD"
+    """会計基準上そもそも存在しない指標(`ValueAvailability.NOT_APPLICABLE`)。
+    欠損ではない。IFRS/USGAAPの経常利益が該当する(`normalize.py` D0043)。"""
+    TARGET_YEAR_ALREADY_REPORTED = "TARGET_YEAR_ALREADY_REPORTED"
+    """対象決算期のFY開示そのもの。当期の実績が出た時点で当期予想枠は空になる。
+    予想が取得できなかったのではなく、予想する対象が無くなった。"""
+    VALUE_NOT_NUMERIC = "VALUE_NOT_NUMERIC"
+    """上記以外で値が数値にならなかった。本当に不明な欠損。"""
+    PREVIOUS_VALUE_IS_ZERO = "PREVIOUS_VALUE_IS_ZERO"
+    """直前値が0で変化率が定義できない。向き自体はUP/DOWNで確定している。"""
+
+
 @dataclass(frozen=True, kw_only=True)
 class ForecastRevision:
     """ある対象決算期に対する予想の、1回ぶんの公表。
@@ -93,8 +116,17 @@ class ForecastRevision:
     source_metric_type: str
     """由来Metric名(`*_current_year_forecast` / `*_next_year_forecast`)。"""
     accounting_standard: str | None
-    unknown_reason: str | None = None
+    unknown_reason: RevisionUnknownReason | None = None
     source_version_id: str
+
+    @property
+    def is_measured_revision(self) -> bool:
+        """直前の有効値と比較できた公表か。
+
+        初出・会計基準上の不存在・年度確定による枠の終了は、いずれも「改定が
+        行われた」ことを意味しない。
+        """
+        return self.direction in (RevisionDirection.UP, RevisionDirection.DOWN, RevisionDirection.FLAT)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -113,9 +145,30 @@ class ForecastRevisionSeries:
         return self.revisions[-1] if self.revisions else None
 
     @property
+    def observation_count(self) -> int:
+        """この決算期について観測した公表の本数(初出・空枠を含む)。"""
+        return len(self.revisions)
+
+    @property
     def revision_count(self) -> int:
-        """初出を除いた公表回数。"""
-        return max(0, len(self.revisions) - 1)
+        """実際に直前値と比較できた改定の回数。
+
+        以前は「本数-1」を返していたため、年度確定で空になった当期予想枠まで
+        1回の改定として数えていた。7203のFY2026 EPSは改定3回(1Q下方・2Q上方・
+        3Q上方)だが4と報告していた。
+        """
+        return sum(1 for r in self.revisions if r.is_measured_revision)
+
+    @property
+    def is_not_applicable_under_standard(self) -> bool:
+        """全Versionが会計基準上の不存在。
+
+        取得できなかったのではなく、その基準には存在しない指標。IFRS採用銘柄の
+        経常利益が該当する。呼び出し側はこれを「取得不可」とは別枠で見せられる。
+        """
+        return bool(self.revisions) and all(
+            r.unknown_reason is RevisionUnknownReason.NOT_APPLICABLE_UNDER_STANDARD for r in self.revisions
+        )
 
     @property
     def accounting_standards(self) -> tuple[str | None, ...]:
@@ -142,6 +195,22 @@ def metric_family(metric_type: str) -> str:
         if metric_type.endswith(suffix):
             return metric_type[: -len(suffix)]
     return metric_type
+
+
+def _absent_value_reason(metric: FundamentalMetric, envelope: DisclosureEnvelope) -> RevisionUnknownReason:
+    """値が数値にならなかった理由を、開示済みの事実だけから分類する。
+
+    - 会計基準上の不存在は `normalize.resolve_value_availability` が既に判定済みで
+      (公式仕様確認済み、D0043)、その結果を使うだけなので推測を加えない。
+    - 対象決算期のFY開示では、当期の実績が確定しているため当期予想枠は空になる。
+      `fiscal_year_target` と `current_period_type` の組だけで判定でき、Field名や
+      開示種別の文字列を解釈する必要がない。
+    """
+    if metric.value_availability is ValueAvailability.NOT_APPLICABLE:
+        return RevisionUnknownReason.NOT_APPLICABLE_UNDER_STANDARD
+    if metric.fiscal_year_target is FiscalYearTarget.CURRENT_FISCAL_YEAR and envelope.current_period_type is PeriodType.FY:
+        return RevisionUnknownReason.TARGET_YEAR_ALREADY_REPORTED
+    return RevisionUnknownReason.VALUE_NOT_NUMERIC
 
 
 def target_fiscal_year_end(metric: FundamentalMetric, envelope: DisclosureEnvelope) -> date | None:
@@ -212,16 +281,16 @@ def build_forecast_revision_series(
         previous: Decimal | None = None
         for version, metric, envelope in entries:
             value = _to_decimal(version.value)
-            reason: str | None = None
+            reason: RevisionUnknownReason | None = None
 
             if value is None:
                 direction = RevisionDirection.UNKNOWN
                 change: Decimal | None = None
-                reason = "forecast value is not numeric"
+                reason = _absent_value_reason(metric, envelope)
             elif previous is None:
                 direction = RevisionDirection.UNKNOWN
                 change = None
-                reason = "first observed forecast for this fiscal year"
+                reason = RevisionUnknownReason.FIRST_OBSERVED
             elif value > previous:
                 direction = RevisionDirection.UP
                 change = None
@@ -235,7 +304,7 @@ def build_forecast_revision_series(
             if direction in (RevisionDirection.UP, RevisionDirection.DOWN):
                 if previous == 0:
                     change = None
-                    reason = "previous forecast is zero, ratio undefined"
+                    reason = RevisionUnknownReason.PREVIOUS_VALUE_IS_ZERO
                 elif value is not None and previous is not None:
                     change = (value - previous) / abs(previous)
 
