@@ -32,8 +32,11 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_LAB_DIR = Path(__file__).resolve().parents[1]
+_REPO_ROOT = _LAB_DIR.parent
+sys.path.insert(0, str(_LAB_DIR))
 
+from dotenv import load_dotenv  # noqa: E402
 from lib.backtest.price_history import AsOfAdjustedPriceHistory  # noqa: E402
 from lib.data_sources.convert import (  # noqa: E402
     detect_corporate_action_events_from_equity_bars,
@@ -82,6 +85,8 @@ def _fail(status: str, detail: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    # 実行ディレクトリに依存しないよう、リポジトリルートの.envを明示指定する。
+    load_dotenv(_REPO_ROOT / ".env")
 
     try:
         normalized = [normalize_provider_code_to_internal(code) for code in args.codes]
