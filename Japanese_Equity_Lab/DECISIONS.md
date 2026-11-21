@@ -19546,3 +19546,41 @@ evidence/command limits,13 Draft ancestor PRs, excluded sibling4–6/governance
 branch, CI success and remaining real-data/experiment/portfolio/operational gates.
 Direct GitHub read-only and local ancestry checks; no code review/test repetition.
 No merge/FROZEN or new functionality. Whole-product percentage remains unassessed.
+
+## 2026-11-21 — pre-trade liquidity and correlation warnings (Step 1)
+
+New package `lib/pretrade_risk/` with `liquidity.py` and `correlation.py`, CLI
+`scripts/pretrade_check.py`, and 32 synthetic tests. Closes the two gaps D0112
+names in its own `UNSUPPORTED` tuple ("LIQUIDITY", "CORRELATION") without
+changing D0112: no import, no contract edit, no promotion of those strings.
+Sector-code limits are a coarse proxy for correlation and pass holdings that
+move together under one factor; measured return correlation covers that miss.
+
+Estimates for warning only, so float rather than D0112's exact Decimal context.
+Outputs are warnings, not optimiser inputs. VaR, CVaR, stress calibration and
+covariance-based optimisation remain out of scope and unimplemented.
+
+PIT safety is structural: both functions depend only on the `PriceHistorySource`
+protocol, so bars after `as_of` cannot enter. The CLI bounds its J-Quants fetch
+at `end_date=as_of` and builds `AsOfAdjustedPriceHistory`, keeping later
+corporate actions out of the adjustment.
+
+Unknown is not zero. Missing close/volume is excluded from the mean and counted
+in `sessions_unknown`; below `min_known_ratio` (default 0.75 of 20 sessions) the
+result is UNKNOWN, not OK. Zero or negative average turnover is UNKNOWN, not a
+division. Returns are keyed by the interval `(previous_session_date,
+session_date)` and paired only on identical intervals, so a gap in one series is
+dropped rather than aligned against a different-length interval. Zero variance
+yields an undefined correlation, reported as UNKNOWN rather than 0. Warning is
+on positive correlation above the threshold only; negative correlation is
+offsetting rather than concentration, and every estimated pair is returned so
+the caller can see it.
+
+Turnover is close x volume, invariant under split adjustment because
+`apply_split_adjustments` divides price and multiplies volume by the same factor.
+
+Tests are synthetic with no API contact: 2738 passed, 10 pre-existing
+environment failures in `test_post_edit_quality_gate_hook.py` that reproduce
+identically on the pre-change tree. Real-data confirmation against J-Quants is
+not done here; this environment has no egress to that API. Acceptance on real
+data therefore remains open and is handed to local validation.
