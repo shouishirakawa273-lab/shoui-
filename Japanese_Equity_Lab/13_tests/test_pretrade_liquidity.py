@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
-from lib.backtest.price_history import StaticPriceHistory
+from lib.backtest.price_history import AsOfAdjustedPriceHistory, StaticPriceHistory
+from lib.market_calendar import session_close_at
 from lib.pretrade_risk import LiquidityOutcome, assess_liquidity
-from lib.schemas.price_data import AdjustedOHLCVBar
+from lib.schemas.price_data import AdjustedOHLCVBar, CorporateAction, CorporateActionType, RawOHLCVBar
 
-AS_OF = datetime(2026, 11, 21, 15, 0, tzinfo=UTC)
+AS_OF = session_close_at(date(2026, 11, 21))
 
 
 def _bar(
@@ -189,3 +190,106 @@ def test_invalid_arguments_raise(kwargs: dict[str, float | int]) -> None:
 
     with pytest.raises(ValueError):
         assess_liquidity(**call)  # type: ignore[arg-type]
+
+
+def test_long_but_stale_history_is_unknown_not_ok() -> None:
+    """[HIGH] 履歴が「短い」ではなく「古い」場合もOKにしない。
+
+    上場廃止・長期売買停止・Providerのカバレッジ切れでは、窓は満たされるのに
+    中身が何年も前になる。min_known_ratio は長さしか見ないので素通りしていた。
+    """
+    stale_end = date(2025, 5, 20)  # AS_OF から約1年半前
+    bars = _series(sessions=20, end=stale_end)
+
+    result = assess_liquidity(source=_source(bars), code="1234", position_value=1_000_000.0, as_of=AS_OF)
+
+    assert result.sessions_observed == 20
+    assert result.sessions_known == 20
+    assert result.sessions_unknown == 0
+    assert result.outcome is LiquidityOutcome.UNKNOWN
+    assert result.average_daily_turnover is None
+    assert result.last_session == stale_end
+    assert result.staleness_days is not None and result.staleness_days > 500
+    assert "max_staleness_days" in (result.unknown_reason or "")
+
+
+def test_recent_history_within_staleness_bound_is_assessed() -> None:
+    result = assess_liquidity(
+        source=_source(_series(sessions=20, end=date(2026, 11, 20))),
+        code="1234",
+        position_value=1_000_000.0,
+        as_of=AS_OF,
+    )
+
+    assert result.outcome is LiquidityOutcome.OK
+    assert result.staleness_days == 1
+
+
+def test_duplicate_sessions_do_not_inflate_coverage() -> None:
+    """[MEDIUM] 重複行でカバレッジ床を通過させない。"""
+    bars = _series(sessions=10)
+    result = assess_liquidity(source=_source([*bars, *bars]), code="1234", position_value=1_000_000.0, as_of=AS_OF)
+
+    # 10本を重複させても20本には見えない。既定は15本要求なのでUNKNOWN。
+    assert result.sessions_observed == 10
+    assert result.duplicate_sessions_dropped == 10
+    assert result.outcome is LiquidityOutcome.UNKNOWN
+
+
+def test_observed_coverage_is_reported() -> None:
+    """[MEDIUM] 要求期間ではなく実際の観測範囲が分かること。"""
+    result = assess_liquidity(
+        source=_source(_series(sessions=20, end=date(2026, 11, 20))),
+        code="1234",
+        position_value=1_000_000.0,
+        as_of=AS_OF,
+    )
+
+    assert result.first_session == date(2026, 11, 1)
+    assert result.last_session == date(2026, 11, 20)
+
+
+def test_turnover_is_invariant_under_the_as_of_adjusted_path() -> None:
+    """[LOW] 実際にCLIが通る調整関数を使って売買代金不変性を固定する。
+
+    `build_provider_derived_adjusted_bars` はcloseに累積factorを乗じvolumeを
+    同じfactorで除す。どちらかが価格だけを調整するよう変わればここで落ちる。
+    """
+    sessions = [date(2026, 11, 20) - timedelta(days=19 - i) for i in range(20)]
+    raw = [
+        RawOHLCVBar(code="1234", session_date=s, open=1000.0, high=1000.0, low=1000.0, close=1000.0, volume=10_000.0)
+        for s in sessions
+    ]
+    split = CorporateAction(
+        code="1234",
+        action_type=CorporateActionType.SPLIT,
+        effective_date=sessions[10],
+        split_ratio=2.0,
+        announced_at=session_close_at(sessions[0]),
+    )
+
+    without_event = assess_liquidity(
+        source=AsOfAdjustedPriceHistory({"1234": raw}, {"1234": []}),
+        code="1234",
+        position_value=1_000_000.0,
+        as_of=AS_OF,
+    )
+    with_event = assess_liquidity(
+        source=AsOfAdjustedPriceHistory({"1234": raw}, {"1234": [split]}),
+        code="1234",
+        position_value=1_000_000.0,
+        as_of=AS_OF,
+    )
+
+    assert without_event.average_daily_turnover == pytest.approx(10_000_000.0)
+    assert with_event.average_daily_turnover == pytest.approx(without_event.average_daily_turnover)
+
+
+def test_naive_as_of_is_rejected() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        assess_liquidity(
+            source=_source(_series()),
+            code="1234",
+            position_value=1_000_000.0,
+            as_of=datetime(2026, 11, 21, 15, 30),
+        )

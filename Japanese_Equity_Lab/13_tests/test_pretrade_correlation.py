@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from lib.backtest.price_history import StaticPriceHistory
+from lib.market_calendar import session_close_at
 from lib.pretrade_risk import CorrelationOutcome, assess_correlation
 from lib.schemas.price_data import AdjustedOHLCVBar
 
-AS_OF = datetime(2026, 11, 21, 15, 0, tzinfo=UTC)
-START = date(2025, 1, 6)
+AS_OF = session_close_at(date(2026, 11, 21))
+END = date(2026, 11, 21)
+"""系列の最終セッション。古さ判定に掛からないよう as_of 当日に揃える。"""
 
 
 def _bar(code: str, session_date: date, close: float | None) -> AdjustedOHLCVBar:
@@ -27,8 +29,9 @@ def _bar(code: str, session_date: date, close: float | None) -> AdjustedOHLCVBar
     )
 
 
-def _from_returns(code: str, returns: list[float], *, start: date = START) -> list[AdjustedOHLCVBar]:
-    """与えたリターン列を再現する終値Bar列を作る(先頭は基準日)。"""
+def _from_returns(code: str, returns: list[float], *, end: date = END) -> list[AdjustedOHLCVBar]:
+    """与えたリターン列を再現する終値Bar列を作る(最終Barが end に来る)。"""
+    start = end - timedelta(days=len(returns))
     bars = [_bar(code, start, 1000.0)]
     close = 1000.0
     for index, value in enumerate(returns, start=1):
@@ -100,7 +103,7 @@ def test_insufficient_overlap_is_unknown_not_ok() -> None:
 
 def test_flat_series_has_undefined_correlation_and_is_unknown() -> None:
     """分散0の系列との相関は定義されない。0にしない。"""
-    flat = [_bar("2222", START + timedelta(days=i), 1000.0) for i in range(120)]
+    flat = [_bar("2222", END - timedelta(days=119 - i), 1000.0) for i in range(120)]
     source = _source(_from_returns("1111", _wave(120)), flat)
 
     result = assess_correlation(source=source, codes=["1111", "2222"], as_of=AS_OF)
@@ -147,8 +150,8 @@ def test_missing_close_breaks_only_its_own_returns() -> None:
 def test_bars_after_as_of_are_not_used() -> None:
     """PIT: as_of より後のセッションは構造的に入らない。"""
     returns = _wave(120)
-    series_a = _from_returns("1111", returns, start=date(2026, 7, 1))
-    series_b = _from_returns("2222", returns, start=date(2026, 7, 1))
+    series_a = _from_returns("1111", returns)
+    series_b = _from_returns("2222", returns)
     # as_of より後に、相関を壊す向きの動きを足す。
     future_a = _bar("1111", date(2026, 12, 1), 2000.0)
     future_b = _bar("2222", date(2026, 12, 1), 100.0)
@@ -205,3 +208,105 @@ def test_invalid_arguments_raise(kwargs: dict[str, float | int]) -> None:
 
     with pytest.raises(ValueError):
         assess_correlation(**call)  # type: ignore[arg-type]
+
+
+def test_stale_coverage_makes_the_pair_unknown() -> None:
+    """[HIGH] 共有履歴が十分長くても、古ければOK/WARNにしない。"""
+    stale_end = date(2025, 5, 20)
+    returns = _wave(120)
+    source = _source(
+        _from_returns("1111", returns, end=stale_end),
+        _from_returns("2222", returns, end=stale_end),
+    )
+
+    result = assess_correlation(source=source, codes=["1111", "2222"], as_of=AS_OF)
+
+    (pair,) = result.pairs
+    assert pair.overlapping_returns >= 60
+    assert pair.outcome is CorrelationOutcome.UNKNOWN
+    assert pair.correlation is None
+    assert "stale" in (pair.unknown_reason or "")
+    assert all(item.stale for item in result.coverage)
+
+
+def test_one_stale_leg_is_enough_to_make_the_pair_unknown() -> None:
+    returns = _wave(120)
+    source = _source(
+        _from_returns("1111", returns),
+        _from_returns("2222", returns, end=date(2025, 5, 20)),
+    )
+
+    result = assess_correlation(source=source, codes=["1111", "2222"], as_of=AS_OF)
+
+    (pair,) = result.pairs
+    assert pair.outcome is CorrelationOutcome.UNKNOWN
+    assert [item.code for item in result.coverage if item.stale] == ["2222"]
+
+
+def test_coverage_reports_observed_range_per_code() -> None:
+    result = assess_correlation(
+        source=_source(_from_returns("1111", _wave(120)), _from_returns("2222", _wave(120))),
+        codes=["1111", "2222"],
+        as_of=AS_OF,
+    )
+
+    assert [item.code for item in result.coverage] == ["1111", "2222"]
+    for item in result.coverage:
+        assert item.last_session == END
+        assert item.staleness_days == 0
+        assert item.duplicate_sessions_dropped == 0
+        assert not item.stale
+
+
+def test_shared_gap_widens_an_interval_and_is_reported() -> None:
+    """[MEDIUM] 休場とデータ欠損は区別できないので、幅を可視化して渡す。"""
+    returns = _wave(120)
+    series_a = _from_returns("1111", returns)
+    series_b = _from_returns("2222", returns)
+    removed = series_a[60].session_date
+    series_a = [b for b in series_a if b.session_date != removed]
+    series_b = [b for b in series_b if b.session_date != removed]
+
+    result = assess_correlation(source=_source(series_a, series_b), codes=["1111", "2222"], as_of=AS_OF)
+
+    (pair,) = result.pairs
+    # 両方が同じ日を欠くので区間は一致し対応付く。幅が2日になったことが見える。
+    assert pair.max_interval_days == 2
+    assert pair.correlation is not None
+
+
+def test_no_gap_keeps_interval_width_at_one() -> None:
+    result = assess_correlation(
+        source=_source(_from_returns("1111", _wave(120)), _from_returns("2222", _wave(120))),
+        codes=["1111", "2222"],
+        as_of=AS_OF,
+    )
+
+    (pair,) = result.pairs
+    assert pair.max_interval_days == 1
+
+
+def test_duplicate_sessions_do_not_pad_overlap() -> None:
+    """[MEDIUM] 重複行が (D, D) という長さ0の区間や水増しを生まない。"""
+    returns = _wave(120)
+    series_a = _from_returns("1111", returns)
+    series_b = _from_returns("2222", returns)
+
+    result = assess_correlation(
+        source=_source([*series_a, *series_a[:5]], [*series_b, *series_b[:5]]),
+        codes=["1111", "2222"],
+        as_of=AS_OF,
+    )
+
+    (pair,) = result.pairs
+    assert pair.overlapping_returns == len(returns)
+    assert all(item.duplicate_sessions_dropped == 5 for item in result.coverage)
+
+
+def test_naive_as_of_is_rejected() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        assess_correlation(
+            source=_source(_from_returns("1111", _wave(120)), _from_returns("2222", _wave(120))),
+            codes=["1111", "2222"],
+            as_of=datetime(2026, 11, 21, 15, 30),
+        )

@@ -19584,3 +19584,57 @@ environment failures in `test_post_edit_quality_gate_hook.py` that reproduce
 identically on the pre-change tree. Real-data confirmation against J-Quants is
 not done here; this environment has no egress to that API. Acceptance on real
 data therefore remains open and is handed to local validation.
+
+## 2026-11-21 — PIT audit response for pre-trade warnings (Step 1)
+
+Independent `pit-auditor` review of `lib/pretrade_risk/` returned 9 findings,
+2 HIGH. Both HIGH findings were real and are fixed; every finding now has a
+regression test. Suite 2758 passed, same 10 pre-existing hook-environment
+failures.
+
+HIGH 1 — the "structural PIT" claim held only at date granularity.
+`bars_up_to` filters `session_date <= as_of.date()`, so a pre-open `as_of`
+(09:00 JST) returned that day's unfinished bar. The shipped CLI happened to
+dodge it with a 23:59 UTC constant; the exported library did not. Fixed by
+moving the boundary into `lib/pretrade_risk/window.py`, which admits a session
+only once `session_close_at(session_date) <= as_of`, and rejects tz-naive
+`as_of` outright. The docstring claim was corrected rather than kept.
+
+HIGH 2 — no staleness bound. `[-window_sessions:]` took the last N rows that
+exist, not the N sessions before `as_of`, so a delisted or long-halted name
+with history ending 18 months ago reported `sessions_known=20,
+sessions_unknown=0` and a confident OK computed from years-old turnover.
+`min_known_ratio` bounded only how *short* a history could be, never how *old*.
+Added `max_staleness_days` (default 10) to both assessments; beyond it the
+verdict is UNKNOWN. The bound is calendar days, not sessions: this package
+holds no `TradingCalendar`, and inferring session structure from data presence
+is forbidden by `lib/market_calendar.py`, so the limit is stated rather than
+guessed.
+
+MEDIUM — the CLI defaulted `as_of` to the UTC date, which for a JST user means
+yesterday between 00:00 and 09:00 JST, and never checked `as_of` against
+`retrieved_at`. Now defaults to `datetime.now(JST)` with no assumed end-of-day,
+treats `--as-of DATE` as that date's close, and refuses a future `as_of` or one
+after retrieval. Coverage floors counted rows rather than distinct sessions, so
+duplicates from pagination overlap or `--codes 7203 72030` could pass the floor
+on half the real evidence and inject `(D, D)` zero returns; sessions are now
+deduplicated and the dropped count is reported. Codes are normalized before the
+fetch, so an unnormalizable code fails before spending API quota instead of
+producing an all-UNKNOWN report. `data_period` was the requested window and is
+renamed `requested_data_period`, with observed first/last session now reported
+per code.
+
+MEDIUM — interval pairing prevents length mismatch but does not make paired
+intervals comparable: when both codes lack the same date, one may be a halt and
+the other a provider gap. Not resolvable without a calendar, so
+`max_interval_days` is reported per pair and the limit is documented.
+
+LOW — liquidity relied on undefended ordering from the protocol while
+correlation sorted defensively; ordering is now enforced in one place. The
+turnover invariance docstring cited `apply_split_adjustments` while the CLI path
+uses `build_provider_derived_adjusted_bars`; corrected, and a test now pins
+invariance through the path actually taken.
+
+The auditor could not confirm tests existed because it had no search tooling and
+guessed filenames. They exist as `13_tests/test_pretrade_liquidity.py` and
+`test_pretrade_correlation.py`, now joined by `test_pretrade_window.py`.
