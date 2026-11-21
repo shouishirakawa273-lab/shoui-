@@ -19711,3 +19711,49 @@ recent enough that incidental exposure cannot be ruled out; 2021 and earlier
 untouched. The next Locked Test window stays undecided here on purpose. It is
 chosen as part of a preregistration, with the reasoning recorded before the data
 is touched.
+
+## 2026-11-21 — Screener for one-shot stock review (Step 3)
+
+New package `lib/screener/` (`visibility.py`, `financial_trend.py`,
+`forecast_revisions.py`) and CLI `scripts/screen.py`, with 23 synthetic tests.
+Suite 2781 passed, same 10 pre-existing hook-environment failures.
+
+Scope was cut against what the repo actually has, not against the plan. The plan
+listed PBR, dividend yield, ROE and the next earnings date. `normalize.py` states
+plainly that Share Count, Dividend and ROE fields exist in the raw payload but
+are not mapped to metrics, and that reading unmapped fields by guessing their
+names is forbidden. Mapping them is source-onboarding work requiring official
+spec confirmation, which §5 of the plan rules out for now. They are therefore
+reported in an `unavailable` block with the reason, not omitted and not filled.
+
+PER percentile is deferred rather than dropped. `lib/valuation` holds the model —
+fail-closed, look-ahead guarded, denominator-regime aware — but driving it takes
+the ~290-line orchestration that `scripts/jqs_std02_7203_historical_valuation_
+remeasurement.py` shows for a single entity. The trigger for building it is the
+first time a common stock's valuation needs judging; PER is not how J-REITs are
+valued, so it would not have answered the question that motivated the screener.
+
+Availability semantics are explicit rather than defaulted. `MARKET_PUBLIC_AT` is
+used unless asked otherwise, because Phase4A gives every provider version an
+`availability_basis` of UNKNOWN, so `PROVIDER_AVAILABLE_AT` returns nothing
+unless the caller opts in. The report always carries which semantics produced it,
+so a number can never be read without knowing its visibility basis.
+
+Forecast revisions are the differentiated output and also Step 4's input: for
+each company-forecast series, every version visible at `decision_at`, with
+direction and ratio against the previous value. A ratio from a zero base is
+UNKNOWN rather than infinite; a non-numeric version is UNKNOWN and does not
+become the new base, so the next real revision still measures against the last
+real figure. Negative bases use an absolute denominator, so an improving loss
+forecast reads as UP rather than flipping sign.
+
+A bug found by its own test: eligibility was filtered when selecting series but
+not per version. Since a series_id spans metric_type, fiscal_year_target,
+period_type, scope and accounting_standard, quarterly, forecast and
+value-absent versions can share one series — and the last of them won. Both
+levels now apply the same filter.
+
+Restatements keep the latest visible version and record how many it superseded.
+Periods with no visible version are absent rather than forward-filled. Series
+split by an accounting-standard change stay separate rather than being silently
+merged.
