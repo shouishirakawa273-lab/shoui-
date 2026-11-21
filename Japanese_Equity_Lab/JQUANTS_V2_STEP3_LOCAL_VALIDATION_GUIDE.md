@@ -29,6 +29,23 @@ EDINET調査と違い、今回は公式ドキュメントにはクラウドセ�
 
 ---
 
+## 一括実行(推奨)
+
+C〜H を個別に貼る代わりに、診断スクリプト1本で全項目を観測できる。PowerShellへ
+複数行を貼ると改行が落ちて事故るため、通常はこちらを使う。
+
+```powershell
+cd C:\Users\白川正威\shoui-
+git pull
+cd Japanese_Equity_Lab
+python scripts/jquants_step3_schema_diagnostic.py --save-snapshot > step3_diag.txt 2>&1
+```
+
+1項目が失敗しても残りは続行し、失敗は `!!` 付きで表示される。出力は
+`step3_diag.txt` に入るので、そのまま貼り戻せる(APIキーは一切出力されない)。
+
+以下 A〜I は、個別に確認したい場合と、将来同種の検証を再実行する場合の手順。
+
 ## A. 最新のブランチを同期する
 
 ```powershell
