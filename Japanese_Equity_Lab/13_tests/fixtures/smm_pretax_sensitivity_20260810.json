@@ -1,0 +1,30 @@
+{
+  "fixture_kind": "COMPANY_SOURCE_FACTS_ONLY_NOT_PIPELINE_HISTORY",
+  "source_url": "https://www.smm.co.jp/ir/event/teleconference/pdf/2026/260810_telephone.pdf",
+  "title": "2026年度第1四半期決算説明資料",
+  "entity_id": "5713",
+  "disclosed_on": "2026-08-10",
+  "exact_public_at": null,
+  "historical_pipeline_available_at": null,
+  "forecast_period": "FY2026",
+  "forecast_version": "2026-08 forecast",
+  "pdf_page_index": 18,
+  "printed_page": "19",
+  "table_locator": "2026年度業績予想（8月）の業績感応度",
+  "profit_metric": "PRETAX_INCOME",
+  "scope": "UNKNOWN_NOT_VERIFIED_BY_THIS_FIXTURE",
+  "currency": "JPY",
+  "profit_unit": "JPY_100_MILLION",
+  "rows": [
+    {"driver": "COPPER", "driver_step": "100", "driver_unit": "USD/metric_tonne", "magnitude": "32"},
+    {"driver": "GOLD", "driver_step": "100", "driver_unit": "USD/troy_oz", "magnitude": "36"},
+    {"driver": "USDJPY", "driver_step": "1", "driver_unit": "JPY/USD", "magnitude": "22"}
+  ],
+  "direction": "UNKNOWN_NOT_VERIFIED_BY_THIS_FIXTURE",
+  "verified_linear_range": null,
+  "verified_base_levels": null,
+  "verified_joint_composition": null,
+  "inventory_treatment": "Inventory valuation effects excluded",
+  "fx_coverage": "Domestic metal processing income plus overseas currency translation effects",
+  "verification_note": "Facts manually read from the company table; no signed forecast or historical available_at inferred."
+}
