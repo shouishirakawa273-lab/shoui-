@@ -73,6 +73,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--position-value", type=float, default=1_000_000.0, help="流動性判定に使う想定ポジション額(円)")
     parser.add_argument("--as-of", type=date.fromisoformat, default=None, help="判定日(YYYY-MM-DD)。既定はいま(JST)")
     parser.add_argument("--years", type=int, default=10, help="財務推移をさかのぼる年数")
+    parser.add_argument("--forecast-years", type=int, default=3, help="予想改定履歴を出す対象決算期の数(新しい順)")
     parser.add_argument("--max-staleness-days", type=int, default=DEFAULT_MAX_STALENESS_DAYS)
     parser.add_argument(
         "--provider-semantics",
@@ -175,10 +176,18 @@ def main(argv: list[str] | None = None) -> int:
         forecasts = build_forecast_revision_series(
             revision_histories=histories,
             metrics=code_metrics,
+            envelopes=envelopes_by_code.get(code, []),
             decision_at=as_of,
             availability_semantics=semantics,
             include_unknown_availability=args.include_unknown_availability,
         )
+        # 対象決算期が新しい順に、直近 --forecast-years 期ぶんだけ残す。
+        # 全期を出すと1銘柄で数千行になり「ざっと見」にならない。
+        known_targets = sorted(
+            {s.target_fiscal_year_end for s in forecasts if s.target_fiscal_year_end is not None}, reverse=True
+        )
+        kept_targets = set(known_targets[: args.forecast_years])
+        forecasts = tuple(s for s in forecasts if s.target_fiscal_year_end in kept_targets)
         liquidity = assess_liquidity(
             source=price_source,
             code=code,
@@ -217,16 +226,19 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 "forecast_revisions": [
                     {
-                        "metric_type": s.metric_type,
-                        "accounting_standard": s.accounting_standard,
+                        "metric_family": s.metric_family,
+                        "target_fiscal_year_end": (s.target_fiscal_year_end.isoformat() if s.target_fiscal_year_end else None),
+                        "accounting_standards": list(s.accounting_standards),
                         "revision_count": s.revision_count,
                         "revisions": [
                             {
                                 "published_at": r.published_at.isoformat() if r.published_at else None,
+                                "disclosure_period_type": r.disclosure_period_type.value,
                                 "value": _num(r.value),
                                 "previous_value": _num(r.previous_value),
                                 "direction": r.direction.value,
                                 "change_ratio": _num(r.change_ratio),
+                                "source_metric_type": r.source_metric_type,
                                 "unknown_reason": r.unknown_reason,
                             }
                             for r in s.revisions

@@ -19757,3 +19757,43 @@ Restatements keep the latest visible version and record how many it superseded.
 Periods with no visible version are absent rather than forward-filled. Series
 split by an accounting-standard change stay separate rather than being silently
 merged.
+
+## 2026-11-21 — Forecast revisions were grouped by the wrong key (Step 3 fix)
+
+Real-data validation on 7203 and 8035 showed the revision history was not a
+revision history. Grouping used `series_id`, which contains
+`fiscal_year_target` — a *relative* label (`CURRENT_FISCAL_YEAR`) rather than an
+absolute year — and `current_period_type`, the quarter the disclosure belonged
+to. Series therefore collected **the same quarter across different fiscal
+years**: one series held every August Q1 disclosure from 2020 to 2026, and the
+reported `change_ratio` between consecutive entries compared FY2021's forecast
+with FY2022's. Those are different targets, so every ratio in the output was a
+year-over-year comparison labelled as a revision.
+
+Grouping is now `(metric_family, absolute target fiscal year end)`. The target is
+read from disclosed fields only: `current_fiscal_year_end` when
+`fiscal_year_target` is CURRENT, `next_fiscal_year_end` when NEXT. At an FY
+disclosure the period has ended, so `*_current_year_forecast` is empty and the
+new guidance sits in `*_next_year_forecast`; that mapping handles it without
+inferring anything from field names or document types.
+
+7203's FY2026 EPS forecast now reads as one sequence, confirmed against the live
+payload: 237.57 at the May FY disclosure, 204.09 at Q1, 224.81 at Q2, 273.91 at
+Q3, against an actual of 295.25 — a cut followed by three raises and a beat.
+Previously those four points sat in four separate series.
+
+Why the tests missed it: every fixture used a single series implying a single
+fiscal year, so the case where one relative label spans several absolute years
+was never constructed. The mechanics were tested; the domain semantics were not.
+Two regression tests now pin both halves — quarters of one year must merge, and
+the same quarter of different years must not.
+
+Each revision now carries `disclosure_period_type` and `source_metric_type`, so
+where in the year a change arrived, and which field carried it, stay visible.
+
+Output volume was the second finding: one code produced 4,258 lines (7203) and
+9,028 (8035), with 80 forecast series for 7203 alone — not the single screen the
+step called for. The CLI now keeps the most recent `--forecast-years` target
+periods, default 3.
+
+Suite 2784 passed, same 10 pre-existing hook-environment failures.

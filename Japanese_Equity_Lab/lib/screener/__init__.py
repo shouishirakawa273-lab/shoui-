@@ -33,7 +33,9 @@ from lib.screener.forecast_revisions import (
     ForecastRevisionSeries,
     RevisionDirection,
     build_forecast_revision_series,
+    metric_family,
     present_forecast_metrics,
+    target_fiscal_year_end,
 )
 from lib.screener.visibility import visible_versions
 
@@ -47,6 +49,8 @@ __all__ = [
     "RevisionDirection",
     "build_financial_trend",
     "build_forecast_revision_series",
+    "metric_family",
     "present_forecast_metrics",
+    "target_fiscal_year_end",
     "visible_versions",
 ]
