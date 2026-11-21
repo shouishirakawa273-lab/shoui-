@@ -19684,3 +19684,30 @@ silently absorbed.
 
 Snapshot persistence and offline rerun remain unwired, so sections D through G of
 the local-validation procedure were not performed. The run was live-fetch only.
+
+## 2026-11-21 — Step 2 closed, and a correction to the plan it invalidated
+
+The period usage ledger (`06_backtests/period_usage_ledger.md`) completes Step 2:
+the rule is written, the format is fixed, and H0001's usage is backfilled from
+`preregistrations.jsonl`, `locked_test_audit{,_real}.jsonl` and the fixture
+manifest. Every row was verified against those primary records, not recalled.
+
+Backfilling it exposed an error in the plan written earlier the same evening.
+"Japanese_Equity_Lab 完成までの方針書" proposed 2025 as the Locked Test window for
+the Step 4 hypothesis. That window is already spent: H0001's real-data round
+used 2025-01-06..2025-12-30 as its Locked Test, unlocked by the owner on
+2026-08-19T13:26:58Z. Reusing it for a new hypothesis is exactly the
+same-final-window contamination the ledger exists to prevent — the plan would
+have reproduced the defect it was written to close.
+
+The recommendation was made without first checking what H0001 had consumed. Both
+references in the plan (Step 2's "fix the window at 2025" and Step 4's table row)
+are corrected to leave the choice undecided and point at the ledger's remaining
+inventory instead.
+
+Remaining inventory as recorded: 2025 burnt in real data; 2022-2024 spent on
+train and validation; 2026 used only as fixture, so unobserved in real data but
+recent enough that incidental exposure cannot be ruled out; 2021 and earlier
+untouched. The next Locked Test window stays undecided here on purpose. It is
+chosen as part of a preregistration, with the reasoning recorded before the data
+is touched.
