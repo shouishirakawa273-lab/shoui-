@@ -19857,3 +19857,72 @@ three actual changes (Q1 cut, Q2 raise, Q3 raise). It now counts entries that
 were measured against a previous value; `observation_count` keeps the raw total.
 
 Suite 2806 passed (+22), same 10 pre-existing hook-environment failures.
+
+## 2026-11-22 — J-Quants V2 source onboarding for Step 3's missing outputs
+
+Research only, per the `source-onboarding` skill; no adapter or normalizer code.
+Report in `JQUANTS_V2_STEP3_SOURCE_ONBOARDING.md`. Unlike the EDINET round,
+official docs were reachable from this session, so the findings below are
+`PRIMARY_OFFICIAL` rather than inferred.
+
+**The three gaps are disclosed fields, not derivations.** `/fins/summary`
+carries `ROE`/`NCROE` and `ShEq`/`NCShEq` (added during 2026, all plans),
+`BPS`/`NCBPS`, `Eq`/`NCEq`, the share counts `ShOutFY`/`TrShFY`/`AvgSh`, and the
+full dividend set `Div*`/`FDiv*`/`NxFDiv*`. Separately `/equities/valuation`
+publishes daily EPS/FwdEPS/BPS/ROE/FwdROE/PER/FwdPER/PBR/MktCap with documented
+formulas, on all plans. So ROE, PBR and a PER percentile can be met with
+retrieved values and no arithmetic of ours, which keeps the root CLAUDE.md rule
+against filling numbers by calculation intact. Dividend yield is the one
+exception — it appears in no endpoint and would have to be derived from `DivAnn`
+and price. That decision is left open.
+
+**Two findings outrank the feature work.**
+
+First, corrections overwrite in place. `/fins/summary` rows corrected under the
+same `DiscNo` replace the previous value, which is then unobtainable, and
+`/equities/valuation` states plainly that correction history and pre-correction
+data are not provided by any channel. A row fetched today therefore carries its
+original `DiscDate`/`DiscTime` while possibly holding a later-corrected value,
+and the API gives no way to tell. That is look-ahead leakage inherent to
+fetching history after the fact. Our own snapshots taken near disclosure are not
+good practice here, they are the only defence — which also means H0001's real
+data round cannot be shown to have seen pre-correction values, since those
+snapshots are outside Git (same constraint as the W0 open item).
+
+Second, the provider does not supply the time any item became available. So
+`PROVIDER_AVAILABLE_AT` resolving to UNKNOWN in Phase4A is not unfinished
+implementation, it reflects a source-side fact, and `availability_basis=UNKNOWN`
+is not a hole to fill. Standard-plan `/fins/summary` also updates daily rather
+than continuously (continuous is Premium), so the earliest our pipeline could
+have held a row is after that day's ingest — but per-record ingest times are not
+published, so this stays UNKNOWN rather than becoming a derived bound.
+
+**Confirmations of existing choices.** The official text says an empty string
+means only that no value was stated — not withdrawal, not undecided — which is
+exactly `MISSING_OR_UNSPECIFIED`. Ordinary profit is documented as blank under
+both IFRS and US GAAP, matching `_NOT_APPLICABLE_UNDER_STANDARD`. And `DiscNo`
+is documented as not guaranteeing order, with `DiscDate`/`DiscTime` to be used
+instead; `normalize.py:57` already forbids deriving dates from `DiscNo`, and
+`forecast_revisions.py` sorts on `published_at`, so both comply. Note the V1 doc
+page claims ascending `DiscNo` ordering and contradicts V2 here.
+
+**New hazards recorded.** Dividend per share is explicitly not adjusted for
+splits or consolidations, so once mapped it belongs in `per_share.py`'s
+`PER_SHARE_METRICS` — the same discontinuity found in EPS applies. Range-form
+forecasts are not recorded at all, so a blank forecast may mean "disclosed as a
+range" rather than "not disclosed". `/equities/valuation` returns nulls for every
+indicator on ETFs, ETNs and preferred stock and everything but `MktCap` for
+REITs, which matters because the recent work has been REIT-heavy. `/fins/dividend`
+and `/fins/details` are Premium-only and unavailable on this plan. Fiscal-year
+changes have no field of their own and must be read off `CurFYEn`, which bears on
+the `target_fiscal_year_end` grouping added yesterday.
+
+**Also found:** `/v2/fins/announcement` does not exist. V1's announcement
+endpoint became `/v2/equities/earnings-calendar` (next business day only, March
+and September year-ends), and a separate `/v2/fins/earnings-date` covering all
+listed issues was released during 2026 — all plans, Standard reaching 10 years,
+retention from 2014-09-01. Its response field list could not be retrieved and is
+recorded as UNKNOWN. The official 開示書類種別 list likewise was not retrieved;
+it is the fix for `*_Consolidated_US` DocTypes failing closed to
+`accounting_standard=None`, which is why 7203's 2017–2020 actuals sit in a
+separate series from 2021 onward.
