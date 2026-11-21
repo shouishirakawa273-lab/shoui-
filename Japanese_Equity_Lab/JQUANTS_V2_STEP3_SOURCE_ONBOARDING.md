@@ -345,3 +345,164 @@ skillの定めによりここでは実装せず、選択肢とトレードオフ
 
 いずれも `SourceAuthorityClass = PRIMARY_OFFICIAL`。本報告で `VERIFIED_SECONDARY`
 以下の出典に依拠した確定記載はない。
+
+---
+
+# 追補(2026-11-22) — 設計判断と残ギャップ3件の解消
+
+## 10. 採用した設計判断
+
+オーナー判断により以下を確定。実装はまだ行っていない。
+
+| 決定 | 内容 |
+| --- | --- |
+| PER・PBR・ROEの一次ソース | **併用。** 普通株等は `/equities/valuation`、REITは `/fins/summary` |
+| 配当利回り | **現在値のみ。** 10年分位は出さない |
+| 米国基準DocType | **今回の作業に含める** |
+
+### 10.1 併用の必須条件: nullでフォールバックしない
+
+`/equities/valuation` のnullは、REITだけでなく新規上場・決算期変更・未開示でも
+発生する(§6.4)。したがって「nullなら `/fins/summary` から計算する」という実装は、
+**本当に取得不可な値を自作値で埋めることになり、ルートCLAUDE.mdの
+「取得できない項目を他の値から計算・推測して埋めることは禁止」に正面から違反する。**
+
+**値を見てから選ぶのではなく、銘柄種別でソースを決め打ちする。** 選んだソースが
+nullを返したら「取得不可」とする。別ソースへ黙って切り替えない。
+
+### 10.2 `ROE`/`EPS`/`BPS` は両ソースで別物
+
+同一指標の2つの測定値ではない。**どちらの定義で出しているかのラベルが必須。**
+
+| 指標 | `/fins/summary` | `/equities/valuation` |
+| --- | --- | --- |
+| ROE | 会社が開示した自己資本利益率(年次・開示時点) | TTM純利益 ÷ TTM期首期末平均自己資本(JPX算出・日次) |
+| EPS | 開示された一株当たり当期純利益 | TTM純利益ベース |
+| BPS | 開示された一株あたり純資産 | 直近開示の期末自己資本ベース |
+
+両者は正当に異なる値になる。平均しない。優先順位で片方を「正」としない。
+
+## 11. ギャップ解消1: 銘柄種別の判定 — `ProdCat`
+
+`/equities/master` の `ProdCat`(商品区分コード)で判定できる。`PRIMARY_OFFICIAL`。
+
+| コード | 名称 |
+| --- | --- |
+| 011 | 内国株券 |
+| 012 | 優先出資証券 |
+| 013 | REIT |
+| 014 | ETF |
+| 021 | 外国株券 |
+| 022 | 外国REIT |
+| 023 | 外国ETF |
+| 024 | 外国株預託証券 |
+
+公式記載の性質:
+
+- 銘柄マスタに記録された値を無修正で返す
+- コード定義は全期間(2008-05-07開始)を通じて同一
+- **全期間・全銘柄で値が存在し、欠損はない**(バックフィル不要)
+- **`011`(内国株券)には優先株等も含まれるため、`ProdCat` だけでは普通株を特定できない**
+- ETN・インフラファンドに専用コードはない
+- JPXサイト上の市場・商品区分との公式な対応表は提供されない
+
+### ルーティング方針(実装時に適用)
+
+`ProdCat` は「REITかどうか」を確定できるので§10.1の決め打ちに使える。ただし
+`011` 内に優先株が混ざるため、**`011` の銘柄が `/equities/valuation` でnullを
+返した場合、それは優先株だった可能性を含む。§10.1のとおり「取得不可」とし、
+`/fins/summary` へ切り替えない。** この挙動は正しい: 優先株のPERを自作することに
+意味はない。
+
+`ProdCat` は日付ごとのマスタ値なので、PIT的には**判定時点の値**を使う。
+
+## 12. ギャップ解消2: 開示書類種別(DocType)公式一覧
+
+`PRIMARY_OFFICIAL`。全42種別。会計基準の接尾辞は **`_JP` / `_US` / `_IFRS` /
+`_JMIS` / `_Foreign` / `_REIT`** の6種。期種別は `FY` / `1Q` / `2Q` / `3Q` /
+`OtherPeriod`。連結区分は `Consolidated` / `NonConsolidated`。
+
+**決算短信系(38種)**
+
+| 会計基準 | 連結 | 非連結 |
+| --- | --- | --- |
+| 日本基準 `_JP` | FY/1Q/2Q/3Q/OtherPeriod | FY/1Q/2Q/3Q/OtherPeriod |
+| 米国基準 `_US` | FY/1Q/2Q/3Q/OtherPeriod | (一覧に無い) |
+| ＩＦＲＳ `_IFRS` | FY/1Q/2Q/3Q/OtherPeriod | FY/1Q/2Q/3Q/OtherPeriod |
+| ＪＭＩＳ `_JMIS` | FY/1Q/2Q/3Q/OtherPeriod | (一覧に無い) |
+| 外国株 `_Foreign` | FY/1Q/2Q/3Q/OtherPeriod | FY/1Q/2Q/3Q/OtherPeriod |
+| REIT `_REIT` | FY のみ | (一覧に無い) |
+
+**修正系(4種)**: `DividendForecastRevision`(配当予想の修正) /
+`EarnForecastRevision`(業績予想の修正) /
+`REITDividendForecastRevision`(分配予想の修正) /
+`REITEarnForecastRevision`(利益予想の修正)
+
+### 実装時の注意(3点)
+
+1. **`_JMIS` はＪＭＩＳ(修正国際基準)であり、ＩＦＲＳとは別の会計基準。**
+   IFRSへマップしてはならない。名前が似ているが別物である
+2. **経常利益のNOT_APPLICABLE拡張は行わない。** 公式記載は「IFRS・米国基準では
+   経常利益が空欄」までであり、`_JMIS` / `_Foreign` / `_REIT` について同じことが
+   言えるかは `UNKNOWN`。JMISはIFRSベースなので空欄になりそうだが、**それは推測
+   なので登録しない。** `normalize.py` が `_JP` に対して取っている態度と同じ
+3. 一覧に無い組み合わせ(非連結の米国基準等)は引き続き未知DocTypeとして
+   fail closedする。一覧が全てだと断定しない
+
+これで7203の2017〜2020年(`FYFinancialStatements_Consolidated_US` 等)が
+`accounting_standard=None` になっている原因は解消できる。**`_US` は公式一覧に
+「決算短信（連結・米国基準）」として明記されており、substring heuristicではなく
+明示的なマッピングとして登録できる。**
+
+## 13. ギャップ解消3: `/fins/earnings-date` — 部分的
+
+| 項目 | 確認結果 |
+| --- | --- |
+| 検索キー | `code` / `date`(公表日) / `scheduled_date`(予定日) のいずれか1つ必須。`PRIMARY_OFFICIAL`(CLI仕様)および `SECONDARY` が一致 |
+| レスポンスField | **`PRIMARY_OFFICIAL` では未取得。** 公式仕様ページに本セッションから到達できなかった |
+| Field名(参考) | `PubDate`(公表日)と `SchDate`(予定日)を含むとされる。**出典は `SECONDARY`(サードパーティクライアントのIssue)。確定情報として扱わない** |
+| 予定日未定時 | `SchDate` が空文字になるとされる。`SECONDARY` |
+
+### PIT安全な使い方(公式記載から導ける)
+
+公式リリースノートは、**予定日で検索した場合、訂正された予定日については現在
+有効なものだけが取得できる**と明記している。つまり:
+
+- **`scheduled_date` で検索してはいけない。** 過去に報告され後に訂正された予定日が
+  見えなくなり、「その時点で市場が知っていた予定日」を再現できない
+- `code` または `date`(公表日)で検索し、**(公表日, 予定日) の対を全て保持する。**
+  これが予定日の改定履歴になる
+
+この方針は公式記載のみから導けるので、Field名が `SECONDARY` 止まりでも
+**使い方の判断は確定できる。** 実際のField名は実データ照合で確認する。
+
+## 14. 更新後のUNKNOWN一覧
+
+§8から解消されたもの: 銘柄種別の判定手段、開示書類種別の公式一覧。
+
+残るUNKNOWN:
+
+- `/equities/valuation` のデータ格納開始日
+- `/equities/valuation` の `EPS`/`FwdEPS`/`BPS` が使用する株式数
+- `/equities/valuation` の一株当たり指標が分割・併合を反映するか(`MktCap` のみ明記)
+- `/equities/valuation` の負の利益の扱い
+- `/fins/earnings-date` のレスポンスField**公式**一覧
+- `/fins/summary` の削除semantics
+- `/fins/summary` の訂正レコードと元レコードの確定的な対応関係
+- `ShEq`/`ROE` の過去行における充填状況
+- `_JMIS` / `_Foreign` / `_REIT` における経常利益の存否
+- 公式DocType一覧が網羅的かどうか(非連結・米国基準等が実データに現れないか)
+- ETN・インフラファンドの `ProdCat` 値
+
+## 15. 次工程(実データ照合で確認すべきこと)
+
+`local-validation` skill に従う。実APIはオーナーのローカル環境から叩く。
+
+1. `ShEq` / `ROE` が**過去の行にも入っているか**(2026年追加Fieldのため最重要)
+2. REIT銘柄の `/equities/valuation` 応答(`MktCap` 以外が本当に全てnullか)
+3. REIT銘柄の `/fins/summary` で `DivUnit` / `FDivUnit` が取れるか
+4. `/equities/valuation` の一株当たり指標が分割をまたいで連続するか
+   (7203の2021年10月前後で確認できる)
+5. `/fins/earnings-date` の実際のレスポンスField
+6. `ProdCat` が対象銘柄で期待通りの値か
+7. 実データのDocType集合が公式一覧に収まるか
