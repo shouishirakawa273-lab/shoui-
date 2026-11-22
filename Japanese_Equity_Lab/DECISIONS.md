@@ -19926,3 +19926,36 @@ recorded as UNKNOWN. The official 開示書類種別 list likewise was not retri
 it is the fix for `*_Consolidated_US` DocTypes failing closed to
 `accounting_standard=None`, which is why 7203's 2017–2020 actuals sit in a
 separate series from 2021 onward.
+
+## 2026-11-22 — Redirected output died on cp932 before the first API call
+
+The Step 3 diagnostic was run as `> step3_diag.txt 2>&1` and crashed on its own
+header line. On Japanese Windows, redirecting stdout makes Python encode with the
+locale codec (cp932), and the header contained one em-dash (U+2014), which cp932
+cannot represent. `UnicodeEncodeError` at the first `print`, so no request was
+ever issued. The same script prints fine to a console, where the failure never
+appears — it only happens on redirect, which is exactly how the guide told the
+user to run it.
+
+Scanning for the cause found precisely one offending character in the file, but
+deleting it would only have postponed the problem: `screen.py` and
+`pretrade_check.py` emit Japanese via `ensure_ascii=False`, so each is one stray
+character away from the same death, and both are routinely redirected.
+
+`lib/cli_io.py` fixes the class rather than the instance. `force_output_encoding`
+leaves a stream alone when `isatty()` is true — Japanese already renders
+correctly on this console, and forcing UTF-8 there could produce mojibake on a
+legacy one — and switches it to UTF-8 only when redirected, which removes the
+character-set limit entirely. Two encodings are offered because the destinations
+differ: human-readable reports take `utf-8-sig` so PowerShell's `Get-Content`
+detects UTF-8 from the BOM without an `-Encoding` flag, while JSON output takes
+plain `utf-8`, since a BOM would break `json.load` downstream. The diagnostic
+applies the BOM variant to stdout only, so `2>&1` yields one BOM at the top of
+the file rather than a stray mark where stderr first writes.
+
+Verified by reproducing the original conditions — `PYTHONIOENCODING=cp932` with
+captured stdout — against the fixed script: no `UnicodeEncodeError`, clean exit 2
+on the missing key. `13_tests/test_cli_io.py` keeps the regression, including the
+em-dash encode that fails under cp932 and succeeds after the switch.
+
+Suite 2815 passed (+9), same 10 pre-existing hook-environment failures.

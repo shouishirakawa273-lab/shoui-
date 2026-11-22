@@ -38,6 +38,7 @@ sys.path.insert(0, str(_LAB_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
 from lib.backtest.price_history import AsOfAdjustedPriceHistory  # noqa: E402
+from lib.cli_io import force_output_encoding  # noqa: E402
 from lib.data_sources.convert import (  # noqa: E402
     detect_corporate_action_events_from_equity_bars,
     equity_bars_payload_to_raw_bars,
@@ -84,6 +85,8 @@ def _fail(status: str, detail: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # リダイレクト時のcp932符号化エラーを防ぐ。BOMは付けない(json.loadが壊れる)
+    force_output_encoding()
     args = _parse_args(argv)
     # 実行ディレクトリに依存しないよう、リポジトリルートの.envを明示指定する。
     load_dotenv(_REPO_ROOT / ".env")

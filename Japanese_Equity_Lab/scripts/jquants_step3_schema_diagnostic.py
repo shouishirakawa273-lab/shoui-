@@ -33,6 +33,7 @@ _REPO_ROOT = _LAB_DIR.parent
 sys.path.insert(0, str(_LAB_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
+from lib.cli_io import HUMAN_READABLE, JSON_SAFE, force_output_encoding  # noqa: E402
 from lib.data_sources.jquants import JQuantsAdapter  # noqa: E402
 from lib.errors import DataSourceError  # noqa: E402
 
@@ -264,13 +265,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--save-snapshot", action="store_true", help="生PayloadをRawSnapshotStoreへ保存する")
     args = parser.parse_args(argv)
 
+    # リダイレクト時のcp932符号化エラーを防ぐ(lib/cli_io.py の経緯を参照)。
+    # BOMは先頭1つだけにしたいので、`2>&1` で合流するstderrには付けない。
+    force_output_encoding(HUMAN_READABLE, streams=[sys.stdout])
+    force_output_encoding(JSON_SAFE, streams=[sys.stderr])
+
     load_dotenv(_REPO_ROOT / ".env")
     adapter = JQuantsAdapter()
     if not adapter.configured:
         print("JQUANTS_API_KEY が設定されていません(.env を確認してください)", file=sys.stderr)
         return 2
 
-    print("J-Quants V2 Step 3 Schema Diagnostic — 読み取り専用・観測のみ")
+    print("J-Quants V2 Step 3 Schema Diagnostic - 読み取り専用・観測のみ")
     print(f"実行: {datetime.now(UTC).isoformat()}  対象: {args.code} / {args.reit_code}")
 
     rows = _run("fins fields", lambda: check_fins_fields(adapter, args.code)) or []
