@@ -20327,3 +20327,40 @@ on PowerShell's side of the pipe. Setting
 `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` once per session fixes
 both `>` and `|` for every script. The numbers survived, being ASCII, so this run
 did not need repeating.
+
+## 2026-11-24 (9) — Step 3 Stage 2: the two new endpoints
+
+`fetch_valuation_indicators` and `fetch_earnings_dates` added to the J-Quants
+adapter. Both go through `_get_all_pages`, so the existing 1.05s throttle and
+`x-api-key` header apply without a second code path — the test suite takes 3.3s
+for twelve cases precisely because the throttle is live, which is the evidence
+that it was not bypassed.
+
+**Neither sends a date range.** `/equities/valuation` has no documented range
+parameter and the full daily history is what a ten-year percentile needs anyway,
+so `data_period` records `full_available_history` — truthful, unlike a requested
+window that is not applied.
+
+**`/fins/earnings-date` deliberately cannot be queried by scheduled date.** The
+official release note says that searching by scheduled date returns only the
+currently valid one, so corrected dates disappear and the date the market knew at
+the time cannot be reconstructed. That is a PIT-breaking path, so it is not
+offered as an argument at all; a test asserts the call raises `TypeError` if
+someone tries. Querying by code yields the (published, scheduled) pairs that
+constitute the revision history.
+
+**A docstring that had gone false is corrected.** `fetch_financial_statements`
+still said the endpoint name and the `code`/`from`/`to` parameters were a working
+hypothesis because official docs were unreachable. Docs are reachable now, the
+endpoint name is confirmed, and the official parameter table lists only `code`,
+`date` and `cursor` — `from`/`to` are not in it and the 41-against-41 count
+comparison showed they are ignored. The arguments stay for caller compatibility
+but the docstring now says plainly that no filtering happens.
+
+Both methods carry what the real-data observation established, including that
+`/equities/valuation` returns nothing but `MktCap` for a REIT, that nulls must not
+trigger a source switch, that per-share levels step at the ex-date while PER and
+PBR stay continuous, and that correction history is not provided by any channel.
+
+12 tests, mocked HTTP only, with response shapes taken from the 2026-11-24
+observations. Suite 2911 passed, same 10 pre-existing hook-environment failures.

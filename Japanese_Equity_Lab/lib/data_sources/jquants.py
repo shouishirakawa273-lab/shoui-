@@ -200,9 +200,19 @@ class JQuantsAdapter:
     def fetch_financial_statements(self, *, codes: Sequence[str], start_date: date, end_date: date) -> RawFetchResult:
         """``GET /v2/fins/summary``: 決算短信サマリ(実績・会社予想・修正等)を取得する(Phase4A、D0043)。
 
-        **未検証(重要)**: 公式ドキュメントへは引き続き接続できない(DECISIONS.md
-        D0043「A」)。Endpoint名・クエリパラメータ名(`code`/`from`/`to`)は他のV2
-        Endpointと同じ規約を踏襲した作業仮説であり、公式仕様で確認したものではない。
+        **確認状況の更新(2026-11-22/24)**: 公式仕様ページへ到達でき、Endpoint名が
+        正しいことを確認した。ただし**公式のパラメータ表は `code` / `date` /
+        `cursor` の3つで、`from`/`to` は載っていない。** 2026-11-24に実データで
+        件数を比べ、`code` のみで41件、`code`+`from`+`to` でも41件と一致した
+        (`scripts/jquants_step3_schema_diagnostic.py`)。つまり**送っている
+        `from`/`to` は無視されている。**
+
+        これはPITの漏れを生まない(正規化層が `decision_at` で絞る)が、本メソッドは
+        引数で受け取った範囲を実際には適用していない。`start_date`/`end_date` は
+        「送信したQuery Parameter」であって「結果を絞り込むフィルタ」ではない。
+        引数を落とすと呼び出し側の互換が壊れるため残しているが、**絞り込みを
+        期待してはならない**(下記Period/Coverage Semantics参照)。
+
         レスポンスFieldの解釈(意味論)は`lib.fundamentals.normalize`側で行う
         (このメソッドはRaw Payloadをそのまま返す)。
 
@@ -245,6 +255,100 @@ class JQuantsAdapter:
             # ことを明示する(Local Real Data Validationでこのendpointはfrom/toで
             # 絞り込まれないことを確認済み、上記docstring参照)。
             data_period=f"requested_research_window={start_date.isoformat()}/{end_date.isoformat()}",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_valuation_indicators(self, *, codes: Sequence[str]) -> RawFetchResult:
+        """``GET /v2/equities/valuation``: 日次のバリュエーション指標(Step 3)。
+
+        **公式仕様で確認済み、かつ2026-11-24に実データで観測済み。** 11 Field
+        (`Date`/`Code`/`EPS`/`FwdEPS`/`BPS`/`ROE`/`FwdROE`/`PER`/`FwdPER`/`PBR`/
+        `MktCap`)。7203で2440件、最古 2016-11-24。全プランで利用できる。
+
+        **なぜこのEndpointを使うか**: PER・PBRが算出済みで**日次系列**として返る
+        ため、「過去10年の分位」が系列から直接求まる。算出方法が公式に文書化されて
+        いるので、本Labが定義を決めずに済む(ルート `CLAUDE.md`「数値を推測で
+        埋めない」に抵触しない)。
+
+        **銘柄種別で中身が全く違う**(2026-11-24観測):
+
+        - 普通株(7203): 全Fieldが埋まる(`FwdEPS`/`FwdPER`/`FwdROE` のみ60/2440件null)
+        - REIT(89510): **`MktCap` 以外の全Fieldが2440/2440件null**
+
+        したがって**nullを見てから別ソースへ切り替えてはならない。** nullの理由は
+        REITだけでなく新規上場・決算期変更・未開示も含むため、切り替えれば
+        「取得不可を自作値で埋める」ことになる。取得前に `ProdCat` で決め打ちする
+        (`lib/screener/instrument.py`)。
+
+        **一株当たり指標は分割の遡及調整をしていない**(2026-11-24観測): 7203の
+        権利落ち日(2021-09-29)でEPSは1067.36→213.47、BPSは8634.65→1726.93と
+        ちょうど5.0000倍の段差が立つ。一方**PER・PBRは連続**(9.73→9.71、1.2→1.2)
+        で、株価と一株当たり価値が同時にずれて打ち消し合う。分位に使うなら
+        PER・PBRは安全、EPS・BPSの水準は安全でない。
+
+        **訂正履歴は提供されない**(公式明記)。訂正前のデータはAPI・CSV等いずれの
+        手段でも取得できないため、過去のPIT正しさは本Labが取ったSnapshotにしか
+        依存できない。
+
+        `ROE`/`FwdROE` は小数(0.1151 = 11.51%)でパーセントではない。
+        """
+        records: list[dict[str, object]] = []
+        for code in codes:
+            records.extend(
+                self._get_all_pages(
+                    "/equities/valuation",
+                    {"code": code},
+                    error_label=f"{code} のバリュエーション指標",
+                )
+            )
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/v2/equities/valuation",
+            request_parameters={"codes": list(codes)},
+            retrieved_at=datetime.now(UTC),
+            # 期間を指定していないので、返ったCoverageがそのまま全てである。
+            data_period="full_available_history",
+            response_schema_version=RESPONSE_SCHEMA_VERSION,
+            payload=records,
+        )
+
+    def fetch_earnings_dates(self, *, codes: Sequence[str]) -> RawFetchResult:
+        """``GET /v2/fins/earnings-date``: 決算発表予定日(Step 3)。
+
+        **2026-11-24に実データで観測済み。** 7 Field(`PubDate`/`SchDate`/`FQName`/
+        `FYE`/`Code`/`CoName`/`CoNameEn`)。7203で40件、年4回、予定日の約1ヶ月前に
+        公表される。全プランで利用でき、Standardプランは10年前まで(格納は
+        2014-09-01〜)。
+
+        **予定日(`scheduled_date`)での検索を意図的に提供しない。** 公式リリース
+        ノートは、予定日で検索した場合、訂正された予定日については**現在有効な
+        ものだけが取得できる**と明記している。つまり予定日で引くと、
+        「その時点で市場が知っていた予定日」を再現できない——過去に報告され後に
+        訂正された予定日が消える。PITを壊す経路なので、引数として用意しない。
+
+        代わりに**銘柄コードで引き、(公表日, 予定日) の対を全て保持する。**
+        これが予定日の改定履歴になる。
+
+        `/v2/fins/announcement` はV2に存在しない。V1のそれは
+        `/v2/equities/earnings-calendar` に移行し、そちらは3・9月期決算会社の
+        翌営業日分のみを返す別物である(混同しない)。
+        """
+        records: list[dict[str, object]] = []
+        for code in codes:
+            records.extend(
+                self._get_all_pages(
+                    "/fins/earnings-date",
+                    {"code": code},
+                    error_label=f"{code} の決算発表予定日",
+                )
+            )
+        return RawFetchResult(
+            source="jquants",
+            endpoint="/v2/fins/earnings-date",
+            request_parameters={"codes": list(codes)},
+            retrieved_at=datetime.now(UTC),
+            data_period="full_available_history",
             response_schema_version=RESPONSE_SCHEMA_VERSION,
             payload=records,
         )
