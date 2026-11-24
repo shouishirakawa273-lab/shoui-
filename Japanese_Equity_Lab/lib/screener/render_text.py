@@ -179,12 +179,31 @@ def _dividend_lines(dividend: DividendYieldAssessment) -> list[str]:
     if not dividend.figures:
         return [f"  {_label('配当利回り')}{_UNAVAILABLE} ({_short(dividend.unknown_reason)})"]
     parts: list[str] = []
+    notes: list[str] = []
     for figure in dividend.figures:
         # 予想にはラベルを付ける(ルール1)。どの期に対するものかも併記する。
-        label = "予想" if figure.basis is DividendBasis.FORECAST else "実績"
+        # 実績は**覆っている月数まで書く。** 「実績」だけだと、半期REITの分配金と
+        # 年額配当が同じ顔で並び、読み手は半期の値を年額として読む(2026-11-24)。
+        if figure.basis is DividendBasis.FORECAST:
+            label = "予想"
+        elif figure.basis is DividendBasis.TRAILING_12M:
+            label = "実績12か月"
+        elif figure.months_covered:
+            label = f"実績{figure.months_covered}か月"
+        else:
+            label = "実績1期"
         period = figure.fiscal_period_end.isoformat() if figure.fiscal_period_end else "期末不明"
-        parts.append(f"{label} {_pct(figure.yield_ratio, digits=2)} ({_num(figure.dividend, digits=0)}円 / {period})")
-    return ["  配当利回り        " + "   ".join(parts)]
+        if figure.components:
+            amount = "+".join(_num(component, digits=0) for component in figure.components)
+            period = f"{period}まで{figure.period_count}期"
+        else:
+            amount = _num(figure.dividend, digits=0)
+        parts.append(f"{label} {_pct(figure.yield_ratio, digits=2)} ({amount}円 / {period})")
+        if figure.basis is DividendBasis.TRAILING_PERIOD:
+            notes.extend(figure.notes or ("12か月を覆えていない理由が記録されていない",))
+    lines = ["  " + _label("配当利回り") + "   ".join(parts)]
+    lines += [f"  {_label('')}※ 年額ではない: {_short(note, limit=80)}" for note in notes]
+    return lines
 
 
 def _roe_lines(trend: FinancialTrend) -> list[str]:
@@ -351,17 +370,19 @@ def render_report(
 
     tail: list[str] = []
     if correlation is not None and correlation.pairs:
-        warned = [p for p in correlation.pairs if p.outcome is CorrelationOutcome.WARN]
-        unknown = [p for p in correlation.pairs if p.outcome is CorrelationOutcome.UNKNOWN]
         tail.append("=" * 78)
         tail.append(f"相関 (閾値 {correlation.threshold}, {correlation.window_sessions}営業日)")
-        if warned:
-            for pair in warned:
-                tail.append(f"  ⚠ {pair.code_a} / {pair.code_b}  {_num(pair.correlation)}  n={pair.overlapping_returns}")
-        else:
-            tail.append("  閾値を超えるペアなし")
-        for pair in unknown:
-            tail.append(f"  ・{pair.code_a} / {pair.code_b}  {_UNAVAILABLE} ({_short(pair.unknown_reason, limit=40)})")
+        # **全ペアの係数を出す。** 閾値超えだけを出すと 0.68 と 0.05 が同じ
+        # 「超えるペアなし」になり、分散させる意味があるかの判断に使えない
+        # (2026-11-24、物流REIT3本を並べたときに気づいた)。
+        for pair in correlation.pairs:
+            if pair.outcome is CorrelationOutcome.UNKNOWN:
+                tail.append(f"  ・{pair.code_a} / {pair.code_b}  {_UNAVAILABLE} ({_short(pair.unknown_reason, limit=40)})")
+                continue
+            mark = "⚠" if pair.outcome is CorrelationOutcome.WARN else " "
+            tail.append(f"  {mark} {pair.code_a} / {pair.code_b}  {_num(pair.correlation)}  n={pair.overlapping_returns}")
+        if not any(p.outcome is CorrelationOutcome.WARN for p in correlation.pairs):
+            tail.append(f"  閾値 {correlation.threshold} を超えるペアなし")
 
     if unavailable:
         tail.append("=" * 78)

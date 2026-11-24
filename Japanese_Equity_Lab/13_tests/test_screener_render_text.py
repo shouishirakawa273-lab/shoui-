@@ -18,6 +18,7 @@ from decimal import Decimal
 
 import pytest
 from lib.evidence.model import AvailabilitySemantics
+from lib.pretrade_risk.correlation import CorrelationAssessment, CorrelationOutcome, PairCorrelation
 from lib.pretrade_risk.liquidity import LiquidityAssessment, LiquidityOutcome
 from lib.screener.dividend_yield import (
     DividendBasis,
@@ -114,12 +115,13 @@ def _dividend(*, figures: tuple[DividendYieldFigure, ...] | None = None) -> Divi
                 published_at=AS_OF,
             ),
             DividendYieldFigure(
-                basis=DividendBasis.TRAILING,
+                basis=DividendBasis.TRAILING_12M,
                 source_metric_type="dividend_per_share_annual",
                 dividend=Decimal("95"),
                 yield_ratio=Decimal("0.0287"),
                 fiscal_period_end=date(2026, 3, 31),
                 published_at=AS_OF,
+                months_covered=12,
             ),
         )
     return DividendYieldAssessment(
@@ -611,3 +613,92 @@ def test_revision_count_shares_the_line_with_the_sequence() -> None:
     sequence_lines = [ln for ln in lines if "251.25" in ln]
     assert len(sequence_lines) == 1
     assert "改定" in sequence_lines[0]
+
+
+# --- 実績の分子が何か月分かを必ず書く(2026-11-24の回帰) ---
+
+
+def test_twelve_month_trailing_shows_the_summed_components() -> None:
+    """半期2期を合算したときは、月数と内訳を出す。合算を隠さない。"""
+    dividend = _dividend(
+        figures=(
+            DividendYieldFigure(
+                basis=DividendBasis.TRAILING_12M,
+                source_metric_type="distribution_per_unit",
+                dividend=Decimal("3432"),
+                yield_ratio=Decimal("0.0419"),
+                fiscal_period_end=date(2026, 5, 31),
+                published_at=AS_OF,
+                period_count=2,
+                months_covered=12,
+                components=(Decimal("1716"), Decimal("1716")),
+            ),
+        )
+    )
+    line = next(x for x in _render(dividend=dividend) if "配当利回り" in x)
+    assert "実績12か月" in line
+    assert "1716+1716円" in line
+    assert "まで2期" in line
+
+
+def test_single_period_trailing_is_not_shown_as_an_annual_figure() -> None:
+    """[回帰] 半期の分配金を「実績」とだけ書くと、読み手は年額として読む。
+
+    3283で `1716 / 81900 = 2.10%` が「実績」と並び、市場水準の4%台と
+    2倍ずれていた。月数と、年額でない理由を出す。
+    """
+    dividend = _dividend(
+        figures=(
+            DividendYieldFigure(
+                basis=DividendBasis.TRAILING_PERIOD,
+                source_metric_type="distribution_per_unit",
+                dividend=Decimal("1716"),
+                yield_ratio=Decimal("0.0210"),
+                fiscal_period_end=date(2026, 5, 31),
+                published_at=AS_OF,
+                months_covered=6,
+                notes=("開示済みの期が12か月を覆わないため合算しない(6か月 × 1期)",),
+            ),
+        )
+    )
+    lines = [x for x in _render(dividend=dividend) if "配当利回り" in x or "年額ではない" in x]
+    assert any("実績6か月" in x for x in lines)
+    assert any("年額ではない" in x for x in lines)
+
+
+def test_correlation_prints_every_pair_not_only_breaches() -> None:
+    """[回帰] 0.68と0.05が同じ「超えるペアなし」になると、分散の判断に使えない。"""
+    pairs = (
+        PairCorrelation(
+            code_a="3283",
+            code_b="2979",
+            overlapping_returns=240,
+            correlation=0.68,
+            max_interval_days=3,
+            threshold=0.7,
+            outcome=CorrelationOutcome.OK,
+        ),
+        PairCorrelation(
+            code_a="3283",
+            code_b="8967",
+            overlapping_returns=240,
+            correlation=0.05,
+            max_interval_days=3,
+            threshold=0.7,
+            outcome=CorrelationOutcome.OK,
+        ),
+    )
+    assessment = CorrelationAssessment(
+        as_of=AS_OF,
+        codes=("3283", "2979", "8967"),
+        window_sessions=250,
+        min_overlap=200,
+        threshold=0.7,
+        max_staleness_days=3,
+        coverage=(),
+        pairs=pairs,
+    )
+    text = render_report(as_of=AS_OF, entries=[_render()], correlation=assessment, unavailable=[])
+    assert "0.68" in text
+    assert "0.05" in text
+    assert "閾値 0.7 を超えるペアなし" in text

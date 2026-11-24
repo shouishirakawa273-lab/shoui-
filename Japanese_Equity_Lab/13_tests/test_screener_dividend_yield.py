@@ -94,7 +94,7 @@ def _assess(**kwargs: object) -> object:
 def test_trailing_yield_from_actual_dividend() -> None:
     result = _assess()
     trailing = result.trailing  # type: ignore[attr-defined]
-    assert trailing.basis is DividendBasis.TRAILING
+    assert trailing.basis is DividendBasis.TRAILING_12M
     assert trailing.dividend == Decimal("95")
     assert trailing.yield_ratio == Decimal("95") / PRICE
     assert trailing.source_metric_type == "dividend_per_share_annual"
@@ -104,7 +104,7 @@ def test_forecast_and_trailing_are_both_reported() -> None:
     """予想と実績は別の量。両方あるなら両方出し、どちらかを黙って選ばない。"""
     result = _assess(forecast_series=(_forecast_series("dividend_per_share_annual", date(2027, 3, 31), "100"),))
     bases = {f.basis for f in result.figures}  # type: ignore[attr-defined]
-    assert bases == {DividendBasis.FORECAST, DividendBasis.TRAILING}
+    assert bases == {DividendBasis.FORECAST, DividendBasis.TRAILING_12M}
     assert result.forecast.dividend == Decimal("100")  # type: ignore[attr-defined]
     assert result.trailing.dividend == Decimal("95")  # type: ignore[attr-defined]
 
@@ -322,3 +322,99 @@ def test_float_zero_price_is_still_rejected() -> None:
     result = _assess(price=0.0)
     assert result.figures == ()  # type: ignore[attr-defined]
     assert result.unknown_reason is not None  # type: ignore[attr-defined]
+
+
+# --- 分子は12か月を覆わなければならない(2026-11-24の回帰) ---
+#
+# 3283(日本プロロジスリート、5月期/11月期)で `1716 / 81900 = 2.10%` と出ていた。
+# `DivUnit` は**その決算期の分**なので、半期決算では半年分しか入らない。
+# 市場が語る水準は4%台で、**取得できている値を別の量として見せていた。**
+
+REIT_PRICE = Decimal("81900")
+
+
+def _reit_assess(rows: list[tuple[str, date, str]], **kwargs: object) -> object:
+    base: dict[str, object] = {
+        "code": "3283",
+        "instrument_kind": InstrumentKind.REIT,
+        "price": REIT_PRICE,
+        "price_session": date(2026, 11, 20),
+        "actual_trend": _trend("3283", rows),
+        "forecast_series": (),
+        "decision_at": DECISION_AT,
+    }
+    base.update(kwargs)
+    return assess_dividend_yield(**base)  # type: ignore[arg-type]
+
+
+_SEMIANNUAL_ROWS = [
+    ("distribution_per_unit", date(2025, 11, 30), "1716"),
+    ("distribution_per_unit", date(2026, 5, 31), "1716"),
+]
+
+
+def test_semiannual_reit_distribution_is_summed_to_twelve_months() -> None:
+    """[回帰] 半期決算の分配金は、開示済みの連続2期を合算して12か月にする。"""
+    trailing = _reit_assess(_SEMIANNUAL_ROWS).trailing  # type: ignore[attr-defined]
+    assert trailing.basis is DividendBasis.TRAILING_12M
+    assert trailing.dividend == Decimal("3432")
+    assert trailing.months_covered == 12
+    assert trailing.period_count == 2
+    assert trailing.components == (Decimal("1716"), Decimal("1716"))
+    # 2.10%ではなく4.19%。半分に見えていたのがこれ。
+    assert trailing.yield_ratio == pytest.approx(Decimal("0.0419"), abs=Decimal("0.0001"))
+    assert trailing.notes == ()
+
+
+def test_single_semiannual_period_is_not_doubled() -> None:
+    """[回帰] 1期しか無いとき、2倍して年額を作らない(ルートCLAUDE.md 規約3)。
+
+    取得できない値を計算で埋めることになる。期の長さを明示して1期分だけ出す。
+    """
+    trailing = _reit_assess([_SEMIANNUAL_ROWS[1]]).trailing  # type: ignore[attr-defined]
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("1716")
+    assert trailing.months_covered is None  # 1点では期の長さが分からない。12と仮定しない
+    assert trailing.notes  # なぜ年額でないかを必ず持つ
+
+
+def test_basis_discontinuity_inside_the_window_blocks_summation() -> None:
+    """[回帰] 合算する期の間に1口当たり基準の不連続があれば合算しない。
+
+    一株/一口当たり配当は遡及調整されないので、分割をまたぐ和は無意味になる。
+    「現在値は段差を踏まない」という当初の論拠は1点を採る限りの話だった。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        _SEMIANNUAL_ROWS,
+        basis_break_period_ends=frozenset({date(2026, 5, 31)}),
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("1716")  # 合算しない
+    assert any("不連続" in note for note in trailing.notes)
+
+
+def test_basis_discontinuity_before_the_window_does_not_block_summation() -> None:
+    """窓の外側の不連続は合算を妨げない。合算されない期の段差は関係しない。
+
+    3283の実データでは不連続が 2024-11-30 → 2025-05-31 にあり、
+    合算対象(2025-11-30, 2026-05-31)の外側だった。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        _SEMIANNUAL_ROWS,
+        basis_break_period_ends=frozenset({date(2025, 5, 31)}),
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_12M
+    assert trailing.dividend == Decimal("3432")
+
+
+def test_periods_that_do_not_tile_twelve_months_are_not_summed() -> None:
+    """期がタイル状に12か月を覆わないなら合算しない。隙間を埋めて推測しない。"""
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("distribution_per_unit", date(2026, 1, 31), "800"),
+            ("distribution_per_unit", date(2026, 5, 31), "1716"),
+        ]
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("1716")
+    assert trailing.months_covered == 4  # 1期の長さは言えるが、12か月は覆えていない

@@ -120,6 +120,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="text",
         help=("出力形式。text=1画面(既定、方針書の受入基準「1画面」)、json=全量(機械可読・Snapshotとの突き合わせ用)"),
     )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=("出力先ファイル。**PowerShellの `>` ではなくこちらを使う** (理由は `_emit` のdocstring)"),
+    )
     parser.add_argument("--forecast-years", type=int, default=3, help="予想改定履歴を出す対象決算期の数(新しい順)")
     parser.add_argument("--max-staleness-days", type=int, default=DEFAULT_MAX_STALENESS_DAYS)
     parser.add_argument(
@@ -138,6 +144,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _fail(status: str, detail: str) -> int:
     print(json.dumps({"status": status, "detail": detail}, ensure_ascii=False), file=sys.stderr)
     return 2
+
+
+def _emit(text: str, out: Path | None) -> None:
+    """標準出力か、`--out` で指定されたファイルへ書く。
+
+    ## `--out` がある理由
+
+    PowerShellの `>` は、Pythonの標準出力を**Shell側でデコードし直して**から
+    ファイルへ書く。`lib/cli_io.force_output_encoding` がstdoutをUTF-8へ
+    切り替えても、PowerShellはそのbyte列をConsoleのCodePage(cp932)として読むため、
+    **文字化けした文字列をUTF-16で保存する。**
+
+    2026-11-24に `screen.py --format json > s5.txt` で実際に起きた。
+    先頭が `0xff`(UTF-16 LEのBOM)で `json.load` が落ち、`note` フィールドは
+    `莠域Φ縺ｨ螳溽ｸｾ…`(「予想と実績…」のUTF-8をcp932として読んだ形)になっていた。
+    **cli_ioが入る前はクラッシュし、入った後は静かに壊れる**ようになっていた。
+    クラッシュは直っていたが、`JSON_SAFE` のコメントが約束していた
+    「json.loadが読める」は守られていなかった。
+
+    Pythonが自分でファイルを書けば、経路からShellが外れてこの問題が消える。
+    """
+    if out is None:
+        print(text)
+        return
+    out.write_text(text + "\n", encoding="utf-8")
+    print(f"wrote {len(text)} characters (utf-8) to {out}", file=sys.stderr)
+    logger.info("screen: wrote %d characters to %s", len(text), out)
 
 
 def _num(value: Decimal | float | None) -> float | None:
@@ -290,8 +323,17 @@ def main(argv: list[str] | None = None) -> int:
             metric_types=DIVIDEND_ACTUAL_METRIC_TYPES,
             include_unknown_availability=args.include_unknown_availability,
         )
+        code_bars = raw_by_code.get(code, [])
+        # 配当利回りの12か月合算が基準の不連続を踏まないよう、**先に**不連続を検知する。
+        # 順序が逆だと合算の門が1つ減る(`lib/screener/dividend_yield.py`)。
+        per_share = assess_per_share_comparability(
+            code=code,
+            trend=trend,
+            corporate_actions=events_by_code.get(code, []),
+            corporate_actions_known_from=min((b.session_date for b in code_bars), default=None),
+        )
         latest_bar = max(
-            (b for b in raw_by_code.get(code, []) if session_close_at(b.session_date) <= as_of),
+            (b for b in code_bars if session_close_at(b.session_date) <= as_of),
             key=lambda b: b.session_date,
             default=None,
         )
@@ -303,6 +345,9 @@ def main(argv: list[str] | None = None) -> int:
             actual_trend=dividend_trend,
             forecast_series=forecasts,
             decision_at=as_of,
+            basis_break_period_ends=frozenset(
+                b.to_fiscal_period_end for b in per_share.breaks if b.to_fiscal_period_end is not None
+            ),
         )
 
         valuation = (
@@ -312,13 +357,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         earnings = build_earnings_schedule(code=code, rows=earnings_rows, decision_at=as_of)
 
-        code_bars = raw_by_code.get(code, [])
-        per_share = assess_per_share_comparability(
-            code=code,
-            trend=trend,
-            corporate_actions=events_by_code.get(code, []),
-            corporate_actions_known_from=min((b.session_date for b in code_bars), default=None),
-        )
         liquidity = assess_liquidity(
             source=price_source,
             code=code,
@@ -448,14 +486,22 @@ def main(argv: list[str] | None = None) -> int:
                             "yield_ratio": _num(f.yield_ratio),
                             "fiscal_period_end": (f.fiscal_period_end.isoformat() if f.fiscal_period_end else None),
                             "published_at": (f.published_at.isoformat() if f.published_at else None),
+                            "period_count": f.period_count,
+                            "months_covered": f.months_covered,
+                            "components": [_num(c) for c in f.components],
+                            "notes": list(f.notes),
                         }
                         for f in dividend.figures
                     ],
                     "note": (
                         "予想と実績は別の量なので両方を並べる。片方が無いときもう片方へ"
                         "暗黙に落とさない。yield_ratioは小数(0.0312=3.12%)。"
-                        "一株当たり配当は分割の遡及調整がされないが、現在値は最新の配当と"
-                        "最新の株価で期をまたがないため段差を踏まない(分位は踏むので出さない)。"
+                        "実績の分子はProviderのField単位では期ごとの値で、半期決算のREITでは"
+                        "半年分しか入らない。TRAILING_12Mは開示済みの連続する期を合算した"
+                        "ものでmonths_covered=12。TRAILING_PERIODは12か月を覆えなかった"
+                        "1期分でありnotesに理由が入る——**年額ではないので2倍しないこと。**"
+                        "一株当たり配当は分割の遡及調整がされないので、合算は期のタイルと"
+                        "基準の不連続の2門を通したものだけが成立する。分位は出さない。"
                     ),
                 },
                 "per_share_comparability": {
@@ -566,16 +612,17 @@ def main(argv: list[str] | None = None) -> int:
         },
     }
     if args.format == "json":
-        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        _emit(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True), args.out)
         return 0
 
-    print(
+    _emit(
         render_report(
             as_of=as_of,
             entries=rendered,
             correlation=correlation,
             unavailable=report["unavailable"]["metrics"],
-        )
+        ),
+        args.out,
     )
     return 0
 
