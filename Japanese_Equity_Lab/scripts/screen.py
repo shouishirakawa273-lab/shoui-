@@ -403,12 +403,15 @@ def main(argv: list[str] | None = None) -> int:
                         if earnings.next_scheduled is not None
                         else None
                     ),
-                    "revision_count": earnings.revision_count,
+                    "restatements_of_the_same_date": earnings.restatements_of_the_same_date,
                     "visible_entry_count": len(earnings.entries),
                     "unknown_reason": earnings.unknown_reason,
                     "note": (
                         "予定日は改定されるので(公表日, 予定日)の対を全て保持する。"
                         "予定日での検索は訂正前が消えるため使わない(PubDate基準で可視性を判定)。"
+                        "決算期を識別するFieldが無い(FYEはMMDDで年を含まない)ため、"
+                        "決算期ごとの改定回数は数えられない。同一予定日の再報告のみ数える。"
+                        "next_scheduledがnullなのは、次の予定日がまだ公表されていない正常な状態でもある。"
                     ),
                 },
                 "dividend_yield": {

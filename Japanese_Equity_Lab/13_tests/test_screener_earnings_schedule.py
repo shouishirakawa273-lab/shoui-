@@ -55,10 +55,16 @@ def test_upcoming_scheduled_date_is_found() -> None:
 
 
 def test_past_scheduled_dates_are_not_offered_as_next() -> None:
+    """[実データ] 7203の3Q予定日は毎年1月上旬公表。11月下旬にはまだ出ていない。
+
+    過去の予定日を代わりに見せない——それは「直近の決算発表予定日」ではない。
+    `None` + 理由が正しい出力である。
+    """
     rows = [_row("2026-09-28", "2026-11-05", fq="2Q")]
     schedule = build_earnings_schedule(code=CODE, rows=rows, decision_at=DECISION_AT)
     assert schedule.next_scheduled is None
     assert len(schedule.entries) == 1  # 履歴としては残す
+    assert schedule.unknown_reason is not None
 
 
 def test_scheduled_on_the_decision_date_counts_as_upcoming() -> None:
@@ -80,7 +86,9 @@ def test_revisions_are_kept_not_collapsed() -> None:
     schedule = build_earnings_schedule(code=CODE, rows=rows, decision_at=DECISION_AT)
     assert len(schedule.entries) == 2
     assert {e.scheduled_on for e in schedule.entries} == {date(2026, 12, 10), date(2026, 12, 17)}
-    assert schedule.revision_count == 1
+    # 予定日が変わった改定は、数えられる対象ではない(決算期を識別できないため)。
+    # 履歴は entries に残るので、そこを人が読む。
+    assert schedule.restatements_of_the_same_date == 0
 
 
 def test_latest_publication_wins_for_the_same_scheduled_date() -> None:
@@ -93,24 +101,37 @@ def test_latest_publication_wins_for_the_same_scheduled_date() -> None:
     assert schedule.next_scheduled.published_on == date(2026, 11, 15)
 
 
-def test_revision_count_is_zero_for_distinct_quarters() -> None:
+def test_distinct_quarters_are_not_restatements() -> None:
     rows = [
         _row("2026-06-29", "2026-08-04", fq="1Q"),
         _row("2026-09-28", "2026-11-05", fq="2Q"),
         _row("2026-11-01", "2026-12-10", fq="3Q"),
     ]
     schedule = build_earnings_schedule(code=CODE, rows=rows, decision_at=DECISION_AT)
-    assert schedule.revision_count == 0
+    assert schedule.restatements_of_the_same_date == 0
     assert len(schedule.entries) == 3
 
 
-def test_same_quarter_of_a_different_fiscal_year_is_not_a_revision() -> None:
+def test_same_quarter_across_ten_years_is_not_counted_as_revisions() -> None:
+    """[回帰] `FYE` はMMDDで年を含まない。
+
+    最初の実装は `(FYE, FQName)` をキーにしたため、7203で40件中36回の「改定」に
+    なった。`(0331, 3Q)` が10年ぶん衝突していた。
+    """
+    rows = [_row(f"{year}-01-04", f"{year}-02-06", fq="3Q", fye="0331") for year in range(2017, 2027)]
+    schedule = build_earnings_schedule(code=CODE, rows=rows, decision_at=DECISION_AT)
+    assert len(schedule.entries) == 10
+    assert schedule.restatements_of_the_same_date == 0
+
+
+def test_the_same_scheduled_date_reported_twice_is_a_restatement() -> None:
+    """数えられるのはこれだけ: 同一の予定日が異なる公表日で再報告された件数。"""
     rows = [
-        _row("2025-11-01", "2025-12-10", fq="3Q", fye="0331"),
-        _row("2026-11-01", "2026-12-10", fq="3Q", fye="0630"),
+        _row("2026-11-01", "2026-12-10", fq="3Q"),
+        _row("2026-11-15", "2026-12-10", fq="3Q"),
     ]
     schedule = build_earnings_schedule(code=CODE, rows=rows, decision_at=DECISION_AT)
-    assert schedule.revision_count == 0
+    assert schedule.restatements_of_the_same_date == 1
 
 
 # --- PIT ---

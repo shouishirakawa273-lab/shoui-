@@ -25,6 +25,17 @@ Raw(`PubDate`/`SchDate`/`FQName`/`FYE`)を読む。
 
 判定時点以降で最も近い予定日を「次回」とする。過去の予定日は、改定履歴を読む
 ためにそのまま残す。
+
+**次回が `None` になるのは正常な状態でもある。** 7203の実観測では3Q予定日は毎年
+1月上旬に公表される(2017-01-04公表→2017-02-06予定)。したがって11月下旬の時点で
+3Qの予定日はまだ公表されていない。**過去の予定日を代わりに見せない**——それは
+「直近の決算発表予定日」ではない。理由を述べて `None` を返す。
+
+## 決算期を識別するFieldが無い
+
+`FYE` はMMDDで年を含まず、`FQName` は四半期だけを表す。したがって
+「どの決算年度の3Qか」はこのEndpointのFieldからは決まらない。
+`restatements_of_the_same_date` の節を参照。
 """
 
 from __future__ import annotations
@@ -61,21 +72,33 @@ class EarningsSchedule:
     unknown_reason: str | None
 
     @property
-    def revision_count(self) -> int:
-        """同じ決算期に対して2件目以降が出た回数。
+    def restatements_of_the_same_date(self) -> int:
+        """**同じ予定日**が、異なる公表日で複数回報告された回数。
 
-        `(FYE, FQName)` が同じ組に複数の公表があれば、予定日が報告し直された
-        ということ。値が同じでも報告が複数回あった事実は残す。
+        これは「決算期ごとの改定回数」**ではない**。決算期を識別するFieldが無い
+        ためである: `FYE` は `"0331"` のようなMMDDで**年を含まない**。
+
+        2026-11-24、最初の実行で `(FYE, FQName)` をキーに「改定回数」を数えたら、
+        7203で40件中36回になった。`(0331, 3Q)` が10年ぶん衝突し、4キーに対して
+        36件が「2件目以降」と判定されていた。docstringに「年が入っていない」と
+        書いた2つ下で、それを決算期の識別子として使っていた。
+
+        予定日から決算年度を逆算すれば「決算期ごとの改定」は数えられるが、それは
+        「開示は期末から数ヶ月以内に行われる」という推測を要する。Sourceが持って
+        いない区分を発明しないため、**数えられるものだけを数える**: 同一の
+        `SchDate` が複数の `PubDate` で報告された件数。予定日が変わった改定は
+        ここには出ないので、`entries` を人が読む。
         """
-        seen: set[tuple[str | None, str | None]] = set()
-        revisions = 0
+        seen: set[date] = set()
+        restatements = 0
         for entry in self.entries:
-            key = (entry.fiscal_year_end, entry.fiscal_quarter)
-            if key in seen:
-                revisions += 1
+            if entry.scheduled_on is None:
+                continue
+            if entry.scheduled_on in seen:
+                restatements += 1
             else:
-                seen.add(key)
-        return revisions
+                seen.add(entry.scheduled_on)
+        return restatements
 
 
 def _parse_date(raw: object) -> date | None:

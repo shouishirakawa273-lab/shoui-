@@ -20455,3 +20455,48 @@ and `per_percentile` no longer says orchestration is missing, because it is not.
 are produced. What remains for the T gate is acceptance, not construction: three
 or more codes verified (7203 and 8951 done) and one real use for an actual
 investment decision.
+
+## 2026-11-24 (12) — Stage 4b on real data: percentiles work, my revision count did not
+
+Ran 7203, 8951 and 6758. Three findings.
+
+**The percentiles read correctly.** 7203 comes out PER 9.62 at the 41.4th
+percentile, FwdPER 10.93 at 45.5, PBR 1.04 at 46.8, over 2440 sessions from
+2016-11-24. FwdPER's 60 missing rows match the 60-of-2440 observed on 2026-11-24
+exactly. 6758 gives PBR 2.95 at the 95.8th percentile — near the top of its own
+ten-year range — which is the kind of number the tool exists to produce. REITs
+are skipped before the request: `requested_codes` is 7203 and 6758 only.
+
+**An UNKNOWN closed itself.** 6758's `PER` has no current value and 252 of 2440
+missing, `FwdPER` 236 missing, `PBR` zero missing — the gaps sit only on the
+earnings-based indicators. And across 7320 indicator-observations,
+`excluded_non_positive` is **zero everywhere**. So `/equities/valuation` appears
+to return null rather than a negative PER, which answers §14's open question about
+negative earnings.
+
+It also costs something: **the provider has already merged "negative" into
+"absent", so `excluded_missing` cannot separate them.** The policy at (10)
+distinguishes the two and the distinction is still right on our side of the
+boundary, but it is unobservable upstream. Recorded as a limitation, not a defect.
+
+**`revision_count` was wrong, and the comment next to it said why.** 7203 reported
+36 revisions across 40 entries. The key was `(FYE, FQName)`, and `FYE` is `"0331"`
+— MMDD, no year — so `(0331, 3Q)` collided across ten years: four distinct keys,
+thirty-six "second or later" entries. The `ScheduledEarnings.fiscal_year_end`
+docstring says "年が入っていない——日付に変換しない", written by me, two functions
+above the code that used it as a fiscal-year identifier.
+
+The fiscal year could be inferred from the scheduled date, but that needs the
+assumption that disclosure follows the period end within a few months. Rather than
+invent a division the source does not carry, the property now counts only what is
+computable: the same `SchDate` reported under more than one `PubDate`. Revisions
+that *changed* the date are not counted at all, and the docstring says so —
+`entries` keeps them for a human to read.
+
+**`next_scheduled: None` for all three is correct, not a defect.** 7203's third
+quarter date is published in early January each year (2017-01-04 for 2017-02-06),
+so in late November it does not exist yet. Showing the most recent past date
+instead would have been wrong and would have looked fine, which is exactly the
+substitution the stated reason prevents.
+
+Suite 2948 passed. Same 10 pre-existing hook-environment failures.
