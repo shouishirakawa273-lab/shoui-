@@ -20145,3 +20145,34 @@ and the text says so. Stage 4 closes it.
 
 33 tests added, built from the values actually observed on 2026-11-24 rather than
 invented ones. Suite 2848 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (5) — Step 3 Stage 3: BPS joins the per-share watch list
+
+`bps` was mapped in stage 1 and carries the same discontinuity as EPS: 7203's FY
+series of BPS runs 1.154x then **0.228x** into FY2022 then 1.097x, so anyone
+reading the trend sees a 77% collapse in book value that did not happen.
+
+**The divisor for BPS is shareholders' equity, confirmed arithmetically rather
+than assumed.** For 7203 FY2026, `ShEq / BPS` gives 130.3337億株 and `NP / EPS`
+gives 130.3335億株 — agreement to six figures, ratio 1.000001. So BPS sits on the
+same per-share basis as EPS and its numerator is 自己資本, not 純資産 (`Eq`). That
+mattered because both fields exist with different values, and picking the wrong
+one would have produced a plausible-looking but meaningless divisor. The FY2022
+ratio comes out 4.928x against EPS's 4.97x, the small difference being period-end
+shares versus weighted-average shares; both clear ±25% by a wide margin.
+
+`divisor_source_metric` therefore becomes `DIVISOR_SOURCES`, a per-metric mapping,
+and each `PerShareBreak` records which divisor found it. A metric with no
+configured divisor, or whose divisor series is absent, goes to
+`unchecked_metrics` — never silently to "no discontinuity".
+
+**REITs leave BPS unchecked by design.** `ShEq` is empty for 89510 (0/27), so no
+divisor can be built. Substituting `Eq` would be a guess about what a REIT's BPS
+is computed from, which is UNKNOWN. Unchecked is the honest answer.
+
+**Dividends stay out of the watch list.** `DivAnn` and `DivUnit` are documented as
+not retroactively adjusted, so they carry the same hazard, but there is no total
+metric to divide by and this module's method cannot see them. Listing them would
+read as "checked, no discontinuity found", which is worse than their absence.
+
+Suite 2855 passed (+7), same 10 pre-existing hook-environment failures.

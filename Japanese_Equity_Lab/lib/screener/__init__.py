@@ -39,8 +39,8 @@ from lib.screener.forecast_revisions import (
     target_fiscal_year_end,
 )
 from lib.screener.per_share import (
-    DEFAULT_DIVISOR_SOURCE,
     DEFAULT_DIVISOR_TOLERANCE,
+    DIVISOR_SOURCES,
     PER_SHARE_METRICS,
     PerShareBreak,
     PerShareComparability,
@@ -49,8 +49,8 @@ from lib.screener.per_share import (
 from lib.screener.visibility import visible_versions
 
 __all__ = [
-    "DEFAULT_DIVISOR_SOURCE",
     "DEFAULT_DIVISOR_TOLERANCE",
+    "DIVISOR_SOURCES",
     "PER_SHARE_METRICS",
     "UNMAPPED_METRICS",
     "AnnualObservation",

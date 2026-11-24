@@ -16,6 +16,7 @@ from lib.schemas.price_data import CorporateAction, CorporateActionType
 from lib.screener.financial_trend import AnnualObservation, FinancialTrend, MetricTrend
 from lib.screener.per_share import (
     DEFAULT_DIVISOR_TOLERANCE,
+    DIVISOR_SOURCES,
     assess_per_share_comparability,
 )
 
@@ -75,7 +76,7 @@ _REAL_NET_PROFIT = [
 def test_real_7203_split_boundary_is_detected() -> None:
     """実データ回帰。EPSの74%減は業績ではなく基準の切り替わりだった。"""
     trend = _financial_trend([_trend("eps", _REAL_EPS), _trend("net_profit", _REAL_NET_PROFIT)])
-    result = assess_per_share_comparability(code=CODE, trend=trend)
+    result = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["eps"])
 
     assert len(result.breaks) == 1
     found = result.breaks[0]
@@ -89,7 +90,7 @@ def test_real_7203_split_boundary_is_detected() -> None:
 def test_break_detail_does_not_assert_a_cause() -> None:
     """分割と断定しない。増資・訂正でも同じ形になる。"""
     trend = _financial_trend([_trend("eps", _REAL_EPS), _trend("net_profit", _REAL_NET_PROFIT)])
-    detail = assess_per_share_comparability(code=CODE, trend=trend).breaks[0].detail
+    detail = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["eps"]).breaks[0].detail
     assert "断定しない" in detail
     assert "株式分割があった" not in detail
 
@@ -127,18 +128,21 @@ def test_divisor_is_not_compared_across_accounting_standards() -> None:
 
 
 def test_missing_divisor_metric_is_reported_as_unchecked() -> None:
-    """net_profitが無ければ判定できない。できたふりをしない。"""
+    """net_profitが無ければ判定できない。できたふりをしない。
+
+    bpsも既定の監視対象(2026-11-24追加)なので、除数が無い以上こちらも未確認。
+    """
     trend = _financial_trend([_trend("eps", _REAL_EPS)])
     result = assess_per_share_comparability(code=CODE, trend=trend)
     assert result.breaks == ()
-    assert result.unchecked_metrics == ("eps",)
+    assert set(result.unchecked_metrics) == {"eps", "bps"}
 
 
 def test_absent_per_share_metric_is_unchecked_not_ok() -> None:
     trend = _financial_trend([_trend("net_profit", _REAL_NET_PROFIT)])
     result = assess_per_share_comparability(code=CODE, trend=trend)
     assert result.per_share_metrics == ()
-    assert result.unchecked_metrics == ("eps",)
+    assert set(result.unchecked_metrics) == {"eps", "bps"}
 
 
 def test_zero_per_share_value_is_skipped_not_treated_as_zero_divisor() -> None:
@@ -163,7 +167,7 @@ def test_reverse_split_direction_is_also_detected() -> None:
     eps = [(date(2024, 3, 31), "100"), (date(2025, 3, 31), "1000")]
     net = [(date(2024, 3, 31), "1000000"), (date(2025, 3, 31), "1000000")]
     trend = _financial_trend([_trend("eps", eps), _trend("net_profit", net)])
-    result = assess_per_share_comparability(code=CODE, trend=trend)
+    result = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["eps"])
     assert len(result.breaks) == 1
     assert result.breaks[0].divisor_ratio == pytest.approx(Decimal("0.1"), abs=Decimal("0.001"))
 
@@ -232,3 +236,89 @@ def test_tolerance_must_be_positive() -> None:
 def test_default_tolerance_sits_below_the_smallest_split() -> None:
     """最小の分割(2倍)が必ず検知される位置に閾値がある。"""
     assert DEFAULT_DIVISOR_TOLERANCE < 1
+
+
+# --- BPS(2026-11-24追加) ---
+
+# 7203のFY行。実観測値。FY2022で1株当たり基準が切り替わる。
+_REAL_BPS = [
+    (date(2021, 3, 31), "8370.88"),
+    (date(2022, 3, 31), "1904.88"),
+    (date(2023, 3, 31), "2089.08"),
+    (date(2024, 3, 31), "2539.75"),
+]
+_REAL_SHEQ = [
+    (date(2021, 3, 31), "23404547000000"),
+    (date(2022, 3, 31), "26245969000000"),
+    (date(2023, 3, 31), "28338706000000"),
+    (date(2024, 3, 31), "34220991000000"),
+]
+
+
+def test_bps_is_watched_by_default() -> None:
+    """[回帰] BPSはEPSと同じ不連続を持つ。既定の監視対象に入っている。"""
+    assert "bps" in __import__("lib.screener.per_share", fromlist=["x"]).PER_SHARE_METRICS
+
+
+def test_bps_divisor_is_shareholders_equity_not_net_assets() -> None:
+    """除数は自己資本。7203 FY2026で ShEq/BPS と NP/EPS が6桁一致したことから確定。"""
+    assert DIVISOR_SOURCES["bps"] == "provider_reported_sheq"
+    assert DIVISOR_SOURCES["eps"] == "net_profit"
+
+
+def test_real_7203_bps_break_is_detected() -> None:
+    """[回帰] BPS 8370.88 -> 1904.88 は業績ではなく基準の切り替わり。"""
+    trend = _financial_trend([_trend("bps", _REAL_BPS), _trend("provider_reported_sheq", _REAL_SHEQ)])
+    result = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["bps"])
+
+    assert len(result.breaks) == 1
+    found = result.breaks[0]
+    assert found.metric_type == "bps"
+    assert found.divisor_source_metric == "provider_reported_sheq"
+    assert found.from_fiscal_period_end == date(2021, 3, 31)
+    assert found.to_fiscal_period_end == date(2022, 3, 31)
+    assert found.divisor_ratio == pytest.approx(Decimal("4.93"), abs=Decimal("0.01"))
+
+
+def test_eps_and_bps_are_reported_as_separate_breaks() -> None:
+    """同じ境界でも指標ごとに1件ずつ出る。除数も別々に記録される。"""
+    trend = _financial_trend(
+        [
+            _trend("eps", _REAL_EPS),
+            _trend("net_profit", _REAL_NET_PROFIT),
+            _trend("bps", _REAL_BPS),
+            _trend("provider_reported_sheq", _REAL_SHEQ),
+        ]
+    )
+    result = assess_per_share_comparability(code=CODE, trend=trend)
+    assert {b.metric_type for b in result.breaks} == {"eps", "bps"}
+    assert {b.divisor_source_metric for b in result.breaks} == {"net_profit", "provider_reported_sheq"}
+    assert dict(result.divisor_sources) == {"eps": "net_profit", "bps": "provider_reported_sheq"}
+
+
+def test_reit_without_sheq_leaves_bps_unchecked_not_clean() -> None:
+    """[回帰] REITは`ShEq`が空(89510: 0/27)。純資産で代用せず、未確認と報告する。"""
+    trend = _financial_trend([_trend("bps", _REAL_BPS), _trend("provider_reported_eq", _REAL_SHEQ)])
+    result = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["bps"])
+    assert result.breaks == ()
+    assert "bps" in result.unchecked_metrics
+    assert not result.is_comparable_throughout or "bps" in result.unchecked_metrics
+
+
+def test_metric_without_a_configured_divisor_is_unchecked() -> None:
+    """除数の作り方が無い指標を、黙って「問題なし」にしない。"""
+    trend = _financial_trend([_trend("distribution_per_unit", [(date(2024, 6, 30), "11500")])])
+    result = assess_per_share_comparability(code=CODE, trend=trend, per_share_metrics=["distribution_per_unit"])
+    assert result.unchecked_metrics == ("distribution_per_unit",)
+    assert result.breaks == ()
+
+
+def test_dividend_metrics_are_not_in_the_default_watch_list() -> None:
+    """配当・分配金は遡及調整されないが、除数が無いので本手法では検知できない。
+
+    監視対象に入れると「検知できたのに不連続が無い」と誤読される。
+    """
+    from lib.screener.per_share import PER_SHARE_METRICS
+
+    assert "dividend_per_share_annual" not in PER_SHARE_METRICS
+    assert "distribution_per_unit" not in PER_SHARE_METRICS

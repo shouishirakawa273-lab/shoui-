@@ -257,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 "per_share_comparability": {
                     "metrics": list(per_share.per_share_metrics),
-                    "divisor_source_metric": per_share.divisor_source_metric,
+                    "divisor_sources": {m: src for m, src in per_share.divisor_sources},
                     "tolerance": float(per_share.tolerance),
                     "corporate_action_dates": [d.isoformat() for d in per_share.corporate_action_dates],
                     "corporate_actions_known_from": (
@@ -272,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                                 b.from_fiscal_period_end.isoformat() if b.from_fiscal_period_end else None
                             ),
                             "to_fiscal_period_end": (b.to_fiscal_period_end.isoformat() if b.to_fiscal_period_end else None),
+                            "divisor_source_metric": b.divisor_source_metric,
                             "divisor_ratio": _num(b.divisor_ratio),
                             "detail": b.detail,
                         }

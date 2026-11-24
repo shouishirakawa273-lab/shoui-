@@ -56,24 +56,47 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from types import MappingProxyType
 
 from lib.schemas.price_data import CorporateAction
 from lib.screener.financial_trend import FinancialTrend, MetricTrend
 
 logger = logging.getLogger(__name__)
 
-PER_SHARE_METRICS: tuple[str, ...] = ("eps",)
+PER_SHARE_METRICS: tuple[str, ...] = ("eps", "bps")
 """正規化済みのうち1株当たりの指標。
 
-`book_value_per_share` は `financial_trend.UNMAPPED_METRICS` の通り未マッピング
-なので、ここには入れない(無いものを監視対象として宣言しない)。
+`bps` は2026-11-24のStep 3 Stage 1でマッピングした。**EPSと同じ不連続を持つ**:
+7203のFY行のBPSは 1.154倍 → **0.228倍** → 1.097倍 と並び、FY2022で1株当たりの
+基準が切り替わっている。
+
+`distribution_per_unit`(REITの1口当たり分配金)と
+`dividend_per_share_annual`(一株当たり配当)も公式に遡及調整されないと明記されて
+いるため同じ性質を持つが、**除数にできる総額のMetricが無い**ため本モジュールの
+手法では検知できない。ここに入れると「検知できたのに不連続が無い」と誤読される
+ので入れない(`unchecked_metrics` でもなく、対象外)。
 """
 
-DEFAULT_DIVISOR_SOURCE = "net_profit"
+DIVISOR_SOURCES: dict[str, str] = {
+    "eps": "net_profit",
+    "bps": "provider_reported_sheq",
+}
+"""1株当たり指標 -> 除数を作るための総額Metric。
+
+`bps` の除数が自己資本(`ShEq`)で正しいことは**実データで確認した**。7203の
+FY2026で `ShEq / BPS = 130.3337億株`、`NP / EPS = 130.3335億株` と6桁一致する
+(比 1.000001)。つまりBPSはEPSと同じ1株当たり基準に乗っており、純資産(`Eq`)では
+なく自己資本が分子である。推測ではない。
+
+REITでは `ShEq` が空(89510: 0/27)なので `bps` の除数が作れない。その場合は
+`unchecked_metrics` に入り、**「不連続なし」とは報告しない**。REITのBPSが何を
+分子にしているかは `UNKNOWN` であり、`Eq` で代用すれば推測になる。
+"""
+
 DEFAULT_DIVISOR_TOLERANCE = Decimal("0.25")
 
 
@@ -85,6 +108,8 @@ class PerShareBreak:
     accounting_standard: str | None
     from_fiscal_period_end: date | None
     to_fiscal_period_end: date | None
+    divisor_source_metric: str
+    """この不連続を検知するのに使った総額Metric。"""
     divisor_ratio: Decimal
     """後期の除数 / 前期の除数。1.0から離れるほど基準の変化が大きい。"""
     detail: str
@@ -100,13 +125,14 @@ class PerShareComparability:
     breaks: tuple[PerShareBreak, ...]
     corporate_action_dates: tuple[date, ...]
     """Provider確定のCorporate Action Eventの権利落ち日。`known_from` 以降のみ。"""
+    divisor_sources: tuple[tuple[str, str], ...]
+    """実際に使った (1株当たり指標, 除数Metric) の対。"""
     corporate_actions_known_from: date | None
     """Corporate Action Eventを観測できた最も古いセッション。
 
     これより前にEventが無かったという主張ではない。`None` は株価データが無く、
     経路1が全くUNKNOWNであることを意味する。
     """
-    divisor_source_metric: str
     tolerance: Decimal
     unchecked_metrics: tuple[str, ...]
     """除数を取れず不連続判定ができなかった指標。空欄にせず明示する。"""
@@ -136,7 +162,7 @@ def assess_per_share_comparability(
     corporate_actions: Sequence[CorporateAction] = (),
     corporate_actions_known_from: date | None = None,
     per_share_metrics: Sequence[str] = PER_SHARE_METRICS,
-    divisor_source_metric: str = DEFAULT_DIVISOR_SOURCE,
+    divisor_sources: Mapping[str, str] = MappingProxyType(DIVISOR_SOURCES),
     tolerance: Decimal = DEFAULT_DIVISOR_TOLERANCE,
 ) -> PerShareComparability:
     """1株当たり指標が全期間を通じて同じ基準かを調べる。
@@ -144,23 +170,35 @@ def assess_per_share_comparability(
     会計基準が同じseries同士でのみ除数を比較する。基準をまたぐ比較は
     `financial_trend` が既にseriesを分けており、ここで畳み直さない。
 
+    除数は指標ごとに異なる(`DIVISOR_SOURCES`)。除数Metricが `divisor_sources` に
+    無い指標、またはその系列が存在しない指標は `unchecked_metrics` に入り、
+    **「不連続なし」とは報告しない。**
+
     値を書き換えないので、戻り値を無視しても推移の数値は変わらない。
     """
     if tolerance <= 0:
         raise ValueError(f"tolerance must be positive: {tolerance!r}")
 
-    divisor_trends = {t.accounting_standard: t for t in trend.trends if t.metric_type == divisor_source_metric}
-
     breaks: list[PerShareBreak] = []
     unchecked: list[str] = []
     checked_metrics: list[str] = []
+    used_sources: list[tuple[str, str]] = []
 
     for metric_type in per_share_metrics:
+        divisor_source_metric = divisor_sources.get(metric_type)
+        if divisor_source_metric is None:
+            # 除数の作り方が決まっていない指標。黙って「問題なし」にしない。
+            unchecked.append(metric_type)
+            continue
+
         targets = [t for t in trend.trends if t.metric_type == metric_type]
         if not targets:
             unchecked.append(metric_type)
             continue
         checked_metrics.append(metric_type)
+        used_sources.append((metric_type, divisor_source_metric))
+
+        divisor_trends = {t.accounting_standard: t for t in trend.trends if t.metric_type == divisor_source_metric}
 
         checked_any = False
         for target in targets:
@@ -194,6 +232,7 @@ def assess_per_share_comparability(
                         accounting_standard=target.accounting_standard,
                         from_fiscal_period_end=earlier,
                         to_fiscal_period_end=later,
+                        divisor_source_metric=divisor_source_metric,
                         divisor_ratio=ratio,
                         detail=(
                             f"{divisor_source_metric}/{metric_type} が {earlier.isoformat()} 期から "
@@ -224,7 +263,7 @@ def assess_per_share_comparability(
         breaks=tuple(breaks),
         corporate_action_dates=action_dates,
         corporate_actions_known_from=corporate_actions_known_from,
-        divisor_source_metric=divisor_source_metric,
+        divisor_sources=tuple(used_sources),
         tolerance=tolerance,
         unchecked_metrics=tuple(unchecked),
     )
