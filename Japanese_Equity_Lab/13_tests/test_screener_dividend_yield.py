@@ -446,25 +446,21 @@ def test_history_covers_every_visible_period_oldest_first() -> None:
     assert [p.value for p in history] == [Decimal(v) for v in ("600", "612", "1830", "1830", "1716")]
 
 
-def test_history_marks_the_basis_discontinuity() -> None:
-    """3283の実データでは 2024-11-30 → 2025-05-31 で約2.99倍。
+def test_history_reports_that_it_crosses_a_break_without_placing_it() -> None:
+    """[回帰] 段差の位置を主張しない。epsの遷移先に印を挿すと1期ずれた。
 
-    印が無ければ 612 → 1830 を「分配金が3倍になった」と読む。
+    3283の実データは `4420 5521 1830` で、約3倍の段差は eps基準の
+    2024-11-30→2025-05-31 ではなく 2025-05-31→2025-11-30 にあった。
+    報告するのは**eps基準での遷移元期末**だけで、配当側の位置ではない。
     """
-    history = _reit_assess(  # type: ignore[attr-defined]
-        _FIVE_PERIODS,
-        basis_break_period_ends=frozenset({date(2025, 5, 31)}),
-    ).history
-    assert [p.basis_break_before for p in history] == [False, False, True, False, False]
+    result = _reit_assess(_FIVE_PERIODS, basis_break_period_ends=frozenset({date(2025, 5, 31)}))
+    assert result.history_crosses_basis_break_after == (date(2024, 11, 30),)  # type: ignore[attr-defined]
 
 
-def test_first_history_point_is_never_marked() -> None:
-    """先頭の点には「直前」が無い。比較対象が系列の外にあるので印を立てない。"""
-    history = _reit_assess(  # type: ignore[attr-defined]
-        _FIVE_PERIODS,
-        basis_break_period_ends=frozenset({date(2024, 5, 31)}),
-    ).history
-    assert history[0].basis_break_before is False
+def test_a_break_before_the_history_starts_is_not_reported() -> None:
+    """先頭の点より前の不連続は、比較対象が系列の外にあるので報告しない。"""
+    result = _reit_assess(_FIVE_PERIODS, basis_break_period_ends=frozenset({date(2024, 5, 31)}))
+    assert result.history_crosses_basis_break_after == ()  # type: ignore[attr-defined]
 
 
 def test_history_survives_a_missing_price() -> None:

@@ -135,12 +135,6 @@ class DividendHistoryPoint:
 
     fiscal_period_end: date
     value: Decimal
-    basis_break_before: bool
-    """直前の期との間に1口/1株当たり基準の不連続があるか。
-
-    **印を付けずに並べてはならない。** 分割をまたいだ約3倍の段差は、
-    印が無ければ「分配金が3倍になった」と読める。
-    """
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -157,6 +151,22 @@ class DividendYieldAssessment:
 
     合算した直近2期だけでは「直近の減少が初めてか、何度目か」が分からない。
     REITではDPUの推移がROEより中心的な系列なので、全期を持ち上げる。
+    """
+    history_crosses_basis_break_after: tuple[date, ...] = ()
+    """推移が基準の不連続をまたぐことが分かっている、**eps基準での遷移元**期末。
+
+    **この位置に配当の段差があるとは言えない。** 2026-11-24の実データでは、
+    配当の段差はeps基準の1期**あと**に現れた:
+
+    - 3283: eps基準は 2024-11-30 → 2025-05-31。配当は 4420 → 5521 → 1830 で、
+      約3倍の段差は 2025-05-31 → 2025-11-30 にある。
+    - 8967: eps基準は 2024-07-31 → 2025-01-31。配当は 5300 → 5578 → 2150 で、
+      段差は 2025-01-31 → 2025-07-31 にある。
+
+    期中の分割では、その期のEPSは新しい口数で割られる一方、その期の分配金は
+    旧い口数ベースで宣言されている——という説明が付きそうだが、**確認していない。**
+    値の大きさから段差位置を当てるのは禁止(分配金は売却益で正当に3倍跳ねうる)。
+    だから「またぐ」とだけ言い、「どこで」は言わない。
     """
 
     @property
@@ -226,20 +236,20 @@ def _actual_by_period(trend: FinancialTrend, metric_type: str) -> dict[date, tup
 
 def _build_history(
     by_period: Mapping[date, tuple[Decimal, datetime | None]],
-    *,
-    basis_break_period_ends: frozenset[date],
 ) -> tuple[DividendHistoryPoint, ...]:
-    ends = sorted(by_period)
-    return tuple(
-        DividendHistoryPoint(
-            fiscal_period_end=end,
-            value=by_period[end][0],
-            # 先頭の点には「直前」が無い。不連続の遷移先が先頭なら、
-            # 比較対象がこの系列の外にあるので印を立てない。
-            basis_break_before=index > 0 and end in basis_break_period_ends,
-        )
-        for index, end in enumerate(ends)
-    )
+    return tuple(DividendHistoryPoint(fiscal_period_end=end, value=by_period[end][0]) for end in sorted(by_period))
+
+
+def _breaks_inside_history(
+    history: Sequence[DividendHistoryPoint],
+    basis_break_period_ends: frozenset[date],
+) -> tuple[date, ...]:
+    """推移の内側に入る不連続の、eps基準での遷移元期末。
+
+    先頭の点より前の不連続は、比較対象が系列の外にあるので報告しない。
+    """
+    ends = [p.fiscal_period_end for p in history]
+    return tuple(previous for previous, end in zip(ends[:-1], ends[1:], strict=True) if end in basis_break_period_ends)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -404,7 +414,11 @@ def assess_dividend_yield(
 
     resolved_price = _to_decimal_price(price)
 
-    def _empty(reason: str, history: tuple[DividendHistoryPoint, ...] = ()) -> DividendYieldAssessment:
+    def _empty(
+        reason: str,
+        history: tuple[DividendHistoryPoint, ...] = (),
+        crosses: tuple[date, ...] = (),
+    ) -> DividendYieldAssessment:
         return DividendYieldAssessment(
             code=code,
             instrument_kind=instrument_kind,
@@ -413,6 +427,7 @@ def assess_dividend_yield(
             figures=(),
             unknown_reason=reason,
             history=history,
+            history_crosses_basis_break_after=crosses,
         )
 
     metric_type = _ACTUAL_METRIC_BY_KIND.get(instrument_kind)
@@ -421,12 +436,13 @@ def assess_dividend_yield(
 
     # 推移は株価に依らない。**利回りが出せなくても推移は出す。**
     by_period = _actual_by_period(actual_trend, metric_type)
-    history = _build_history(by_period, basis_break_period_ends=basis_break_period_ends)
+    history = _build_history(by_period)
+    crosses = _breaks_inside_history(history, basis_break_period_ends)
 
     if resolved_price is None:
-        return _empty("株価が取得できないため算出できない", history)
+        return _empty("株価が取得できないため算出できない", history, crosses)
     if resolved_price <= 0:
-        return _empty(f"株価が正の値でないため算出できない(price={resolved_price})", history)
+        return _empty(f"株価が正の値でないため算出できない(price={resolved_price})", history, crosses)
 
     family = metric_family(metric_type)
     figures: list[DividendYieldFigure] = []
@@ -469,7 +485,7 @@ def assess_dividend_yield(
         )
 
     if not figures:
-        return _empty(f"{metric_type} の予想・実績いずれも判定時点で可視でない", history)
+        return _empty(f"{metric_type} の予想・実績いずれも判定時点で可視でない", history, crosses)
 
     logger.info("screener: %s dividend yield from %d basis/bases", code, len(figures))
     return DividendYieldAssessment(
@@ -480,4 +496,5 @@ def assess_dividend_yield(
         figures=tuple(figures),
         unknown_reason=None,
         history=history,
+        history_crosses_basis_break_after=crosses,
     )

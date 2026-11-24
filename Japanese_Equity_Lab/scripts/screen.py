@@ -497,13 +497,15 @@ def main(argv: list[str] | None = None) -> int:
                         {
                             "fiscal_period_end": p.fiscal_period_end.isoformat(),
                             "value": _num(p.value),
-                            "basis_break_before": p.basis_break_before,
                         }
                         for p in dividend.history
                     ],
+                    "history_crosses_basis_break_after": [d.isoformat() for d in dividend.history_crosses_basis_break_after],
                     "note": (
-                        "historyは実績配当の期別推移(古い順)。basis_break_before=trueの点は"
-                        "直前の期と1口/1株当たり基準が切れており、**前後の増減を読んではならない。**"
+                        "historyは実績配当の期別推移(古い順)。"
+                        "history_crosses_basis_break_afterが空でなければ、この並びは1口/1株当たり"
+                        "基準の不連続をまたぐ。日付はepsで検知した遷移元期末であり、**配当側の"
+                        "段差がどの期かではない**(実データでは1期あとに現れた)。位置は未確定。"
                         "予想と実績は別の量なので両方を並べる。片方が無いときもう片方へ"
                         "暗黙に落とさない。yield_ratioは小数(0.0312=3.12%)。"
                         "実績の分子はProviderのField単位では期ごとの値で、半期決算のREITでは"

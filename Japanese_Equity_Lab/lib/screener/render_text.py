@@ -206,22 +206,20 @@ def _dividend_lines(dividend: DividendYieldAssessment) -> list[str]:
     return lines
 
 
-_BASIS_BREAK_MARK = "(基準不連続)"
-"""推移の中で1口/1株当たり基準が切れた位置。
-
-記号+凡例ではなく語を置く。1画面では凡例行が1行を食うし、記号は
-東アジア幅が曖昧(`‖` は Ambiguous)でラベル列の桁が崩れる。
-「変更」ではなく「不連続」——検知したのは除数の段差で、分割・併合・増資・
-訂正のどれかとは断定しない(`lib/screener/per_share.py`)。
-"""
-
-
 def _dividend_history_lines(dividend: DividendYieldAssessment) -> list[str]:
     """実績配当の期別推移。合算した直近2期だけでは増減の履歴が読めない。
 
     REITではDPUの推移がROEより中心的な系列である。「直近の減少が初めてか、
     何度目か」はこの行だけが答える(2026-11-24、3283の−6.2%と2979の−13.3%を
     前に、判断の土台が無いことが分かった)。
+
+    ## 段差の位置を行の中に示さない
+
+    最初の実装はeps基準の遷移先期末に `(基準不連続)` を挿していた。**実データで
+    1期ずれた。** 3283は `4420 5521 | 1830` と出て、比較できる 4420 と 5521 の
+    間に印が立ち、比較できない 5521 と 1830 の間に印が無かった——
+    **両方向に誤らせる、印が無いより悪い状態。** 位置は言わず、またぐことだけ言う
+    (`DividendYieldAssessment.history_crosses_basis_break_after`)。
     """
     if not dividend.history:
         return []
@@ -229,12 +227,15 @@ def _dividend_history_lines(dividend: DividendYieldAssessment) -> list[str]:
     points = dividend.history
     shown = points[-_MAX_HISTORY_POINTS:]
     span = f"(直近{len(shown)}/{len(points)}期)" if len(shown) < len(points) else f"({len(points)}期)"
-    parts: list[str] = []
-    for index, point in enumerate(shown):
-        if index > 0 and point.basis_break_before:
-            parts.append(_BASIS_BREAK_MARK)
-        parts.append(_num(point.value, digits=0))
-    return [f"  {_label(label)}{span} {' '.join(parts)}"]
+    lines = [f"  {_label(label)}{span} " + " ".join(_num(p.value, digits=0) for p in shown)]
+
+    first_shown = shown[0].fiscal_period_end
+    crossing = [d for d in dividend.history_crosses_basis_break_after if d >= first_shown]
+    if crossing:
+        dates = ", ".join(d.isoformat() for d in crossing)
+        lines.append(f"  {_label('')}※ この並びは1口/1株当たり基準の不連続をまたぐ(eps基準では {dates} の直後)")
+        lines.append(f"  {_label('')}  配当側の段差がどの期かは確認できていないので、増減をそのまま読めない")
+    return lines
 
 
 def _roe_lines(trend: FinancialTrend) -> list[str]:

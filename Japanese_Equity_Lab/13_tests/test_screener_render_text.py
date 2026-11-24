@@ -708,18 +708,14 @@ def test_correlation_prints_every_pair_not_only_breaches() -> None:
 # --- 実績配当の期別推移(2026-11-24追加) ---
 
 
-def _history(values: list[tuple[date, str]], break_at: date | None = None) -> tuple[DividendHistoryPoint, ...]:
-    return tuple(
-        DividendHistoryPoint(
-            fiscal_period_end=end,
-            value=Decimal(value),
-            basis_break_before=index > 0 and end == break_at,
-        )
-        for index, (end, value) in enumerate(values)
-    )
+def _history(values: list[tuple[date, str]]) -> tuple[DividendHistoryPoint, ...]:
+    return tuple(DividendHistoryPoint(fiscal_period_end=end, value=Decimal(value)) for end, value in values)
 
 
-def _reit_dividend(history: tuple[DividendHistoryPoint, ...]) -> DividendYieldAssessment:
+def _reit_dividend(
+    history: tuple[DividendHistoryPoint, ...],
+    crosses: tuple[date, ...] = (),
+) -> DividendYieldAssessment:
     return DividendYieldAssessment(
         code=CODE,
         instrument_kind=InstrumentKind.REIT,
@@ -728,6 +724,7 @@ def _reit_dividend(history: tuple[DividendHistoryPoint, ...]) -> DividendYieldAs
         figures=(),
         unknown_reason="テスト用",
         history=history,
+        history_crosses_basis_break_after=crosses,
     )
 
 
@@ -738,14 +735,25 @@ def test_distribution_history_is_rendered_with_its_period_count() -> None:
     assert "1830 1716" in line
 
 
-def test_distribution_history_marks_a_basis_break_inline() -> None:
-    """[回帰] 612 → 1830 を「3倍になった」と読ませない。"""
-    history = _history(
-        [(date(2024, 11, 30), "612"), (date(2025, 5, 31), "1830"), (date(2026, 5, 31), "1716")],
-        break_at=date(2025, 5, 31),
-    )
-    line = next(x for x in _render(dividend=_reit_dividend(history)) if "分配金推移" in x)
-    assert "612 (基準不連続) 1830 1716" in line
+def test_distribution_history_warns_without_placing_the_break() -> None:
+    """[回帰] 段差の位置を行の中に示さない。epsの遷移先に印を挿すと1期ずれた。
+
+    3283の実データは `4420 5521 1830` で、印は比較できる 4420/5521 の間に立ち、
+    比較できない 5521/1830 の間には立たなかった。両方向に誤らせていた。
+    """
+    history = _history([(date(2024, 11, 30), "4420"), (date(2025, 5, 31), "5521"), (date(2025, 11, 30), "1830")])
+    rendered = _render(dividend=_reit_dividend(history, crosses=(date(2024, 11, 30),)))
+    line = next(x for x in rendered if "分配金推移" in x)
+    assert "4420 5521 1830" in line
+    assert "基準不連続" not in line
+    assert any("不連続をまたぐ" in x and "2024-11-30" in x for x in rendered)
+    assert any("どの期かは確認できていない" in x for x in rendered)
+
+
+def test_a_history_with_no_break_gets_no_warning() -> None:
+    history = _history([(date(2025, 11, 30), "2746"), (date(2026, 5, 31), "2381")])
+    rendered = _render(dividend=_reit_dividend(history))
+    assert not any("不連続" in x for x in rendered if "分配金推移" in x or "※" in x)
 
 
 def test_distribution_history_states_the_truncation() -> None:
