@@ -20417,3 +20417,41 @@ and `per_share.py` reports those independently.
 cheap/expensive judgement. The plan forbids recommendation output
 (「推奨判定、スコアリング、自動ランキング」), so the screener reports the number and
 the human reads it.
+
+## 2026-11-24 (11) — Step 3 Stage 4b: percentiles and the earnings schedule
+
+Implements the policy recorded at (10), unchanged. Two modules, both reading raw
+payloads and computing nothing the provider already publishes.
+
+`lib/screener/valuation_percentile.py` takes `/equities/valuation` rows and
+reports, per indicator, the current value, the empirical-CDF percentile, the
+sample size, and **separate counts for non-positive and missing exclusions** — so
+the denominator is never silent and a thin `FwdPER` series is visible rather than
+quietly averaged over. Coverage dates come out on every call, so a three-year
+sample cannot be read as ten. Staleness imports `liquidity.py`'s constant rather
+than restating the number, which makes the reuse real in code instead of a claim
+in a comment.
+
+`lib/screener/earnings_schedule.py` keeps every visible (published, scheduled)
+pair rather than the latest one, because collapsing them erases the revision
+history that the scheduled-date query would also have erased. `revision_count`
+counts second-and-later publications for the same `(FYE, FQName)`, so a date
+re-reported at the same value still registers as a report. Visibility is by
+`PubDate <= decision_at`; the module's docstring states plainly that this is the
+optimistic side of a day-granularity boundary, since publication times are not
+provided, and why that was judged acceptable here.
+
+**The screener does not call `/equities/valuation` for a REIT at all.** Not "calls
+it and discards nulls" — `ProdCat` decides before the request, which is both the
+rule from (10) and one fewer pointless HTTP call. REITs get a stated reason in
+place of indicators.
+
+Three more now-false claims corrected: `pbr` leaves `UNMAPPED_METRICS`'s filter,
+and `per_percentile` no longer says orchestration is missing, because it is not.
+
+37 tests added. Suite 2948 passed, same 10 pre-existing hook-environment failures.
+
+**Step 3's output specification is now complete.** All five items the plan lists
+are produced. What remains for the T gate is acceptance, not construction: three
+or more codes verified (7203 and 8951 done) and one real use for an actual
+investment decision.

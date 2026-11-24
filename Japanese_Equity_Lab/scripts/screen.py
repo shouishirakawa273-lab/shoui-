@@ -72,6 +72,8 @@ from lib.screener import (  # noqa: E402
     InstrumentKind,
     assess_dividend_yield,
     assess_per_share_comparability,
+    assess_valuation_percentiles,
+    build_earnings_schedule,
     build_financial_trend,
     build_forecast_revision_series,
     classify_codes,
@@ -212,6 +214,26 @@ def main(argv: list[str] | None = None) -> int:
         master_payload = []
     instrument_kinds = classify_codes(codes=codes, master_payload=master_payload)
 
+    # Stage 4b。valuationはREITでMktCap以外すべてnullなので、REITには引かない
+    # ——nullを見てから切り替えるのではなく、種別で先に決める。
+    valuation_codes = [c for c in codes if instrument_kinds.get(c) is InstrumentKind.SHARE]
+    valuation_rows: list[dict[str, object]] = []
+    valuation_unavailable_reason: str | None = None
+    if valuation_codes:
+        try:
+            valuation_rows = list(adapter.fetch_valuation_indicators(codes=valuation_codes).payload)
+        except DataSourceError as exc:
+            valuation_unavailable_reason = str(exc)
+            logger.warning("screener: /equities/valuation が取得できません: %s", exc)
+
+    earnings_rows: list[dict[str, object]] = []
+    earnings_unavailable_reason: str | None = None
+    try:
+        earnings_rows = list(adapter.fetch_earnings_dates(codes=codes).payload)
+    except DataSourceError as exc:
+        earnings_unavailable_reason = str(exc)
+        logger.warning("screener: /fins/earnings-date が取得できません: %s", exc)
+
     entries = []
     # 警告の集計はdataclassから直接取る。整形済みJSONを読み返して判定しない。
     liquidity_warned: list[str] = []
@@ -275,6 +297,13 @@ def main(argv: list[str] | None = None) -> int:
             decision_at=as_of,
         )
 
+        valuation = (
+            assess_valuation_percentiles(code=code, rows=valuation_rows, decision_at=as_of, window_years=args.years)
+            if instrument_kinds.get(code) is InstrumentKind.SHARE
+            else None
+        )
+        earnings = build_earnings_schedule(code=code, rows=earnings_rows, decision_at=as_of)
+
         code_bars = raw_by_code.get(code, [])
         per_share = assess_per_share_comparability(
             code=code,
@@ -323,6 +352,65 @@ def main(argv: list[str] | None = None) -> int:
                     for t in trend.trends
                 ],
                 "instrument_kind": instrument_kinds.get(code, InstrumentKind.UNKNOWN).value,
+                "valuation_percentiles": (
+                    {
+                        "window_years": valuation.window_years,
+                        "window_start": valuation.window_start.isoformat(),
+                        "current_session": (valuation.current_session.isoformat() if valuation.current_session else None),
+                        "staleness_days": valuation.staleness_days,
+                        "unknown_reason": valuation.unknown_reason,
+                        "indicators": [
+                            {
+                                "indicator": i.indicator,
+                                "current_value": _num(i.current_value),
+                                "percentile": _num(i.percentile),
+                                "sample_size": i.sample_size,
+                                "excluded_non_positive": i.excluded_non_positive,
+                                "excluded_missing": i.excluded_missing,
+                                "first_session": (i.first_session.isoformat() if i.first_session else None),
+                                "last_session": (i.last_session.isoformat() if i.last_session else None),
+                                "unknown_reason": i.unknown_reason,
+                            }
+                            for i in valuation.indicators
+                        ],
+                        "note": (
+                            "percentileは経験分布関数 count(x<=現在値)/n の小数(0.23=下から23%)。"
+                            "非正の値は分布から除外し件数を excluded_non_positive に出す"
+                            "(負のPERは「安い」ではなく「赤字」)。現在値が非正なら分位はUNKNOWN。"
+                            "PER・PBRは権利落ち日で株価と一株当たり価値が打ち消し合うため分割の処理は不要。"
+                        ),
+                    }
+                    if valuation is not None
+                    else {
+                        "unknown_reason": (
+                            "InstrumentKind="
+                            + instrument_kinds.get(code, InstrumentKind.UNKNOWN).value
+                            + " では/equities/valuationがMktCap以外を返さないため算出しない"
+                        ),
+                        "indicators": [],
+                    }
+                ),
+                "earnings_schedule": {
+                    "next_scheduled": (
+                        {
+                            "scheduled_on": (
+                                earnings.next_scheduled.scheduled_on.isoformat() if earnings.next_scheduled.scheduled_on else None
+                            ),
+                            "published_on": earnings.next_scheduled.published_on.isoformat(),
+                            "fiscal_quarter": earnings.next_scheduled.fiscal_quarter,
+                            "fiscal_year_end": earnings.next_scheduled.fiscal_year_end,
+                        }
+                        if earnings.next_scheduled is not None
+                        else None
+                    ),
+                    "revision_count": earnings.revision_count,
+                    "visible_entry_count": len(earnings.entries),
+                    "unknown_reason": earnings.unknown_reason,
+                    "note": (
+                        "予定日は改定されるので(公表日, 予定日)の対を全て保持する。"
+                        "予定日での検索は訂正前が消えるため使わない(PubDate基準で可視性を判定)。"
+                    ),
+                },
                 "dividend_yield": {
                     "price": _num(dividend.price),
                     "price_session": (dividend.price_session.isoformat() if dividend.price_session else None),
@@ -425,13 +513,22 @@ def main(argv: list[str] | None = None) -> int:
             for p in correlation.pairs
         ],
         "unavailable": {
-            "metrics": [m for m in UNMAPPED_METRICS if m not in ("roe", "dividend_yield", "book_value_per_share")],
+            "metrics": [m for m in UNMAPPED_METRICS if m not in ("roe", "dividend_yield", "book_value_per_share", "pbr")],
             "reason": (
                 "2026-11-24にnormalize.pyへのマッピングは完了している"
                 "(provider_reported_roe / bps / shares_outstanding_period_end 等)。"
                 "ここで出ないのはScreener側のOrchestrationが未実装のため。"
             ),
-            "per_percentile": "lib/valuation にモデルはあるがOrchestrationが未整備のため未実装",
+            "per_percentile": "2026-11-24に entries[].valuation_percentiles として実装済み",
+        },
+        "valuation_source": {
+            "available": valuation_unavailable_reason is None,
+            "unavailable_reason": valuation_unavailable_reason,
+            "requested_codes": valuation_codes,
+        },
+        "earnings_date_source": {
+            "available": earnings_unavailable_reason is None,
+            "unavailable_reason": earnings_unavailable_reason,
         },
         "instrument_master": {
             "available": master_unavailable_reason is None,
