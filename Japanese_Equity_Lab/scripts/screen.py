@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -66,15 +67,40 @@ from lib.market_calendar import JST, session_close_at  # noqa: E402
 from lib.pretrade_risk import assess_correlation, assess_liquidity  # noqa: E402
 from lib.pretrade_risk.liquidity import DEFAULT_MAX_STALENESS_DAYS, LiquidityOutcome  # noqa: E402
 from lib.screener import (  # noqa: E402
+    InstrumentKind,
+    assess_dividend_yield,
     assess_per_share_comparability,
     build_financial_trend,
     build_forecast_revision_series,
+    classify_codes,
 )
 from lib.screener.financial_trend import UNMAPPED_METRICS  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 PRICE_FETCH_MARGIN_DAYS = 600
 FINS_FETCH_MARGIN_DAYS = 4000  # 約11年。通期実績を10年ぶん拾うための余裕。
-TREND_METRIC_TYPES = ("sales", "operating_profit", "ordinary_profit", "net_profit", "eps", "total_assets")
+TREND_METRIC_TYPES = (
+    "sales",
+    "operating_profit",
+    "ordinary_profit",
+    "net_profit",
+    "eps",
+    "total_assets",
+    # Step 3 Stage 4a(2026-11-24)。方針書の出力仕様「ROEの10年推移」。
+    # ProviderがFY開示にのみ入れるので、年次で1点ずつ並ぶ(7203: 11/41行)。
+    "provider_reported_roe",
+    # per_share.py がBPSの不連続を検知するのに必要(除数は自己資本)。
+    "bps",
+    "provider_reported_sheq",
+)
+
+DIVIDEND_ACTUAL_METRIC_TYPES = ("dividend_per_share_annual", "distribution_per_unit")
+"""配当利回りの実績ベース用。表示する推移とは別に取る。
+
+`TREND_METRIC_TYPES` に混ぜると、方針書が指定した推移の中身が膨らんで
+「ざっと見」でなくなる。PIT絞りは同じ `build_financial_trend` を使い回す。
+"""
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -170,6 +196,17 @@ def main(argv: list[str] | None = None) -> int:
 
     cutoff = date(as_of.year - args.years, as_of.month, as_of.day)
 
+    # 銘柄種別。**値を見てからソースを選ばないため、取得前に決め打ちする**
+    # (lib/screener/instrument.py)。
+    master_unavailable_reason: str | None = None
+    try:
+        master_payload = adapter.fetch_equities_master(as_of=as_of.date()).payload
+    except DataSourceError as exc:
+        master_unavailable_reason = str(exc)
+        logger.warning("screener: /equities/master が取得できずInstrumentKindは全てUNKNOWNです: %s", exc)
+        master_payload = []
+    instrument_kinds = classify_codes(codes=codes, master_payload=master_payload)
+
     entries = []
     # 警告の集計はdataclassから直接取る。整形済みJSONを読み返して判定しない。
     liquidity_warned: list[str] = []
@@ -207,6 +244,31 @@ def main(argv: list[str] | None = None) -> int:
         # 取得不可とも違うので別枠へ移す(IFRS採用銘柄の経常利益など)。
         not_applicable_families = sorted({s.metric_family for s in forecasts if s.is_not_applicable_under_standard})
         forecasts = tuple(s for s in forecasts if not s.is_not_applicable_under_standard)
+
+        dividend_trend = build_financial_trend(
+            code=code,
+            envelopes=envelopes_by_code.get(code, []),
+            metrics=code_metrics,
+            revision_histories=histories,
+            decision_at=as_of,
+            availability_semantics=semantics,
+            metric_types=DIVIDEND_ACTUAL_METRIC_TYPES,
+            include_unknown_availability=args.include_unknown_availability,
+        )
+        latest_bar = max(
+            (b for b in raw_by_code.get(code, []) if session_close_at(b.session_date) <= as_of),
+            key=lambda b: b.session_date,
+            default=None,
+        )
+        dividend = assess_dividend_yield(
+            code=code,
+            instrument_kind=instrument_kinds.get(code, InstrumentKind.UNKNOWN),
+            price=latest_bar.close if latest_bar is not None else None,
+            price_session=latest_bar.session_date if latest_bar is not None else None,
+            actual_trend=dividend_trend,
+            forecast_series=forecasts,
+            decision_at=as_of,
+        )
 
         code_bars = raw_by_code.get(code, [])
         per_share = assess_per_share_comparability(
@@ -255,6 +317,29 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     for t in trend.trends
                 ],
+                "instrument_kind": instrument_kinds.get(code, InstrumentKind.UNKNOWN).value,
+                "dividend_yield": {
+                    "price": _num(dividend.price),
+                    "price_session": (dividend.price_session.isoformat() if dividend.price_session else None),
+                    "unknown_reason": dividend.unknown_reason,
+                    "figures": [
+                        {
+                            "basis": f.basis.value,
+                            "source_metric_type": f.source_metric_type,
+                            "dividend": _num(f.dividend),
+                            "yield_ratio": _num(f.yield_ratio),
+                            "fiscal_period_end": (f.fiscal_period_end.isoformat() if f.fiscal_period_end else None),
+                            "published_at": (f.published_at.isoformat() if f.published_at else None),
+                        }
+                        for f in dividend.figures
+                    ],
+                    "note": (
+                        "予想と実績は別の量なので両方を並べる。片方が無いときもう片方へ"
+                        "暗黙に落とさない。yield_ratioは小数(0.0312=3.12%)。"
+                        "一株当たり配当は分割の遡及調整がされないが、現在値は最新の配当と"
+                        "最新の株価で期をまたがないため段差を踏まない(分位は踏むので出さない)。"
+                    ),
+                },
                 "per_share_comparability": {
                     "metrics": list(per_share.per_share_metrics),
                     "divisor_sources": {m: src for m, src in per_share.divisor_sources},
@@ -335,13 +420,17 @@ def main(argv: list[str] | None = None) -> int:
             for p in correlation.pairs
         ],
         "unavailable": {
-            "metrics": list(UNMAPPED_METRICS),
+            "metrics": [m for m in UNMAPPED_METRICS if m not in ("roe", "dividend_yield", "book_value_per_share")],
             "reason": (
                 "2026-11-24にnormalize.pyへのマッピングは完了している"
                 "(provider_reported_roe / bps / shares_outstanding_period_end 等)。"
                 "ここで出ないのはScreener側のOrchestrationが未実装のため。"
             ),
             "per_percentile": "lib/valuation にモデルはあるがOrchestrationが未整備のため未実装",
+        },
+        "instrument_master": {
+            "available": master_unavailable_reason is None,
+            "unavailable_reason": master_unavailable_reason,
         },
         "warnings": {
             "liquidity": liquidity_warned,

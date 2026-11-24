@@ -20176,3 +20176,62 @@ metric to divide by and this module's method cannot see them. Listing them would
 read as "checked, no discontinuity found", which is worse than their absence.
 
 Suite 2855 passed (+7), same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (6) — Step 3 Stage 4a: ROE trend, dividend yield, instrument routing
+
+Deliberately ordered before the two new endpoints, so that stage 1's sixteen
+mappings meet real data before more code is stacked on them. Two things in those
+mappings were reasoned rather than observed and this is what tests them:
+`provider_reported_roe` was given CUMULATIVE because its numerator is a period
+flow, by analogy with `eps` — internal precedent, not observation; and ROE
+appearing only on FY rows is expected to yield a clean annual series, which no one
+has watched happen.
+
+**`ProdCat` routing comes first, before any value is read.** `lib/screener/
+instrument.py` maps the eight official codes onto four kinds. The grouping is by
+*which field to read*, not by the codes themselves: domestic shares, foreign
+shares and depositary receipts all use per-share dividend fields and so collapse
+into `SHARE`; REITs use per-unit distributions and stay separate; ETFs and
+preferred subscription certificates go to `OTHER`, meaning known but not covered.
+An unseen code resolves to `UNKNOWN`, not `OTHER`, so a new product category is
+exposed rather than quietly absorbed. Since `011` includes preferred shares, the
+`SHARE` label is explicitly not a claim that something is common stock.
+
+**Dividend yield reports forecast and trailing side by side.** They are different
+quantities, and letting one stand in for the other when it is missing would put a
+different number under the same name. Market convention uses the forecast, so both
+are labelled and absent ones are stated absent. The ratio is a decimal, matching
+`/equities/valuation`'s ROE convention rather than a percentage.
+
+Current value only, as decided on 2026-11-22, and the reason is worth recording
+precisely: dividend per share is not retroactively adjusted for splits, but the
+*current* yield pairs the latest dividend with the latest price, so no comparison
+crosses a period boundary and the discontinuity is never touched. A percentile
+would touch it.
+
+Field selection is fixed by instrument kind and never falls back on an empty
+value. A REIT's empty `dividend_per_share_annual` is not a retrieval failure — it
+is a concept the issuer does not report — and the same holds in reverse for a
+common stock's empty `DivUnit`. `OTHER` and `UNKNOWN` produce nothing at all,
+because which field would be right has not been confirmed.
+
+The forecast comes through the existing revision machinery unchanged: the new
+metric names end in `_current_year_forecast`, so `build_forecast_revision_series`
+already picks them up and `metric_family` already strips them correctly. A side
+effect of stage 1 worth noting is that **dividend forecast revisions now appear in
+`forecast_revisions` automatically**, which is useful on its own. The current
+forecast is the nearest target fiscal year not yet ended, and within it the last
+revision carrying a number — so the value survives the slot closing at the
+year's FY disclosure.
+
+Actual dividends ride a second `build_financial_trend` call rather than joining
+`TREND_METRIC_TYPES`, which would have bloated the trend the plan specifies.
+`provider_reported_roe`, `bps` and `provider_reported_sheq` do join it: ROE
+because the plan asks for it, the other two because `per_share.py` needs them to
+see the BPS break.
+
+A `/equities/master` failure degrades every code to `UNKNOWN` rather than aborting
+the run, and says so in the output under `instrument_master` as well as in the
+log, since a log line nobody reads is not a disclosure.
+
+37 tests added. Suite 2892 passed, same 10 pre-existing hook-environment failures.
