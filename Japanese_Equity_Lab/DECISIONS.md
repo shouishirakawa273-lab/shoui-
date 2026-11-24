@@ -20013,3 +20013,46 @@ a REIT at all — was never observed. The script now runs the same check for the
 REIT code and adds `DivUnit`, `FDivUnit`, `OdP` and `OpP` to the watch list;
 `OdP` also shows on real data whether ordinary profit is absent under IFRS as
 documented, and what REIT disclosures do with it.
+
+## 2026-11-24 (2) — REIT observation, and a guessed field name in my own diagnostic
+
+Full results in `JQUANTS_V2_STEP3_SOURCE_ONBOARDING.md` §16.
+
+**REIT and common stock swap fields for the same concepts**, so the REIT branch
+is a different mapping rather than the same mapping with fewer values. For 89510,
+`ShEq` is empty on all 27 rows while `Eq` is filled on 20; `DivAnn` is empty
+while `DivUnit` is filled; `AvgSh` is empty entirely. Building a REIT's
+book-value figures through `ShEq` would have yielded nothing but 取得不可. REITs
+also disclose semi-annually — 20 FY rows over ten years — so a "ten-year trend"
+is twenty points for them, with 日本ビルファンド closing in June and December.
+
+**Ordinary profit confirmed from both directions.** `OdP` is 0/41 for 7203, whose
+41 rows are entirely IFRS and US GAAP, matching the documented blank; and 20/27
+for the REIT, which proves `_REIT` must *not* join
+`_NOT_APPLICABLE_UNDER_STANDARD`. Declining to guess about JMIS and REIT in §12
+turns out to have been the right call for at least one of them.
+
+**PER and PBR percentiles need no split handling.** At 7203's ex-date,
+`/equities/valuation` steps EPS and BPS by exactly 5.0000x while PER goes 9.73 to
+9.71 and PBR holds at 1.2 — price and per-share value move together and cancel.
+The levels are a different matter and their step sits at the ex-date, a different
+anchor from `/fins/summary`, whose FY BPS series runs 1.154x then 0.228x into
+FY2022. `per_share.py` needs BPS in `PER_SHARE_METRICS`.
+
+**`from`/`to` confirmed ignored**: 41 records either way, and the official
+parameter table lists only code, date and cursor. No PIT leak, since the
+normalizer filters on `decision_at`, but `fetch_financial_statements` takes a
+range it does not apply and `raw_disclosure_date_range` will overstate coverage.
+
+**My own error, recorded because the conclusion nearly stood.** I put `OpP` in the
+diagnostic's watch list. The real name is `OP` per `_METRIC_FIELD_MAP`, confirmed
+in D0043. It came back 0/27 for the REIT and I began reading that as "REITs do
+not disclose operating profit" — a non-existent field is always empty, so a fill
+rate of zero is no evidence of non-disclosure. This is precisely what the rule
+against guessing source specs exists to prevent, and the guess was mine, inside
+the instrument built to check such things.
+
+The script now compares every watched name against the payload's key set and
+reports absent names separately, as a naming error rather than an observation, so
+the same misreading cannot pass silently. REIT operating profit is UNKNOWN
+pending a re-run with `OP`.

@@ -56,9 +56,16 @@ WATCHED_FIELDS = (
     "DivUnit",
     "FDivUnit",
     "OdP",
-    "OpP",
+    "OP",
 )
-"""今回マッピング候補になるField。空欄率と「いつから入っているか」を見る。"""
+"""今回マッピング候補になるField。空欄率と「いつから入っているか」を見る。
+
+**ここに書くのは公式仕様または `normalize.py` で確認済みのField名だけ。**
+2026-11-24に `OpP` という推測した名前を入れてしまい、REITで0/27になったのを
+「REITは営業利益を開示しない」と読みかけた。実在する名前は `OP` である
+(`normalize.py` の `_METRIC_FIELD_MAP`)。存在しないFieldは常に0件になるので、
+**充填率0は「開示されていない」の証拠にならない。** 下の存在チェックで切り分ける。
+"""
 
 SPLIT_WINDOW = ("2021-09-25", "2021-10-08")
 """7203で1株当たり基準が切り替わった前後。EPS/BPSが調整済みかを見る。"""
@@ -102,9 +109,22 @@ def check_fins_fields(adapter: JQuantsAdapter, code: str, *, label: str = "普�
         return rows
 
     print(f"  fields in first record: {len(rows[0])}")
+
+    # Field名の綴り間違いを充填率0と混同しないための切り分け。
+    schema = {k for r in rows for k in r}
+    unknown = [f for f in WATCHED_FIELDS if f not in schema]
+    if unknown:
+        print()
+        print("  !! Schemaに存在しないField名(観測ではなく名前の誤り):")
+        for field in unknown:
+            print(f"       {field}")
+        print("     -> 公式仕様で名前を確認すること。0件を「未開示」と読まない。")
+
     print()
-    print("  充填率:")
+    print("  充填率(Schemaに存在するFieldのみ):")
     for field in WATCHED_FIELDS:
+        if field not in schema:
+            continue
         n = sum(1 for r in rows if _filled(r, field))
         bar = "#" * round(20 * n / len(rows))
         print(f"    {field:16s} {n:3d}/{len(rows)}  {bar}")
