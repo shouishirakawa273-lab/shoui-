@@ -20364,3 +20364,56 @@ PBR stay continuous, and that correction history is not provided by any channel.
 
 12 tests, mocked HTTP only, with response shapes taken from the 2026-11-24
 observations. Suite 2911 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (10) — Valuation percentile policy, fixed before looking at any distribution
+
+Recorded ahead of implementing stage 4b, at the owner's instruction, so that none
+of it can be tuned to an observed distribution. Every threshold below is argued
+from a general property, not from this data.
+
+**Indicators.** `PER`, `FwdPER` and `PBR` each get a percentile, all treated
+identically. `FwdPER` is thinner (60 of 2440 rows null for 7203) but withholding
+one indicator by judgement is harder to reason about than uniform treatment plus
+honest coverage reporting, which makes thinness visible anyway.
+
+**Non-positive values leave the distribution, and their own percentile is
+UNKNOWN.** A negative PER means losses, not cheapness; leaving it in makes the
+bottom of the distribution — which reads as "cheapest" — mean "largest losses",
+inverting the output. Negative PBR likewise means negative book value. They are
+excluded from the sample and the excluded count is reported, so the denominator is
+never silent. When the *current* value is itself non-positive, its percentile is
+UNKNOWN rather than 0 or 100: a value excluded from a distribution cannot be
+placed in it. The alternative convention of mapping negative earnings to
+infinitely expensive is a transformation we would be inventing, so it is not used.
+
+**Window: ten years back from `decision_at`**, reusing the CLI's existing
+`--years`. Only rows whose session has closed by `decision_at` are eligible, by
+`session_close_at(Date) <= decision_at`, the same rule the bar window uses — the
+value is computed from that session's close, so it is not knowable earlier.
+
+**Percentile definition: the empirical CDF at the current value**, that is
+`count(x <= current) / n` over the eligible sample, with the current observation
+included in its own sample. One convention, stated, so nobody has to guess which.
+
+**Minimum sample: 250 sessions.** A percentile over fewer observations describes
+roughly a year, not ten, and the label "ten-year percentile" would then mislead.
+250 is one year of trading sessions, which is the smallest span for which the
+output's name is not actively wrong. Below it the percentile is UNKNOWN. First
+date, last date and n are always reported, so a three-year sample is never
+mistaken for ten.
+
+**Staleness: 10 days**, the same figure `liquidity.py` already declares. Reusing a
+threshold already argued for beats inventing a second one. Past it the current
+value is not current — delisting or suspension — and is reported as UNKNOWN with
+the staleness stated.
+
+**No split handling, and the reason is structural.** PER and PBR stay continuous
+across an ex-date because price and per-share value scale together and cancel;
+observed on 7203 at 2021-09-29 (PER 9.73 to 9.71, PBR 1.2 to 1.2) and resting on
+that structure rather than on the single observation. Per-share *levels* do step,
+and `per_share.py` reports those independently.
+
+**Not decided here**, deliberately: whether to display a percentile band or any
+cheap/expensive judgement. The plan forbids recommendation output
+(「推奨判定、スコアリング、自動ランキング」), so the screener reports the number and
+the human reads it.
