@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import shutil
 import subprocess
 import sys
 import uuid
@@ -57,6 +58,37 @@ _SETTINGS = _REPO_ROOT / ".claude" / "settings.json"
 _THIS_TEST_DIR = Path(__file__).resolve().parent
 
 
+def _bash_executable() -> str:
+    """`bash` の実体を解決する。
+
+    `"bash"` を直書きすると、PATH に bash が無い環境で `FileNotFoundError`
+    [WinError 2] になる。2026-11-25に実機で確認した: Git for Windows の既定
+    インストールは `Git\\cmd`(`git.exe` のみ)を PATH へ入れ、`bash.exe` のある
+    `Git\\bin` を入れない。**`git` は通るのに `bash` は通らない**状態になる。
+
+    そこで PATH → `git` の実体から辿る、の順で探す。パスを直書きしないのは、
+    インストール先がマシンごとに違うため。
+
+    見つからなければ `skip` する。緑にはしない——**フックを起動できなかった
+    という事実を、通ったことにしてはならない。**
+
+    なお、これはテスト側が bash を起動できるかの話であって、**Claude Code が
+    フックをどの shell で起動するかとは別である。** それはここでは測れない。
+    """
+    found = shutil.which("bash")
+    if found:
+        return found
+    git = shutil.which("git")
+    if git:
+        # Git\cmd\git.exe → Git
+        git_root = Path(git).resolve().parent.parent
+        for relative in ("bin/bash.exe", "usr/bin/bash.exe"):
+            candidate = git_root / relative
+            if candidate.exists():
+                return str(candidate)
+    pytest.skip("bash を解決できないためHook Scriptを起動できない(PATHとgitの導出先を確認した)")
+
+
 def _run_hook(
     payload: dict[str, object] | None,
     *,
@@ -65,7 +97,7 @@ def _run_hook(
 ) -> subprocess.CompletedProcess[str]:
     input_data = json.dumps(payload) if payload is not None else ""
     return subprocess.run(
-        ["bash", str(_HOOK_SCRIPT)],
+        [_bash_executable(), str(_HOOK_SCRIPT)],
         input=input_data,
         capture_output=True,
         text=True,
@@ -124,7 +156,7 @@ def test_hook_invocation_command_locates_repo_root_from_subdirectory_cwd() -> No
     quality_gate_command = next(c for c in commands if "post_edit_quality_gate.sh" in c)
     subdir = _REPO_ROOT / "Japanese_Equity_Lab" / "lib"
     result = subprocess.run(
-        ["bash", "-c", quality_gate_command],
+        [_bash_executable(), "-c", quality_gate_command],
         input="",
         capture_output=True,
         text=True,
@@ -167,7 +199,7 @@ def test_hook_fails_closed_when_no_venv_present(tmp_path: Path) -> None:
     hook_copy.write_bytes(_HOOK_SCRIPT.read_bytes())
 
     result = subprocess.run(
-        ["bash", str(hook_copy)],
+        [_bash_executable(), str(hook_copy)],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -207,7 +239,7 @@ def test_fast_gate_never_falls_back_to_global_python(tmp_path: Path) -> None:
     hook_copy.write_bytes(_HOOK_SCRIPT.read_bytes())
 
     result = subprocess.run(
-        ["bash", str(hook_copy)],
+        [_bash_executable(), str(hook_copy)],
         input=json.dumps({"tool_input": {"file_path": str(fake_repo / "x.py")}}),
         capture_output=True,
         text=True,
@@ -256,7 +288,7 @@ def test_fast_gate_fails_closed_when_repo_venv_lacks_ruff(tmp_path: Path) -> Non
     assert fake_python.exists(), "Nested VenvのPython Interpreterが見つかりません"
 
     result = subprocess.run(
-        ["bash", str(hook_copy)],
+        [_bash_executable(), str(hook_copy)],
         input=json.dumps({"tool_input": {"file_path": str(fake_repo / "x.py")}}),
         capture_output=True,
         text=True,

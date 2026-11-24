@@ -9,17 +9,51 @@ Import/直接呼び出しはできない。したがってこのFileは実際に
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _HOOK_SCRIPT = _REPO_ROOT / ".claude" / "hooks" / "protected_path_warning.sh"
 
 
+def _bash_executable() -> str:
+    """`bash` の実体を解決する。
+
+    `"bash"` を直書きすると、PATH に bash が無い環境で `FileNotFoundError`
+    [WinError 2] になる。2026-11-25に実機で確認した: Git for Windows の既定
+    インストールは `Git\\cmd`(`git.exe` のみ)を PATH へ入れ、`bash.exe` のある
+    `Git\\bin` を入れない。**`git` は通るのに `bash` は通らない**状態になる。
+
+    そこで PATH → `git` の実体から辿る、の順で探す。パスを直書きしないのは、
+    インストール先がマシンごとに違うため。
+
+    見つからなければ `skip` する。緑にはしない——**フックを起動できなかった
+    という事実を、通ったことにしてはならない。**
+
+    なお、これはテスト側が bash を起動できるかの話であって、**Claude Code が
+    フックをどの shell で起動するかとは別である。** それはここでは測れない。
+    """
+    found = shutil.which("bash")
+    if found:
+        return found
+    git = shutil.which("git")
+    if git:
+        # Git\cmd\git.exe → Git
+        git_root = Path(git).resolve().parent.parent
+        for relative in ("bin/bash.exe", "usr/bin/bash.exe"):
+            candidate = git_root / relative
+            if candidate.exists():
+                return str(candidate)
+    pytest.skip("bash を解決できないためHook Scriptを起動できない(PATHとgitの導出先を確認した)")
+
+
 def _run_hook(file_path: str | None) -> subprocess.CompletedProcess[str]:
     payload = {"tool_input": {"file_path": file_path}} if file_path is not None else {}
     return subprocess.run(
-        ["bash", str(_HOOK_SCRIPT)],
+        [_bash_executable(), str(_HOOK_SCRIPT)],
         input=json.dumps(payload),
         capture_output=True,
         text=True,

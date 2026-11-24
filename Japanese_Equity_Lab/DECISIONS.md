@@ -20871,3 +20871,55 @@ break 2本・会社予想2族+直近実績を全部入れた実測は **23行 / 
     revision の `source_metric_type` を捨てているため、FY開示直後は
     `*_next_year_forecast` 由来の値に `*_current_year_forecast` と記録される(規約1)
 15. `decision_at.date()` が呼び出し側のtz依存。本番はJSTで正しいが、テストはUTC
+
+## 2026-11-25 (21) — Hook Test が `"bash"` を直書きしていたため、Windows実機で19件落ちた
+
+`phase-close` Step 5 をオーナー環境で実行した結果。**こちらの予測(3027 passed)は
+外れた。** 実測は **19 failed / 3018 passed**。総数は一致する(19+3018 = 10+3027 =
+3037)のでテストの消失はない。原因がこちらの環境と**別**だった。
+
+19件すべて同じ:
+
+```
+args = 'bash C:\Users\...\.claude\hooks\post_edit_quality_gate.sh'
+FileNotFoundError: [WinError 2] 指定されたファイルが見つかりません。
+```
+
+実機で確認した状態:
+
+- `where.exe bash` → 見つからない
+- `C:\Program Files\Git\bin\bash.exe` → 存在する
+- `C:\Program Files\Git\usr\bin\bash.exe` → 存在する
+
+Git for Windows の既定インストールは `Git\cmd`(`git.exe` のみ)を PATH へ入れ、
+`bash.exe` のある `Git\bin` を入れない。**`git` は通るのに `bash` は通らない。**
+テスト中の `subprocess.run(["git", "init", ...])` が成功して次の `bash` 呼び出しで
+落ちているのは、この形と整合する。
+
+### 言い過ぎた点の訂正
+
+当初「フックは一度も動いていない」と断定したが、**これは証拠を超えていた。**
+確かめられたのは「Python の `subprocess` から `bash` が解決できない」ことだけで、
+Claude Code がフックをどの shell で起動するかは別である(フックのコマンドは
+`$(...)` を含むので、Claude Code は何らかの shell を自力で渡しているはず)。
+テストはそこを測っていない。
+
+### 対応
+
+6箇所の `"bash"` 直書きを `_bash_executable()` に置き換えた。PATH →
+`git` の実体から `../bin/bash.exe` / `../usr/bin/bash.exe` を辿る、の順。
+**パスを直書きしない**(インストール先がマシンごとに違う)。どちらでも
+見つからなければ `pytest.skip` で、理由を明記して止める——
+**起動できなかった事実を緑にしない。**
+
+これは Step 3 の範囲外(テスト基盤)。`.claude/settings.json` 側のフック起動が
+PATH 依存かどうかは**未確認**として繰越に積む。
+
+### 繰越に追加
+
+16. Claude Code がフックを起動できているかの確認。テストが通っても、それは
+    テストが bash を起動できたことしか意味しない。実際にファイルを編集して
+    フックの出力が出るかを見るのが直接の確認になる
+17. `.claude/settings.json` のフックコマンドが `bash` を PATH 依存で呼んでいる。
+    `cli_io` と同じ型(クラッシュは直っても約束は守られていない)なら、
+    こちらも実体解決にすべき
