@@ -206,6 +206,37 @@ def _dividend_lines(dividend: DividendYieldAssessment) -> list[str]:
     return lines
 
 
+_BASIS_BREAK_MARK = "(基準不連続)"
+"""推移の中で1口/1株当たり基準が切れた位置。
+
+記号+凡例ではなく語を置く。1画面では凡例行が1行を食うし、記号は
+東アジア幅が曖昧(`‖` は Ambiguous)でラベル列の桁が崩れる。
+「変更」ではなく「不連続」——検知したのは除数の段差で、分割・併合・増資・
+訂正のどれかとは断定しない(`lib/screener/per_share.py`)。
+"""
+
+
+def _dividend_history_lines(dividend: DividendYieldAssessment) -> list[str]:
+    """実績配当の期別推移。合算した直近2期だけでは増減の履歴が読めない。
+
+    REITではDPUの推移がROEより中心的な系列である。「直近の減少が初めてか、
+    何度目か」はこの行だけが答える(2026-11-24、3283の−6.2%と2979の−13.3%を
+    前に、判断の土台が無いことが分かった)。
+    """
+    if not dividend.history:
+        return []
+    label = "分配金推移" if dividend.instrument_kind is InstrumentKind.REIT else "配当推移"
+    points = dividend.history
+    shown = points[-_MAX_HISTORY_POINTS:]
+    span = f"(直近{len(shown)}/{len(points)}期)" if len(shown) < len(points) else f"({len(points)}期)"
+    parts: list[str] = []
+    for index, point in enumerate(shown):
+        if index > 0 and point.basis_break_before:
+            parts.append(_BASIS_BREAK_MARK)
+        parts.append(_num(point.value, digits=0))
+    return [f"  {_label(label)}{span} {' '.join(parts)}"]
+
+
 def _roe_lines(trend: FinancialTrend) -> list[str]:
     series = [t for t in trend.trends if t.metric_type == _ROE_METRIC]
     if not series:
@@ -345,6 +376,7 @@ def render_entry(
     ]
     lines += _valuation_lines(valuation, instrument_kind)
     lines += _dividend_lines(dividend)
+    lines += _dividend_history_lines(dividend)
     lines += _roe_lines(trend)
     lines += _forecast_lines(forecasts)
     lines.append(_liquidity_line(liquidity))

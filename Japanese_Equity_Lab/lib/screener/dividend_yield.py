@@ -130,6 +130,20 @@ class DividendYieldFigure:
 
 
 @dataclass(frozen=True, kw_only=True)
+class DividendHistoryPoint:
+    """1決算期ぶんの実績配当。"""
+
+    fiscal_period_end: date
+    value: Decimal
+    basis_break_before: bool
+    """直前の期との間に1口/1株当たり基準の不連続があるか。
+
+    **印を付けずに並べてはならない。** 分割をまたいだ約3倍の段差は、
+    印が無ければ「分配金が3倍になった」と読める。
+    """
+
+
+@dataclass(frozen=True, kw_only=True)
 class DividendYieldAssessment:
     code: str
     instrument_kind: InstrumentKind
@@ -138,6 +152,12 @@ class DividendYieldAssessment:
     figures: tuple[DividendYieldFigure, ...]
     unknown_reason: str | None
     """何も出せなかった理由。空欄にせず明示する(ルートCLAUDE.md)。"""
+    history: tuple[DividendHistoryPoint, ...] = ()
+    """実績配当の期別推移(古い順)。切り詰めは表示側の仕事。
+
+    合算した直近2期だけでは「直近の減少が初めてか、何度目か」が分からない。
+    REITではDPUの推移がROEより中心的な系列なので、全期を持ち上げる。
+    """
 
     @property
     def forecast(self) -> DividendYieldFigure | None:
@@ -202,6 +222,24 @@ def _actual_by_period(trend: FinancialTrend, metric_type: str) -> dict[date, tup
             if obs.published_at is not None and (existing[1] is None or obs.published_at > existing[1]):
                 out[obs.fiscal_period_end] = (obs.value, obs.published_at)
     return out
+
+
+def _build_history(
+    by_period: Mapping[date, tuple[Decimal, datetime | None]],
+    *,
+    basis_break_period_ends: frozenset[date],
+) -> tuple[DividendHistoryPoint, ...]:
+    ends = sorted(by_period)
+    return tuple(
+        DividendHistoryPoint(
+            fiscal_period_end=end,
+            value=by_period[end][0],
+            # 先頭の点には「直前」が無い。不連続の遷移先が先頭なら、
+            # 比較対象がこの系列の外にあるので印を立てない。
+            basis_break_before=index > 0 and end in basis_break_period_ends,
+        )
+        for index, end in enumerate(ends)
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -366,7 +404,7 @@ def assess_dividend_yield(
 
     resolved_price = _to_decimal_price(price)
 
-    def _empty(reason: str) -> DividendYieldAssessment:
+    def _empty(reason: str, history: tuple[DividendHistoryPoint, ...] = ()) -> DividendYieldAssessment:
         return DividendYieldAssessment(
             code=code,
             instrument_kind=instrument_kind,
@@ -374,15 +412,21 @@ def assess_dividend_yield(
             price_session=price_session,
             figures=(),
             unknown_reason=reason,
+            history=history,
         )
 
     metric_type = _ACTUAL_METRIC_BY_KIND.get(instrument_kind)
     if metric_type is None:
         return _empty(f"InstrumentKind={instrument_kind.value} ではどの配当Fieldが適切か確認していないため算出しない")
+
+    # 推移は株価に依らない。**利回りが出せなくても推移は出す。**
+    by_period = _actual_by_period(actual_trend, metric_type)
+    history = _build_history(by_period, basis_break_period_ends=basis_break_period_ends)
+
     if resolved_price is None:
-        return _empty("株価が取得できないため算出できない")
+        return _empty("株価が取得できないため算出できない", history)
     if resolved_price <= 0:
-        return _empty(f"株価が正の値でないため算出できない(price={resolved_price})")
+        return _empty(f"株価が正の値でないため算出できない(price={resolved_price})", history)
 
     family = metric_family(metric_type)
     figures: list[DividendYieldFigure] = []
@@ -403,7 +447,7 @@ def assess_dividend_yield(
         )
 
     trailing = _build_trailing(
-        _actual_by_period(actual_trend, metric_type),
+        by_period,
         basis_break_period_ends=basis_break_period_ends,
         annual_by_definition=family in _ANNUAL_BY_FIELD_DEFINITION,
     )
@@ -425,7 +469,7 @@ def assess_dividend_yield(
         )
 
     if not figures:
-        return _empty(f"{metric_type} の予想・実績いずれも判定時点で可視でない")
+        return _empty(f"{metric_type} の予想・実績いずれも判定時点で可視でない", history)
 
     logger.info("screener: %s dividend yield from %d basis/bases", code, len(figures))
     return DividendYieldAssessment(
@@ -435,4 +479,5 @@ def assess_dividend_yield(
         price_session=price_session,
         figures=tuple(figures),
         unknown_reason=None,
+        history=history,
     )

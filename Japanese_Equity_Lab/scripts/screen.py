@@ -493,7 +493,17 @@ def main(argv: list[str] | None = None) -> int:
                         }
                         for f in dividend.figures
                     ],
+                    "history": [
+                        {
+                            "fiscal_period_end": p.fiscal_period_end.isoformat(),
+                            "value": _num(p.value),
+                            "basis_break_before": p.basis_break_before,
+                        }
+                        for p in dividend.history
+                    ],
                     "note": (
+                        "historyは実績配当の期別推移(古い順)。basis_break_before=trueの点は"
+                        "直前の期と1口/1株当たり基準が切れており、**前後の増減を読んではならない。**"
                         "予想と実績は別の量なので両方を並べる。片方が無いときもう片方へ"
                         "暗黙に落とさない。yield_ratioは小数(0.0312=3.12%)。"
                         "実績の分子はProviderのField単位では期ごとの値で、半期決算のREITでは"

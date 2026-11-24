@@ -22,6 +22,7 @@ from lib.pretrade_risk.correlation import CorrelationAssessment, CorrelationOutc
 from lib.pretrade_risk.liquidity import LiquidityAssessment, LiquidityOutcome
 from lib.screener.dividend_yield import (
     DividendBasis,
+    DividendHistoryPoint,
     DividendYieldAssessment,
     DividendYieldFigure,
 )
@@ -702,3 +703,71 @@ def test_correlation_prints_every_pair_not_only_breaches() -> None:
     assert "0.68" in text
     assert "0.05" in text
     assert "閾値 0.7 を超えるペアなし" in text
+
+
+# --- 実績配当の期別推移(2026-11-24追加) ---
+
+
+def _history(values: list[tuple[date, str]], break_at: date | None = None) -> tuple[DividendHistoryPoint, ...]:
+    return tuple(
+        DividendHistoryPoint(
+            fiscal_period_end=end,
+            value=Decimal(value),
+            basis_break_before=index > 0 and end == break_at,
+        )
+        for index, (end, value) in enumerate(values)
+    )
+
+
+def _reit_dividend(history: tuple[DividendHistoryPoint, ...]) -> DividendYieldAssessment:
+    return DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.REIT,
+        price=Decimal("81900"),
+        price_session=date(2026, 11, 20),
+        figures=(),
+        unknown_reason="テスト用",
+        history=history,
+    )
+
+
+def test_distribution_history_is_rendered_with_its_period_count() -> None:
+    history = _history([(date(2025, 11, 30), "1830"), (date(2026, 5, 31), "1716")])
+    line = next(x for x in _render(dividend=_reit_dividend(history)) if "分配金推移" in x)
+    assert "(2期)" in line
+    assert "1830 1716" in line
+
+
+def test_distribution_history_marks_a_basis_break_inline() -> None:
+    """[回帰] 612 → 1830 を「3倍になった」と読ませない。"""
+    history = _history(
+        [(date(2024, 11, 30), "612"), (date(2025, 5, 31), "1830"), (date(2026, 5, 31), "1716")],
+        break_at=date(2025, 5, 31),
+    )
+    line = next(x for x in _render(dividend=_reit_dividend(history)) if "分配金推移" in x)
+    assert "612 (基準不連続) 1830 1716" in line
+
+
+def test_distribution_history_states_the_truncation() -> None:
+    """20期あるREITで、切り詰めを黙って行わない。"""
+    history = _history([(date(2016 + i // 2, 5 if i % 2 == 0 else 11, 28), str(1700 + i)) for i in range(20)])
+    line = next(x for x in _render(dividend=_reit_dividend(history)) if "分配金推移" in x)
+    assert "(直近10/20期)" in line
+    assert "1719" in line  # 新しい端は残す
+    assert "1700" not in line  # 古い端は落ちる
+
+
+def test_a_share_history_is_labelled_as_dividend_not_distribution() -> None:
+    dividend = _dividend()
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.SHARE,
+        price=dividend.price,
+        price_session=dividend.price_session,
+        figures=dividend.figures,
+        unknown_reason=None,
+        history=_history([(date(2026, 3, 31), "95")]),
+    )
+    rendered = _render(dividend=dividend)
+    assert any("配当推移" in x for x in rendered)
+    assert not any("分配金推移" in x for x in rendered)

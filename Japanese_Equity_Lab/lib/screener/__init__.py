@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from lib.screener.dividend_yield import (
     DividendBasis,
+    DividendHistoryPoint,
     DividendYieldAssessment,
     DividendYieldFigure,
     assess_dividend_yield,
@@ -79,6 +80,7 @@ __all__ = [
     "assess_valuation_percentiles",
     "build_earnings_schedule",
     "DividendBasis",
+    "DividendHistoryPoint",
     "DividendYieldAssessment",
     "DividendYieldFigure",
     "InstrumentKind",

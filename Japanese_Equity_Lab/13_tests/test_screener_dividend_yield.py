@@ -418,3 +418,58 @@ def test_periods_that_do_not_tile_twelve_months_are_not_summed() -> None:
     assert trailing.basis is DividendBasis.TRAILING_PERIOD
     assert trailing.dividend == Decimal("1716")
     assert trailing.months_covered == 4  # 1期の長さは言えるが、12か月は覆えていない
+
+
+# --- 実績配当の期別推移(2026-11-24追加) ---
+#
+# 合算した直近2期だけでは「減少が初めてか、何度目か」が答えられなかった。
+# 系列は既に取得していて、表示していないだけだった。
+
+_FIVE_PERIODS = [
+    ("distribution_per_unit", date(2024, 5, 31), "600"),
+    ("distribution_per_unit", date(2024, 11, 30), "612"),
+    ("distribution_per_unit", date(2025, 5, 31), "1830"),
+    ("distribution_per_unit", date(2025, 11, 30), "1830"),
+    ("distribution_per_unit", date(2026, 5, 31), "1716"),
+]
+
+
+def test_history_covers_every_visible_period_oldest_first() -> None:
+    history = _reit_assess(_FIVE_PERIODS).history  # type: ignore[attr-defined]
+    assert [p.fiscal_period_end for p in history] == [
+        date(2024, 5, 31),
+        date(2024, 11, 30),
+        date(2025, 5, 31),
+        date(2025, 11, 30),
+        date(2026, 5, 31),
+    ]
+    assert [p.value for p in history] == [Decimal(v) for v in ("600", "612", "1830", "1830", "1716")]
+
+
+def test_history_marks_the_basis_discontinuity() -> None:
+    """3283の実データでは 2024-11-30 → 2025-05-31 で約2.99倍。
+
+    印が無ければ 612 → 1830 を「分配金が3倍になった」と読む。
+    """
+    history = _reit_assess(  # type: ignore[attr-defined]
+        _FIVE_PERIODS,
+        basis_break_period_ends=frozenset({date(2025, 5, 31)}),
+    ).history
+    assert [p.basis_break_before for p in history] == [False, False, True, False, False]
+
+
+def test_first_history_point_is_never_marked() -> None:
+    """先頭の点には「直前」が無い。比較対象が系列の外にあるので印を立てない。"""
+    history = _reit_assess(  # type: ignore[attr-defined]
+        _FIVE_PERIODS,
+        basis_break_period_ends=frozenset({date(2024, 5, 31)}),
+    ).history
+    assert history[0].basis_break_before is False
+
+
+def test_history_survives_a_missing_price() -> None:
+    """推移は株価に依らない。利回りが出せなくても推移は出す。"""
+    result = _reit_assess(_FIVE_PERIODS, price=None)
+    assert result.figures == ()  # type: ignore[attr-defined]
+    assert result.unknown_reason  # type: ignore[attr-defined]
+    assert len(result.history) == 5  # type: ignore[attr-defined]
