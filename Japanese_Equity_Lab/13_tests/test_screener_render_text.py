@@ -236,9 +236,15 @@ def test_percentile_is_shown_without_a_verdict() -> None:
 
 
 def test_missing_valuation_states_a_reason() -> None:
-    text = "\n".join(_render(valuation=None, instrument_kind=InstrumentKind.REIT))
-    assert "取得不可" in text
-    assert "REIT" in text
+    """[修正] 以前は `"取得不可" in text` と `"REIT" in text` だった。
+
+    前者は会社予想の取得不可行、後者はヘッダ行(`code  REIT  …`)で満たされる。
+    **`_valuation_lines` が空リストを返しても通る**テストだった(独立レビュー)。
+    """
+    rendered = _render(valuation=None, instrument_kind=InstrumentKind.REIT)
+    line = next(x for x in rendered if "PER / PBR" in x)
+    assert "取得不可" in line
+    assert "REITでは算出対象外" in line
 
 
 def test_missing_dividend_states_a_reason() -> None:
@@ -250,9 +256,9 @@ def test_missing_dividend_states_a_reason() -> None:
         figures=(),
         unknown_reason="株価が取得できないため算出できない",
     )
-    text = "\n".join(_render(dividend=dividend))
-    assert "取得不可" in text
-    assert "株価" in text
+    line = next(x for x in _render(dividend=dividend) if "配当利回り" in x)
+    assert "取得不可" in line
+    assert "株価" in line
 
 
 def test_unknown_percentile_states_a_reason_not_zero() -> None:
@@ -298,16 +304,21 @@ def test_unpublished_next_earnings_date_is_stated_not_replaced_by_a_past_one() -
 
 
 def test_forecast_dividend_is_labelled_as_a_forecast() -> None:
-    """ルート CLAUDE.md ルール1: 予想値にはラベルと出典を付ける。"""
-    text = "\n".join(_render())
-    assert "予想" in text
-    assert "実績" in text
+    """ルート CLAUDE.md ルール1: 予想値にはラベルと出典を付ける。
+
+    [修正] 以前は出力全体に `"予想"` があるかを見ていたが、会社予想の
+    取得不可行で満たされるため、**配当行のラベルを消しても通った**(独立レビュー)。
+    """
+    line = next(x for x in _render() if "配当利回り" in x)
+    assert "予想" in line
+    assert "実績" in line
 
 
 def test_dividend_shows_the_target_period_for_each_basis() -> None:
-    text = "\n".join(_render())
-    assert "2027-03-31" in text
-    assert "2026-03-31" in text
+    """[修正] `"2026-03-31"` はROE行(`最新 2026-03-31 (IFRS)`)で満たされていた。"""
+    line = next(x for x in _render() if "配当利回り" in x)
+    assert "2027-03-31" in line
+    assert "2026-03-31" in line
 
 
 # --- 契約: 警告が出る ---

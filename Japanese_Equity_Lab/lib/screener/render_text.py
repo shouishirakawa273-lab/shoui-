@@ -185,7 +185,9 @@ def _dividend_lines(dividend: DividendYieldAssessment) -> list[str]:
         # 実績は**覆っている月数まで書く。** 「実績」だけだと、半期REITの分配金と
         # 年額配当が同じ顔で並び、読み手は半期の値を年額として読む(2026-11-24)。
         if figure.basis is DividendBasis.FORECAST:
-            label = "予想"
+            # 予想の分子も期ごと。月数を書かないと、半期REITの予想分配金が
+            # 年額と同じ顔で並ぶ(独立レビュー、2026-11-24)。
+            label = f"予想{figure.months_covered}か月" if figure.months_covered else "予想"
         elif figure.basis is DividendBasis.TRAILING_12M:
             label = "実績12か月"
         elif figure.months_covered:
@@ -199,10 +201,16 @@ def _dividend_lines(dividend: DividendYieldAssessment) -> list[str]:
         else:
             amount = _num(figure.dividend, digits=0)
         parts.append(f"{label} {_pct(figure.yield_ratio, digits=2)} ({amount}円 / {period})")
+        if figure.basis is DividendBasis.TRAILING_12M:
+            notes.extend(figure.notes)
         if figure.basis is DividendBasis.TRAILING_PERIOD:
-            notes.extend(figure.notes or ("12か月を覆えていない理由が記録されていない",))
+            notes.extend(f"年額ではない: {note}" for note in (figure.notes or ("12か月を覆えていない理由が記録されていない",)))
+    # 予想が無いことを黙って落とさない(ルートCLAUDE.md 規約2)。
+    if dividend.forecast is None and dividend.forecast_unknown_reason:
+        parts.insert(0, f"予想 {_UNAVAILABLE}")
+        notes.append(f"予想: {dividend.forecast_unknown_reason}")
     lines = ["  " + _label("配当利回り") + "   ".join(parts)]
-    lines += [f"  {_label('')}※ 年額ではない: {_short(note, limit=80)}" for note in notes]
+    lines += [f"  {_label('')}※ {_short(note, limit=80)}" for note in notes]
     return lines
 
 
@@ -276,13 +284,22 @@ def _roe_lines(trend: FinancialTrend) -> list[str]:
 
 
 def _latest_actual(trend: FinancialTrend, metric_family: str) -> tuple[Decimal, date] | None:
-    """同じ指標の、最も新しい決算期の実績。基準をまたいで合成せず1点を選ぶだけ。"""
+    """同じ指標の、最も新しい決算期の実績。基準をまたいで合成せず1点を選ぶだけ。
+
+    **終わっていない期は実績ではない。** `ActualOrForecast` は Field 名だけで
+    決まるため、将来の期末を持つ行が実績seriesに入り込む経路がある
+    (`lib/screener/dividend_yield.py` の `_actual_by_period` に詳細)。
+    判定時点を過ぎた期末だけを採る(PIT監査、2026-11-24)。
+    """
+    as_of = trend.decision_at.date()
     best: tuple[Decimal, date] | None = None
     for metric_trend in trend.trends:
         if metric_trend.metric_type != metric_family:
             continue
         for observation in metric_trend.observations:
             if observation.value is None or observation.fiscal_period_end is None:
+                continue
+            if observation.fiscal_period_end > as_of:
                 continue
             if best is None or observation.fiscal_period_end > best[1]:
                 best = (observation.value, observation.fiscal_period_end)

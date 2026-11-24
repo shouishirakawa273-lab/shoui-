@@ -348,6 +348,9 @@ def main(argv: list[str] | None = None) -> int:
             basis_break_period_ends=frozenset(
                 b.to_fiscal_period_end for b in per_share.breaks if b.to_fiscal_period_end is not None
             ),
+            # 空集合が「不連続なし」と「検査できなかった」の両方を意味しないよう、
+            # 検査が成立したかを別に渡す(独立レビュー、2026-11-24)。
+            basis_check_performed=bool(set(per_share.per_share_metrics) - set(per_share.unchecked_metrics)),
         )
 
         valuation = (
@@ -478,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
                     "price": _num(dividend.price),
                     "price_session": (dividend.price_session.isoformat() if dividend.price_session else None),
                     "unknown_reason": dividend.unknown_reason,
+                    "forecast_unknown_reason": dividend.forecast_unknown_reason,
                     "figures": [
                         {
                             "basis": f.basis.value,

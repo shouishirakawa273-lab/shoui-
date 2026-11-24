@@ -165,6 +165,13 @@ class DividendYieldAssessment:
     合算した直近2期だけでは「直近の減少が初めてか、何度目か」が分からない。
     REITではDPUの推移がROEより中心的な系列なので、全期を持ち上げる。
     """
+    forecast_unknown_reason: str | None = None
+    """予想が出せなかった理由。
+
+    **figures が空でなくても埋まる。** 以前は `unknown_reason` が figures 全滅時
+    だけ埋まり、実績だけ出たREITでは「予想が無い」事実が画面から消えていた
+    (ルートCLAUDE.md 規約2に抵触。独立レビュー、2026-11-24)。
+    """
     history_crosses_basis_break_after: tuple[date, ...] = ()
     """推移が基準の不連続をまたぐことが分かっている、**eps基準での遷移元**期末。
 
@@ -224,19 +231,46 @@ def _months_before(value: date, months: int) -> date:
     return date(year, month, min(value.day, monthrange(year, month)[1]))
 
 
-def _actual_by_period(trend: FinancialTrend, metric_type: str) -> dict[date, tuple[Decimal, datetime | None]]:
+def _actual_by_period(
+    trend: FinancialTrend,
+    metric_type: str,
+    *,
+    decision_at: datetime,
+) -> dict[date, tuple[Decimal, datetime | None]]:
     """決算期末 → (値, 開示時刻)。
 
     `build_financial_trend` が既にPITで絞り、Versionも最新を採っている。
     同じ指標が会計基準ごとに複数seriesへ分かれるので、同じ期末が重なったときは
     **開示が新しい方**を採る(基準をまたいで値を合成しない。1点を選ぶだけ)。
+
+    ## 終わっていない決算期の「実績」を受け取らない
+
+    `ActualOrForecast` は Field 名だけで決まる(`lib/fundamentals/normalize.py`:
+    `DivUnit` は無条件に ACTUAL)。実績seriesから予想行を排除しているのは
+    `period_type is PeriodType.FY` の判定だけで、これは開示の `CurPerType` であって
+    「その期が終わっている」証拠ではない。`*ForecastRevision` 系 DocType の
+    `CurPerType`/`CurPerEn` は**未検証**(normalize.py の注記)なので、将来の期末を
+    持つ行が実績として入り込む経路が開いている。
+
+    そこで**期末が判定時点を過ぎていること**を条件に加える。終わっていない期に
+    実績は存在しないので、これは新しい仮定を置かずに閉じられる(PIT監査、2026-11-24)。
     """
+    as_of = decision_at.date()
     out: dict[date, tuple[Decimal, datetime | None]] = {}
     for series in trend.trends:
         if series.metric_type != metric_type:
             continue
         for obs in series.observations:
             if obs.value is None or obs.fiscal_period_end is None:
+                continue
+            if obs.fiscal_period_end > as_of:
+                logger.warning(
+                    "screener: %s %s の期末 %s が判定時点 %s より後のため実績として扱わない",
+                    trend.code,
+                    metric_type,
+                    obs.fiscal_period_end.isoformat(),
+                    as_of.isoformat(),
+                )
                 continue
             existing = out.get(obs.fiscal_period_end)
             if existing is None:
@@ -267,6 +301,12 @@ def _breaks_inside_history(
 
 @dataclass(frozen=True, kw_only=True)
 class _Trailing:
+    annualized: bool
+    """12か月を覆えたか。**`notes` の有無で代用してはならない。**
+
+    `notes` は「12か月でない理由」と「12か月だが付いている留保」の両方を運ぶ。
+    一緒にすると、基準未検査の留保が付いただけで `TRAILING_PERIOD` に落ちる。
+    """
     total: Decimal
     components: tuple[Decimal, ...]
     period_ends: tuple[date, ...]
@@ -275,11 +315,25 @@ class _Trailing:
     notes: tuple[str, ...]
 
 
+def _observed_period_months(all_ends: Sequence[date]) -> int | None:
+    """観測された決算期の長さ(月)。確認できなければNone。**12と仮定しない。**
+
+    `DivAnn` を「Field名が年間配当だから12か月」と扱うのは、名前からの推測である
+    (独立レビュー、2026-11-24)。このリポジトリは半期決算REITの開示を
+    `PeriodType.FY` として通している実例を自分で持っており、「FY=12か月」は
+    成り立たない。`OpP` の綴り推測と同じ型なので、**観測で裏を取る。**
+    """
+    if len(all_ends) < 2:
+        return None
+    return _month_span(all_ends[-2], all_ends[-1])
+
+
 def _build_trailing(
     by_period: Mapping[date, tuple[Decimal, datetime | None]],
     *,
     basis_break_period_ends: frozenset[date],
     annual_by_definition: bool,
+    basis_check_performed: bool,
 ) -> _Trailing | None:
     """直近12か月を覆う実績配当。覆えないときは1期分と理由を返す。
 
@@ -294,6 +348,7 @@ def _build_trailing(
     def _one_period(months: int | None, reason: str) -> _Trailing:
         value, published_at = by_period[latest]
         return _Trailing(
+            annualized=False,
             total=value,
             components=(),
             period_ends=(latest,),
@@ -302,11 +357,21 @@ def _build_trailing(
             notes=(reason,),
         )
 
+    all_ends = sorted(by_period)
+    observed = _observed_period_months(all_ends)
+
     if annual_by_definition:
-        # `DivAnn` は「年間配当」を表すFieldなので、1期で12か月を覆う。
-        # これはField定義から言えることで、期末の並びからの推測ではない。
+        # `DivAnn` は「年間配当」を表すFieldなので1期で12か月を覆う——が、それは
+        # Field名からの読みである。**観測された期の長さと矛盾したら受け取らない。**
+        # 決算期が12か月でなければ「年間配当」が何を覆うのか確認していない。
+        if observed is not None and observed != TRAILING_MONTHS:
+            return _one_period(
+                observed,
+                f"年額Fieldだが決算期が{observed}か月で、12か月を覆うか確認できない",
+            )
         value, published_at = by_period[latest]
         return _Trailing(
+            annualized=True,
             total=value,
             components=(),
             period_ends=(latest,),
@@ -320,15 +385,32 @@ def _build_trailing(
     # **他の期が見えないことは、その期が長いことの証拠ではない。**
     # (2026-11-24の回帰。存在しないField名が0件を返したのを「開示していない」と
     #  読みかけたのと同じ形。)
-    all_ends = sorted(by_period)
     if len(all_ends) < 2:
         return _one_period(None, "決算期が1つしか可視でないため期の長さを確認できない")
-    period_months = _month_span(all_ends[-2], all_ends[-1])
+    period_months = observed
     if period_months is None:
         return _one_period(None, "直近2期の期末の間隔を月で数えられない")
 
     window_start = _months_before(latest, TRAILING_MONTHS)
     ends = sorted(end for end in by_period if window_start < end <= latest)
+
+    # 窓の中が1期だけなら、その期が12か月あるという主張になる。直前の間隔でも
+    # 裏が取れなければ受け取らない。**可視な期に穴があると、半期の値が
+    # `TRAILING_12M` を名乗る**(半期REITで中間期が落ちると間隔が12か月に見え、
+    # 12×1=12 でタイルの門も通ってしまう)。落ちる経路は実在する:
+    # `DiscTime` 欠落で `market_public_at` が None になった版は可視性判定で丸ごと
+    # 落ち、値が空の期も `financial_trend` で除かれ、どちらも**期末ごと消える**。
+    # (PIT監査、2026-11-24)
+    if len(ends) == 1:
+        if len(all_ends) < 3:
+            return _one_period(period_months, "窓の中が1期で、期の長さを裏付ける前の期が無い")
+        corroboration = _month_span(all_ends[-3], all_ends[-2])
+        if corroboration != period_months:
+            return _one_period(
+                period_months,
+                f"窓の中が1期で、直前の間隔({corroboration}か月)と一致しないため期の長さを信用しない",
+            )
+
     if period_months * len(ends) != TRAILING_MONTHS:
         return _one_period(
             period_months,
@@ -340,7 +422,21 @@ def _build_trailing(
     if any(span != period_months for span in spans):
         return _one_period(period_months, f"決算期の長さが揃わないため合算しない(間隔={spans}か月)")
 
-    crossed = [end for end in ends[1:] if end in basis_break_period_ends]
+    # 窓の中の**どの期末**に不連続の遷移先が当たっても合算しない。先頭を外しては
+    # ならない(以前は `ends[1:]` だった)。
+    #
+    # 配当側の段差は eps 基準の遷移先と同じ期か、その**1期あと**にある(どちらかは
+    # 特定できない。上の `history_crosses_basis_break_after` の注記)。遷移先が
+    # `ends[0]` なら、段差は `ends[0] → ends[1]` に来る可能性があり、それは
+    # 合算の内側である。8967を `--as-of 2025-09-30` で動かすと、遷移先 2025-01-31 が
+    # `ends[0]` に当たり、`5578 + 2150 = 7728` を12か月分として出していた——
+    # **分割前と分割後の足し算**(PIT監査、2026-11-24)。
+    #
+    # 窓の開始(`window_start`)に当たる場合は合算しない理由にならない。段差は
+    # `window_start → ends[0]` か `ends[0] → ends[1]` のどちらかだが、前者は
+    # 合算区間の外で、後者なら `ends[0]` が集合に入るので上の条件で捕まる。
+    # 3283(遷移先 2025-05-31 = window_start)の 1830+1716 はこれで通る。
+    crossed = [end for end in ends if end in basis_break_period_ends]
     if crossed:
         joined = ", ".join(end.isoformat() for end in crossed)
         return _one_period(
@@ -350,13 +446,20 @@ def _build_trailing(
 
     components = tuple(by_period[end][0] for end in ends)
     published: list[datetime] = [at for at in (by_period[end][1] for end in ends) if at is not None]
+    # **不連続が「無かった」のではなく「検査できなかった」場合を黙らせない。**
+    # 門2に渡るのは検知された日付の集合だけなので、除数が取れずに1指標も
+    # 検査できなかったとき、空集合は「不連続なし」と見分けがつかない。
+    # Lab CLAUDE.md:「Unknownは0ではない。Unknownはfalseでもない」
+    # (独立レビュー、2026-11-24)
+    notes = () if basis_check_performed else ("1口/1株当たり基準の不連続を検査できていない(除数が取れず未検査)",)
     return _Trailing(
+        annualized=True,
         total=sum(components, Decimal(0)),
         components=components if len(components) > 1 else (),
         period_ends=tuple(ends),
         months_covered=TRAILING_MONTHS,
         published_at=max(published) if published else None,
-        notes=(),
+        notes=notes,
     )
 
 
@@ -384,6 +487,26 @@ def _current_forecast(
         if revision.value is not None:
             return (revision.value, series.target_fiscal_year_end, revision.published_at)
     return None
+
+
+def _forecast_absence_reason(
+    forecast_series: Sequence[ForecastRevisionSeries],
+    family: str,
+    *,
+    decision_at: datetime,
+) -> str:
+    """予想が出せなかった理由。空欄にせず明示する(ルートCLAUDE.md 規約2)。"""
+    same_family = [s for s in forecast_series if s.metric_family == family]
+    if not same_family:
+        return f"{family} の予想seriesが無い"
+    as_of = decision_at.date()
+    future = [s for s in same_family if s.target_fiscal_year_end is not None and s.target_fiscal_year_end >= as_of]
+    if not future:
+        return f"{family} の予想は判定時点以降を対象とするものが無い"
+    reasons = sorted({r.unknown_reason.value for s in future for r in s.revisions if r.value is None and r.unknown_reason})
+    if reasons:
+        return f"{family} の予想に数値が無い({', '.join(reasons)})"
+    return f"{family} の予想に数値が無い"
 
 
 def _to_decimal_price(price: Decimal | float | None) -> Decimal | None:
@@ -414,6 +537,7 @@ def assess_dividend_yield(
     forecast_series: Sequence[ForecastRevisionSeries] = (),
     decision_at: datetime,
     basis_break_period_ends: frozenset[date] = frozenset(),
+    basis_check_performed: bool = False,
 ) -> DividendYieldAssessment:
     """配当利回りの現在値を、基準ラベル付きで出す。
 
@@ -448,7 +572,7 @@ def assess_dividend_yield(
         return _empty(f"InstrumentKind={instrument_kind.value} ではどの配当Fieldが適切か確認していないため算出しない")
 
     # 推移は株価に依らない。**利回りが出せなくても推移は出す。**
-    by_period = _actual_by_period(actual_trend, metric_type)
+    by_period = _actual_by_period(actual_trend, metric_type, decision_at=decision_at)
     history = _build_history(by_period)
     crosses = _breaks_inside_history(history, basis_break_period_ends)
 
@@ -460,7 +584,12 @@ def assess_dividend_yield(
     family = metric_family(metric_type)
     figures: list[DividendYieldFigure] = []
 
+    # 予想の分子も**期ごと**である。`FDivUnit` は当期(REITでは6か月)の予想なので、
+    # 無印で「予想 X%」と出すと、今日実績側で直した欠陥が予想列に残る
+    # (独立レビュー、2026-11-24)。Field名ではなく**観測された決算期の長さ**を付ける。
+    forecast_months = TRAILING_MONTHS if family in _ANNUAL_BY_FIELD_DEFINITION else _observed_period_months(sorted(by_period))
     forecast = _current_forecast(forecast_series, family, decision_at=decision_at)
+    forecast_unknown_reason: str | None = None
     if forecast is not None:
         value, period_end, published_at = forecast
         figures.append(
@@ -471,17 +600,20 @@ def assess_dividend_yield(
                 yield_ratio=value / resolved_price,
                 fiscal_period_end=period_end,
                 published_at=published_at,
-                months_covered=TRAILING_MONTHS if family in _ANNUAL_BY_FIELD_DEFINITION else None,
+                months_covered=forecast_months,
             )
         )
+    else:
+        forecast_unknown_reason = _forecast_absence_reason(forecast_series, family, decision_at=decision_at)
 
     trailing = _build_trailing(
         by_period,
         basis_break_period_ends=basis_break_period_ends,
         annual_by_definition=family in _ANNUAL_BY_FIELD_DEFINITION,
+        basis_check_performed=basis_check_performed,
     )
     if trailing is not None:
-        annualized = trailing.months_covered == TRAILING_MONTHS and not trailing.notes
+        annualized = trailing.annualized
         figures.append(
             DividendYieldFigure(
                 basis=DividendBasis.TRAILING_12M if annualized else DividendBasis.TRAILING_PERIOD,
@@ -508,6 +640,7 @@ def assess_dividend_yield(
         price_session=price_session,
         figures=tuple(figures),
         unknown_reason=None,
+        forecast_unknown_reason=forecast_unknown_reason,
         history=history,
         history_crosses_basis_break_after=crosses,
     )

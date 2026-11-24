@@ -20691,3 +20691,92 @@ produced material (NAV comparison, distribution history, correlation, the two
 findings above), but no BUY/HOLD/SELL was recorded. Per `CLAUDE.md`, phase
 transitions need an explicit `phase-close`, and the final judgment is the
 human's. Step 3 stays open until the owner says otherwise.
+
+## 2026-11-24 (19) — Step 3 独立レビュー: BLOCKER 1件・HIGH 2件を修正、残りを棚卸し
+
+`phase-close` の Step 12/13 で `pit-auditor` と `skeptic-reviewer` を独立に回した。
+本日自分のコードで3件の欠陥を実データ経由でしか見つけられなかったため、自分で
+自分を見るのは弱いと判断した。両者が同じ門を指摘した。
+
+**[BLOCKER] 合算の門が窓の先頭を見ていなかった。** `crossed` は `ends[1:]` を
+走査していたので、基準不連続の遷移先が `ends[0]` に当たる窓を素通りさせた。
+配当側の段差は eps 基準の遷移先と同じ期かその1期あとにある(どちらかは特定不能)
+ため、遷移先が先頭なら段差は `ends[0] → ends[1]`、すなわち**合算の内側**に来る。
+実データで両方向の実例がある:
+
+- 8967 を `--as-of 2025-09-30` 相当: `5578 + 2150 = 7728` を12か月分として出す
+- 3283 を `--as-of 2025-12-01` 相当: `5521 + 1830 = 7351` → 約8.98%(現基準の
+  水準 4.33% の約2.1倍)
+
+`notes` は空のまま `TRAILING_12M` を名乗るので、**直す前の「半分に見える」より
+悪い。** ラベルが健全だと主張している。`ends` 全体を見るよう変更。`window_start`
+に当たる場合は合算区間の外なので除外のままで、3283 の現在の 1830+1716 は通る。
+
+**[HIGH] 予想側に期の長さの門が無かった。** 修正は実績側だけに入っていた。
+`FDivUnit` は mapped 済みで `FiscalYearTarget.CURRENT_FISCAL_YEAR`、REITの会計期間は
+6か月なので、値が入れば**半期ぶんが無印の「予想 X%」として年額の隣に並ぶ**。
+今日実績側で直した欠陥が予想列に残っていた。観測された決算期の長さを付け、
+表示も `予想6か月` と書くようにした。
+
+**[HIGH] 不連続が「無かった」のと「検査できなかった」が区別できなかった。**
+門に渡るのは検知された日付の集合だけで、除数が取れず1指標も検査できなかった
+場合、空集合は「不連続なし」と同じ。Lab CLAUDE.md「Unknownは0ではない。
+Unknownはfalseでもない」に抵触する。`basis_check_performed` を別に渡し、未検査なら
+`TRAILING_12M` に留保を付ける(基準のラベル自体は落とさない——12か月であること
+自体は変わらないため)。この分離のために `_Trailing.annualized` を明示フィールド
+にした。`notes` の有無で代用していたせいで、留保が付くだけで `TRAILING_PERIOD`
+に落ちる挙動になっていた。
+
+**[MEDIUM] `DivAnn` の年額扱いが Field 名由来だった。** 「FY=12か月」は成り立たない
+——このリポジトリは半期決算の開示を `PeriodType.FY` として通す実例を自分で持って
+いる。`OpP` の綴り推測と同じ型なので、観測された期の長さと矛盾したら受け取らない。
+
+**[MEDIUM] 予想が無いことが画面から消えていた。** `unknown_reason` は figures が
+全滅したときだけ埋まるため、実績だけ出た REIT では「予想が無い」事実がテキストにも
+JSON にも残らなかった。ルートCLAUDE.md 規約2 の対象。`forecast_unknown_reason` を
+追加し、理由(`TARGET_YEAR_ALREADY_REPORTED` 等)を明示する。
+
+**[MEDIUM] 偶然で通っていたテストが4本あった。** 既定フィクスチャは
+`forecasts=()` なので出力に必ず `会社予想  取得不可` 行が入り、ヘッダ行に
+`instrument_kind.value` が入る。この2行が広い部分文字列を満たしていた:
+
+- `test_missing_valuation_states_a_reason` — `"取得不可"` は会社予想行、`"REIT"` は
+  ヘッダ行で満たされ、**`_valuation_lines` が空を返しても通った**
+- `test_forecast_dividend_is_labelled_as_a_forecast` — 配当行のラベルを消しても通った
+- `test_dividend_shows_the_target_period_for_each_basis` — `"2026-03-31"` は ROE 行
+- `test_missing_dividend_states_a_reason` — `"取得不可"` が別行
+
+4本すべて対象行を特定してからアサートするよう修正。**出力全体への部分文字列
+アサートは行が増えるほど偶然成立しやすい**、という一般的な教訓。
+
+### 繰越(Step 3 のクローズ時点で未解決、タスク化済み)
+
+1. **権利落ち日(経路1)で門を作れないか。** `per_share.py` 自身が
+   `CorporateAction.raw_adj_factor` を「推測を含まない一次情報」と呼び、
+   `screen.py` は既に events を持っているのに、門には位置が不確かな経路2しか
+   渡していない。権利落ち日が分かれば1期ずれ問題そのものが消える。
+   `corporate_actions_known_from` より前は UNKNOWN と明記した上で OR にする案
+2. **同一期末が複数seriesで衝突したときの選択**が `published_at` 同値/両方None で
+   series_id 順に落ちる。宣言した availability semantics のタイムスタンプで
+   決めるべきで、合成データにこの経路を通るテストが無い
+3. **`render_text._latest_actual` に会計基準の出所と同値時の決定規則が無い。**
+   7203 は USGAAP と IFRS が同じ期末を持つ。ROE行は `※基準が複数` を出すのに
+   直近実績行は出さない。月数も書いていない
+4. **「当期予想」の定義が画面内で2つある。** `_current_forecast` は
+   「`>= as_of` のうち最も近い期」、`_forecast_lines` は「`target` が最大」で
+   `>= as_of` 条件が無い。決算期末から発表までの期間に食い違う
+5. **`--forecast-years` が算出指標を変える。** 表示用CLIノブなのに、絞った後の
+   `forecasts` を `assess_dividend_yield` にも渡しているため、小さくすると
+   配当利回りの予想 figure が黙って消える
+6. **株価の staleness 上限が無い。** `assess_liquidity` は `max_staleness_days` を
+   受けるのに、利回りの分母はいくら古い終値でも警告が出ず、`price_session` も
+   テキストに出ない
+7. **`published_at` が既知の部分集合の max。** 合算した期の一方が開示時刻不明の
+   とき、報告される出典日が実際より古くなる
+8. **1画面テストが新規行を数えていない。** `_dividend()` は `history=()`、
+   `_reit_dividend()` は `figures=()` で、どちらも producer が出せない状態。
+   REIT 最悪ケースは手計算で約22行(上限24)だが、機械チェックの外にある
+9. **予想 family の優先順**で `distribution_per_unit` が7族中最後・表示上限2。
+   普通株の実データを見て決めた順序が REIT で裏目に出る形(影響は表示順のみ)
+
+3017 passed、`test_post_edit_quality_gate_hook.py` の10件は従来からの環境起因。

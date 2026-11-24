@@ -342,6 +342,8 @@ def _reit_assess(rows: list[tuple[str, date, str]], **kwargs: object) -> object:
         "actual_trend": _trend("3283", rows),
         "forecast_series": (),
         "decision_at": DECISION_AT,
+        # 既定は「検査が成立した」。未検査側は専用テストで確かめる。
+        "basis_check_performed": True,
     }
     base.update(kwargs)
     return assess_dividend_yield(**base)  # type: ignore[arg-type]
@@ -469,3 +471,108 @@ def test_history_survives_a_missing_price() -> None:
     assert result.figures == ()  # type: ignore[attr-defined]
     assert result.unknown_reason  # type: ignore[attr-defined]
     assert len(result.history) == 5  # type: ignore[attr-defined]
+
+
+# --- PIT監査で見つかった3件(2026-11-24) ---
+
+
+def test_break_at_the_first_window_end_blocks_summation() -> None:
+    """[回帰/BLOCKER] 不連続の遷移先が窓の先頭に当たるケースを素通りさせていた。
+
+    門が `ends[1:]` を見ていたため、8967を `--as-of 2025-09-30` 相当で動かすと
+    遷移先 2025-01-31 が `ends[0]` に当たり、`5578 + 2150 = 7728` を12か月分として
+    出していた——**分割前と分割後の足し算**。配当側の段差は eps 基準の遷移先と
+    同じ期か1期あとにあるので、遷移先が先頭なら段差は合算の内側に来うる。
+    """
+    result = _reit_assess(
+        [
+            ("distribution_per_unit", date(2024, 1, 31), "5223"),
+            ("distribution_per_unit", date(2024, 7, 31), "5300"),
+            ("distribution_per_unit", date(2025, 1, 31), "5578"),
+            ("distribution_per_unit", date(2025, 7, 31), "2150"),
+        ],
+        basis_break_period_ends=frozenset({date(2025, 1, 31)}),
+    )
+    trailing = result.trailing  # type: ignore[attr-defined]
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("2150")  # 7728 を出してはならない
+    assert any("不連続" in note for note in trailing.notes)
+
+
+def test_a_hole_in_the_visible_periods_does_not_become_twelve_months() -> None:
+    """[回帰/HIGH] 可視な期に穴があると、半期の値が `TRAILING_12M` を名乗っていた。
+
+    中間期が落ちると直近2期の間隔が12か月に見え、12×1=12 でタイルの門も通る。
+    落ちる経路は実在する(`DiscTime` 欠落で可視性判定から丸ごと外れる、値が空)。
+    窓の中が1期のときは、直前の間隔でも裏を取る。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("distribution_per_unit", date(2024, 5, 31), "1700"),
+            ("distribution_per_unit", date(2024, 11, 30), "1750"),
+            ("distribution_per_unit", date(2025, 5, 31), "1800"),
+            # 2025-11-30 が落ちている
+            ("distribution_per_unit", date(2026, 5, 31), "1716"),
+        ]
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("1716")
+    assert any("一致しない" in note for note in trailing.notes)
+
+
+def test_a_fiscal_period_ending_after_the_decision_time_is_not_an_actual() -> None:
+    """[回帰/HIGH] 終わっていない決算期に実績は存在しない。
+
+    `ActualOrForecast` は Field 名だけで決まり(`DivUnit` は無条件に ACTUAL)、
+    実績seriesから予想行を外しているのは `CurPerType` の判定だけ。
+    `*ForecastRevision` 系 DocType の `CurPerType`/`CurPerEn` は未検証なので、
+    将来の期末を持つ行が実績として入り込む経路が開いていた。
+    """
+    result = _reit_assess(
+        [
+            ("distribution_per_unit", date(2025, 11, 30), "1830"),
+            ("distribution_per_unit", date(2026, 5, 31), "1716"),
+            # DECISION_AT は 2026-11-24。この期はまだ終わっていない
+            ("distribution_per_unit", date(2027, 5, 31), "9999"),
+        ]
+    )
+    assert [p.fiscal_period_end for p in result.history] == [  # type: ignore[attr-defined]
+        date(2025, 11, 30),
+        date(2026, 5, 31),
+    ]
+    trailing = result.trailing  # type: ignore[attr-defined]
+    assert trailing.dividend == Decimal("3546")  # 1830 + 1716。9999 を含めない
+    assert trailing.fiscal_period_end == date(2026, 5, 31)
+
+
+def test_an_unchecked_basis_is_stated_not_treated_as_no_discontinuity() -> None:
+    """[回帰] 空集合が「不連続なし」と「検査できなかった」を兼ねていた。
+
+    門2に渡るのは検知された日付の集合だけなので、除数が取れずに1指標も
+    検査できなかったとき、空集合は「不連続なし」と見分けがつかない。
+    Lab CLAUDE.md:「Unknownは0ではない。Unknownはfalseでもない」
+    """
+    trailing = _reit_assess(_SEMIANNUAL_ROWS, basis_check_performed=False).trailing  # type: ignore[attr-defined]
+    # 12か月であること自体は変わらない。留保が付くだけ。
+    assert trailing.basis is DividendBasis.TRAILING_12M
+    assert trailing.dividend == Decimal("3432")
+    assert any("未検査" in note for note in trailing.notes)
+
+
+def test_an_annual_field_with_a_non_annual_fiscal_period_is_not_claimed_as_twelve_months() -> None:
+    """[回帰] `DivAnn` を「Field名が年間配当だから12か月」と扱っていた。
+
+    このリポジトリは半期決算の開示を `PeriodType.FY` として通す実例を持っており、
+    「FY=12か月」は成り立たない。観測された期の長さと矛盾したら受け取らない。
+    """
+    trailing = _assess(  # type: ignore[attr-defined]
+        actual_trend=_trend(
+            "7203",
+            [
+                ("dividend_per_share_annual", date(2025, 9, 30), "40"),
+                ("dividend_per_share_annual", date(2026, 3, 31), "50"),
+            ],
+        )
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert any("決算期が6か月" in note for note in trailing.notes)
