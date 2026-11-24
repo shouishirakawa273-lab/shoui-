@@ -26,6 +26,7 @@ from lib.screener.dividend_yield import (
 )
 from lib.screener.earnings_schedule import EarningsSchedule, ScheduledEarnings
 from lib.screener.financial_trend import AnnualObservation, FinancialTrend, MetricTrend
+from lib.screener.forecast_revisions import ForecastRevisionSeries
 from lib.screener.instrument import InstrumentKind
 from lib.screener.per_share import PerShareBreak, PerShareComparability
 from lib.screener.render_text import render_entry, render_report
@@ -449,3 +450,110 @@ def test_normal_liquidation_days_are_shown_as_numbers() -> None:
 
     assert "0.40日" in _days(0.4, 3.0)
     assert "5.0日" in _days(5.0, 3.0)
+
+
+# --- 予想: familyを固定しない(2026-11-24の実データで発覚) ---
+
+
+def _series(family: str, target: date, values: list[str | None]) -> ForecastRevisionSeries:
+    from lib.screener.forecast_revisions import (
+        ForecastRevision,
+        RevisionDirection,
+        RevisionUnknownReason,
+    )
+
+    return ForecastRevisionSeries(
+        metric_family=family,
+        target_fiscal_year_end=target,
+        decision_at=AS_OF,
+        availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
+        revisions=tuple(
+            ForecastRevision(
+                published_at=AS_OF,
+                available_at=AS_OF,
+                disclosure_period_type="2Q",
+                source_metric_type=f"{family}_current_year_forecast",
+                value=None if v is None else Decimal(v),
+                previous_value=None,
+                change_ratio=None,
+                direction=RevisionDirection.UNKNOWN,
+                accounting_standard="IFRS",
+                unknown_reason=None if v else RevisionUnknownReason.VALUE_NOT_NUMERIC,
+                source_version_id=f"V{i}",
+            )
+            for i, v in enumerate(values)
+        ),
+    )
+
+
+def test_forecast_falls_back_to_a_family_that_has_values() -> None:
+    """[回帰] eps固定だと、epsだけ空の銘柄で「取得不可」と出て他の予想が隠れた。
+
+    6758はepsが3系列すべて空だが、営業利益・売上・純利益・配当に値がある。
+    8951はepsが空で営業利益・経常利益・売上に値がある。
+    """
+    forecasts = (
+        _series("eps", date(2027, 3, 31), [None, None]),
+        _series("operating_profit", date(2027, 3, 31), ["1400000000000", "1500000000000"]),
+    )
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "取得不可" not in text.split("流動性")[0].split("予想")[-1] or "operating_profit" in text
+    assert "operating_profit" in text
+    assert "1400000000000.00" in text or "1400000000000" in text
+
+
+def test_forecast_shows_the_declared_priority_order_first() -> None:
+    forecasts = (
+        _series("sales", date(2027, 3, 31), ["50000000000000"]),
+        _series("operating_profit", date(2027, 3, 31), ["4000000000000"]),
+        _series("eps", date(2027, 3, 31), ["300"]),
+    )
+    lines = _render(forecasts=forecasts)
+    text = "\n".join(lines)
+    assert text.index("operating_profit") < text.index("eps")
+    assert "sales" not in text  # 上限2 familyなので表示されない
+
+
+def test_hidden_forecast_families_are_counted_not_dropped_silently() -> None:
+    forecasts = (
+        _series("operating_profit", date(2027, 3, 31), ["4000000000000"]),
+        _series("eps", date(2027, 3, 31), ["300"]),
+        _series("sales", date(2027, 3, 31), ["50000000000000"]),
+        _series("net_profit", date(2027, 3, 31), ["3500000000000"]),
+    )
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "他 2 指標の予想あり" in text
+
+
+def test_all_empty_forecasts_state_a_reason() -> None:
+    forecasts = (
+        _series("eps", date(2027, 3, 31), [None, None]),
+        _series("net_profit", date(2027, 3, 31), [None]),
+    )
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "取得不可" in text
+    assert "値のある予想が無い" in text
+
+
+def test_forecast_picks_the_latest_target_within_a_family() -> None:
+    forecasts = (
+        _series("eps", date(2026, 3, 31), ["273.91"]),
+        _series("eps", date(2027, 3, 31), ["299.95"]),
+    )
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "2027-03-31" in text
+    assert "299.95" in text
+
+
+def test_forecast_is_labelled_as_company_guidance() -> None:
+    forecasts = (_series("eps", date(2027, 3, 31), ["299.95"]),)
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "会社予想、実績ではない" in text
+
+
+def test_unmapped_accounting_standard_does_not_claim_to_be_unknown() -> None:
+    """REITは`_REIT`を意図的にマップしていない。「不明」は誤読を招く。"""
+    reit_roe = [(date(2026, 6, 30), "0.033", None)]
+    text = "\n".join(_render(trend=_trend(reit_roe), instrument_kind=InstrumentKind.REIT, valuation=None))
+    assert "基準不明" not in text
+    assert "基準の対応なし" in text

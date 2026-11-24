@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from lib.pretrade_risk.correlation import CorrelationAssessment, CorrelationOutcome
@@ -41,6 +41,29 @@ from lib.screener.valuation_percentile import ValuationPercentiles
 
 _ROE_METRIC = "provider_reported_roe"
 _UNAVAILABLE = "取得不可"
+_FORECAST_FAMILY_PRIORITY: tuple[str, ...] = (
+    "operating_profit",
+    "eps",
+    "net_profit",
+    "sales",
+    "dividend_per_share_annual",
+    "ordinary_profit",
+    "distribution_per_unit",
+)
+"""予想改定を表示する順序。**優劣の判断ではなく表示順**である。
+
+2026-11-24、`eps` 固定で表示していたため、6758と8951で「取得不可」と出していた。
+実際にはどちらも予想を開示しており、1株当たりEPSだけが空だった(6758は営業利益・
+売上・純利益・配当に値があり、8951は営業利益・経常利益・売上に値がある)。
+**あるデータを無いと表示していた。**
+
+営業利益を先頭にしたのは、日本の決算短信で会社予想の中心に置かれるのがそれで
+あるため。EPSが次。どれが重要かの判定はしない——値のあるものを順に出すだけ。
+"""
+
+_MAX_FORECAST_FAMILIES = 2
+"""1画面に収めるための表示上限。残りはJSONにある。"""
+
 _LABEL_WIDTH = 14
 """ラベル列の表示幅(セル数)。文字数ではない——下記 `_display_width` 参照。"""
 
@@ -133,7 +156,7 @@ def _roe_lines(trend: FinancialTrend) -> list[str]:
     # 基準をまたいで1本に畳まない——比較可能性が違う。
     points: list[tuple[str, str, str]] = []
     for metric_trend in series:
-        standard = metric_trend.accounting_standard or "基準不明"
+        standard = metric_trend.accounting_standard or "基準の対応なし"
         for observation in metric_trend.observations:
             if observation.value is None or observation.fiscal_period_end is None:
                 continue
@@ -151,20 +174,51 @@ def _roe_lines(trend: FinancialTrend) -> list[str]:
     return lines
 
 
-def _forecast_lines(forecasts: Sequence[ForecastRevisionSeries], *, family: str = "eps") -> list[str]:
-    candidates = [s for s in forecasts if s.metric_family == family and s.target_fiscal_year_end is not None]
-    if not candidates:
-        return [f"  {_label(f'会社予想({family})')}{_UNAVAILABLE} (可視な予想が無い)"]
-    series = max(candidates, key=lambda s: s.target_fiscal_year_end or __import__("datetime").date.min)
+def _forecast_family_lines(series: ForecastRevisionSeries) -> list[str]:
     values = [r for r in series.revisions if r.value is not None]
-    if not values:
-        return [f"  {_label(f'会社予想({family})')}{_UNAVAILABLE} (値が全て空)"]
     sequence = " → ".join(_num(r.value) for r in values)
     target = series.target_fiscal_year_end.isoformat() if series.target_fiscal_year_end else "不明"
+    label = f"予想({series.metric_family})"
     return [
-        f"  {_label(f'会社予想({family})')}{target} 期  {sequence}",
+        f"  {_label(label)}{target} 期  {sequence}",
         f"    改定 {series.revision_count}回 (公表 {series.observation_count}件)  ※会社予想、実績ではない",
     ]
+
+
+def _forecast_lines(
+    forecasts: Sequence[ForecastRevisionSeries],
+    *,
+    priority: Sequence[str] = _FORECAST_FAMILY_PRIORITY,
+    max_families: int = _MAX_FORECAST_FAMILIES,
+) -> list[str]:
+    """値のある予想を表示順に並べる。
+
+    **familyを固定しない。** 固定すると、その指標だけ空の銘柄で「取得不可」と
+    表示され、他にある予想が見えなくなる(2026-11-24に6758と8951で発生)。
+    """
+    # 各familyについて、判定時点に最も近い将来の決算期を1つ選ぶ。
+    by_family: dict[str, ForecastRevisionSeries] = {}
+    for candidate in forecasts:
+        if candidate.target_fiscal_year_end is None:
+            continue
+        if not any(r.value is not None for r in candidate.revisions):
+            continue
+        current = by_family.get(candidate.metric_family)
+        if current is None or (candidate.target_fiscal_year_end > (current.target_fiscal_year_end or date.min)):
+            by_family[candidate.metric_family] = candidate
+
+    shown: list[str] = []
+    families = [f for f in priority if f in by_family] + sorted(set(by_family) - set(priority))
+    for family in families[:max_families]:
+        shown += _forecast_family_lines(by_family[family])
+
+    if not shown:
+        return [f"  {_label('会社予想')}{_UNAVAILABLE} (値のある予想が無い)"]
+
+    hidden = len(families) - max_families
+    if hidden > 0:
+        shown.append(f"    他 {hidden} 指標の予想あり (--format json で全件)")
+    return shown
 
 
 def _liquidity_line(liquidity: LiquidityAssessment) -> str:

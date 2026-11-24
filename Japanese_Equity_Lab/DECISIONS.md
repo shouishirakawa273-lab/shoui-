@@ -20538,3 +20538,40 @@ cells. Worth noting that my first attempt to *check* the alignment measured
 characters too, and reported a misalignment that did not exist.
 
 29 tests. Suite 2978 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (14) — The text view said 取得不可 while the data was there
+
+Reading the real output for three codes found two things.
+
+**The forecast line was hard-coded to `eps`, so it reported 取得不可 for companies
+that do publish guidance.** 6758's EPS forecast is empty across all three target
+years — but operating profit, sales, net profit and dividend per share all carry
+values. 8951 is the same shape: EPS, net profit and dividend empty, operating
+profit, ordinary profit and sales populated. Both issuers guide; neither guides
+per-share EPS through this field. **The screener was displaying available data as
+unavailable**, which is the one failure mode the "state what is missing" rule
+exists to prevent, arrived at from the other direction.
+
+The renderer now takes the families that have values, in a declared display order
+with operating profit first (it is what Japanese earnings releases put at the
+centre of company guidance), shows two to stay inside one screen, and counts the
+rest rather than dropping them silently. The order is explicitly a display
+sequence, not a judgement of importance.
+
+Worth recording that I nearly fixed the wrong thing: my first hypothesis was that
+`_forecast_lines` picked the furthest target year, which would be empty for an
+issuer that does not guide two years out. Checking the data before changing code
+showed all three of 6758's target years were empty, so the selection logic was
+fine and the family choice was the defect.
+
+**`基準不明` overstated what we do not know.** A REIT's `accounting_standard` is
+null because `_REIT` is deliberately unmapped — it names an issuer category, not a
+standard — so "unknown" reads as a data failure where there is none. Now
+「基準の対応なし」, which is true whether the DocType names no standard or is
+genuinely unrecognised. The underlying distinction does exist in
+`_DOC_TYPES_WITHOUT_ACCOUNTING_STANDARD` but does not reach the trend; threading it
+through `DisclosureEnvelope` for a label is not worth it today, and the wording no
+longer misleads.
+
+36 renderer tests. Suite 2985 passed, same 10 pre-existing hook-environment
+failures.
