@@ -1,0 +1,1794 @@
+﻿{
+  "as_of": "2026-11-24T10:14:21.890332+09:00",
+  "availability_semantics": "MARKET_PUBLIC_AT",
+  "correlation": [],
+  "entries": [
+    {
+      "code": "7203",
+      "dividend_yield": {
+        "figures": [
+          {
+            "basis": "FORECAST",
+            "dividend": 100.0,
+            "fiscal_period_end": "2027-03-31",
+            "published_at": "2026-11-05T13:55:00+09:00",
+            "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+            "yield_ratio": 0.030193236714975844
+          },
+          {
+            "basis": "TRAILING",
+            "dividend": 95.0,
+            "fiscal_period_end": "2026-03-31",
+            "published_at": "2026-05-08T13:55:00+09:00",
+            "source_metric_type": "dividend_per_share_annual",
+            "yield_ratio": 0.028683574879227052
+          }
+        ],
+        "note": "莠域Φ縺ｨ螳溽ｸｾ縺ｯ蛻･縺ｮ驥上↑縺ｮ縺ｧ荳｡譁ｹ繧剃ｸｦ縺ｹ繧九ら援譁ｹ縺檎┌縺・→縺阪ｂ縺・援譁ｹ縺ｸ證鈴ｻ吶↓關ｽ縺ｨ縺輔↑縺・Ｚield_ratio縺ｯ蟆乗焚(0.0312=3.12%)縲ゆｸ譬ｪ蠖薙◆繧企・蠖薙・蛻・牡縺ｮ驕｡蜿願ｪｿ謨ｴ縺後＆繧後↑縺・′縲∫樟蝨ｨ蛟､縺ｯ譛譁ｰ縺ｮ驟榊ｽ薙→譛譁ｰ縺ｮ譬ｪ萓｡縺ｧ譛溘ｒ縺ｾ縺溘′縺ｪ縺・◆繧∵ｮｵ蟾ｮ繧定ｸ上∪縺ｪ縺・蛻・ｽ阪・雕上・縺ｮ縺ｧ蜃ｺ縺輔↑縺・縲・,
+        "price": 3312.0,
+        "price_session": "2026-11-20",
+        "unknown_reason": null
+      },
+      "financial_trend": [
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "bps",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 8370.88
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 1904.88
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 2089.08
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 2539.75
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 2753.09
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 3062.82
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "bps",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 5887.88
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 6438.65
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 6830.92
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 7252.17
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "eps",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 803.23
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 205.23
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 179.47
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 365.94
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 359.56
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 295.25
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "eps",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 605.47
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 842.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 650.55
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 735.61
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "net_profit",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 2245261000000.0
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 2850110000000.0
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 2451318000000.0
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 4944933000000.0
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 4765086000000.0
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 3848098000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "net_profit",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 1831109000000.0
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 2493983000000.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 1882873000000.0
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 2076183000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "operating_profit",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 2197748000000.0
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 2995697000000.0
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 2725025000000.0
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 5352934000000.0
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 4795586000000.0
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 3766216000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "operating_profit",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 1994372000000.0
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 2399862000000.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 2467545000000.0
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 2442869000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "provider_reported_roe",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 0.102
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 0.115
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 0.09
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 0.158
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 0.136
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 0.101
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "provider_reported_roe",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 0.106
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 0.137
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 0.098
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 0.104
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "provider_reported_sheq",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 23404547000000.0
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 26245969000000.0
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 28338706000000.0
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 34220991000000.0
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 35924826000000.0
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 39918854000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "provider_reported_sheq",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 17514812000000.0
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 18735982000000.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 19348152000000.0
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 20060618000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "sales",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 27214594000000.0
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 31379507000000.0
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 37154298000000.0
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 45095325000000.0
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 48036704000000.0
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 50684952000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "sales",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 27597193000000.0
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 29379510000000.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 30225681000000.0
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 29929992000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "IFRS",
+          "metric_type": "total_assets",
+          "observations": [
+            {
+              "fiscal_period_end": "2021-03-31",
+              "published_at": "2021-05-31T15:00:00+09:00",
+              "superseded_count": 1,
+              "value": 62267140000000.0
+            },
+            {
+              "fiscal_period_end": "2022-03-31",
+              "published_at": "2022-05-11T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 67688771000000.0
+            },
+            {
+              "fiscal_period_end": "2023-03-31",
+              "published_at": "2023-05-10T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 74303180000000.0
+            },
+            {
+              "fiscal_period_end": "2024-03-31",
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 90114296000000.0
+            },
+            {
+              "fiscal_period_end": "2025-03-31",
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 93601350000000.0
+            },
+            {
+              "fiscal_period_end": "2026-03-31",
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "superseded_count": 0,
+              "value": 105522331000000.0
+            }
+          ]
+        },
+        {
+          "accounting_standard": "USGAAP",
+          "metric_type": "total_assets",
+          "observations": [
+            {
+              "fiscal_period_end": "2017-03-31",
+              "published_at": "2017-05-10T15:00:00+09:00",
+              "superseded_count": 0,
+              "value": 48750186000000.0
+            },
+            {
+              "fiscal_period_end": "2018-03-31",
+              "published_at": "2018-05-09T13:25:00+09:00",
+              "superseded_count": 0,
+              "value": 50308249000000.0
+            },
+            {
+              "fiscal_period_end": "2019-03-31",
+              "published_at": "2019-05-08T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 51936949000000.0
+            },
+            {
+              "fiscal_period_end": "2020-03-31",
+              "published_at": "2020-05-12T13:10:00+09:00",
+              "superseded_count": 0,
+              "value": 52680436000000.0
+            }
+          ]
+        }
+      ],
+      "forecast_revisions": [
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "distribution_per_unit",
+          "observation_count": 4,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "3Q",
+              "previous_value": null,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "distribution_per_unit",
+          "observation_count": 4,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "3Q",
+              "previous_value": null,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "distribution_per_unit",
+          "observation_count": 2,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "distribution_per_unit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "dividend_per_share_annual",
+          "observation_count": 5,
+          "revision_count": 1,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 90.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "3Q",
+              "previous_value": 90.0,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 90.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 90.0,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "dividend_per_share_annual",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 95.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "1Q",
+              "previous_value": 95.0,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 95.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "2Q",
+              "previous_value": 95.0,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 95.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "3Q",
+              "previous_value": 95.0,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 95.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 95.0,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "dividend_per_share_annual",
+          "observation_count": 3,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 100.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "1Q",
+              "previous_value": 100.0,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 100.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "2Q",
+              "previous_value": 100.0,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "dividend_per_share_annual_current_year_forecast",
+              "unknown_reason": null,
+              "value": 100.0
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "eps",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "eps_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 264.95
+            },
+            {
+              "change_ratio": 0.00033968673334591434,
+              "direction": "UP",
+              "disclosure_period_type": "1Q",
+              "previous_value": 264.95,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 265.04
+            },
+            {
+              "change_ratio": 0.01407334741925747,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 265.04,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 268.77
+            },
+            {
+              "change_ratio": 0.26825910629906613,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 268.77,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 340.87
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 340.87,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "eps",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "eps_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 237.57
+            },
+            {
+              "change_ratio": -0.1409268847076651,
+              "direction": "DOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": 237.57,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 204.09
+            },
+            {
+              "change_ratio": 0.10152383752266157,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 204.09,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 224.81
+            },
+            {
+              "change_ratio": 0.21840665450825142,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 224.81,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 273.91
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 273.91,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "eps",
+          "observation_count": 3,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "eps_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 251.25
+            },
+            {
+              "change_ratio": 0.0832636815920398,
+              "direction": "UP",
+              "disclosure_period_type": "1Q",
+              "previous_value": 251.25,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 272.17
+            },
+            {
+              "change_ratio": 0.10206856009111952,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 272.17,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "eps_current_year_forecast",
+              "unknown_reason": null,
+              "value": 299.95
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "net_profit",
+          "observation_count": 5,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "net_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 3570000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "2Q",
+              "previous_value": 3570000000000.0,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3570000000000.0
+            },
+            {
+              "change_ratio": 0.2661064425770308,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 3570000000000.0,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 4520000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 4520000000000.0,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "net_profit",
+          "observation_count": 5,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "net_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 2660000000000.0
+            },
+            {
+              "change_ratio": 0.10150375939849623,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 2660000000000.0,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 2930000000000.0
+            },
+            {
+              "change_ratio": 0.21843003412969283,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 2930000000000.0,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3570000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 3570000000000.0,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "net_profit",
+          "observation_count": 3,
+          "revision_count": 1,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "net_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 3250000000000.0
+            },
+            {
+              "change_ratio": 0.09846153846153846,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 3250000000000.0,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "net_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3570000000000.0
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "operating_profit",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "operating_profit_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 4300000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "1Q",
+              "previous_value": 4300000000000.0,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 4300000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "2Q",
+              "previous_value": 4300000000000.0,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 4300000000000.0
+            },
+            {
+              "change_ratio": 0.09302325581395349,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 4300000000000.0,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 4700000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 4700000000000.0,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "operating_profit",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "operating_profit_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 3800000000000.0
+            },
+            {
+              "change_ratio": -0.15789473684210525,
+              "direction": "DOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": 3800000000000.0,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3200000000000.0
+            },
+            {
+              "change_ratio": 0.0625,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 3200000000000.0,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3400000000000.0
+            },
+            {
+              "change_ratio": 0.11764705882352941,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 3400000000000.0,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3800000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 3800000000000.0,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "operating_profit",
+          "observation_count": 3,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "operating_profit_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 3000000000000.0
+            },
+            {
+              "change_ratio": 0.13333333333333333,
+              "direction": "UP",
+              "disclosure_period_type": "1Q",
+              "previous_value": 3000000000000.0,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3400000000000.0
+            },
+            {
+              "change_ratio": 0.14705882352941177,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 3400000000000.0,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "operating_profit_current_year_forecast",
+              "unknown_reason": null,
+              "value": 3900000000000.0
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "ordinary_profit",
+          "observation_count": 5,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "3Q",
+              "previous_value": null,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "ordinary_profit",
+          "observation_count": 5,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "3Q",
+              "previous_value": null,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "ordinary_profit",
+          "observation_count": 3,
+          "revision_count": 0,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_next_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "1Q",
+              "previous_value": null,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": null,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "ordinary_profit_current_year_forecast",
+              "unknown_reason": "VALUE_NOT_NUMERIC",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "sales",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2024-05-08T13:55:00+09:00",
+              "source_metric_type": "sales_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 46000000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "1Q",
+              "previous_value": 46000000000000.0,
+              "published_at": "2024-08-01T13:25:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 46000000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "2Q",
+              "previous_value": 46000000000000.0,
+              "published_at": "2024-11-06T13:55:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 46000000000000.0
+            },
+            {
+              "change_ratio": 0.021739130434782608,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 46000000000000.0,
+              "published_at": "2025-02-05T13:25:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 47000000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 47000000000000.0,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2025-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "sales",
+          "observation_count": 5,
+          "revision_count": 3,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2025-05-08T13:55:00+09:00",
+              "source_metric_type": "sales_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 48500000000000.0
+            },
+            {
+              "change_ratio": 0.0,
+              "direction": "FLAT",
+              "disclosure_period_type": "1Q",
+              "previous_value": 48500000000000.0,
+              "published_at": "2025-08-07T14:00:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 48500000000000.0
+            },
+            {
+              "change_ratio": 0.010309278350515464,
+              "direction": "UP",
+              "disclosure_period_type": "2Q",
+              "previous_value": 48500000000000.0,
+              "published_at": "2025-11-05T14:25:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 49000000000000.0
+            },
+            {
+              "change_ratio": 0.02040816326530612,
+              "direction": "UP",
+              "disclosure_period_type": "3Q",
+              "previous_value": 49000000000000.0,
+              "published_at": "2026-02-06T14:00:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 50000000000000.0
+            },
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": 50000000000000.0,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": "TARGET_YEAR_ALREADY_REPORTED",
+              "value": null
+            }
+          ],
+          "target_fiscal_year_end": "2026-03-31"
+        },
+        {
+          "accounting_standards": [
+            "IFRS"
+          ],
+          "metric_family": "sales",
+          "observation_count": 3,
+          "revision_count": 2,
+          "revisions": [
+            {
+              "change_ratio": null,
+              "direction": "UNKNOWN",
+              "disclosure_period_type": "FY",
+              "previous_value": null,
+              "published_at": "2026-05-08T13:55:00+09:00",
+              "source_metric_type": "sales_next_year_forecast",
+              "unknown_reason": "FIRST_OBSERVED",
+              "value": 51000000000000.0
+            },
+            {
+              "change_ratio": 0.058823529411764705,
+              "direction": "UP",
+              "disclosure_period_type": "1Q",
+              "previous_value": 51000000000000.0,
+              "published_at": "2026-08-04T14:00:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 54000000000000.0
+            },
+            {
+              "change_ratio": -0.009259259259259259,
+              "direction": "DOWN",
+              "disclosure_period_type": "2Q",
+              "previous_value": 54000000000000.0,
+              "published_at": "2026-11-05T13:55:00+09:00",
+              "source_metric_type": "sales_current_year_forecast",
+              "unknown_reason": null,
+              "value": 53500000000000.0
+            }
+          ],
+          "target_fiscal_year_end": "2027-03-31"
+        }
+      ],
+      "instrument_kind": "SHARE",
+      "liquidity": {
+        "average_daily_turnover": 96294619610.0,
+        "days_to_liquidate": 1.0384796202010771e-05,
+        "last_session": "2026-11-20",
+        "outcome": "OK",
+        "staleness_days": 4,
+        "unknown_reason": null
+      },
+      "not_applicable_under_standard": [],
+      "per_share_comparability": {
+        "breaks": [
+          {
+            "accounting_standard": "IFRS",
+            "detail": "net_profit/eps 縺・2021-03-31 譛溘°繧・2022-03-31 譛溘〒邏・.97蛟阪↓螟牙喧縺励◆縲ゅ％縺ｮ蠅・阜繧偵∪縺溘＄ eps 縺ｯ蜷後§1譬ｪ蠖薙◆繧雁渕貅悶〒縺ｯ縺ｪ縺・蜴溷屏縺ｯ蛻・牡繝ｻ菴ｵ蜷医・蠅苓ｳ・・險よｭ｣縺ｮ縺・★繧後→繧よ妙螳壹＠縺ｪ縺・縲・,
+            "divisor_ratio": 4.968140447363565,
+            "divisor_source_metric": "net_profit",
+            "from_fiscal_period_end": "2021-03-31",
+            "metric_type": "eps",
+            "to_fiscal_period_end": "2022-03-31"
+          },
+          {
+            "accounting_standard": "IFRS",
+            "detail": "provider_reported_sheq/bps 縺・2021-03-31 譛溘°繧・2022-03-31 譛溘〒邏・.93蛟阪↓螟牙喧縺励◆縲ゅ％縺ｮ蠅・阜繧偵∪縺溘＄ bps 縺ｯ蜷後§1譬ｪ蠖薙◆繧雁渕貅悶〒縺ｯ縺ｪ縺・蜴溷屏縺ｯ蛻・牡繝ｻ菴ｵ蜷医・蠅苓ｳ・・險よｭ｣縺ｮ縺・★繧後→繧よ妙螳壹＠縺ｪ縺・縲・,
+            "divisor_ratio": 4.927945158000112,
+            "divisor_source_metric": "provider_reported_sheq",
+            "from_fiscal_period_end": "2021-03-31",
+            "metric_type": "bps",
+            "to_fiscal_period_end": "2022-03-31"
+          }
+        ],
+        "corporate_action_dates": [],
+        "corporate_actions_known_from": "2025-04-03",
+        "divisor_sources": {
+          "bps": "provider_reported_sheq",
+          "eps": "net_profit"
+        },
+        "metrics": [
+          "eps",
+          "bps"
+        ],
+        "note": "1譬ｪ蠖薙◆繧頑欠讓吶・髢狗､ｺ譎らせ縺ｮ縺ｾ縺ｾ(as-reported)縺ｧ縲∵ｪ蠑丞・蜑ｲ繧偵＆縺九・縺ｼ縺｣縺ｦ隱ｿ謨ｴ縺励※縺・↑縺・Ｄorporate_actions_known_from 繧医ｊ蜑阪・Corporate Action縺ｯ隕ｳ貂ｬ縺ｧ縺阪※縺翫ｉ縺壹∫┌縺九▲縺溘→縺・≧諢丞袖縺ｧ縺ｯ縺ｪ縺・UNKNOWN)縲・,
+        "tolerance": 0.25,
+        "unchecked_metrics": []
+      }
+    }
+  ],
+  "fins_retrieved_at": "2026-11-24T01:14:23.559128+00:00",
+  "include_unknown_availability": false,
+  "instrument_master": {
+    "available": true,
+    "unavailable_reason": null
+  },
+  "position_value": 1000000.0,
+  "price_retrieved_at": "2026-11-24T01:14:22.326067+00:00",
+  "trend_years": 10,
+  "unavailable": {
+    "metrics": [
+      "pbr",
+      "shares_outstanding"
+    ],
+    "per_percentile": "lib/valuation 縺ｫ繝｢繝・Ν縺ｯ縺ゅｋ縺薫rchestration縺梧悴謨ｴ蛯吶・縺溘ａ譛ｪ螳溯｣・,
+    "reason": "2026-11-24縺ｫnormalize.py縺ｸ縺ｮ繝槭ャ繝斐Φ繧ｰ縺ｯ螳御ｺ・＠縺ｦ縺・ｋ(provider_reported_roe / bps / shares_outstanding_period_end 遲・縲ゅ％縺薙〒蜃ｺ縺ｪ縺・・縺ｯScreener蛛ｴ縺ｮOrchestration縺梧悴螳溯｣・・縺溘ａ縲・
+  },
+  "warnings": {
+    "correlation": [],
+    "liquidity": [],
+    "per_share_basis": [
+      "7203"
+    ]
+  }
+}
