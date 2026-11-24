@@ -20606,3 +20606,43 @@ were updated; they were testing the display, which is what changed.
 
 42 renderer tests. Suite 2991 passed, same 10 pre-existing hook-environment
 failures.
+
+## 2026-11-24 (16) — The 方針書's reason for rejecting a UI no longer holds
+
+Nothing implemented. This records an observation and a direction, per
+`CLAUDE.md`「仕様変更が必要になった場合はコードを勝手に変えず `DECISIONS.md` に記録する」.
+
+The 方針書 rejects a UI in two places: the 却下する作業 table (「UI・ダッシュボード /
+CSV とターミナル出力で足りる」) and the やらないこと list (「UI(CSVかターミナル出力で十分)」).
+
+**That reason was a prediction, made before the tool had ever been used.** The first
+real use — choosing among 3283 / 2979 / 8967 for an actual investment decision — tested
+it. The owner found re-running `scripts/screen.py` in PowerShell for each look too
+costly and asked for something browsable instead. The prediction was wrong.
+
+A second point the 方針書 did not consider: the 「1画面」 acceptance criterion
+**deliberately withholds data** (`他 N 指標あり (--format json)`, `推移(直近10/20期)`).
+"Comprehensive" and "one screen" are in tension by design, and no amount of CLI
+polish resolves it. A UI can carry a summary and a drill-down at once.
+
+**What still holds** is the 却下 table's deeper pattern, which is not about terminals.
+D0111〜D0113の拡張 was rejected because widening before anything is verified is
+「JELが膨らんだ原因そのもの」; 自動独立審査 because 「それ自身が未完プロジェクトを1個
+増やす」. A UI is that same shape of risk. So the sequencing matters more than the
+decision itself.
+
+**Decided by the owner, 2026-11-24:**
+
+1. **Step 3 closes first.** One investment judgment remains in its acceptance
+   criteria. Starting a UI now would leave T open indefinitely.
+2. **The form is an independent Streamlit app under `Japanese_Equity_Lab/`** — not a
+   page added to the repository-root `app.py`. That app's providers (yfinance,
+   Finnhub) carry no PIT guarantee. Putting PIT-gated numbers beside non-PIT ones on
+   one screen reproduces exactly the defect class fixed twice today: a half-period
+   distribution shown as an annual figure, and a structurally inapplicable field
+   shown as a missing value. **Same name, different quantity.** `lib/screener/` is
+   already UI-independent (that is why `render_text.py` is separate), so wiring is
+   the only work; no logic moves into the UI (root `CLAUDE.md`).
+
+The 却下 row in the 方針書 stays as written until that work begins. This entry is the
+record that its stated reason has been falsified by use.
