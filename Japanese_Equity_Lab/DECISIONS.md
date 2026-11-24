@@ -20056,3 +20056,26 @@ The script now compares every watched name against the payload's key set and
 reports absent names separately, as a naming error rather than an observation, so
 the same misreading cannot pass silently. REIT operating profit is UNKNOWN
 pending a re-run with `OP`.
+
+## 2026-11-24 (3) — Research phase closed; REITs do disclose operating profit
+
+`OP` comes back 20/27 for 89510, so the reading I had started — that REITs do not
+disclose operating profit — was wrong, as the guessed field name implied it would
+be. With the existence check in place the fill-rate table raised no naming
+warnings, which also confirms the remaining nineteen watched names are all real
+fields in the payload.
+
+Every observation the implementation depends on is now settled: the 2026-added
+`ShEq` and `ROE` reach back the full ten years the plan allows; REIT data is
+available through `/fins/summary` with a swapped field set; ordinary *and*
+operating profit are both present for REITs; PER and PBR stay continuous across a
+split while EPS and BPS do not; `/fins/earnings-date` exposes the published and
+scheduled dates the PIT-safe query needs; `ProdCat` routes instruments; observed
+DocTypes sit inside the official 42; and `from`/`to` are ignored by
+`/fins/summary`.
+
+What remains UNKNOWN does not block: where a REIT's distribution forecast lives
+(`FDivUnit` is empty but `REITEarnForecastRevision` exists, so absence cannot be
+claimed), negative-earnings handling in `/equities/valuation`, deletion semantics,
+ordinary profit under JMIS and Foreign, and the `ProdCat` of ETNs and
+infrastructure funds.
