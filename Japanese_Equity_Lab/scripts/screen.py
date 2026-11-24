@@ -336,8 +336,9 @@ def main(argv: list[str] | None = None) -> int:
         "unavailable": {
             "metrics": list(UNMAPPED_METRICS),
             "reason": (
-                "Share Count関連・Dividend関連・ROEはRaw PayloadにはあるがMetricへ未マッピング"
-                "(lib/fundamentals/normalize.py)。Field名を推測して読まない。"
+                "2026-11-24にnormalize.pyへのマッピングは完了している"
+                "(provider_reported_roe / bps / shares_outstanding_period_end 等)。"
+                "ここで出ないのはScreener側のOrchestrationが未実装のため。"
             ),
             "per_percentile": "lib/valuation にモデルはあるがOrchestrationが未整備のため未実装",
         },

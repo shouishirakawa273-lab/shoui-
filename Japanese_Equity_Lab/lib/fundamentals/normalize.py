@@ -273,6 +273,158 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
         ConsolidationScope.CONSOLIDATED,
         PeriodBasis.POINT_IN_TIME,
     ),
+    # --- Step 3(2026-11-24追加) ---
+    #
+    # 公式仕様ページでField名と意味を確認し、**さらに実データで実在を観測した**
+    # ものだけを登録する。7203(普通株)と89510(REIT)の両方でRaw Payloadの
+    # キー集合に存在することを `scripts/jquants_step3_schema_diagnostic.py` の
+    # 存在チェックで確認済み。
+    #
+    # **公式仕様にしか載っていないFieldは足していない**(`FPayoutRatioAnn`・
+    # `DivTotalAnn`・`Div1Q`〜`DivFY`等)。2026-11-24に`OpP`という綴りを推測で
+    # 監視対象に入れ、REITで0件になったのを「REITは営業利益を開示しない」と
+    # 読みかけた(実在する名前は`OP`)。存在しないFieldは常に0件になるので、
+    # 観測なしでの登録はこの種の誤りを招く。
+    #
+    # `ShEq`(自己資本)と`Eq`(純資産)は**別概念**である。普通株では両方が
+    # 埋まり値が異なる。REITでは`ShEq`が空で`Eq`のみ埋まる(89510: ShEq 0/27、
+    # Eq 20/27)。したがって**銘柄種別で読み替えるのではなく、別Metricとして
+    # 並べる。** どちらを使うかは上位層の判断であり、normalize.pyは
+    # 「どのFieldから取れたか」という構造的事実だけを記録する。
+    # `DivAnn`(一株当たり配当)と`DivUnit`(1口当たり分配金)も同様に別概念。
+    "provider_reported_eq": (
+        "Eq",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "provider_reported_eq_non_consolidated": (
+        "NCEq",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "provider_reported_sheq_non_consolidated": (
+        "NCShEq",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    # ROE・配当性向はProviderが算出した比率。`provider_reported_eqar` と同じ扱いで、
+    # **Lab側で再計算も上書きもしない**(Validation Testでの整合確認のみ許容)。
+    # `/equities/valuation` のROE(TTM純利益÷期首期末平均自己資本)とは**定義が違う
+    # 別物**であり、同一指標の2つの測定値ではない。混ぜない。
+    # PeriodBasisは`eps`と同じCUMULATIVE: 分子が期間のFlowであり、
+    # `provider_reported_eqar`(Stock÷Stock)とは性質が異なる。
+    "provider_reported_roe": (
+        "ROE",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "provider_reported_roe_non_consolidated": (
+        "NCROE",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "provider_reported_payout_ratio_annual": (
+        "PayoutRatioAnn",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    # BPSは期末時点の1株当たりStockなのでPOINT_IN_TIME(`eps`はFlowなのでCUMULATIVE)。
+    # **開示時点のままで株式分割の遡及調整はされていない。** 7203のFY行は
+    # 1.154倍→0.228倍で基準が切り替わっており、`lib/screener/per_share.py` の
+    # 監視対象に入れる必要がある(EPSと同じ不連続)。
+    "bps": (
+        "BPS",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "bps_non_consolidated": (
+        "NCBPS",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.NON_CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    # 株式数。`ShOutFY`は**自己株式を含む**期末発行済株式数で、自己株式を除いた
+    # 株式数は公式ヘルプが示すとおり `ShOutFY - TrShFY` で得られる(公式が示した
+    # 導出なので推測ではない)。ただし**normalize.pyでは減算しない**: Providerが
+    # 出した2つの値をそのまま別Metricとして保持し、必要な層で計算する。
+    # REITでは`AvgSh`が空(89510: 0/27)。
+    "shares_outstanding_period_end": (
+        "ShOutFY",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "treasury_shares_period_end": (
+        "TrShFY",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.POINT_IN_TIME,
+    ),
+    "average_shares": (
+        "AvgSh",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    # 配当(一株当たり、普通株)。**遡及調整されない**(公式明記)ので、EPS/BPSと
+    # 同じ不連続が生じる。
+    "dividend_per_share_annual": (
+        "DivAnn",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "dividend_per_share_annual_current_year_forecast": (
+        "FDivAnn",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "dividend_per_share_annual_next_year_forecast": (
+        "NxFDivAnn",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.NEXT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    # 分配金(1口当たり、REIT等)。普通株では空(7203: 0/41)、REITでは埋まる
+    # (89510: DivUnit 20/27)。`FDivUnit`はREITでも0/27だったが、
+    # `REITEarnForecastRevision`が7件あるため**「REITの分配金予想は取得できない」と
+    # 結論してはならない**。どのFieldに入るかは未確認。
+    "distribution_per_unit": (
+        "DivUnit",
+        ActualOrForecast.ACTUAL,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
+    "distribution_per_unit_current_year_forecast": (
+        "FDivUnit",
+        ActualOrForecast.COMPANY_FORECAST,
+        FiscalYearTarget.CURRENT_FISCAL_YEAR,
+        ConsolidationScope.CONSOLIDATED,
+        PeriodBasis.CUMULATIVE,
+    ),
 }
 
 # Providerが使う会計基準を表すLabel文字列。IFRSは公式仕様(IFRS/USGAAPには
@@ -287,30 +439,113 @@ _METRIC_FIELD_MAP: dict[str, tuple[str, ActualOrForecast, FiscalYearTarget, Cons
 # 変わらない、ラベルのみ変更)。
 ACCOUNTING_STANDARD_IFRS = "IFRS"
 ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP = "PROVIDER_SUFFIX_JP"
+ACCOUNTING_STANDARD_USGAAP = "USGAAP"
+ACCOUNTING_STANDARD_JMIS = "JMIS"
+"""ＪＭＩＳ(修正国際基準)。公式DocType一覧に「決算短信（連結・ＪＭＩＳ）」として
+独立して載る**IFRSとは別の会計基準**。IFRSベースではあるが同一ではないため、
+`ACCOUNTING_STANDARD_IFRS` へ寄せてはならない。"""
 
 # DocType文字列 -> Accounting Standard の明示的Mapping(substring heuristic禁止)。
-# IFRS 4件・"_JP"接尾辞4件は4銘柄Local Real Data Validationで実在する
-# DocType値として確認済み(D0043追記)。それ以外(Non-Consolidated DocType・
-# USGAAPのDocType・Forecast Revision専用DocType等)は未確認のため、既定で
-# fail closed(None)する。
+#
+# 2026-11-22、公式DocType一覧(jpx-jquants.com/ja/spec/fin-summary/typeofdocument)
+# へ到達でき、接尾辞の意味が確認できた。登録するのは
+# **接尾辞が会計基準を指すもの**だけ:
+#
+#   _JP   「日本基準」    _US  「米国基準」
+#   _IFRS 「ＩＦＲＳ」    _JMIS「ＪＭＩＳ」
+#
+# **`_Foreign`(外国株)と`_REIT`(REIT)は登録しない。** 公式ラベルはそれぞれ
+# 「決算短信（連結・外国株）」「決算短信（REIT）」であり、これは**発行者の区分で
+# あって会計基準ではない**。会計基準へマップすれば推測になる。DocTypeが会計基準と
+# 発行者区分の2つを兼ねているのがモデル上のズレで、本来は別軸に分けるべきだが、
+# それはStep 3の範囲外(DECISIONS.md 2026-11-24参照)。
+#
+# また、**実際に文字列として見たDocTypeだけを登録する**(公式一覧ページで読んだ
+# もの、または実データで観測したもの)。見ていない組み合わせは意図的に未登録で、
+# 公式42種に対して本表は不完全である。未登録はfail closedで安全に処理され、
+# 現れればwarningで露出する。推測で綴った文字列を足しても得がない。
 _DOC_TYPE_TO_ACCOUNTING_STANDARD: dict[str, str] = {
+    # IFRS連結: 1Q/2Q/3Q/FYは実データ観測済み(7203/6758/8056)、OtherPeriodは公式一覧
     "1QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
     "2QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
     "3QFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
     "FYFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "OtherPeriodFinancialStatements_Consolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    # IFRS非連結: 公式一覧
+    "1QFinancialStatements_NonConsolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "2QFinancialStatements_NonConsolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "3QFinancialStatements_NonConsolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "FYFinancialStatements_NonConsolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    "OtherPeriodFinancialStatements_NonConsolidated_IFRS": ACCOUNTING_STANDARD_IFRS,
+    # 日本基準連結: 実データ観測済み(3626)および公式一覧
     "1QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
     "2QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
     "3QFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
     "FYFinancialStatements_Consolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    # 日本基準非連結: 公式一覧
+    "1QFinancialStatements_NonConsolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "2QFinancialStatements_NonConsolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "3QFinancialStatements_NonConsolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "FYFinancialStatements_NonConsolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    "OtherPeriodFinancialStatements_NonConsolidated_JP": ACCOUNTING_STANDARD_PROVIDER_SUFFIX_JP,
+    # 米国基準連結: 2026-11-24に7203の2017〜2020年で観測済み(14行)、および公式一覧
+    "1QFinancialStatements_Consolidated_US": ACCOUNTING_STANDARD_USGAAP,
+    "2QFinancialStatements_Consolidated_US": ACCOUNTING_STANDARD_USGAAP,
+    "3QFinancialStatements_Consolidated_US": ACCOUNTING_STANDARD_USGAAP,
+    "FYFinancialStatements_Consolidated_US": ACCOUNTING_STANDARD_USGAAP,
+    # ＪＭＩＳ連結: 公式一覧
+    "1QFinancialStatements_Consolidated_JMIS": ACCOUNTING_STANDARD_JMIS,
+    "2QFinancialStatements_Consolidated_JMIS": ACCOUNTING_STANDARD_JMIS,
+    "3QFinancialStatements_Consolidated_JMIS": ACCOUNTING_STANDARD_JMIS,
+    "FYFinancialStatements_Consolidated_JMIS": ACCOUNTING_STANDARD_JMIS,
+    "OtherPeriodFinancialStatements_Consolidated_JMIS": ACCOUNTING_STANDARD_JMIS,
 }
 
-# 会計基準上、そもそも存在しない指標(ユーザー確認済み公式仕様、D0043)。
-# `PROVIDER_SUFFIX_JP`はここに含めない: 経常利益(ordinary_profit)が
-# "_JP"接尾辞の会計基準で存在しない、という事実は確認できていないため
-# (未確認事項を推測で埋めない、D0043)。
+# 公式一覧に載っているが、接尾辞が会計基準を指さないDocType。
+#
+# これを分けておく理由は**warningの意味が違う**から。「公式一覧にあるが会計基準を
+# 名乗っていない」は仕様どおりの既知の状態で、`accounting_standard=None` が正しい
+# 結果である。「一覧にも無い未知のDocType」はSchema Evolutionか綴りの変化であり、
+# 調査が必要な状態。同じ文言で出すと、前者のノイズに後者が埋もれる。
+#
+# `_REIT`は2026-11-24に89510で観測済み(`FYFinancialStatements_Consolidated_REIT`
+# 20件、`REITEarnForecastRevision` 7件)。REITが経常利益を開示していることも同時に
+# 確認したので、`_NOT_APPLICABLE_UNDER_STANDARD` には**追加しない**。
+_DOC_TYPES_WITHOUT_ACCOUNTING_STANDARD: frozenset[str] = frozenset(
+    {
+        # 外国株(発行者区分、会計基準ではない): 公式一覧
+        "1QFinancialStatements_Consolidated_Foreign",
+        "2QFinancialStatements_Consolidated_Foreign",
+        "3QFinancialStatements_Consolidated_Foreign",
+        "FYFinancialStatements_Consolidated_Foreign",
+        "OtherPeriodFinancialStatements_Consolidated_Foreign",
+        "1QFinancialStatements_NonConsolidated_Foreign",
+        "2QFinancialStatements_NonConsolidated_Foreign",
+        "3QFinancialStatements_NonConsolidated_Foreign",
+        "FYFinancialStatements_NonConsolidated_Foreign",
+        "OtherPeriodFinancialStatements_NonConsolidated_Foreign",
+        # REIT(発行者区分): 公式一覧、89510で観測済み
+        "FYFinancialStatements_Consolidated_REIT",
+        # 修正の開示(そもそも決算短信ではない): 公式一覧、REIT分は89510で観測済み
+        "DividendForecastRevision",
+        "EarnForecastRevision",
+        "REITDividendForecastRevision",
+        "REITEarnForecastRevision",
+    }
+)
+
+# 会計基準上、そもそも存在しない指標(ユーザー確認済み公式仕様、D0043。
+# 2026-11-22に公式仕様ページで再確認、2026-11-24に実データで裏付け: `OdP`は
+# IFRS/米国基準のみで構成された7203の41行すべてで空だった)。
+#
+# ここに**追加してはならないもの**:
+# - `PROVIDER_SUFFIX_JP`: 経常利益が存在しないという事実は確認できていない
+# - `JMIS`: IFRSベースなので空になりそうだが、公式記載は「IFRS・米国基準」までで
+#   JMISに触れていない。推測で埋めない
+# - REIT: 2026-11-24に89510で`OdP` 20/27を観測。**REITは経常利益を開示している**
 _NOT_APPLICABLE_UNDER_STANDARD: dict[str, frozenset[str]] = {
     ACCOUNTING_STANDARD_IFRS: frozenset({"ordinary_profit"}),
-    "USGAAP": frozenset({"ordinary_profit"}),
+    ACCOUNTING_STANDARD_USGAAP: frozenset({"ordinary_profit"}),
 }
 
 _KNOWN_PERIOD_TYPES: dict[str, PeriodType] = {
@@ -500,9 +735,18 @@ def parse_financial_summary_payload(
         if doc_type is not None:
             accounting_standard = _DOC_TYPE_TO_ACCOUNTING_STANDARD.get(doc_type)
             if accounting_standard is None:
-                logger.warning(
-                    "fins_summary: 未知のDocType '%s' のためaccounting_standardをUNKNOWN(None)にfail closedします", doc_type
-                )
+                if doc_type in _DOC_TYPES_WITHOUT_ACCOUNTING_STANDARD:
+                    # 仕様どおりの既知の状態。調査すべき異常ではない。
+                    logger.info(
+                        "fins_summary: DocType '%s' は会計基準を名乗らないため"
+                        "accounting_standardはUNKNOWN(None)です(公式一覧にある既知の種別)",
+                        doc_type,
+                    )
+                else:
+                    logger.warning(
+                        "fins_summary: 未知のDocType '%s' のためaccounting_standardをUNKNOWN(None)にfail closedします",
+                        doc_type,
+                    )
 
         canonical_entity_id: str | None = None
         if entity_registry is not None and disc_date is not None:

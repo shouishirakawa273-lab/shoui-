@@ -20079,3 +20079,69 @@ What remains UNKNOWN does not block: where a REIT's distribution forecast lives
 claimed), negative-earnings handling in `/equities/valuation`, deletion semantics,
 ordinary profit under JMIS and Foreign, and the `ProdCat` of ETNs and
 infrastructure funds.
+
+## 2026-11-24 (4) — Step 3 Stage 1: DocType registration and field mapping
+
+**DocTypes registered, 8 entries to 28.** The official list reached on 2026-11-22
+shows six suffixes, of which four name an accounting standard: `_JP` 日本基準,
+`_US` 米国基準, `_IFRS` ＩＦＲＳ, `_JMIS` ＪＭＩＳ. Those are now explicit entries
+across the period types and consolidation scopes whose strings were actually seen,
+either on the official page or in real data. Strings never seen verbatim stay
+unregistered: fail-closed already handles them safely, a warning surfaces them if
+they appear, and a guessed spelling buys nothing. So the table is deliberately
+incomplete against the official 42.
+
+`_US` was the point of the exercise — it is what left 7203's 2017–2020 rows at
+`accounting_standard=None`, and registering it also activates the
+`USGAAP` entry in `_NOT_APPLICABLE_UNDER_STANDARD`, which had been unreachable
+because no DocType mapped to that label. `_JMIS` gets its own constant and is
+**not** folded into IFRS: the official list carries it as a standard of its own,
+and IFRS-derived is not IFRS.
+
+**`_Foreign` and `_REIT` are deliberately not mapped.** Their official labels are
+「決算短信（連結・外国株）」and「決算短信（REIT）」— an issuer category, not an
+accounting standard. Mapping them would be a guess. The real problem is that
+DocType encodes two things at once, standard and issuer category, and the proper
+fix is to separate the axes; that is outside Step 3. They go instead into
+`_DOC_TYPES_WITHOUT_ACCOUNTING_STANDARD` so the log can distinguish "officially
+listed, names no standard" (info, the spec working as written) from "not in the
+list at all" (warning, schema evolution or a changed spelling). One message for
+both would bury the second in the noise of the first.
+
+REIT also stays out of `_NOT_APPLICABLE_UNDER_STANDARD`, because `OdP` came back
+20/27 for 89510 — REITs do disclose ordinary profit. JMIS stays out for the
+opposite reason: it looks like it should be absent, but the official text covers
+only IFRS and US GAAP, so assuming would be guessing.
+
+**Sixteen fields mapped, 23 metric types to 39.** Only names whose existence the
+diagnostic's key-set check confirmed in both 7203 and 89510 payloads. Fields that
+appear only in the official spec — `FPayoutRatioAnn`, `DivTotalAnn`, the
+per-quarter `Div1Q`–`DivFY` — are left out, because the `OpP` incident earlier
+today showed what an unobserved name costs: it reads as zero everywhere and looks
+like an observation.
+
+The modelling decision that mattered: **`ShEq` and `Eq` are distinct metrics, not
+one metric read from different fields by instrument type.** For common stock both
+are populated with different values — the existing code already said so — and for
+a REIT only `Eq` is. The same holds for `DivAnn` against `DivUnit`, per share
+versus per unit. Mapping them separately means normalize.py needs no
+instrument-type branching at all; which one to show is the caller's decision. That
+matches the module's existing rule that scope follows from which field group a
+value came from, not from interpretation.
+
+`ROE` and `PayoutRatioAnn` take the `provider_reported_` prefix that `EqAR`
+already uses, for ratios the provider computes and the Lab must not recompute.
+`ROE` is CUMULATIVE like `eps`, since its numerator is a period flow, unlike
+`EqAR` which divides stock by stock. `BPS` is POINT_IN_TIME, a per-share stock at
+period end. Share counts are kept as the two reported values; `ShOutFY - TrShFY`
+is the derivation the official help gives, so it is not a guess, but normalize.py
+does not perform it.
+
+**Two now-false claims corrected.** `UNMAPPED_METRICS` in `financial_trend.py` and
+the `unavailable.reason` in `screen.py` both said these figures were unmapped in
+normalize.py. That stopped being true with this change. The screener still does
+not output them, but the reason is now missing orchestration, not missing data,
+and the text says so. Stage 4 closes it.
+
+33 tests added, built from the values actually observed on 2026-11-24 rather than
+invented ones. Suite 2848 passed, same 10 pre-existing hook-environment failures.

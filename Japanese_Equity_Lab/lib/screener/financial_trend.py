@@ -71,10 +71,23 @@ class FinancialTrend:
 
 
 UNMAPPED_METRICS = ("pbr", "dividend_yield", "roe", "shares_outstanding", "book_value_per_share")
-"""Raw Payloadには存在するがMetricへ未マッピングの指標。
+"""このスクリーナーがまだ出力しない指標。**理由は2026-11-24に変わった。**
 
-`lib/fundamentals/normalize.py` のモジュールDocstring「依然未検証」節に対応する。
-推測で埋めずUNKNOWNとして扱うため、名前だけを定数として持つ。
+以前は「Raw PayloadにはあるがMetricへ未マッピング」だった。Step 3のStage 1で
+`normalize.py` へのマッピングが済んだので、**その理由はもう成り立たない**:
+
+- `roe` → `provider_reported_roe`(マップ済み。Provider算出の比率で、
+  `/equities/valuation` のTTM ROEとは別物)
+- `book_value_per_share` → `bps`(マップ済み)
+- `shares_outstanding` → `shares_outstanding_period_end` と
+  `treasury_shares_period_end`(どちらもマップ済み。自己株式控除後は
+  公式が示す `ShOutFY - TrShFY` だが、normalize.pyでは計算しない)
+- `pbr` / `dividend_yield` → Metricとしては存在しない。`/equities/valuation` の
+  `PBR` を使うか、`bps`・`DivAnn` と株価から導出するかは上位層の判断
+
+したがって現状これらが出ないのは**Orchestrationが未実装だから**であり、データが
+無いからではない。Step 3のStage 4で解消する。それまでは「取得不可」と明示する
+(空欄にしない)という方針は変えない。
 """
 
 
