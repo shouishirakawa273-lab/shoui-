@@ -122,11 +122,17 @@ class PerShareComparability:
 
     code: str
     per_share_metrics: tuple[str, ...]
+    """実際に連続する2期を比較できた指標。`unchecked_metrics` と重複しない。"""
     breaks: tuple[PerShareBreak, ...]
     corporate_action_dates: tuple[date, ...]
     """Provider確定のCorporate Action Eventの権利落ち日。`known_from` 以降のみ。"""
     divisor_sources: tuple[tuple[str, str], ...]
-    """実際に使った (1株当たり指標, 除数Metric) の対。"""
+    """実際に比較に使った (1株当たり指標, 除数Metric) の対。
+
+    比較できなかった指標は入らない。2026-11-24、8951で `bps` が
+    `unchecked_metrics` に入っているのに、ここが「`provider_reported_sheq` を
+    使った」と言っていた(除数の系列が無いので実際には使っていない)。
+    """
     corporate_actions_known_from: date | None
     """Corporate Action Eventを観測できた最も古いセッション。
 
@@ -195,8 +201,6 @@ def assess_per_share_comparability(
         if not targets:
             unchecked.append(metric_type)
             continue
-        checked_metrics.append(metric_type)
-        used_sources.append((metric_type, divisor_source_metric))
 
         divisor_trends = {t.accounting_standard: t for t in trend.trends if t.metric_type == divisor_source_metric}
 
@@ -243,7 +247,12 @@ def assess_per_share_comparability(
                     )
                 )
 
-        if not checked_any and metric_type not in unchecked:
+        # 実際に連続する2期を比較できた指標だけを「確認済み」とする。
+        # 系列が存在することと、比較できたことは別。
+        if checked_any:
+            checked_metrics.append(metric_type)
+            used_sources.append((metric_type, divisor_source_metric))
+        elif metric_type not in unchecked:
             unchecked.append(metric_type)
 
     action_dates = tuple(

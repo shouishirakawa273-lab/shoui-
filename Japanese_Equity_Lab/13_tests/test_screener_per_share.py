@@ -322,3 +322,23 @@ def test_dividend_metrics_are_not_in_the_default_watch_list() -> None:
 
     assert "dividend_per_share_annual" not in PER_SHARE_METRICS
     assert "distribution_per_unit" not in PER_SHARE_METRICS
+
+
+def test_checked_and_unchecked_do_not_overlap() -> None:
+    """[回帰] 系列が存在することと、比較できたことは別。
+
+    8951ではBPSの系列はあるが`ShEq`が無いため比較できない。以前は
+    `per_share_metrics`(確認済み)と`unchecked_metrics`の両方に入っていた。
+    """
+    trend = _financial_trend([_trend("bps", _REAL_BPS), _trend("eps", _REAL_EPS), _trend("net_profit", _REAL_NET_PROFIT)])
+    result = assess_per_share_comparability(code=CODE, trend=trend)
+    assert set(result.per_share_metrics).isdisjoint(result.unchecked_metrics)
+    assert "eps" in result.per_share_metrics
+    assert "bps" in result.unchecked_metrics
+
+
+def test_divisor_sources_only_lists_sources_actually_used() -> None:
+    """[回帰] 比較できなかった指標の除数を「使った」と報告しない。"""
+    trend = _financial_trend([_trend("bps", _REAL_BPS), _trend("eps", _REAL_EPS), _trend("net_profit", _REAL_NET_PROFIT)])
+    result = assess_per_share_comparability(code=CODE, trend=trend)
+    assert dict(result.divisor_sources) == {"eps": "net_profit"}

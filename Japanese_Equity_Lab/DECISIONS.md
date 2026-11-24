@@ -20274,3 +20274,56 @@ synthetic tests exercising mechanism without meaning; this one was a tool silent
 disabled.
 
 Suite 2897 passed (+5), same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (8) — Stage 4a verified on real data; the two-path design earns itself
+
+Ran 7203 and 8951 (日本ビルファンド). Everything stage 1 and 4a rests on holds, and
+one output claim was false and is fixed.
+
+**The two mappings that were reasoned rather than observed both hold.**
+`provider_reported_roe` as CUMULATIVE produces a clean annual series, and ROE
+living only on FY rows yields exactly what the plan wanted: ten annual points for
+7203, as **two series** — USGAAP for 2017–2020 and IFRS for 2021–2026. That split
+is the `_US` registration working, and it is the right shape, since ROE under two
+different standards is not one comparable series.
+
+8951 gives twenty points at June and December ends, confirming the semi-annual
+REIT reporting predicted from the DocType counts. Its `accounting_standard` is
+null by design, `_REIT` naming an issuer category rather than a standard.
+
+Dividend yield reports both bases for 7203 — forecast 100円 at 3.02%, trailing
+95円 at 2.87% — and trailing only for the REIT, 2489円 per unit at 2.08%, because
+`FDivUnit` is empty there. Exactly the asymmetry the field observations predicted.
+
+**The divisor path caught a break the provider path could not see, twice.** For
+7203, `eps` breaks 4.968x and `bps` 4.928x at the FY2021–FY2022 boundary, each
+through its own divisor. For 8951, `eps` breaks 5.000x between the June and
+December 2024 periods, with per-unit earnings going 13724 to 2665. In both cases
+`corporate_action_dates` is empty and `corporate_actions_known_from` is
+2025-04-03: the 600-day price window reaches neither the 2021 nor the 2024/2025
+change. So path 1 saw nothing and path 2 found it, which is precisely why both
+exist — and because the window boundary is in the output, the empty event list
+cannot be misread as "no events".
+
+Per the module's own rule, the cause of the REIT break is not asserted. A basis
+change is established; whether it was a unit split is not, and nothing in this
+data settles it.
+
+**The false claim.** For 8951, `bps` sat in `unchecked_metrics` while
+`divisor_sources` reported that `provider_reported_sheq` had been used for it —
+no divisor series exists for a REIT, so nothing was used. `bps` also appeared in
+`per_share_metrics` and `unchecked_metrics` at once, because the code recorded a
+metric as checked when its *series* existed rather than when a comparison actually
+ran. The three fields now mean what they say: compared, not compared, and the
+pairs actually used, with the first two disjoint.
+
+Suite 2899 passed. Same 10 pre-existing hook-environment failures.
+
+**Environment note.** `| Out-File -Encoding utf8` corrupted the Japanese in the
+output: PowerShell decodes a child process's bytes with `[Console]::OutputEncoding`
+(cp932 here) before re-encoding, and the JSON is left with stray control bytes
+that no longer parse. The script writing UTF-8 does not help, since the damage is
+on PowerShell's side of the pipe. Setting
+`[Console]::OutputEncoding = [System.Text.Encoding]::UTF8` once per session fixes
+both `>` and `|` for every script. The numbers survived, being ASCII, so this run
+did not need repeating.
