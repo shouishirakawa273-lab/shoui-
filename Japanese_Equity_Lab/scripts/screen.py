@@ -79,6 +79,7 @@ from lib.screener import (  # noqa: E402
     classify_codes,
 )
 from lib.screener.financial_trend import UNMAPPED_METRICS  # noqa: E402
+from lib.screener.render_text import render_entry, render_report  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--position-value", type=float, default=1_000_000.0, help="流動性判定に使う想定ポジション額(円)")
     parser.add_argument("--as-of", type=date.fromisoformat, default=None, help="判定日(YYYY-MM-DD)。既定はいま(JST)")
     parser.add_argument("--years", type=int, default=10, help="財務推移をさかのぼる年数")
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help=("出力形式。text=1画面(既定、方針書の受入基準「1画面」)、json=全量(機械可読・Snapshotとの突き合わせ用)"),
+    )
     parser.add_argument("--forecast-years", type=int, default=3, help="予想改定履歴を出す対象決算期の数(新しい順)")
     parser.add_argument("--max-staleness-days", type=int, default=DEFAULT_MAX_STALENESS_DAYS)
     parser.add_argument(
@@ -236,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
 
     entries = []
     # 警告の集計はdataclassから直接取る。整形済みJSONを読み返して判定しない。
+    rendered: list[list[str]] = []
     liquidity_warned: list[str] = []
     per_share_warned: list[str] = []
     for code in codes:
@@ -323,6 +331,20 @@ def main(argv: list[str] | None = None) -> int:
         if per_share.breaks:
             per_share_warned.append(code)
 
+        rendered.append(
+            render_entry(
+                code=code,
+                instrument_kind=instrument_kinds.get(code, InstrumentKind.UNKNOWN),
+                as_of=as_of,
+                trend=trend,
+                forecasts=forecasts,
+                liquidity=liquidity,
+                dividend=dividend,
+                valuation=valuation,
+                earnings=earnings,
+                per_share=per_share,
+            )
+        )
         entries.append(
             {
                 "code": code,
@@ -543,7 +565,18 @@ def main(argv: list[str] | None = None) -> int:
             "per_share_basis": per_share_warned,
         },
     }
-    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.format == "json":
+        print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+
+    print(
+        render_report(
+            as_of=as_of,
+            entries=rendered,
+            correlation=correlation,
+            unavailable=report["unavailable"]["metrics"],
+        )
+    )
     return 0
 
 

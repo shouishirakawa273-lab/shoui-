@@ -20500,3 +20500,41 @@ instead would have been wrong and would have looked fine, which is exactly the
 substitution the stated reason prevents.
 
 Suite 2948 passed. Same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (13) — The one-screen view, which the acceptance criterion already required
+
+Step 3's acceptance criterion reads「銘柄コード1つで上記が**1画面または1CSV**で
+出る」. The JSON is 409KB and 5690 lines for three codes, 136KB each — neither one
+screen nor one CSV. The plan also says「使われないツールは完成していない」, and a
+form nobody will read is a form nobody will use, so this was not an addition to
+Step 3 but an unmet part of it.
+
+`lib/screener/render_text.py` renders one screen per code (14 lines with every
+warning showing), and `--format text` is now the default, with `--format json`
+kept for machine reading and snapshot reconciliation. Rendering lives in `lib/`
+rather than the script so it can be tested; the JSON path was not touched, so the
+output verified earlier today still holds.
+
+**No verdicts.** The plan forbids「推奨判定、スコアリング、自動ランキング」, so a
+test asserts that 割安, 割高, 買い, 売り, 推奨, おすすめ, お得, 狙い目 and 有望
+appear nowhere in the output. A percentile prints as "41%" with no adjective
+attached. Unavailable values keep their reason in shortened form rather than going
+blank, forecasts carry the 予想 label and their target period per the root rule,
+and the corporate-action window boundary is stated so an empty event list cannot
+read as "no events".
+
+Two formatting defects caught by actually looking at the output:
+
+`days_to_liquidate` printed as `0.000` for 7203, where the real figure is
+1.04e-05 — a `.3f` format silently erased the information for exactly the
+large-cap case where the answer is "trivially liquidatable". It now reads
+"0.01日未満で解消 (閾値 3日)", with the threshold alongside so the reader knows what
+a warning would mean.
+
+Labels were padded with character counts, so Japanese ones broke the column:
+`配当利回り` is five characters but ten cells in a monospace terminal. Padding now
+uses East Asian display width, and a test asserts every label occupies exactly 14
+cells. Worth noting that my first attempt to *check* the alignment measured
+characters too, and reported a misalignment that did not exist.
+
+29 tests. Suite 2978 passed, same 10 pre-existing hook-environment failures.
