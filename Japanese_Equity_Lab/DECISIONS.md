@@ -19959,3 +19959,57 @@ on the missing key. `13_tests/test_cli_io.py` keeps the regression, including th
 em-dash encode that fails under cp932 and succeeds after the switch.
 
 Suite 2815 passed (+9), same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 — Real-data observation settles the Step 3 source routing
+
+Diagnostic run on 7203 and 89510 (日本ビルファンド). Report appended to
+`JQUANTS_V2_STEP3_SOURCE_ONBOARDING.md` §16. Four results decide the design.
+
+**ROE is available for ten years.** `ShEq`, `Eq`, `ShOutFY`, `TrShFY` and `AvgSh`
+are filled on all 41 rows from 2017-02-06 — the Standard plan's ten-year horizon,
+so as far back as the plan reaches. `ROE`, `BPS`, `NCShEq`, `NCEq` and
+`PayoutRatioAnn` appear on exactly the 11 FY rows and nowhere else, which is
+enough: one observation per fiscal year, FY2017 through FY2026, is precisely what
+a ten-year annual trend needs. The 2026-added fields were the main risk to the
+whole plan and they came back populated.
+
+**PER and PBR percentiles are safe across splits; EPS and BPS are not.** At
+7203's ex-date, `/equities/valuation` steps from EPS 1067.36 to 213.47 and BPS
+8634.65 to 1726.93 — both exactly 5.0000x — while PER moves 9.73 to 9.71 and PBR
+stays at 1.2. The ratios are continuous because price and per-share value shift
+together, so a ten-year PER or PBR percentile from this endpoint needs no
+split handling at all. The per-share levels are another matter, and the step sits
+at the ex-date rather than at a fiscal period boundary, a different anchor from
+`/fins/summary`.
+
+`/fins/summary`'s own BPS carries the same break: the FY series runs 1.094x,
+1.061x, 1.062x, 1.154x, then **0.228x** into FY2022, then 1.097x onward. So
+`per_share.py` must cover BPS as well as EPS, and ±25% catches 0.228x with room
+to spare. ROE is a ratio and is immune.
+
+**REIT confirms the need for two sources.** For 89510, every indicator
+`/equities/valuation` publishes is null across all 2440 rows except `MktCap`.
+Routing works: `ProdCat` is 011 for 72030 and 013 for 89510.
+
+**`from`/`to` are ignored by `/fins/summary`.** 41 records with the code alone,
+41 with a 2024 range added. The official parameter table lists only code, date
+and cursor, so the adapter has been sending two parameters that do nothing. No
+PIT leak follows — the normalizer filters on `decision_at` — but
+`fetch_financial_statements` advertises a bounded window it does not deliver, and
+`raw_disclosure_date_range` will report wider coverage than was asked for. The
+contract is misleading and should be corrected.
+
+**Also closed:** `/fins/earnings-date` returns `PubDate`, `SchDate`, `FQName`,
+`FYE`, `Code`, `CoName`, `CoNameEn` — 40 records for 7203, four a year, each
+published about a month ahead. Querying by code yields the (published, scheduled)
+pairs the PIT-safe usage needs, so that UNKNOWN is resolved from primary
+observation. 7203's DocTypes are eight values, IFRS and US across FY/1Q/2Q/3Q,
+all inside the official 42; US accounts for 14 of 41 rows, which is what
+registering `_US` recovers.
+
+**My own gap:** the diagnostic checked `/fins/summary` only for 7203, so the REIT
+half of the routing decision — whether `DivUnit`, `BPS` or `ROE` come through for
+a REIT at all — was never observed. The script now runs the same check for the
+REIT code and adds `DivUnit`, `FDivUnit`, `OdP` and `OpP` to the watch list;
+`OdP` also shows on real data whether ordinary profit is absent under IFRS as
+documented, and what REIT disclosures do with it.

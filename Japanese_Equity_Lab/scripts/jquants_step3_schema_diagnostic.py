@@ -53,6 +53,10 @@ WATCHED_FIELDS = (
     "FDivAnn",
     "NxFDivAnn",
     "PayoutRatioAnn",
+    "DivUnit",
+    "FDivUnit",
+    "OdP",
+    "OpP",
 )
 """今回マッピング候補になるField。空欄率と「いつから入っているか」を見る。"""
 
@@ -83,9 +87,13 @@ def _run(label: str, fn: Any) -> Any:
     return None
 
 
-def check_fins_fields(adapter: JQuantsAdapter, code: str) -> list[dict[str, Any]]:
-    """項目1・2: `ShEq`/`ROE` 等が過去行にも入っているか。"""
-    _section(f"[1,2] /fins/summary 追加Fieldの充填状況 (code={code})")
+def check_fins_fields(adapter: JQuantsAdapter, code: str, *, label: str = "普通株") -> list[dict[str, Any]]:
+    """項目1・2: `ShEq`/`ROE` 等が過去行にも入っているか。
+
+    REITでも同じことを見る。`/equities/valuation` がREITでほぼ空だと確定したので、
+    REIT側の値が `/fins/summary` から取れるかどうかが併用方針の成否を決める。
+    """
+    _section(f"[1,2] /fins/summary 追加Fieldの充填状況 ({label} code={code})")
     result = adapter.fetch_financial_statements(codes=[code], start_date=date(2015, 1, 1), end_date=date.today())
     rows: list[dict[str, Any]] = list(result.payload)
     print(f"  records: {len(rows)}  retrieved_at: {result.retrieved_at.isoformat()}")
@@ -282,6 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     rows = _run("fins fields", lambda: check_fins_fields(adapter, args.code)) or []
     if rows:
         _run("doc types", lambda: check_doc_types(rows))
+    reit_rows = _run("fins fields reit", lambda: check_fins_fields(adapter, args.reit_code, label="REIT")) or []
+    if reit_rows:
+        _run("doc types reit", lambda: check_doc_types(reit_rows))
     _run("prodcat", lambda: check_prodcat(adapter, (args.code, args.reit_code)))
     _run("valuation common", lambda: check_valuation(adapter, args.code, label="普通株"))
     _run("valuation reit", lambda: check_valuation(adapter, args.reit_code, label="REIT"))
