@@ -497,9 +497,9 @@ def test_forecast_falls_back_to_a_family_that_has_values() -> None:
         _series("operating_profit", date(2027, 3, 31), ["1400000000000", "1500000000000"]),
     )
     text = "\n".join(_render(forecasts=forecasts))
-    assert "取得不可" not in text.split("流動性")[0].split("予想")[-1] or "operating_profit" in text
-    assert "operating_profit" in text
-    assert "1400000000000.00" in text or "1400000000000" in text
+    assert "営業利益" in text
+    assert "1.40兆" in text
+    assert "1.50兆" in text
 
 
 def test_forecast_shows_the_declared_priority_order_first() -> None:
@@ -510,8 +510,8 @@ def test_forecast_shows_the_declared_priority_order_first() -> None:
     )
     lines = _render(forecasts=forecasts)
     text = "\n".join(lines)
-    assert text.index("operating_profit") < text.index("eps")
-    assert "sales" not in text  # 上限2 familyなので表示されない
+    assert text.index("営業利益") < text.index("EPS")
+    assert "売上" not in text  # 上限2 familyなので表示されない
 
 
 def test_hidden_forecast_families_are_counted_not_dropped_silently() -> None:
@@ -522,7 +522,7 @@ def test_hidden_forecast_families_are_counted_not_dropped_silently() -> None:
         _series("net_profit", date(2027, 3, 31), ["3500000000000"]),
     )
     text = "\n".join(_render(forecasts=forecasts))
-    assert "他 2 指標の予想あり" in text
+    assert "他 2 指標あり" in text
 
 
 def test_all_empty_forecasts_state_a_reason() -> None:
@@ -557,3 +557,57 @@ def test_unmapped_accounting_standard_does_not_claim_to_be_unknown() -> None:
     text = "\n".join(_render(trend=_trend(reit_roe), instrument_kind=InstrumentKind.REIT, valuation=None))
     assert "基準不明" not in text
     assert "基準の対応なし" in text
+
+
+# --- 読みやすさ(2026-11-24の実出力で発覚) ---
+
+
+def test_amounts_are_rounded_to_tril_and_hundred_million() -> None:
+    """[回帰] 営業利益予想が `3000000000000.00` と出ていた(3兆円)。
+
+    13桁の数字列は1画面の目的を損ねる。
+    """
+    from lib.screener.render_text import _yen
+
+    assert _yen(Decimal("3000000000000")) == "3.00兆"
+    assert _yen(Decimal("26476000000")) == "265億"
+    assert _yen(Decimal("-1500000000000")) == "-1.50兆"
+    assert _yen(Decimal("5000000")) == "5,000,000"
+
+
+def test_per_share_forecasts_are_not_rounded_to_units() -> None:
+    """EPSや配当は円単位のまま。兆・億に丸めない。"""
+    forecasts = (_series("eps", date(2027, 3, 31), ["251.25", "299.95"]),)
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "251.25" in text
+    assert "兆" not in text
+
+
+def test_long_family_names_do_not_collide_with_values() -> None:
+    """[回帰] `operating_profit` は18セルでラベル列(14)を超え、値とくっついていた。"""
+    forecasts = (_series("operating_profit", date(2027, 3, 31), ["3000000000000"]),)
+    text = "\n".join(_render(forecasts=forecasts))
+    assert "営業利益" in text
+    assert "operating_profit" not in text  # 表示は短縮名、JSONは内部名
+    assert "期  " in text  # 期と値のあいだに空白がある
+
+
+def test_history_is_capped_and_the_count_is_stated() -> None:
+    """[回帰] REITは半期開示で10年20点。間引かず末尾を取り、何期中かを明示する。"""
+    twenty = [(date(2017 + i // 2, 6 if i % 2 == 0 else 12, 30), f"0.0{23 + i}", "IFRS") for i in range(20)]
+    text = "\n".join(_render(trend=_trend(twenty)))
+    assert "推移(直近10/20期)" in text
+
+
+def test_short_history_states_the_plain_count() -> None:
+    text = "\n".join(_render())
+    assert "推移(6期)" in text
+    assert "直近" not in text
+
+
+def test_revision_count_shares_the_line_with_the_sequence() -> None:
+    forecasts = (_series("eps", date(2027, 3, 31), ["251.25", "299.95"]),)
+    lines = _render(forecasts=forecasts)
+    sequence_lines = [ln for ln in lines if "251.25" in ln]
+    assert len(sequence_lines) == 1
+    assert "改定" in sequence_lines[0]

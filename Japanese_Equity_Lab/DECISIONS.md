@@ -20575,3 +20575,34 @@ longer misleads.
 
 36 renderer tests. Suite 2985 passed, same 10 pre-existing hook-environment
 failures.
+
+## 2026-11-24 (15) — Readability defects the first real text output exposed
+
+The forecast fallback worked, and reading the result found three things that
+defeated the point of a one-screen view.
+
+**Amounts printed in full.** Operating profit guidance came out
+`3000000000000.00 → 3400000000000.00 → 3900000000000.00` — forty-eight characters
+of digits for 3 to 3.9 trillion yen. Amounts now round to 兆 and 億; per-share
+figures (EPS, dividend, distribution) stay in yen, since rounding those would
+destroy the only digits that matter.
+
+**Long family names collided with their values.** `予想(operating_profit)` is 22
+cells against a 14-cell label column, so `_label` added no padding and the value
+butted straight against the parenthesis. The family now sits in the value area
+behind a `会社予想` label, with short Japanese names — the internal metric_type
+stays in the JSON for reconciliation.
+
+**A REIT's history was twenty numbers on one line.** 89510 reports semi-annually,
+so ten years is twenty points. Capped at ten, taken from the end, labelled
+`推移(直近10/20期)` so the truncation is stated rather than silent; a short series
+reads `推移(6期)`. Not thinned — the recent end is kept whole.
+
+Revision counts also moved onto the sequence line, which saves two lines per
+family. A share with every warning showing now renders in 17 lines.
+
+Three earlier renderer tests asserted on the old wording and internal names and
+were updated; they were testing the display, which is what changed.
+
+42 renderer tests. Suite 2991 passed, same 10 pre-existing hook-environment
+failures.

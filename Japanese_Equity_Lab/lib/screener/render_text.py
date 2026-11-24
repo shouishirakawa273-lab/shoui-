@@ -64,6 +64,46 @@ _FORECAST_FAMILY_PRIORITY: tuple[str, ...] = (
 _MAX_FORECAST_FAMILIES = 2
 """1画面に収めるための表示上限。残りはJSONにある。"""
 
+_FAMILY_LABELS: dict[str, str] = {
+    "operating_profit": "営業利益",
+    "ordinary_profit": "経常利益",
+    "net_profit": "純利益",
+    "sales": "売上",
+    "eps": "EPS",
+    "dividend_per_share_annual": "配当",
+    "distribution_per_unit": "分配金",
+}
+"""表示用の短縮名。**JSONには内部のmetric_type名がそのまま入る**(突き合わせ用)。
+
+`operating_profit` は18セルあり、ラベル列(14セル)を超えて値と衝突していた。
+"""
+
+_PER_SHARE_FAMILIES = frozenset({"eps", "dividend_per_share_annual", "distribution_per_unit"})
+"""1株(1口)当たりの指標。円単位に丸めず、そのまま出す。"""
+
+_MAX_HISTORY_POINTS = 10
+"""推移に並べる最大期数。
+
+REITは半期開示なので10年で20点になり(89510で実測)、1行に並べると読めない。
+**間引かず末尾から切り、何期中の何期かを明示する。**
+"""
+
+
+def _yen(value: Decimal) -> str:
+    """金額を兆・億で丸める。13桁の数字列は1画面の目的を損ねる。
+
+    2026-11-24、営業利益予想が `3000000000000.00` と出ていた(3兆円)。
+    """
+    amount = float(value)
+    sign = "-" if amount < 0 else ""
+    magnitude = abs(amount)
+    if magnitude >= 1e12:
+        return f"{sign}{magnitude / 1e12:.2f}兆"
+    if magnitude >= 1e8:
+        return f"{sign}{magnitude / 1e8:.0f}億"
+    return f"{sign}{magnitude:,.0f}"
+
+
 _LABEL_WIDTH = 14
 """ラベル列の表示幅(セル数)。文字数ではない——下記 `_display_width` 参照。"""
 
@@ -167,22 +207,26 @@ def _roe_lines(trend: FinancialTrend) -> list[str]:
     points.sort()
     latest_period, latest_value, latest_standard = points[-1]
     lines = [f"  {_label('ROE')}{latest_value:>8s}   最新 {latest_period} ({latest_standard})"]
-    history = " ".join(value for _, value, _ in points)
-    standards = sorted({standard for _, _, standard in points})
+
+    shown_points = points[-_MAX_HISTORY_POINTS:]
+    history = " ".join(value for _, value, _ in shown_points)
+    span = f"推移(直近{len(shown_points)}/{len(points)}期)" if len(shown_points) < len(points) else f"推移({len(points)}期)"
+    standards = sorted({standard for _, _, standard in shown_points})
     suffix = f"  ※基準が複数: {', '.join(standards)}" if len(standards) > 1 else ""
-    lines.append(f"    推移 {history}{suffix}")
+    lines.append(f"    {span} {history}{suffix}")
     return lines
 
 
-def _forecast_family_lines(series: ForecastRevisionSeries) -> list[str]:
+def _forecast_family_lines(series: ForecastRevisionSeries, *, first: bool) -> list[str]:
+    """1 family ぶん。familyはラベル列ではなく値側に置く(ラベル列を溢れさせない)。"""
     values = [r for r in series.revisions if r.value is not None]
-    sequence = " → ".join(_num(r.value) for r in values)
+    per_share = series.metric_family in _PER_SHARE_FAMILIES
+    sequence = " → ".join(_num(r.value) if per_share else _yen(r.value) for r in values if r.value is not None)
     target = series.target_fiscal_year_end.isoformat() if series.target_fiscal_year_end else "不明"
-    label = f"予想({series.metric_family})"
-    return [
-        f"  {_label(label)}{target} 期  {sequence}",
-        f"    改定 {series.revision_count}回 (公表 {series.observation_count}件)  ※会社予想、実績ではない",
-    ]
+    name = _FAMILY_LABELS.get(series.metric_family, series.metric_family)
+    head = _label("会社予想") if first else _label("")
+    # 改定回数を同じ行に畳む(familyごとに2行使うと1画面を圧迫する)。
+    return [f"  {head}{_label(name, 10)}{target}期  {sequence}  (改定{series.revision_count}回/公表{series.observation_count}件)"]
 
 
 def _forecast_lines(
@@ -207,17 +251,19 @@ def _forecast_lines(
         if current is None or (candidate.target_fiscal_year_end > (current.target_fiscal_year_end or date.min)):
             by_family[candidate.metric_family] = candidate
 
-    shown: list[str] = []
     families = [f for f in priority if f in by_family] + sorted(set(by_family) - set(priority))
-    for family in families[:max_families]:
-        shown += _forecast_family_lines(by_family[family])
-
-    if not shown:
+    if not families:
         return [f"  {_label('会社予想')}{_UNAVAILABLE} (値のある予想が無い)"]
 
+    shown: list[str] = []
+    for index, family in enumerate(families[:max_families]):
+        shown += _forecast_family_lines(by_family[family], first=index == 0)
+
     hidden = len(families) - max_families
+    note = "※会社予想、実績ではない"
     if hidden > 0:
-        shown.append(f"    他 {hidden} 指標の予想あり (--format json で全件)")
+        note += f" / 他 {hidden} 指標あり (--format json)"
+    shown.append(f"  {_label('')}{_label('', 10)}{note}")
     return shown
 
 
