@@ -350,7 +350,13 @@ def main(argv: list[str] | None = None) -> int:
             ),
             # 空集合が「不連続なし」と「検査できなかった」の両方を意味しないよう、
             # 検査が成立したかを別に渡す(独立レビュー、2026-11-24)。
-            basis_check_performed=bool(set(per_share.per_share_metrics) - set(per_share.unchecked_metrics)),
+            # 権利落ち日は一次情報なので、届く範囲ではこちらが門になる。
+            corporate_action_dates=per_share.corporate_action_dates,
+            corporate_actions_known_from=per_share.corporate_actions_known_from,
+            # `per_share_metrics` と `unchecked_metrics` は構造上互いに素なので
+            # 差集合は前者と同じ。意味は「epsかbpsが系列のどこかで1回比較できた」で、
+            # **合算窓がカバーされたか**ではない(独立レビュー、2026-11-25。繰越)。
+            basis_check_performed=bool(per_share.per_share_metrics),
         )
 
         valuation = (

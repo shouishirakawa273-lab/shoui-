@@ -20780,3 +20780,94 @@ JSON にも残らなかった。ルートCLAUDE.md 規約2 の対象。`forecast
    普通株の実データを見て決めた順序が REIT で裏目に出る形(影響は表示順のみ)
 
 3017 passed、`test_post_edit_quality_gate_hook.py` の10件は従来からの環境起因。
+
+## 2026-11-25 (20) — 再レビュー: 自分の修正が同型の欠陥を作っていた。門を一次情報へ寄せた
+
+`pit-auditor` と `skeptic-reviewer` を修正後に再実行。前回の BLOCKER は両者
+**CLOSED**。しかし**両者が独立に同じ新規 HIGH** を指摘した。私が直したときに
+作ったものである。
+
+**[HIGH] `months_covered` に「信用しない」と判定した値を入れていた。** 期の長さを
+裏付けられない経路で `_one_period(period_months, ...)` と渡していたため、穴がある
+ケースで `basis=TRAILING_PERIOD, months_covered=12` となり、表示は
+`実績12か月 2.10% (1716円)`。**最初に直した欠陥の症状が、enum から月数ラベルへ
+移っただけ**だった。株式側では逆方向にも出る(FY開示が1期落ちると `実績24か月`)。
+
+私が足した回帰テストは `basis` と `dividend` しか assert していなかった。
+**同じファイルの別のテストは `months_covered == 4` を確認している。** 片方だけ
+抜けた。`months_covered` は**分子が覆う月数**であって「最後に見えた2期末の間隔」
+ではない、という契約を docstring に書いた当人が破っていた。
+
+### 門を経路1(権利落ち日)へ寄せた
+
+両レビューが指摘した「経路2は両方向に外れる」が決定的だった。`effective_date` は
+**基準が切り替わる点そのもの**なので、段差位置を推測する必要がない。窓の期末を
+`ends`、権利落ち日を d として:
+
+- `d <= ends[0]` → 全期が新基準 → 合算可
+- `d > ends[-1]` → 全期が旧基準 → 合算可
+- その間 → またぐ → 拒否
+
+3283で検算すると、経路2が過剰に拒否していた窓(末尾 2025-05-31、4420+5521)が
+正しく通る。窓全体が `corporate_actions_known_from` 以降に収まるときだけ経路1を
+使い、届かない範囲は従来の保守的な経路2に落とす。`per_share.py` 自身が書いている
+「2経路の OR」の形になった。
+
+### ほかに閉じたもの
+
+- **`len(ends) == 1` で門2を回していた。** 足し算をしていないのに「合算する期の間に
+  不連続がある」という**事実でない理由**で降格していた。前回の修正で新しく入った経路。
+- **理由文が断定形だった。** 配当側の段差位置は確認できていないので
+  「またぐ可能性がある」に改めた(`per_share.py` の語法と揃える)。
+- **年額Fieldで観測が取れないときに Field 名の前提へ無言で戻っていた。** 拒否はせず
+  (`DivAnn` は年間配当のFieldなので値自体は使える)、`basis_check_performed` と同じ形で
+  **留保を付ける**。両レビューがこの設計を妥当と評価している。
+- **`basis_check_performed` の計算が誤解を招く形だった。** `per_share_metrics` と
+  `unchecked_metrics` は構造上互いに素なので、差集合は前者と同じ。「重複を除いている」
+  という誤った保証を読み手に与えていた。コメントで意味を明記。
+
+### テストを足した(レビューが「0件」と指摘した分岐)
+
+`予想Nか月` の表示、`forecast_unknown_reason` の表示、`render_text._latest_actual`
+の判定時点フィルタ、権利落ち日の門(またぐ/またがない両方)、`len(ends)==1` で
+降格しないこと、断定語を使わないこと、`months_covered` が None であること。
+
+**偶然で通っていたテストを4本追加で修正。** 前回4本直したが同型が残っていた。
+`_render()` の既定が `forecasts=()` なので出力に必ず「会社予想 取得不可」行が入り、
+`"取得不可" in text` が**対象を見なくても真**になる:
+
+- `test_unknown_percentile_states_a_reason_not_zero` — `_valuation_lines` が空を返しても通った
+- `test_unknown_liquidity_states_a_reason` — `_liquidity_line` を落としても通った
+- `test_no_roe_states_a_reason` — 理由文字列が会社予想行で満たされていた
+- `test_a_share_does_not_get_the_excess_distribution_note` — 既定 fixture は
+  `history=()` で推移行がそもそも描画されず、出し分けが壊れても検出できなかった
+
+**1画面の最悪構成テストを追加(繰越 LOW から昇格)。** 既存の「全部乗せ」テストは
+`dividend` を既定のままにしていたため、今回追加した5行を1行も数えていなかった
+(実測15行)。配当の留保・予想理由・推移・またぎ注記・利益分配金注記・per-share
+break 2本・会社予想2族+直近実績を全部入れた実測は **23行 / 上限24**。余裕1行。
+
+3027 passed。`test_post_edit_quality_gate_hook.py` の10件は従来からの環境起因。
+
+### 繰越(更新)
+
+前回(19)の9件のうち、①権利落ち日での門 は**完了**。残り8件に加えて:
+
+10. **決算期の長さは開示されている。** `CurPerSt`/`CurFYSt`/`CurFYEn` は
+    `normalize.py:727-732` でパースされ `DisclosureEnvelope` に載っているのに、
+    `AnnualObservation` が envelope を落とすため `dividend_yield` から見えない。
+    **間隔から推測する必要がそもそも無い。** これを通せば、裏取りの穴
+    (中間期が系統的に落ちると全間隔が12か月に見える)・予想側の月数・
+    `DivAnn` の名前依存が**まとめて消える**。再監査・独立レビューの両方が
+    独立に同じ結論に到達した
+11. `basis_check_performed` の粒度。「系列のどこかで1回比較できた」であって
+    合算窓がカバーされたかではない。窓内の各期末について除数が取れたかを返すべき
+12. `decision_at` の門が2箇所にしか入っていない。`_roe_lines`・JSON出力・
+    `per_share` の break 検知は素通りなので、将来期末が「実績」として出る経路が残る。
+    `build_financial_trend` に集約するのが筋
+13. 留保が散文でしか出ていない。`ValueAvailability`/`AvailabilityBasis` のように
+    構造化フィールドで持つのがこのリポジトリの既存パターン
+14. FORECAST の `source_metric_type` が合成値。`_current_forecast` が選んだ
+    revision の `source_metric_type` を捨てているため、FY開示直後は
+    `*_next_year_forecast` 由来の値に `*_current_year_forecast` と記録される(規約1)
+15. `decision_at.date()` が呼び出し側のtz依存。本番はJSTで正しいが、テストはUTC

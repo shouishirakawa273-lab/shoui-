@@ -328,10 +328,32 @@ def _observed_period_months(all_ends: Sequence[date]) -> int | None:
     return _month_span(all_ends[-2], all_ends[-1])
 
 
+def _summed(
+    by_period: Mapping[date, tuple[Decimal, datetime | None]],
+    ends: Sequence[date],
+    *,
+    notes: tuple[str, ...],
+) -> _Trailing:
+    """合算が成立したときの返り値。経路1と経路2で共通。"""
+    components = tuple(by_period[end][0] for end in ends)
+    published = [at for at in (by_period[end][1] for end in ends) if at is not None]
+    return _Trailing(
+        annualized=True,
+        total=sum(components, Decimal(0)),
+        components=components if len(components) > 1 else (),
+        period_ends=tuple(ends),
+        months_covered=TRAILING_MONTHS,
+        published_at=max(published) if published else None,
+        notes=notes,
+    )
+
+
 def _build_trailing(
     by_period: Mapping[date, tuple[Decimal, datetime | None]],
     *,
     basis_break_period_ends: frozenset[date],
+    corporate_action_dates: Sequence[date] = (),
+    corporate_actions_known_from: date | None = None,
     annual_by_definition: bool,
     basis_check_performed: bool,
 ) -> _Trailing | None:
@@ -346,6 +368,18 @@ def _build_trailing(
     latest = max(by_period)
 
     def _one_period(months: int | None, reason: str) -> _Trailing:
+        """1期分だけ返す。
+
+        `months` は**分子が覆う月数**であって「最後に見えた2期末の間隔」ではない。
+        期の長さを信用しないと判定した経路では **None を渡す**(独立レビュー・PIT
+        再監査、2026-11-25。両者が独立に同じ指摘をした)。
+
+        信用しない値を入れていたため、穴があるケースで
+        `basis=TRAILING_PERIOD, months_covered=12` となり、表示が
+        `実績12か月 2.10% (1716円)` ——**最初に直した欠陥の症状そのもの**が
+        enumから月数ラベルへ移っていた。回帰テストが `months_covered` を
+        assertしていなかったので捕まらなかった。
+        """
         value, published_at = by_period[latest]
         return _Trailing(
             annualized=False,
@@ -366,9 +400,13 @@ def _build_trailing(
         # 決算期が12か月でなければ「年間配当」が何を覆うのか確認していない。
         if observed is not None and observed != TRAILING_MONTHS:
             return _one_period(
-                observed,
+                None,
                 f"年額Fieldだが決算期が{observed}か月で、12か月を覆うか確認できない",
             )
+        # 観測が取れないときに**Field名の前提へ無言で戻らない。** ただし拒否もしない:
+        # `DivAnn` は年間配当のFieldなので値自体は使える。`basis_check_performed` と
+        # 同じ形で、基準は維持して**留保を付ける**(両レビューがこの設計を妥当と
+        # 評価している。2026-11-25)。
         value, published_at = by_period[latest]
         return _Trailing(
             annualized=True,
@@ -377,7 +415,7 @@ def _build_trailing(
             period_ends=(latest,),
             months_covered=TRAILING_MONTHS,
             published_at=published_at,
-            notes=(),
+            notes=() if observed is not None else ("決算期の長さを観測で裏付けられていない",),
         )
 
     # 期ごとのField(`DivUnit`)では、期の長さを**観測された期末の間隔から**決める。
@@ -403,11 +441,11 @@ def _build_trailing(
     # (PIT監査、2026-11-24)
     if len(ends) == 1:
         if len(all_ends) < 3:
-            return _one_period(period_months, "窓の中が1期で、期の長さを裏付ける前の期が無い")
+            return _one_period(None, "窓の中が1期で、期の長さを裏付ける前の期が無い")
         corroboration = _month_span(all_ends[-3], all_ends[-2])
         if corroboration != period_months:
             return _one_period(
-                period_months,
+                None,
                 f"窓の中が1期で、直前の間隔({corroboration}か月)と一致しないため期の長さを信用しない",
             )
 
@@ -422,8 +460,37 @@ def _build_trailing(
     if any(span != period_months for span in spans):
         return _one_period(period_months, f"決算期の長さが揃わないため合算しない(間隔={spans}か月)")
 
+    # ## 経路1(一次情報)で判定できるならそれを使う
+    #
+    # `CorporateAction.raw_adj_factor` は権利落ち日のrecordに載る公式仕様(D0034)で、
+    # `per_share.py` 自身が「推測を含まない一次情報」と呼んでいる。`effective_date` は
+    # **基準が切り替わる点そのもの**なので、段差位置を推測する必要がない。
+    #
+    # 窓の期末を `ends` とすると、権利落ち日 d について:
+    #   d <= ends[0]  → 合算する全期が新基準 → 合算可
+    #   d >  ends[-1] → 合算する全期が旧基準 → 合算可
+    #   その間        → またぐ → 拒否
+    #
+    # 経路1は株価取得Window(600日)の範囲しか見えないので、窓全体が
+    # `corporate_actions_known_from` 以降に収まっているときだけ使える。
+    # それより前は UNKNOWN であり、「イベントが無かった」ではない。
+    if len(ends) > 1 and corporate_actions_known_from is not None and window_start >= corporate_actions_known_from:
+        straddling = [d for d in corporate_action_dates if ends[0] < d <= ends[-1]]
+        if straddling:
+            joined = ", ".join(d.isoformat() for d in straddling)
+            return _one_period(period_months, f"合算区間に権利落ち日があるため合算しない({joined})")
+        # 経路1で通った和には留保が付かない。権利落ち日は一次情報なので、
+        # 経路2の「未検査」留保はここでは意味を持たない。
+        return _summed(by_period, ends, notes=())
+
+    # ## 経路2(除数の段差)。経路1が窓に届かないときの退避先
+    #
     # 窓の中の**どの期末**に不連続の遷移先が当たっても合算しない。先頭を外しては
     # ならない(以前は `ends[1:]` だった)。
+    #
+    # `len(ends) == 1` では足し算をしていないので、基準の連続性は無関係。
+    # 以前は降格して「合算する期の間に不連続がある」という**事実でない理由**を
+    # 出していた(独立レビュー、2026-11-25)。
     #
     # 配当側の段差は eps 基準の遷移先と同じ期か、その**1期あと**にある(どちらかは
     # 特定できない。上の `history_crosses_basis_break_after` の注記)。遷移先が
@@ -436,31 +503,27 @@ def _build_trailing(
     # `window_start → ends[0]` か `ends[0] → ends[1]` のどちらかだが、前者は
     # 合算区間の外で、後者なら `ends[0]` が集合に入るので上の条件で捕まる。
     # 3283(遷移先 2025-05-31 = window_start)の 1830+1716 はこれで通る。
-    crossed = [end for end in ends if end in basis_break_period_ends]
+    crossed = [end for end in ends if end in basis_break_period_ends] if len(ends) > 1 else []
     if crossed:
         joined = ", ".join(end.isoformat() for end in crossed)
+        # **断定しない。** 配当側の段差がどの期かは確認できていないので、
+        # 「不連続がある」ではなく「またぐ可能性がある」。`per_share.py` の
+        # 「分割・併合・増資・訂正のいずれとも断定しない」と語法を揃える。
         return _one_period(
             period_months,
-            f"合算する期の間に1口/1株当たり基準の不連続があるため合算しない({joined})",
+            f"合算区間が1口/1株当たり基準の不連続をまたぐ可能性があるため合算しない({joined})",
         )
 
-    components = tuple(by_period[end][0] for end in ends)
-    published: list[datetime] = [at for at in (by_period[end][1] for end in ends) if at is not None]
     # **不連続が「無かった」のではなく「検査できなかった」場合を黙らせない。**
     # 門2に渡るのは検知された日付の集合だけなので、除数が取れずに1指標も
     # 検査できなかったとき、空集合は「不連続なし」と見分けがつかない。
     # Lab CLAUDE.md:「Unknownは0ではない。Unknownはfalseでもない」
     # (独立レビュー、2026-11-24)
-    notes = () if basis_check_performed else ("1口/1株当たり基準の不連続を検査できていない(除数が取れず未検査)",)
-    return _Trailing(
-        annualized=True,
-        total=sum(components, Decimal(0)),
-        components=components if len(components) > 1 else (),
-        period_ends=tuple(ends),
-        months_covered=TRAILING_MONTHS,
-        published_at=max(published) if published else None,
-        notes=notes,
-    )
+    #
+    # なお現在のフラグは「epsかbpsが系列のどこかで1回比較できた」であって
+    # **合算窓がカバーされたか**ではない。粒度は繰越(DECISIONS.md)。
+    reservation = () if basis_check_performed else ("1口/1株当たり基準の不連続を検査できていない(除数が取れず未検査)",)
+    return _summed(by_period, ends, notes=reservation)
 
 
 def _current_forecast(
@@ -537,6 +600,8 @@ def assess_dividend_yield(
     forecast_series: Sequence[ForecastRevisionSeries] = (),
     decision_at: datetime,
     basis_break_period_ends: frozenset[date] = frozenset(),
+    corporate_action_dates: Sequence[date] = (),
+    corporate_actions_known_from: date | None = None,
     basis_check_performed: bool = False,
 ) -> DividendYieldAssessment:
     """配当利回りの現在値を、基準ラベル付きで出す。
@@ -609,6 +674,8 @@ def assess_dividend_yield(
     trailing = _build_trailing(
         by_period,
         basis_break_period_ends=basis_break_period_ends,
+        corporate_action_dates=corporate_action_dates,
+        corporate_actions_known_from=corporate_actions_known_from,
         annual_by_definition=family in _ANNUAL_BY_FIELD_DEFINITION,
         basis_check_performed=basis_check_performed,
     )

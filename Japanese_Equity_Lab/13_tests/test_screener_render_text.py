@@ -275,10 +275,13 @@ def test_unknown_percentile_states_a_reason_not_zero() -> None:
             unknown_reason="PER の現在値が2026-11-20の行に無い",
         ),
     )
-    text = "\n".join(_render(valuation=_valuation(indicators=indicators)))
-    assert "取得不可" in text
-    assert "0.0%" not in text
-    assert "0%" not in text
+    # [修正] `"取得不可" in text` は会社予想の取得不可行で満たされ、
+    # **`_valuation_lines` が空を返しても通った**(独立レビュー、2026-11-25)。
+    rendered = _render(valuation=_valuation(indicators=indicators))
+    line = next(x for x in rendered if "PER" in x)
+    assert "取得不可" in line
+    assert "0.0%" not in line
+    assert "0%" not in line
 
 
 def test_no_roe_states_a_reason() -> None:
@@ -289,9 +292,9 @@ def test_no_roe_states_a_reason() -> None:
         trends=(),
         unmapped_metrics=(),
     )
-    text = "\n".join(_render(trend=empty))
-    assert "ROE" in text
-    assert "取得不可" in text
+    # [修正] 理由文字列が会社予想行で満たされていた。
+    line = next(x for x in _render(trend=empty) if "ROE" in x)
+    assert "取得不可" in line
 
 
 def test_unpublished_next_earnings_date_is_stated_not_replaced_by_a_past_one() -> None:
@@ -419,8 +422,9 @@ def test_warn_outcome_is_marked() -> None:
 
 
 def test_unknown_liquidity_states_a_reason() -> None:
-    text = "\n".join(_render(liquidity=_liquidity(outcome=LiquidityOutcome.UNKNOWN)))
-    assert "取得不可" in text
+    # [修正] `_liquidity_line` を丸ごと落としても通る状態だった。
+    line = next(x for x in _render(liquidity=_liquidity(outcome=LiquidityOutcome.UNKNOWN)) if "流動性" in x)
+    assert "取得不可" in line
 
 
 @pytest.mark.parametrize("kind", list(InstrumentKind))
@@ -833,6 +837,156 @@ def test_a_reit_states_that_distributions_exclude_excess_distribution() -> None:
 
 
 def test_a_share_does_not_get_the_excess_distribution_note() -> None:
-    """利益超過分配金はREITの概念。普通株に出すとノイズになる。"""
-    rendered = _render()
+    """利益超過分配金はREITの概念。普通株に出すとノイズになる。
+
+    [修正] 既定の `_dividend()` は `history=()` なので推移行がそもそも描画されず、
+    **注記の出し分け条件が壊れていても検出できなかった**(独立レビュー)。
+    履歴を持つ普通株で確かめる。
+    """
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.SHARE,
+        price=Decimal("3300"),
+        price_session=date(2026, 11, 20),
+        figures=(),
+        unknown_reason="テスト用",
+        history=_history([(date(2025, 3, 31), "95"), (date(2026, 3, 31), "100")]),
+    )
+    rendered = _render(dividend=dividend)
+    assert any("配当推移" in x for x in rendered)  # 行が出ていることを先に確かめる
     assert not any("利益超過分配金" in x for x in rendered)
+
+
+# --- 独立レビューが「テスト0件」と指摘した表示分岐(2026-11-25) ---
+
+
+def _forecast_figure(months: int | None) -> DividendYieldFigure:
+    return DividendYieldFigure(
+        basis=DividendBasis.FORECAST,
+        source_metric_type="distribution_per_unit_current_year_forecast",
+        dividend=Decimal("2700"),
+        yield_ratio=Decimal("0.0330"),
+        fiscal_period_end=date(2026, 11, 30),
+        published_at=AS_OF,
+        months_covered=months,
+    )
+
+
+def test_a_forecast_states_how_many_months_it_covers() -> None:
+    """[テスト0件だった] 予想の分子も期ごと。月数が無いと年額と同じ顔になる。"""
+    dividend = _reit_dividend(())
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.REIT,
+        price=dividend.price,
+        price_session=dividend.price_session,
+        figures=(_forecast_figure(6),),
+        unknown_reason=None,
+    )
+    line = next(x for x in _render(dividend=dividend) if "配当利回り" in x)
+    assert "予想6か月" in line
+
+
+def test_a_forecast_with_an_unknown_period_length_is_not_labelled_twelve_months() -> None:
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.REIT,
+        price=Decimal("81900"),
+        price_session=date(2026, 11, 20),
+        figures=(_forecast_figure(None),),
+        unknown_reason=None,
+    )
+    line = next(x for x in _render(dividend=dividend) if "配当利回り" in x)
+    assert "予想 " in line
+    assert "か月" not in line
+
+
+def test_a_missing_forecast_states_its_reason() -> None:
+    """[テスト0件だった] 実績だけ出たREITで「予想が無い」事実が消えていた(規約2)。"""
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.REIT,
+        price=Decimal("81900"),
+        price_session=date(2026, 11, 20),
+        figures=(
+            DividendYieldFigure(
+                basis=DividendBasis.TRAILING_12M,
+                source_metric_type="distribution_per_unit",
+                dividend=Decimal("3432"),
+                yield_ratio=Decimal("0.0419"),
+                fiscal_period_end=date(2026, 5, 31),
+                published_at=AS_OF,
+                months_covered=12,
+            ),
+        ),
+        unknown_reason=None,
+        forecast_unknown_reason="distribution_per_unit の予想に数値が無い(TARGET_YEAR_ALREADY_REPORTED)",
+    )
+    rendered = _render(dividend=dividend)
+    line = next(x for x in rendered if "配当利回り" in x)
+    assert "予想 取得不可" in line
+    assert any("TARGET_YEAR_ALREADY_REPORTED" in x for x in rendered)
+
+
+def test_the_latest_actual_line_excludes_a_period_that_has_not_ended() -> None:
+    """[テスト0件だった] 配当側にはテストがあったが直近実績行には無かった。"""
+    trend = _trend(
+        [(date(2026, 3, 31), "4800000000000", None), (date(2027, 3, 31), "9900000000000", None)],
+        metric_type="operating_profit",
+    )
+    forecasts = (_series("operating_profit", date(2027, 3, 31), ["5000000000000"]),)
+    line = next(x for x in _render(forecasts=forecasts, trend=trend) if "直近実績" in x)
+    assert "2026-03" in line
+    assert "2027-03" not in line
+
+
+def test_the_worst_case_entry_still_fits_one_screen() -> None:
+    """[繰越から昇格] 既存の全部乗せテストは今回追加した行を1行も数えていなかった。
+
+    `_dividend()` は notes も history も持たないので実測15行しか数えていない。
+    独立レビューの手計算では最悪構成で24行(上限ちょうど)。実測で確かめる。
+    """
+    found = PerShareBreak(
+        metric_type="eps",
+        accounting_standard="IFRS",
+        from_fiscal_period_end=date(2024, 11, 30),
+        to_fiscal_period_end=date(2025, 5, 31),
+        divisor_source_metric="net_profit",
+        divisor_ratio=Decimal("2.99"),
+        detail="...",
+    )
+    dividend = DividendYieldAssessment(
+        code=CODE,
+        instrument_kind=InstrumentKind.REIT,
+        price=Decimal("81900"),
+        price_session=date(2026, 11, 20),
+        figures=(
+            DividendYieldFigure(
+                basis=DividendBasis.TRAILING_PERIOD,
+                source_metric_type="distribution_per_unit",
+                dividend=Decimal("1716"),
+                yield_ratio=Decimal("0.0210"),
+                fiscal_period_end=date(2026, 5, 31),
+                published_at=AS_OF,
+                months_covered=None,
+                notes=("窓の中が1期で、期の長さを裏付ける前の期が無い",),
+            ),
+        ),
+        unknown_reason=None,
+        forecast_unknown_reason="distribution_per_unit の予想に数値が無い(TARGET_YEAR_ALREADY_REPORTED)",
+        history=_history([(date(2016 + i // 2, 5 if i % 2 == 0 else 11, 28), str(1700 + i)) for i in range(20)]),
+        history_crosses_basis_break_after=(date(2025, 5, 31),),
+    )
+    lines = _render(
+        dividend=dividend,
+        liquidity=_liquidity(outcome=LiquidityOutcome.WARN),
+        per_share=_per_share(breaks=(found, found), unchecked=("bps",)),
+        # 会社予想ブロックも最大構成にする。2族 + 直近実績 + ※ で4行使う。
+        forecasts=(
+            _series("operating_profit", date(2027, 3, 31), ["3000000000000", "3400000000000", "3900000000000"]),
+            _series("eps", date(2027, 3, 31), ["251.25", "272.17", "299.95"]),
+            _series("sales", date(2027, 3, 31), ["1000000000000"]),
+        ),
+        trend=_trend([(date(2026, 3, 31), "4800000000000", None)], metric_type="operating_profit"),
+    )
+    assert len(lines) <= MAX_LINES_PER_ENTRY, "\n".join([f"{len(lines)}行", *lines])

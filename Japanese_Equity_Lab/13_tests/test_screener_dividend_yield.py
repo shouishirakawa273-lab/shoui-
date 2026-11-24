@@ -576,3 +576,102 @@ def test_an_annual_field_with_a_non_annual_fiscal_period_is_not_claimed_as_twelv
     ).trailing
     assert trailing.basis is DividendBasis.TRAILING_PERIOD
     assert any("決算期が6か月" in note for note in trailing.notes)
+
+
+# --- PIT再監査・独立レビュー(2026-11-25) ---
+
+
+def test_an_untrusted_period_length_is_not_reported_as_months_covered() -> None:
+    """[回帰/HIGH] 「信用しない」と判定した期の長さを `months_covered` に入れていた。
+
+    結果 `basis=TRAILING_PERIOD, months_covered=12` となり、表示が
+    `実績12か月 2.10% (1716円)` ——**最初に直した欠陥の症状そのもの**が
+    enumから月数ラベルへ移っていた。両レビューが独立に同じ指摘をした。
+
+    `months_covered` は**分子が覆う月数**で、「最後に見えた2期末の間隔」ではない。
+    """
+    holed = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("distribution_per_unit", date(2024, 5, 31), "1700"),
+            ("distribution_per_unit", date(2024, 11, 30), "1750"),
+            ("distribution_per_unit", date(2025, 5, 31), "1800"),
+            ("distribution_per_unit", date(2026, 5, 31), "1716"),
+        ]
+    ).trailing
+    assert holed.basis is DividendBasis.TRAILING_PERIOD
+    assert holed.months_covered is None  # 12 を入れてはならない
+
+    boundary = _reit_assess([_SEMIANNUAL_ROWS[1], ("distribution_per_unit", date(2025, 5, 31), "1700")]).trailing  # type: ignore[attr-defined]
+    assert boundary.basis is DividendBasis.TRAILING_PERIOD
+    assert boundary.months_covered is None
+
+
+def test_an_ex_date_straddling_the_window_blocks_summation() -> None:
+    """権利落ち日は基準が切り替わる点そのもの。位置を推測せず門にできる。"""
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("distribution_per_unit", date(2024, 5, 31), "4243"),
+            ("distribution_per_unit", date(2024, 11, 30), "4420"),
+            ("distribution_per_unit", date(2025, 5, 31), "5521"),
+            ("distribution_per_unit", date(2025, 11, 30), "1830"),
+        ],
+        corporate_action_dates=(date(2025, 6, 2),),
+        corporate_actions_known_from=date(2023, 6, 1),
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_PERIOD
+    assert trailing.dividend == Decimal("1830")  # 5521+1830=7351 を出してはならない
+    assert any("権利落ち日" in note for note in trailing.notes)
+
+
+def test_an_ex_date_after_the_window_allows_summation() -> None:
+    """[回帰] 経路2(epsの段差)は過剰に拒否していた。権利落ち日なら通せる。
+
+    窓の末尾が 2025-05-31 のとき、4420 と 5521 はどちらも段差の手前なので
+    本来は足せる。eps 基準の遷移先が 2025-05-31 に当たるため経路2では拒否
+    されていた(独立レビューが「両方向に外れる」と指摘した片側)。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("distribution_per_unit", date(2023, 11, 30), "4133"),
+            ("distribution_per_unit", date(2024, 5, 31), "4243"),
+            ("distribution_per_unit", date(2024, 11, 30), "4420"),
+            ("distribution_per_unit", date(2025, 5, 31), "5521"),
+        ],
+        basis_break_period_ends=frozenset({date(2025, 5, 31)}),
+        corporate_action_dates=(date(2025, 6, 2),),
+        corporate_actions_known_from=date(2023, 6, 1),
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_12M
+    assert trailing.dividend == Decimal("9941")  # 4420 + 5521
+    assert trailing.notes == ()
+
+
+def test_a_single_period_window_does_not_claim_a_summation_was_blocked() -> None:
+    """[回帰] 足し算をしていないのに「合算する期の間に不連続がある」と出していた。
+
+    `len(ends) == 1` では基準の連続性は無関係。降格も理由も事実でなかった。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        [
+            ("dividend_per_share_annual", date(2024, 3, 31), "90"),
+            ("dividend_per_share_annual", date(2025, 3, 31), "95"),
+            ("dividend_per_share_annual", date(2026, 3, 31), "100"),
+        ],
+        instrument_kind=InstrumentKind.SHARE,
+        basis_break_period_ends=frozenset({date(2026, 3, 31)}),
+    ).trailing
+    assert trailing.basis is DividendBasis.TRAILING_12M
+    assert not any("合算する期の間" in note for note in trailing.notes)
+
+
+def test_the_gate_reason_does_not_assert_a_discontinuity_exists() -> None:
+    """配当側の段差がどの期かは確認できていないので断定しない。
+
+    `per_share.py` の「分割・併合・増資・訂正のいずれとも断定しない」と語法を揃える。
+    """
+    trailing = _reit_assess(  # type: ignore[attr-defined]
+        _SEMIANNUAL_ROWS + [("distribution_per_unit", date(2025, 5, 31), "1700")],
+        basis_break_period_ends=frozenset({date(2026, 5, 31)}),
+    ).trailing
+    assert any("可能性がある" in note for note in trailing.notes)
+    assert not any("不連続があるため" in note for note in trailing.notes)
