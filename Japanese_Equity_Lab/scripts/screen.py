@@ -62,10 +62,12 @@ from lib.data_sources.ticker_codes import (  # noqa: E402
 )
 from lib.errors import DataSourceError  # noqa: E402
 from lib.evidence.model import AvailabilitySemantics  # noqa: E402
+from lib.fundamentals.model import DisclosureEnvelope, FundamentalMetric  # noqa: E402
 from lib.fundamentals.normalize import build_revision_histories, parse_financial_summary_payload  # noqa: E402
 from lib.market_calendar import JST, session_close_at  # noqa: E402
 from lib.pretrade_risk import assess_correlation, assess_liquidity  # noqa: E402
 from lib.pretrade_risk.liquidity import DEFAULT_MAX_STALENESS_DAYS, LiquidityOutcome  # noqa: E402
+from lib.schemas.price_data import CorporateAction, RawOHLCVBar  # noqa: E402
 from lib.screener import (  # noqa: E402
     InstrumentKind,
     assess_dividend_yield,
@@ -175,20 +177,23 @@ def main(argv: list[str] | None = None) -> int:
 
     raw_bars = equity_bars_payload_to_raw_bars(bars_result.payload)
     events = detect_corporate_action_events_from_equity_bars(bars_result.payload)
-    raw_by_code: dict[str, list] = {c: [] for c in codes}
+    # 型を書かないと中身がAnyになり、Barのフィールド型がmypyから消える。
+    # 2026-11-24、配当利回りで実際にそれが起きた(close: float|None を
+    # Decimal|None の引数へ渡してもmypyが通った)。
+    raw_by_code: dict[str, list[RawOHLCVBar]] = {c: [] for c in codes}
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
-    events_by_code: dict[str, list] = {c: [] for c in codes}
+    events_by_code: dict[str, list[CorporateAction]] = {c: [] for c in codes}
     for event in events:
         events_by_code.setdefault(event.code, []).append(event)
     price_source = AsOfAdjustedPriceHistory(raw_by_code, events_by_code)
 
     envelopes, metrics = parse_financial_summary_payload(fins_result.payload, retrieved_at=fins_result.retrieved_at)
-    envelopes_by_code: dict[str, list] = {c: [] for c in codes}
+    envelopes_by_code: dict[str, list[DisclosureEnvelope]] = {c: [] for c in codes}
     for envelope in envelopes:
         envelopes_by_code.setdefault(envelope.internal_code, []).append(envelope)
     envelope_code = {e.envelope_id: e.internal_code for e in envelopes}
-    metrics_by_code: dict[str, list] = {c: [] for c in codes}
+    metrics_by_code: dict[str, list[FundamentalMetric]] = {c: [] for c in codes}
     for metric in metrics:
         code = envelope_code.get(metric.envelope_id)
         if code is not None:

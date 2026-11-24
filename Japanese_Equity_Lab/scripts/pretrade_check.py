@@ -59,6 +59,7 @@ from lib.pretrade_risk.liquidity import (  # noqa: E402
     DEFAULT_THRESHOLD_DAYS,
 )
 from lib.pretrade_risk.liquidity import DEFAULT_WINDOW_SESSIONS as LIQUIDITY_WINDOW  # noqa: E402
+from lib.schemas.price_data import CorporateAction, RawOHLCVBar  # noqa: E402
 
 # 暦日。250営業日ぶんのBarを確実に含めるための取得開始マージン。
 FETCH_MARGIN_DAYS = 600
@@ -122,10 +123,10 @@ def main(argv: list[str] | None = None) -> int:
     raw_bars = equity_bars_payload_to_raw_bars(fetched.payload)
     events = detect_corporate_action_events_from_equity_bars(fetched.payload)
 
-    raw_by_code: dict[str, list] = {code: [] for code in codes}
+    raw_by_code: dict[str, list[RawOHLCVBar]] = {code: [] for code in codes}
     for bar in raw_bars:
         raw_by_code.setdefault(bar.code, []).append(bar)
-    events_by_code: dict[str, list] = {code: [] for code in codes}
+    events_by_code: dict[str, list[CorporateAction]] = {code: [] for code in codes}
     for event in events:
         events_by_code.setdefault(event.code, []).append(event)
 

@@ -276,3 +276,49 @@ def test_latest_fiscal_period_wins_for_trailing() -> None:
     result = _assess(actual_trend=trend)
     assert result.trailing.dividend == Decimal("95")  # type: ignore[attr-defined]
     assert result.trailing.fiscal_period_end == date(2026, 3, 31)  # type: ignore[attr-defined]
+
+
+# --- 株価がfloatで来る経路(2026-11-24の実行時エラー) ---
+
+
+def test_float_price_from_the_bar_pipeline_is_accepted() -> None:
+    """[回帰] `RawOHLCVBar.close` は float。Decimalと割れず実行時に落ちていた。
+
+    株価パイプラインは意図的にfloat、配当は開示文字列由来でDecimal。利回りは
+    両者をまたぐので、境界で変換する。
+    """
+    result = _assess(price=3050.0)
+    assert result.trailing is not None  # type: ignore[attr-defined]
+    assert result.price == Decimal("3050")  # type: ignore[attr-defined]
+
+
+def test_float_price_does_not_leak_binary_expansion() -> None:
+    """`Decimal(float)` ではなく `Decimal(str(float))` を使うこと。
+
+    前者だと 0.1 が 0.1000000000000000055511151231257827... になり、
+    その展開がそのまま利回りに入る。
+    """
+    from lib.screener.dividend_yield import _to_decimal_price
+
+    assert _to_decimal_price(0.1) == Decimal("0.1")
+    assert str(_to_decimal_price(0.1)) == "0.1"
+    assert _to_decimal_price(3050.0) == Decimal("3050.0")
+
+
+def test_decimal_price_is_passed_through_unchanged() -> None:
+    from lib.screener.dividend_yield import _to_decimal_price
+
+    original = Decimal("3050.25")
+    assert _to_decimal_price(original) is original
+
+
+def test_none_price_stays_none() -> None:
+    from lib.screener.dividend_yield import _to_decimal_price
+
+    assert _to_decimal_price(None) is None
+
+
+def test_float_zero_price_is_still_rejected() -> None:
+    result = _assess(price=0.0)
+    assert result.figures == ()  # type: ignore[attr-defined]
+    assert result.unknown_reason is not None  # type: ignore[attr-defined]

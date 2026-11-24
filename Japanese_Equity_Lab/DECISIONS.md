@@ -20235,3 +20235,42 @@ the run, and says so in the output under `instrument_master` as well as in the
 log, since a log line nobody reads is not a disclosure.
 
 37 tests added. Suite 2892 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (7) — A bare `list` annotation had been hiding type errors
+
+Stage 4a crashed on the first real run: `Decimal / float` is unsupported, because
+`RawOHLCVBar.close` is `float | None` while `assess_dividend_yield` declared
+`price: Decimal | None`. mypy had passed `scripts/screen.py` cleanly.
+
+The reason it passed is the finding worth keeping. `scripts/screen.py:178` read
+
+    raw_by_code: dict[str, list] = {c: [] for c in codes}
+
+A bare `list` is `list[Any]`, so every bar drawn from that dict was `Any`, every
+field access on it was `Any`, and `Any` satisfies `Decimal | None`. **The bars'
+field types had been invisible to mypy all along.** Nothing had depended on one
+before — liquidity and correlation take the bars as objects and never pass a
+field into a typed signature — so the hole stayed covered until the dividend yield
+read `close`. Verified it is not a package re-export problem: calling the function
+with a `float` through `from lib.screener import ...` is flagged correctly.
+
+Four such annotations in `screen.py` and two in `pretrade_check.py` are now
+parameterised. With the types restored, mypy reports the actual error at the
+actual line, which is how this should have surfaced before the run.
+
+The conversion itself goes through `str()`, and the helper says why in a comment
+that is meant to survive tidying: `Decimal(0.1)` is
+`Decimal('0.1000000000000000055511151231257827...')` while `Decimal(str(0.1))` is
+`Decimal('0.1')`. Dropping the `str()` to simplify would push the binary expansion
+straight into the yield. The signature now admits `Decimal | float | None`,
+because the price pipeline is float by `liquidity.py`'s deliberate choice and the
+dividend is Decimal by the disclosure pipeline's, and the yield genuinely spans
+the two; converting in one documented place beats asking every caller to remember.
+
+This is the fifth defect of the week that tests passed over, and the first where
+the type checker should have caught it and was prevented from doing so by an
+annotation written long before. Worth noting the pattern: the earlier four were
+synthetic tests exercising mechanism without meaning; this one was a tool silently
+disabled.
+
+Suite 2897 passed (+5), same 10 pre-existing hook-environment failures.

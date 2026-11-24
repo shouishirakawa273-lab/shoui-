@@ -141,11 +141,29 @@ def _current_forecast(
     return None
 
 
+def _to_decimal_price(price: Decimal | float | None) -> Decimal | None:
+    """株価をDecimalにする。**`str()` を経由することが必須。**
+
+    株価パイプラインは意図的にfloatである(`lib/pretrade_risk/liquidity.py`:
+    「判定ではなくスクリーニングなのでDecimalの厳密contextではなくfloatを用いる」)。
+    一方、配当は開示文字列由来なのでDecimalで保持している。利回りは両者をまたぐ。
+
+    `Decimal(0.1)` は `Decimal('0.1000000000000000055511151231257827...')` になる。
+    `Decimal(str(0.1))` は `Decimal('0.1')`。**後者でなければ、2進浮動小数の展開を
+    そのまま利回りに持ち込む。** 「簡潔にする」つもりで `str()` を外さないこと。
+    """
+    if price is None:
+        return None
+    if isinstance(price, Decimal):
+        return price
+    return Decimal(str(price))
+
+
 def assess_dividend_yield(
     *,
     code: str,
     instrument_kind: InstrumentKind,
-    price: Decimal | None,
+    price: Decimal | float | None,
     price_session: date | None,
     actual_trend: FinancialTrend,
     forecast_series: Sequence[ForecastRevisionSeries] = (),
@@ -157,11 +175,13 @@ def assess_dividend_yield(
     `unknown_reason` を埋める。**0や空欄にしない。**
     """
 
+    resolved_price = _to_decimal_price(price)
+
     def _empty(reason: str) -> DividendYieldAssessment:
         return DividendYieldAssessment(
             code=code,
             instrument_kind=instrument_kind,
-            price=price,
+            price=resolved_price,
             price_session=price_session,
             figures=(),
             unknown_reason=reason,
@@ -170,10 +190,10 @@ def assess_dividend_yield(
     metric_type = _ACTUAL_METRIC_BY_KIND.get(instrument_kind)
     if metric_type is None:
         return _empty(f"InstrumentKind={instrument_kind.value} ではどの配当Fieldが適切か確認していないため算出しない")
-    if price is None:
+    if resolved_price is None:
         return _empty("株価が取得できないため算出できない")
-    if price <= 0:
-        return _empty(f"株価が正の値でないため算出できない(price={price})")
+    if resolved_price <= 0:
+        return _empty(f"株価が正の値でないため算出できない(price={resolved_price})")
 
     family = metric_family(metric_type)
     figures: list[DividendYieldFigure] = []
@@ -186,7 +206,7 @@ def assess_dividend_yield(
                 basis=DividendBasis.FORECAST,
                 source_metric_type=f"{family}_current_year_forecast",
                 dividend=value,
-                yield_ratio=value / price,
+                yield_ratio=value / resolved_price,
                 fiscal_period_end=period_end,
                 published_at=published_at,
             )
@@ -200,7 +220,7 @@ def assess_dividend_yield(
                 basis=DividendBasis.TRAILING,
                 source_metric_type=metric_type,
                 dividend=value,
-                yield_ratio=value / price,
+                yield_ratio=value / resolved_price,
                 fiscal_period_end=period_end,
                 published_at=published_at,
             )
@@ -213,7 +233,7 @@ def assess_dividend_yield(
     return DividendYieldAssessment(
         code=code,
         instrument_kind=instrument_kind,
-        price=price,
+        price=resolved_price,
         price_session=price_session,
         figures=tuple(figures),
         unknown_reason=None,
