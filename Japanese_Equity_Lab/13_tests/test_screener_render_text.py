@@ -43,7 +43,10 @@ MAX_LINES_PER_ENTRY = 24
 _FORBIDDEN_WORDS = ("割安", "割高", "買い", "売り", "推奨", "おすすめ", "お得", "狙い目", "有望")
 
 
-def _trend(roe_points: list[tuple[date, str, str | None]]) -> FinancialTrend:
+def _trend(
+    roe_points: list[tuple[date, str, str | None]],
+    metric_type: str = "provider_reported_roe",
+) -> FinancialTrend:
     by_standard: dict[str | None, list[AnnualObservation]] = {}
     for period_end, value, standard in roe_points:
         by_standard.setdefault(standard, []).append(
@@ -61,9 +64,9 @@ def _trend(roe_points: list[tuple[date, str, str | None]]) -> FinancialTrend:
         availability_semantics=AvailabilitySemantics.MARKET_PUBLIC_AT,
         trends=tuple(
             MetricTrend(
-                metric_type="provider_reported_roe",
+                metric_type=metric_type,
                 accounting_standard=standard,
-                series_id=f"{CODE}|roe|{standard}",
+                series_id=f"{CODE}|{metric_type}|{standard}",
                 observations=tuple(observations),
             )
             for standard, observations in by_standard.items()
@@ -539,13 +542,19 @@ def test_all_empty_forecasts_state_a_reason() -> None:
 
 
 def test_forecast_picks_the_latest_target_within_a_family() -> None:
+    """予想行そのものを見る。
+
+    以前は `"2027-03-31" in text` で通っていたが、配当利回り行の予想期末が
+    同じ日付だったので**予想行を見ていなくても通る**テストだった(2026-11-24)。
+    """
     forecasts = (
         _series("eps", date(2026, 3, 31), ["273.91"]),
         _series("eps", date(2027, 3, 31), ["299.95"]),
     )
-    text = "\n".join(_render(forecasts=forecasts))
-    assert "2027-03-31" in text
-    assert "299.95" in text
+    line = next(x for x in _render(forecasts=forecasts) if "EPS" in x)
+    assert "2027-03期" in line
+    assert "2026-03期" not in line
+    assert "299.95" in line
 
 
 def test_forecast_is_labelled_as_company_guidance() -> None:
@@ -779,3 +788,40 @@ def test_a_share_history_is_labelled_as_dividend_not_distribution() -> None:
     rendered = _render(dividend=dividend)
     assert any("配当推移" in x for x in rendered)
     assert not any("分配金推移" in x for x in rendered)
+
+
+# --- 予想に直近実績を並べる(2026-11-24の回帰) ---
+
+
+def test_forecast_shows_the_latest_actual_alongside_the_revision() -> None:
+    """[回帰] 上方修正でも実績を割っている予想が「勢いがある」と読めていた。
+
+    8967は営業利益を60億→66億に上方修正していたが直近実績より下で、
+    会社は1口分配金を 2,365 → 2,200 → 2,250 と減配予想にしていた。
+    改定の向きと水準は別の情報なので両方出す。
+    """
+    actual = _trend([(date(2026, 7, 31), "6770000000", None)], metric_type="operating_profit")
+    forecasts = (_series("operating_profit", date(2027, 1, 31), ["6000000000", "6600000000"]),)
+    rendered = _render(forecasts=forecasts, trend=actual)
+    assert any("直近実績" in x and "営業利益 68億(2026-07)" in x for x in rendered)
+    assert any("60億 → 66億" in x for x in rendered)
+
+
+def test_forecast_without_a_matching_actual_states_no_prefix() -> None:
+    """実績が無い族では省く。取得不可とは別で、比較対象がそもそも存在しない。"""
+    forecasts = (_series("operating_profit", date(2027, 1, 31), ["6600000000"]),)
+    rendered = _render(forecasts=forecasts, trend=_trend([]))
+    assert not any("直近実績" in x for x in rendered)
+
+
+def test_a_reit_states_that_distributions_exclude_excess_distribution() -> None:
+    """[回帰] 2979は我々2,381円・市場2,708円。差327円は利益超過分配金。"""
+    history = _history([(date(2025, 11, 30), "2746"), (date(2026, 5, 31), "2381")])
+    rendered = _render(dividend=_reit_dividend(history))
+    assert any("利益分配金ベース" in x for x in rendered)
+
+
+def test_a_share_does_not_get_the_excess_distribution_note() -> None:
+    """利益超過分配金はREITの概念。普通株に出すとノイズになる。"""
+    rendered = _render()
+    assert not any("利益超過分配金" in x for x in rendered)

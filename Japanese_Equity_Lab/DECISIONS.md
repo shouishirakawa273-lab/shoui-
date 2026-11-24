@@ -20646,3 +20646,48 @@ decision itself.
 
 The 却下 row in the 方針書 stays as written until that work begins. This entry is the
 record that its stated reason has been falsified by use.
+
+## 2026-11-24 (17) — Two Source findings the first real investment use exposed
+
+Using the screener on 3283 / 2979 / 8967 for an actual decision surfaced two
+defects that synthetic tests could not have found, because both are facts about
+what the provider's fields mean.
+
+**`DivUnit` excludes 利益超過分配金.** 2979's 2026-05 period reads 2,381 here and
+2,708 in the market. The difference is 327. Arithmetic pins it: 当期純利益
+1,732百万 ÷ 727,500口 = 2,381 exactly, so `DivUnit` carries only the distribution
+of period profit. 8967's values match the market exactly (2,365 / 2,150 / 5,578),
+so this is **systematic only for REITs that pay 利益超過分配金**, and it
+understates their yield by roughly 0.3 points. Which field holds the excess
+portion is UNKNOWN; like `NxFDivUnit`, it does not get mapped on a guessed name.
+Until then the REIT output states the basis (`利益分配金ベース`).
+
+**A forecast revision's direction was shown without its level.** 8967 rendered
+`営業利益 60億 → 66億 (改定1回)` — an upward revision that is nonetheless *below*
+the latest actual, while the issuer guided 1口分配金 down, 2,365 → 2,200 → 2,250.
+Read alone, an upward revision looks like momentum. **Direction and level are
+different facts.** The forecast block now carries a 直近実績 line naming each
+shown family's latest actual with its fiscal period; placing it inline pushed the
+family lines past 90 cells with three revisions at 兆 scale. Target periods are
+now `YYYY-MM期` rather than a full date, which narrowed the family lines from 85
+to 80 cells, so the block is narrower than before despite the extra line.
+
+**A test was passing for the wrong reason.**
+`test_forecast_picks_the_latest_target_within_a_family` asserted
+`"2027-03-31" in text`, and the dividend-yield line's forecast period carries the
+same date — so it passed without ever reading the forecast line. Now scoped to
+that line and asserting the absence of the older target too. Worth noting as a
+pattern: whole-output substring assertions pass on coincidence.
+
+3012 passed, same 10 pre-existing hook-environment failures.
+
+## 2026-11-24 (18) — Step 3 status
+
+Output specification complete; every item the 方針書 lists renders. Acceptance
+criteria: 1画面 met, 3銘柄以上 met (7203 / 8951 / 6758 / 3283 / 2979 / 8967).
+The third, 「実際に1回、自分の投資判断に使ってみる」, is the owner's action and is
+**not marked met here** — the screener was used on the three logistics REITs and
+produced material (NAV comparison, distribution history, correlation, the two
+findings above), but no BUY/HOLD/SELL was recorded. Per `CLAUDE.md`, phase
+transitions need an explicit `phase-close`, and the final judgment is the
+human's. Step 3 stays open until the owner says otherwise.

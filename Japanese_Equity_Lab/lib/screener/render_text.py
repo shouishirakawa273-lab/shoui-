@@ -229,6 +229,13 @@ def _dividend_history_lines(dividend: DividendYieldAssessment) -> list[str]:
     span = f"(直近{len(shown)}/{len(points)}期)" if len(shown) < len(points) else f"({len(points)}期)"
     lines = [f"  {_label(label)}{span} " + " ".join(_num(p.value, digits=0) for p in shown)]
 
+    if dividend.instrument_kind is InstrumentKind.REIT:
+        # 2026-11-24: 2979の2026-05期は我々2,381円・市場2,708円。差327円は
+        # 利益超過分配金で、`DivUnit` には入っていない(当期利益1,732百万÷727,500口
+        # = 2,381円と一致)。8967では市場値と完全一致するので、**利益超過分配金を
+        # 出す銘柄でだけ**起きる。どのFieldに入るかは未確認なので、基準を書くに留める。
+        lines.append(f"  {_label('')}※ 利益分配金ベース。利益超過分配金は含まれない場合がある")
+
     first_shown = shown[0].fiscal_period_end
     crossing = [d for d in dividend.history_crosses_basis_break_after if d >= first_shown]
     if crossing:
@@ -268,21 +275,77 @@ def _roe_lines(trend: FinancialTrend) -> list[str]:
     return lines
 
 
+def _latest_actual(trend: FinancialTrend, metric_family: str) -> tuple[Decimal, date] | None:
+    """同じ指標の、最も新しい決算期の実績。基準をまたいで合成せず1点を選ぶだけ。"""
+    best: tuple[Decimal, date] | None = None
+    for metric_trend in trend.trends:
+        if metric_trend.metric_type != metric_family:
+            continue
+        for observation in metric_trend.observations:
+            if observation.value is None or observation.fiscal_period_end is None:
+                continue
+            if best is None or observation.fiscal_period_end > best[1]:
+                best = (observation.value, observation.fiscal_period_end)
+    return best
+
+
 def _forecast_family_lines(series: ForecastRevisionSeries, *, first: bool) -> list[str]:
-    """1 family ぶん。familyはラベル列ではなく値側に置く(ラベル列を溢れさせない)。"""
+    """1 family ぶん。familyはラベル列ではなく値側に置く(ラベル列を溢れさせない)。
+
+    ## 直近実績を頭に置く
+
+    改定の**向き**だけを出すと、上方修正されていても実績を割っている予想が
+    「勢いがある」と読める。2026-11-24の8967がそれだった——営業利益を
+    60億→66億に上方修正しているが、直近実績(2026-07期)より下で、会社は
+    1口分配金を 2,365 → 2,200 → 2,250 と**減配予想**にしていた。
+    **向きと水準は別の情報なので、両方出す。**
+    """
     values = [r for r in series.revisions if r.value is not None]
     per_share = series.metric_family in _PER_SHARE_FAMILIES
-    sequence = " → ".join(_num(r.value) if per_share else _yen(r.value) for r in values if r.value is not None)
-    target = series.target_fiscal_year_end.isoformat() if series.target_fiscal_year_end else "不明"
+
+    def _amount(value: Decimal) -> str:
+        return _num(value) if per_share else _yen(value)
+
+    sequence = " → ".join(_amount(r.value) for r in values if r.value is not None)
+    target = series.target_fiscal_year_end.strftime("%Y-%m") if series.target_fiscal_year_end else "不明"
     name = _FAMILY_LABELS.get(series.metric_family, series.metric_family)
     head = _label("会社予想") if first else _label("")
     # 改定回数を同じ行に畳む(familyごとに2行使うと1画面を圧迫する)。
     return [f"  {head}{_label(name, 10)}{target}期  {sequence}  (改定{series.revision_count}回/公表{series.observation_count}件)"]
 
 
+def _latest_actual_line(
+    families: Sequence[str],
+    trend: FinancialTrend | None,
+) -> list[str]:
+    """表示した予想の族について、直近実績を1行にまとめる。
+
+    予想行に差し込むと、3改定×兆単位で90セルを超えて折り返す。族ごとに
+    1行足すのも1画面を圧迫するので、**ブロックに1行**だけ置く。
+    実績の決算期も書く——直前の期なのか、何期も前なのかで意味が変わる。
+    """
+    if trend is None:
+        return []
+    parts: list[str] = []
+    for family in families:
+        actual = _latest_actual(trend, family)
+        if actual is None:
+            # 実績が無い族(予想しか開示されない指標)。取得不可とは別で、
+            # 比較対象がそもそも存在しない。黙って省く。
+            continue
+        value, period_end = actual
+        name = _FAMILY_LABELS.get(family, family)
+        amount = _num(value) if family in _PER_SHARE_FAMILIES else _yen(value)
+        parts.append(f"{name} {amount}({period_end.strftime('%Y-%m')})")
+    if not parts:
+        return []
+    return [f"  {_label('')}{_label('直近実績', 10)}{' / '.join(parts)}"]
+
+
 def _forecast_lines(
     forecasts: Sequence[ForecastRevisionSeries],
     *,
+    trend: FinancialTrend | None = None,
     priority: Sequence[str] = _FORECAST_FAMILY_PRIORITY,
     max_families: int = _MAX_FORECAST_FAMILIES,
 ) -> list[str]:
@@ -309,6 +372,8 @@ def _forecast_lines(
     shown: list[str] = []
     for index, family in enumerate(families[:max_families]):
         shown += _forecast_family_lines(by_family[family], first=index == 0)
+
+    shown += _latest_actual_line(families[:max_families], trend)
 
     hidden = len(families) - max_families
     note = "※会社予想、実績ではない"
@@ -379,7 +444,7 @@ def render_entry(
     lines += _dividend_lines(dividend)
     lines += _dividend_history_lines(dividend)
     lines += _roe_lines(trend)
-    lines += _forecast_lines(forecasts)
+    lines += _forecast_lines(forecasts, trend=trend)
     lines.append(_liquidity_line(liquidity))
     lines.append(_earnings_line(earnings))
     warnings = _per_share_lines(per_share)
