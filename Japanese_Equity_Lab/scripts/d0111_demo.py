@@ -13,7 +13,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lib.evaluation.integrity import to_hashable  # noqa: E402
 from lib.evidence.thesis_impact import ThesisScenario  # noqa: E402
 from lib.forecasting.engine import compute_fundamental_forecast  # noqa: E402
-from lib.forecasting.model import AssumptionSource, ForecastAssumption, HistoricalFundamentalBase, ScenarioAssumptions  # noqa: E402
+from lib.forecasting.model import (  # noqa: E402
+    AssumptionSource,
+    ForecastAssumption,
+    HistoricalFundamentalBase,
+    ScenarioAssumptions,
+)
 from lib.scenario_returns import (  # noqa: E402
     CashTerms,
     ExitMapping,
